@@ -1,0 +1,89 @@
+<!DOCTYPE html>
+<html lang="it">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+  <title>Piano Nutrizionale</title>
+  <link rel="manifest" href="manifest.json">
+  <link rel="stylesheet" href="css/style.css">
+  <meta name="theme-color" content="#2D6A4F">
+</head>
+<body>
+  
+  <div id="app-container">
+    <div id="view-today" class="view hidden"></div>
+    <div id="view-week" class="view hidden"></div>
+    <div id="view-shop" class="view hidden"></div>
+    <div id="view-settings" class="view hidden"></div>
+  </div>
+
+  <div id="recipe-modal" class="modal hidden">
+    <div class="modal-content">
+      <div class="modal-header">
+        <h2 id="modal-title"></h2>
+        <button id="modal-close" class="btn-icon">&times;</button>
+      </div>
+      <p id="modal-time" class="text-muted"></p>
+      
+      <div class="tabs">
+        <button class="tab-btn active" data-target="tab-ingredients">Ingredienti</button>
+        <button class="tab-btn" data-target="tab-prep">Preparazione</button>
+        <button class="tab-btn" data-target="tab-batch">Batch Cooking</button>
+      </div>
+      
+      <div id="tab-ingredients" class="tab-content active">
+        <ul id="modal-ingredients-list"></ul>
+      </div>
+      
+      <div id="tab-prep" class="tab-content hidden">
+        <ul id="modal-prep-list"></ul>
+      </div>
+      
+      <div id="tab-batch" class="tab-content hidden">
+        <p id="modal-batch-text"></p>
+      </div>
+      
+      <div class="modal-footer">
+        <button id="modal-edit-btn" class="btn btn-primary">Modifica ricetta</button>
+        <button id="modal-revert-btn" class="btn btn-outline hidden">Ripristina originale</button>
+        <button id="modal-save-btn" class="btn btn-primary hidden">Salva</button>
+      </div>
+    </div>
+  </div>
+
+  <nav class="bottom-nav">
+    <a href="#week" class="nav-item" id="nav-week">
+      <span class="nav-icon">📅</span>
+      <span class="nav-label">Settimana</span>
+    </a>
+    <a href="#today" class="nav-item active" id="nav-today">
+      <span class="nav-icon">⭐</span>
+      <span class="nav-label">Oggi</span>
+    </a>
+    <a href="#shop" class="nav-item" id="nav-shop">
+      <span class="nav-icon">🛒</span>
+      <span class="nav-label">Spesa</span>
+    </a>
+    <a href="#settings" class="nav-item" id="nav-settings">
+      <span class="nav-icon">⚙️</span>
+      <span class="nav-label">Impostazioni</span>
+    </a>
+  </nav>
+
+  <!-- Firebase Scripts -->
+  <script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-app-compat.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-firestore-compat.js"></script>
+  
+  <!-- App Scripts -->
+  <script src="js/data.js"></script>
+  <script src="js/firebase.js"></script>
+  <script src="js/notifications.js"></script>
+  <script src="js/app.js"></script>
+  
+  <script>
+    if ('serviceWorker' in navigator) {
+      navigator.serviceWorker.register('sw.js');
+    }
+  </script>
+</body>
+</html>
