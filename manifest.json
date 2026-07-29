@@ -1,0 +1,20 @@
+{
+  "name": "Piano Nutrizionale",
+  "short_name": "Nutrizione",
+  "start_url": "./",
+  "display": "standalone",
+  "background_color": "#F8F9FA",
+  "theme_color": "#2D6A4F",
+  "icons": [
+    {
+      "src": "https://via.placeholder.com/192x192/2D6A4F/FFFFFF?text=PN",
+      "sizes": "192x192",
+      "type": "image/png"
+    },
+    {
+      "src": "https://via.placeholder.com/512x512/2D6A4F/FFFFFF?text=PN",
+      "sizes": "512x512",
+      "type": "image/png"
+    }
+  ]
+}
