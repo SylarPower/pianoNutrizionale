@@ -11,7 +11,7 @@ const firebaseConfig = {
 let db;
 
 function initFirebase() {
-  if (firebaseConfig.apiKey === "AIzaSyCuV3KSAWMWRWJR-LhX_FCSJQLlXaJws7M") {
+  if (firebaseConfig.apiKey === "REPLACE_API_KEY") {
     console.warn("Firebase not configured. Running in offline/mock mode.");
     return false;
   }
@@ -19,17 +19,9 @@ function initFirebase() {
   try {
     firebase.initializeApp(firebaseConfig);
     db = firebase.firestore();
-    
-    // Enable offline persistence
-    db.enablePersistence()
-      .catch((err) => {
-        if (err.code == 'failed-precondition') {
-          console.warn("Multiple tabs open, persistence can only be enabled in one tab at a a time.");
-        } else if (err.code == 'unimplemented') {
-          console.warn("The current browser does not support all of the features required to enable persistence.");
-        }
-      });
-      
+    db.enablePersistence().catch((err) => {
+      console.warn("Offline persistence not enabled:", err.code);
+    });
     return true;
   } catch (e) {
     console.error("Firebase init error", e);
@@ -37,21 +29,10 @@ function initFirebase() {
   }
 }
 
-// ------------------------------------
-// MOCK FALLBACKS FOR OFFLINE DEVELOPMENT
-// ------------------------------------
 const mockStore = {
   settings: {
-    notificationTimes: {
-      breakfast: "08:30",
-      snack1: "10:00",
-      lunch: "13:30",
-      snack2: "16:00",
-      dinner: "20:00"
-    },
-    persons: 2,
-    twoPersonsType: 'mf',
-    notificationsEnabled: false // verrà auto-settato su PC da app.js
+    notificationTimes: { breakfast: "08:30", snack1: "10:00", lunch: "13:30", snack2: "16:00", dinner: "20:00" },
+    persons: 2, twoPersonsType: 'mf', notificationsEnabled: false
   },
   weekPlans: {},
   recipes: {},
@@ -59,37 +40,25 @@ const mockStore = {
     mode: 'current',
     customDays: { monday: 'training', tuesday: 'training', wednesday: 'training', thursday: 'rest', friday: 'training', saturday: 'rest', sunday: 'rest' },
     selectedMeals: { monday: [], tuesday: [], wednesday: [], thursday: [], friday: [], saturday: [], sunday: [] },
-    persons: 2, 
-    twoPersonsType: 'mf', 
-    checkedItems: [],
-    customQtys: {}
+    persons: 2, twoPersonsType: 'mf', checkedItems: [], customQtys: {}
   }
 };
 
 async function getGlobalSettings() {
   if (!db) return mockStore.settings;
   const doc = await db.collection('settings').doc('global').get();
-  if (doc.exists) {
-    return { ...mockStore.settings, ...doc.data() };
-  }
-  return mockStore.settings;
+  return doc.exists ? { ...mockStore.settings, ...doc.data() } : mockStore.settings;
 }
 
 async function saveGlobalSettings(settings) {
-  if (!db) {
-    mockStore.settings = { ...mockStore.settings, ...settings };
-    return;
-  }
+  if (!db) { mockStore.settings = { ...mockStore.settings, ...settings }; return; }
   await db.collection('settings').doc('global').set(settings, { merge: true });
 }
 
 function getISOWeekString() {
-  const d = new Date();
-  d.setHours(0, 0, 0, 0);
-  d.setDate(d.getDate() + 4 - (d.getDay() || 7));
+  const d = new Date(); d.setHours(0, 0, 0, 0); d.setDate(d.getDate() + 4 - (d.getDay() || 7));
   const yearStart = new Date(d.getFullYear(), 0, 1);
-  const weekNo = Math.ceil((((d - yearStart) / 86400000) + 1) / 7);
-  return `${d.getFullYear()}-W${weekNo.toString().padStart(2, '0')}`;
+  return `${d.getFullYear()}-W${Math.ceil((((d - yearStart) / 86400000) + 1) / 7).toString().padStart(2, '0')}`;
 }
 
 async function getWeekPlan() {
@@ -101,10 +70,7 @@ async function getWeekPlan() {
 
 async function saveWeekPlan(plan) {
   const weekId = getISOWeekString();
-  if (!db) {
-    mockStore.weekPlans[weekId] = plan;
-    return;
-  }
+  if (!db) { mockStore.weekPlans[weekId] = plan; return; }
   await db.collection('weekPlans').doc(weekId).set(plan, { merge: true });
 }
 
@@ -115,10 +81,7 @@ async function getShoppingList() {
 }
 
 async function saveShoppingList(listData) {
-  if (!db) {
-    mockStore.shoppingList = { ...mockStore.shoppingList, ...listData };
-    return;
-  }
+  if (!db) { mockStore.shoppingList = { ...mockStore.shoppingList, ...listData }; return; }
   await db.collection('shoppingList').doc('current').set(listData, { merge: true });
 }
 
@@ -129,17 +92,11 @@ async function getCustomRecipe(mealId) {
 }
 
 async function saveCustomRecipe(mealId, recipeData) {
-  if (!db) {
-    mockStore.recipes[mealId] = recipeData;
-    return;
-  }
+  if (!db) { mockStore.recipes[mealId] = recipeData; return; }
   await db.collection('recipes').doc(mealId).set(recipeData);
 }
 
 async function deleteCustomRecipe(mealId) {
-  if (!db) {
-    delete mockStore.recipes[mealId];
-    return;
-  }
+  if (!db) { delete mockStore.recipes[mealId]; return; }
   await db.collection('recipes').doc(mealId).delete();
 }
