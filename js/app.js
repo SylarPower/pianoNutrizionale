@@ -39,7 +39,6 @@ async function initApp() {
   appState.weekPlan = await getWeekPlan();
   appState.shoppingListCloud = await getShoppingListCloud();
   appState.deviceSettings = getLocalDeviceSettings();
-  if (appState.deviceSettings.darkMode) document.body.classList.add('dark-mode');
   
   const isMobile = /Android|webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i.test(navigator.userAgent);
   if (!isMobile && ("Notification" in window)) {
@@ -131,8 +130,8 @@ function handleRoute() {
   
   if (hash === '#today') renderToday();
   else if (hash === '#week') renderWeek();
+  else if (hash === '#prep') renderPrep();
   else if (hash === '#shop') renderShop();
-  else if (hash === '#guide') renderGuide();
   else if (hash === '#settings') renderSettings();
 }
 
@@ -243,8 +242,145 @@ window.toggleDayType = async function(dayKey, type) {
   scheduleDailyNotifications();
   if (window.location.hash === '#today') renderToday();
   if (window.location.hash === '#week') renderWeek();
+  if (window.location.hash === '#prep') renderPrep();
   if (window.location.hash === '#shop') renderShop();
 };
+
+
+// ------------------------------------
+// RENDER PREP (Centro di Comando Serale)
+// ------------------------------------
+window.changePrepDay = function(val) {
+  appState.deviceSettings.prepSelectedDay = val;
+  saveLocalDeviceSettings(appState.deviceSettings);
+  renderPrep();
+}
+
+async function renderPrep() {
+  const container = document.getElementById('view-prep');
+  const todayKey = getTodayKey();
+  const selectedDay = appState.deviceSettings.prepSelectedDay || todayKey;
+  
+  // Trova il giorno successivo per il batch cooking
+  const weekDays = ['monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday', 'sunday'];
+  const nextDayIndex = (weekDays.indexOf(selectedDay) + 1) % 7;
+  const nextDay = weekDays[nextDayIndex];
+  
+  const s = appState.deviceSettings;
+  const singleType = s.singlePersonType || 'm';
+  
+  let html = `
+    <div class="flex-between" style="margin-bottom:1rem; flex-wrap:wrap; gap:0.5rem;">
+      <h2 style="margin:0;">Preparazione</h2>
+    </div>
+    
+    <div class="settings-section" style="padding:1rem; margin-bottom:1rem;">
+      <div style="display:flex; justify-content:space-between; align-items:center;">
+        <span style="font-weight:600;">Giorno:</span>
+        <select onchange="changePrepDay(this.value)" style="padding:0.3rem;">
+          <option value="monday" ${selectedDay === 'monday' ? 'selected' : ''}>Lunedì</option>
+          <option value="tuesday" ${selectedDay === 'tuesday' ? 'selected' : ''}>Martedì</option>
+          <option value="wednesday" ${selectedDay === 'wednesday' ? 'selected' : ''}>Mercoledì</option>
+          <option value="thursday" ${selectedDay === 'thursday' ? 'selected' : ''}>Giovedì</option>
+          <option value="friday" ${selectedDay === 'friday' ? 'selected' : ''}>Venerdì</option>
+          <option value="saturday" ${selectedDay === 'saturday' ? 'selected' : ''}>Sabato</option>
+          <option value="sunday" ${selectedDay === 'sunday' ? 'selected' : ''}>Domenica</option>
+        </select>
+      </div>
+      
+      <div style="display:flex; justify-content:space-between; align-items:center; margin-top:1rem; border-top:1px solid #eee; padding-top:1rem;">
+        <span style="font-weight:600;">Calcola per:</span>
+        <select style="padding:0.3rem;" onchange="updateShopPersons(parseInt(this.value)); renderPrep();">
+          <option value="1" ${s.persons === 1 ? 'selected' : ''}>1 persona</option>
+          <option value="2" ${s.persons === 2 ? 'selected' : ''}>2 persone</option>
+        </select>
+      </div>
+      
+      <div class="${s.persons === 1 ? '' : 'hidden'}" style="margin-top:0.5rem; font-size:0.9rem;">
+        <label style="margin-right:1rem;"><input type="radio" name="prepSingleType" value="m" onchange="updateShopSingleType('m'); renderPrep();" ${singleType === 'm' ? 'checked' : ''}> Uomo (×1)</label>
+        <label style="margin-right:1rem;"><input type="radio" name="prepSingleType" value="f" onchange="updateShopSingleType('f'); renderPrep();" ${singleType === 'f' ? 'checked' : ''}> Donna (×0.75)</label>
+      </div>
+      <div class="${s.persons === 2 ? '' : 'hidden'}" style="margin-top:0.5rem; font-size:0.9rem;">
+        <label style="margin-right:1rem;"><input type="radio" name="prepTwoType" value="mf" onchange="updateShopTwoType('mf'); renderPrep();" ${s.twoPersonsType === 'mf' ? 'checked' : ''}> Uomo+Donna (×1.75)</label><br>
+        <label style="margin-right:1rem;"><input type="radio" name="prepTwoType" value="fm" onchange="updateShopTwoType('fm'); renderPrep();" ${s.twoPersonsType === 'fm' ? 'checked' : ''}> Donna+Uomo (×2.25)</label><br>
+        <label><input type="radio" name="prepTwoType" value="same" onchange="updateShopTwoType('same'); renderPrep();" ${s.twoPersonsType === 'same' ? 'checked' : ''}> Stesso sesso (×2)</label>
+      </div>
+    </div>
+  `;
+
+  // Moltiplicatore
+  let multiplier = 1;
+  if (s.persons === 2) {
+    if (s.twoPersonsType === 'mf') multiplier = 1.75;
+    else if (s.twoPersonsType === 'fm') multiplier = 2.25;
+    else multiplier = 2;
+  } else {
+    if (singleType === 'f') multiplier = 0.75;
+    else multiplier = 1;
+  }
+
+  const plan = MEAL_PLAN[selectedDay];
+  const dayType = getDayType(selectedDay);
+  
+  // 1. CENA DI OGGI
+  const dinnerMealBase = plan.meals[dayType].find(m => m.slot === 'dinner');
+  const customDinner = await getCustomRecipe(dinnerMealBase.id);
+  const dinner = customDinner || dinnerMealBase;
+
+  html += `<h3 style="margin-top:2rem; margin-bottom:1rem; border-bottom:2px solid var(--primary); padding-bottom:0.5rem;">🍽️ La Cena di ${plan.dayName}</h3>`;
+  
+  html += `<div class="settings-section">`;
+  html += `<h4 style="margin-bottom:0.5rem;">${dinner.emoji} ${dinner.name}</h4>`;
+  
+  html += `<h5 style="color:var(--text-muted); margin-top:1rem; margin-bottom:0.5rem;">Ingredienti totali per la cena:</h5>`;
+  html += `<ul style="list-style:none; padding:0; font-size:0.9rem;">`;
+  dinner.ingredients.forEach(ing => {
+    let finalQty = ing.quantity;
+    if (typeof finalQty === 'number') {
+      if(ing.unit !== 'pz' && ing.unit !== 'q.b.') finalQty = formatQty(finalQty * multiplier);
+    }
+    html += `<li style="padding:0.2rem 0; border-bottom:1px solid #f0f0f0;"><strong>${finalQty} ${ing.unit==='q.b.'||ing.unit==='pz'?'':ing.unit}</strong> - ${ing.name}</li>`;
+  });
+  html += `</ul>`;
+
+  html += `<h5 style="color:var(--text-muted); margin-top:1.5rem; margin-bottom:0.5rem;">Passaggi (Tappa per spuntare):</h5>`;
+  html += `<ul style="list-style:none; padding:0; font-size:0.9rem;">`;
+  dinner.steps.forEach((step, i) => {
+    html += `<li class="step-item" style="padding:0.4rem 0; border-bottom:1px solid #f0f0f0;" onclick="this.classList.toggle('done')"><strong>${i+1}.</strong> ${step}</li>`;
+  });
+  html += `</ul>`;
+  html += `</div>`;
+
+
+  // 2. BATCH COOKING
+  html += `<h3 style="margin-top:2rem; margin-bottom:1rem; border-bottom:2px solid var(--accent); padding-bottom:0.5rem;">🍳 Batch Cooking (Preparazione per ${MEAL_PLAN[nextDay].dayName})</h3>`;
+  
+  html += `<div class="settings-section">`;
+  if (plan.batchCooking.evening) {
+    html += `<p style="font-size:1.1rem; font-weight:bold; color:var(--accent); margin-bottom:1rem;">${plan.batchCooking.evening}</p>`;
+    
+    html += `<p class="text-muted" style="font-size:0.85rem; margin-bottom:1rem;"><em>💡 Consiglio: Le quantità indicate qui sotto includono GIA' le eventuali porzioni extra indicate nel batch cooking, sommate agli ingredienti della cena per comodità.</em></p>`;
+    
+    // Mostriamo anche i pasti del giorno DOPO che beneficiano del batch
+    const nextPlan = MEAL_PLAN[nextDay];
+    const nextDayType = getDayType(nextDay);
+    html += `<h5 style="color:var(--text-muted); margin-bottom:0.5rem;">Perché prepariamo queste cose?</h5>`;
+    html += `<ul style="list-style:none; padding:0; font-size:0.85rem; margin-bottom:1rem;">`;
+    
+    nextPlan.meals[nextDayType].forEach(nextMeal => {
+      if(nextMeal.prepNote || (nextMeal.name.toLowerCase().includes('pancake') && plan.batchCooking.evening.toLowerCase().includes('pancake'))) {
+        html += `<li>👉 <strong>${nextMeal.slot.toUpperCase()}:</strong> ${nextMeal.emoji} ${nextMeal.name}</li>`;
+      }
+    });
+    html += `</ul>`;
+    
+  } else {
+    html += `<p class="text-muted" style="text-align:center; padding:1rem;">Nessuna preparazione anticipata per stasera! 🎉 Riposati.</p>`;
+  }
+  html += `</div>`;
+
+  container.innerHTML = html;
+}
 
 // ------------------------------------
 // RENDER SHOP
@@ -526,198 +662,7 @@ window.resetShopList = async function() {
 }
 
 // ------------------------------------
-// RENDER GUIDE
-// ------------------------------------
-function renderGuide() {
-  const container = document.getElementById('view-guide');
-  container.innerHTML = `
-    <h2>Linee Guida di Meller</h2>
-    
-    <div class="settings-section" style="margin-bottom:1rem;">
-      <h3 style="color:var(--primary); margin-bottom:0.5rem; border-bottom:1px solid #eee; padding-bottom:0.5rem;" onclick="this.nextElementSibling.classList.toggle('hidden')" style="cursor:pointer;">
-        Struttura Dieta ▼
-      </h3>
-      <div style="line-height:1.6; padding-top:0.5rem;">
-        <ul style="padding-left:1.2rem; margin-top:0.5rem; margin-bottom:1rem;">
-          <li style="margin-bottom:0.5rem;"><strong>1° giorno: allenamento.</strong> Bilanciata, ricca di carboidrati. Crackers nello spuntino mattutino. Quote carboidrati e proteine aumentate a pranzo.</li>
-          <li style="margin-bottom:0.5rem;"><strong>2° giorno: riposo.</strong> Pasti bilanciati. Quota carboidrati e proteine leggermente ridotta. Niente crackers.</li>
-        </ul>
-        <p class="text-muted"><em>NB: preferisci fonti di carboidrati non integrali prima e dopo un allenamento e nel carico. Libera negli altri momenti.</em></p>
-      </div>
-    </div>
-
-    <div class="settings-section" style="margin-bottom:1rem;">
-      <h3 style="color:var(--primary); margin-bottom:0.5rem; border-bottom:1px solid #eee; padding-bottom:0.5rem;" onclick="this.nextElementSibling.classList.toggle('hidden')" style="cursor:pointer;">
-        1° Giorno (Allenamento) ▼
-      </h3>
-      <div class="hidden" style="line-height:1.6; padding-top:0.5rem; font-size:0.9rem;">
-        <h4 style="color:var(--accent);">COLAZIONE</h4>
-        <ul style="padding-left:1rem; margin-bottom:1rem;">
-          <li>Avena <strong>40g</strong>, Yogurt greco 0% <strong>100g</strong>, Marmellata <strong>15g</strong></li>
-          <li><em>Alt 1:</em> Kefir 100g o Uova intere 60g / Miele 10g</li>
-          <li><em>Alt 2 (Pancake Albume):</em> Albume 120g, Yogurt 40g, Avena 40g, Marmellata 30g</li>
-          <li><em>Alt 3:</em> Yogurt 200g, Cereali 50g, Marmellata 10g</li>
-          <li><em>Alt 4:</em> Latte parz. scremato 250g, Cereali 50g</li>
-        </ul>
-        
-        <h4 style="color:var(--accent);">SPUNTINO</h4>
-        <ul style="padding-left:1rem; margin-bottom:1rem;">
-          <li>Frutta fresca <strong>250g</strong>, Crackers <strong>30g</strong>, Proteine Whey <strong>30g</strong></li>
-        </ul>
-
-        <h4 style="color:var(--accent);">PRANZO</h4>
-        <ul style="padding-left:1rem; margin-bottom:1rem;">
-          <li>Pasta/Riso <strong>90g</strong> (<em>Alt:</em> Gnocchi 250g, Farro 90g, Quinoa 80g, Pane 120g, Patate 450g)</li>
-          <li>Pollame <strong>200g</strong> (<em>Alt:</em> Manzo 150g, Maiale 100g, Merluzzo 250g, Uova 180g)</li>
-          <li>Verdura <strong>200g</strong></li>
-          <li>Olio EVO <strong>10g</strong></li>
-        </ul>
-
-        <h4 style="color:var(--accent);">MERENDA</h4>
-        <ul style="padding-left:1rem; margin-bottom:1rem;">
-          <li>Yogurt greco 0% <strong>150g</strong>, Miele <strong>15g</strong></li>
-          <li><em>Alt:</em> Crackers 30g o Frutta secca 20g</li>
-        </ul>
-
-        <h4 style="color:var(--accent);">CENA</h4>
-        <ul style="padding-left:1rem; margin-bottom:1rem;">
-          <li>Pollame <strong>200g</strong> (<em>Alt:</em> Manzo 150g, Pesce 250g, Legumi 240g)</li>
-          <li>Pane <strong>60g</strong> (<em>Alt:</em> Crackers 40g, Patate 230g)</li>
-          <li>Verdura <strong>200g</strong></li>
-          <li>Olio EVO <strong>10g</strong></li>
-        </ul>
-        <p class="text-muted" style="margin-top:0.5rem; font-size:0.8rem;"><strong>Macro medie:</strong> 1903 kcal | PRO 135g (28%) | FAT 55g (26%) | CHO 213g (44%)</p>
-      </div>
-    </div>
-
-    <div class="settings-section" style="margin-bottom:1rem;">
-      <h3 style="color:var(--rest); margin-bottom:0.5rem; border-bottom:1px solid #eee; padding-bottom:0.5rem;" onclick="this.nextElementSibling.classList.toggle('hidden')" style="cursor:pointer;">
-        2° Giorno (Riposo) ▼
-      </h3>
-      <div class="hidden" style="line-height:1.6; padding-top:0.5rem; font-size:0.9rem;">
-        <h4 style="color:var(--rest);">COLAZIONE</h4>
-        <ul style="padding-left:1rem; margin-bottom:1rem;">
-          <li>Avena <strong>40g</strong>, Yogurt greco 0% <strong>100g</strong>, Marmellata <strong>15g</strong></li>
-          <li><em>Alt:</em> Vedi alternative allenamento.</li>
-        </ul>
-        
-        <h4 style="color:var(--rest);">SPUNTINO</h4>
-        <ul style="padding-left:1rem; margin-bottom:1rem;">
-          <li>Frutta fresca <strong>250g</strong>, Proteine Whey <strong>30g</strong></li>
-          <li style="color:var(--danger);"><em>Niente Crackers!</em></li>
-        </ul>
-
-        <h4 style="color:var(--rest);">PRANZO</h4>
-        <ul style="padding-left:1rem; margin-bottom:1rem;">
-          <li>Pasta/Riso <strong>70g</strong> (<em>Alt:</em> Gnocchi 190g, Farro 70g, Quinoa 60g, Pane 90g, Patate 350g)</li>
-          <li>Pollame <strong>200g</strong></li>
-          <li>Verdura <strong>200g</strong></li>
-          <li>Olio EVO <strong>10g</strong></li>
-        </ul>
-
-        <h4 style="color:var(--rest);">MERENDA</h4>
-        <ul style="padding-left:1rem; margin-bottom:1rem;">
-          <li>Yogurt greco 0% <strong>150g</strong>, Miele <strong>15g</strong></li>
-          <li><em>Alt:</em> Crackers 30g o Frutta secca 20g</li>
-        </ul>
-
-        <h4 style="color:var(--rest);">CENA</h4>
-        <ul style="padding-left:1rem; margin-bottom:1rem;">
-          <li>Pollame <strong>200g</strong></li>
-          <li>Pane <strong>60g</strong> (<em>Alt:</em> Crackers 40g, Patate 230g)</li>
-          <li>Verdura <strong>200g</strong></li>
-          <li>Olio EVO <strong>10g</strong></li>
-        </ul>
-        <p class="text-muted" style="margin-top:0.5rem; font-size:0.8rem;"><strong>Macro medie:</strong> 1719 kcal | PRO 130g (30%) | FAT 52g (27%) | CHO 180g (42%)</p>
-      </div>
-    </div>
-      
-    <div class="settings-section" style="margin-bottom:1rem;">
-      <h3 style="color:var(--primary); margin-bottom:0.5rem; border-bottom:1px solid #eee; padding-bottom:0.5rem;" onclick="this.nextElementSibling.classList.toggle('hidden')" style="cursor:pointer;">
-        Integrazione Syform ▼
-      </h3>
-      <div class="hidden" style="line-height:1.6; padding-top:0.5rem;">
-        <ul style="padding-left:1.2rem; margin-top:0.5rem; margin-bottom:1rem;">
-          <li style="margin-bottom:0.5rem;"><strong>Creatp Syform:</strong> 7g al giorno con acqua dopo colazione.</li>
-          <li style="margin-bottom:0.5rem;"><strong>Optiwhey Syform:</strong> seguendo lo schema della dieta.</li>
-        </ul>
-        <p>Sconto del 20% sul sito <a href="http://syform.com" target="_blank" style="color:var(--primary-light);">syform.com</a> con codice <strong>AD20MTML</strong>.</p>
-      </div>
-    </div>
-      
-    <div class="settings-section" style="margin-bottom:1rem;">
-      <h3 style="color:var(--primary); margin-bottom:0.5rem; border-bottom:1px solid #eee; padding-bottom:0.5rem;" onclick="this.nextElementSibling.classList.toggle('hidden')" style="cursor:pointer;">
-        Alternative Alimentari ▼
-      </h3>
-      <div class="hidden" style="line-height:1.6; padding-top:0.5rem;">
-        <div style="overflow-x:auto;">
-          <table style="width:100%; border-collapse: collapse; margin-top:0.5rem; font-size:0.95rem;">
-            <tr style="background:#eee;"><td colspan="2" style="padding:0.5rem; font-weight:bold;">Carboidrati (Rif: Pasta/Riso 70g)</td></tr>
-            <tr style="border-bottom:1px solid #ddd;"><td style="padding:0.5rem;">Gnocchi di patate</td><td style="text-align:right; padding:0.5rem;">190 g</td></tr>
-            <tr style="border-bottom:1px solid #ddd;"><td style="padding:0.5rem;">Farro, Orzo</td><td style="text-align:right; padding:0.5rem;">70 g</td></tr>
-            <tr style="border-bottom:1px solid #ddd;"><td style="padding:0.5rem;">Quinoa, Grano Saraceno, Amaranto</td><td style="text-align:right; padding:0.5rem;">60 g</td></tr>
-            <tr style="border-bottom:1px solid #ddd;"><td style="padding:0.5rem;">Pane</td><td style="text-align:right; padding:0.5rem;">90 g</td></tr>
-            <tr style="border-bottom:1px solid #ddd;"><td style="padding:0.5rem;">Piadina</td><td style="text-align:right; padding:0.5rem;">80 g</td></tr>
-            <tr style="border-bottom:1px solid #ddd;"><td style="padding:0.5rem;">Crackers, Grissini, Crostini</td><td style="text-align:right; padding:0.5rem;">60 g</td></tr>
-            <tr style="border-bottom:1px solid #ddd;"><td style="padding:0.5rem;">Polenta, cotta</td><td style="text-align:right; padding:0.5rem;">340 g</td></tr>
-            <tr style="border-bottom:1px solid #ddd;"><td style="padding:0.5rem;">Patate</td><td style="text-align:right; padding:0.5rem;">350 g</td></tr>
-            
-            <tr style="background:#eee;"><td colspan="2" style="padding:0.5rem; font-weight:bold;">Proteine (Rif: Pollame 200g)</td></tr>
-            <tr style="border-bottom:1px solid #ddd;"><td style="padding:0.5rem;">Manzo (tagli magri)</td><td style="text-align:right; padding:0.5rem;">150 g</td></tr>
-            <tr style="border-bottom:1px solid #ddd;"><td style="padding:0.5rem;">Maiale (tagli magri) / Affettati sgrassati</td><td style="text-align:right; padding:0.5rem;">100 g</td></tr>
-            <tr style="border-bottom:1px solid #ddd;"><td style="padding:0.5rem;">Crostacei, Molluschi</td><td style="text-align:right; padding:0.5rem;">300 g</td></tr>
-            <tr style="border-bottom:1px solid #ddd;"><td style="padding:0.5rem;">Merluzzo / Nasello / Sogliola</td><td style="text-align:right; padding:0.5rem;">250 g</td></tr>
-            <tr style="border-bottom:1px solid #ddd;"><td style="padding:0.5rem;">Pesce in scatola al naturale</td><td style="text-align:right; padding:0.5rem;">150 g</td></tr>
-            <tr style="border-bottom:1px solid #ddd;"><td style="padding:0.5rem;">Pesce in scatola sott'olio / Salmone / Sgombro</td><td style="text-align:right; padding:0.5rem;">100 g</td></tr>
-            <tr style="border-bottom:1px solid #ddd;"><td style="padding:0.5rem;">Fiocchi di latte / Uova intere</td><td style="text-align:right; padding:0.5rem;">180 g</td></tr>
-            <tr style="border-bottom:1px solid #ddd;"><td style="padding:0.5rem;">Montasio / Grana</td><td style="text-align:right; padding:0.5rem;">50 g</td></tr>
-            <tr style="border-bottom:1px solid #ddd;"><td style="padding:0.5rem;">Legumi in scatola o bolliti</td><td style="text-align:right; padding:0.5rem;">240 g</td></tr>
-            <tr style="border-bottom:1px solid #ddd;"><td style="padding:0.5rem;">Legumotti - Barilla</td><td style="text-align:right; padding:0.5rem;">80 g</td></tr>
-          </table>
-        </div>
-      </div>
-    </div>
-
-    <div class="settings-section" style="margin-bottom:1rem;">
-      <h3 style="color:var(--primary); margin-bottom:0.5rem; border-bottom:1px solid #eee; padding-bottom:0.5rem;" onclick="this.nextElementSibling.classList.toggle('hidden')" style="cursor:pointer;">
-        Frequenze (Proteine) ▼
-      </h3>
-      <div class="hidden" style="line-height:1.6; padding-top:0.5rem;">
-        <div style="overflow-x:auto;">
-          <table style="width:100%; border-collapse: collapse; margin-top:0.5rem; font-size:0.95rem;">
-            <tr style="border-bottom:1px solid #ddd;"><td style="padding:0.5rem; font-weight:600;">Pollame</td><td style="text-align:right; padding:0.5rem;">1-2 volte a settimana</td></tr>
-            <tr style="border-bottom:1px solid #ddd;"><td style="padding:0.5rem; font-weight:600;">Manzo, maiale, affettati</td><td style="text-align:right; padding:0.5rem;">Max 1 volta a settimana</td></tr>
-            <tr style="border-bottom:1px solid #ddd;"><td style="padding:0.5rem; font-weight:600;">Pesce ricco di omega-3</td><td style="text-align:right; padding:0.5rem;">Almeno 2-3 volte a settimana</td></tr>
-            <tr style="border-bottom:1px solid #ddd;"><td style="padding:0.5rem; font-weight:600;">Altro pesce e prodotti ittici</td><td style="text-align:right; padding:0.5rem;">1-2 volte a settimana</td></tr>
-            <tr style="border-bottom:1px solid #ddd;"><td style="padding:0.5rem; font-weight:600;">Latticini e Uova (a pranzo/cena)</td><td style="text-align:right; padding:0.5rem;">1-2 volte a settimana</td></tr>
-            <tr style="border-bottom:1px solid #ddd;"><td style="padding:0.5rem; font-weight:600;">Legumi e derivati</td><td style="text-align:right; padding:0.5rem;">Almeno 3-4 volte a settimana</td></tr>
-          </table>
-        </div>
-      </div>
-    </div>
-
-    <div class="settings-section" style="margin-bottom:1rem;">
-      <h3 style="color:var(--primary); margin-bottom:0.5rem; border-bottom:1px solid #eee; padding-bottom:0.5rem;" onclick="this.nextElementSibling.classList.toggle('hidden')" style="cursor:pointer;">
-        Altre info e FAQ ▼
-      </h3>
-      <div class="hidden" style="line-height:1.6; padding-top:0.5rem;">
-        <ul style="padding-left:1.2rem; margin-top:0.5rem; margin-bottom:1rem;">
-          <li style="margin-bottom:0.5rem;">Punta a un consumo di almeno 2-2,5 litri di acqua al giorno.</li>
-          <li style="margin-bottom:0.5rem;">Usa solo sale iodato. Sfrutta liberamente spezie, limone, aceto.</li>
-          <li style="margin-bottom:0.5rem;">Avrai a disposizione un pasto “sociale” a settimana.</li>
-          <li style="margin-bottom:0.5rem;">Puoi combinare due alternative di proteine dimezzandone le quantità.</li>
-          <li style="margin-bottom:0.5rem;">Non serve pesare la verdura.</li>
-        </ul>
-        <p style="margin-top:0.5rem;"><strong>Devo seguire lo schema rigido?</strong> No. Le opzioni sono intercambiabili.</p>
-        <p style="margin-top:1rem;"><strong>Come mi comporto con le quantità?</strong> I pesi si riferiscono ad alimenti a crudo.</p>
-        <p style="margin-top:1rem;"><strong>Cosa faccio se mangio fuori?</strong> Scegli carboidrati non conditi, proteine magre e verdure scondite (griglia/vapore).</p>
-      </div>
-    </div>
-  `;
-}
-
-// ------------------------------------
-// RENDER SETTINGS
+// RENDER SETTINGS & GUIDE
 // ------------------------------------
 function renderSettings() {
   const container = document.getElementById('view-settings');
@@ -750,7 +695,6 @@ function renderSettings() {
   });
   html += `</div>`;
 
-  // --- INIZIO BLOCCO GUIDA (Spostato dentro Settings) ---
   html += `
     <h3 style="margin-top:2rem; margin-bottom:1rem;">Manuale Dieta</h3>
     
@@ -938,17 +882,17 @@ function renderSettings() {
   container.innerHTML = html;
 }
 
+window.updateNotificationTime = async function(slotId, value) {
+  appState.settings.notificationTimes[slotId] = value;
+  await saveGlobalSettings({notificationTimes: appState.settings.notificationTimes});
+  scheduleDailyNotifications();
+}
+
 window.toggleDarkMode = function(isDark) {
   appState.deviceSettings.darkMode = isDark;
   saveLocalDeviceSettings(appState.deviceSettings);
   if (isDark) document.body.classList.add('dark-mode');
   else document.body.classList.remove('dark-mode');
-}
-
-window.updateNotificationTime = async function(slotId, value) {
-  appState.settings.notificationTimes[slotId] = value;
-  await saveGlobalSettings({notificationTimes: appState.settings.notificationTimes});
-  scheduleDailyNotifications();
 }
 
 // ------------------------------------
@@ -1105,9 +1049,9 @@ function renderModalContent() {
 }
 
 function toggleEditMode() { editMode = !editMode; renderModalContent(); }
-window.updateModalPersons = function(val) { appState.deviceSettings.persons = val; saveLocalDeviceSettings(appState.deviceSettings); renderModalContent(); renderShop(); }
-window.updateModalTwoType = function(val) { appState.deviceSettings.twoPersonsType = val; saveLocalDeviceSettings(appState.deviceSettings); renderModalContent(); renderShop(); }
-window.updateModalSingleType = function(val) { appState.deviceSettings.singlePersonType = val; saveLocalDeviceSettings(appState.deviceSettings); renderModalContent(); renderShop(); }
+window.updateModalPersons = function(val) { appState.deviceSettings.persons = val; saveLocalDeviceSettings(appState.deviceSettings); renderModalContent(); renderShop(); if (window.location.hash === '#prep') renderPrep(); }
+window.updateModalTwoType = function(val) { appState.deviceSettings.twoPersonsType = val; saveLocalDeviceSettings(appState.deviceSettings); renderModalContent(); renderShop(); if (window.location.hash === '#prep') renderPrep(); }
+window.updateModalSingleType = function(val) { appState.deviceSettings.singlePersonType = val; saveLocalDeviceSettings(appState.deviceSettings); renderModalContent(); renderShop(); if (window.location.hash === '#prep') renderPrep(); }
 window.addIngredient = function() { saveCurrentEditState(); currentModalMeal.data.ingredients.push({ name: "", quantity: 0, unit: "g" }); renderModalContent(); }
 window.removeIngredient = function(index) { saveCurrentEditState(); currentModalMeal.data.ingredients.splice(index, 1); renderModalContent(); }
 window.addStep = function() { saveCurrentEditState(); currentModalMeal.data.steps.push(""); renderModalContent(); }
@@ -1145,6 +1089,7 @@ async function saveRecipeEdit() {
   editMode = false;
   renderModalContent();
   if (window.location.hash === '#today') renderToday();
+  if (window.location.hash === '#prep') renderPrep();
 }
 
 async function revertRecipe() {
@@ -1155,6 +1100,7 @@ async function revertRecipe() {
     currentModalMeal.isCustom = false;
     renderModalContent();
     if (window.location.hash === '#today') renderToday();
+    if (window.location.hash === '#prep') renderPrep();
   }
 }
 
