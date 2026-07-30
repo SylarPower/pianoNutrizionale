@@ -18,26 +18,17 @@ let currentModalMeal = null;
 let editMode = false;
 let shopSettingsVisible = false;
 
-function repairMissingDays() {
-  if (!MEAL_PLAN.thursday.meals.training) MEAL_PLAN.thursday.meals.training = MEAL_PLAN.thursday.meals.rest;
-  if (!MEAL_PLAN.saturday.meals.training) MEAL_PLAN.saturday.meals.training = MEAL_PLAN.saturday.meals.rest;
-  if (!MEAL_PLAN.sunday.meals.training) MEAL_PLAN.sunday.meals.training = MEAL_PLAN.sunday.meals.rest;
-  if (!MEAL_PLAN.monday.meals.rest) MEAL_PLAN.monday.meals.rest = MEAL_PLAN.monday.meals.training;
-  if (!MEAL_PLAN.tuesday.meals.rest) MEAL_PLAN.tuesday.meals.rest = MEAL_PLAN.tuesday.meals.training;
-  if (!MEAL_PLAN.wednesday.meals.rest) MEAL_PLAN.wednesday.meals.rest = MEAL_PLAN.wednesday.meals.training;
-}
-
 // ------------------------------------
 // INITIALIZATION
 // ------------------------------------
 async function initApp() {
   initFirebase();
-  repairMissingDays();
   
   appState.settings = await getGlobalSettings();
   appState.weekPlan = await getWeekPlan();
   appState.shoppingList = await getShoppingList();
   
+  // Auto Notifiche da PC
   const isMobile = /Android|webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i.test(navigator.userAgent);
   if (!isMobile && ("Notification" in window)) {
     if (Notification.permission === "default") {
@@ -632,6 +623,39 @@ function renderGuide() {
       </div>
     </div>
       
+    <div class="settings-section" style="margin-bottom:1rem;">
+      <h3 style="color:var(--primary); margin-bottom:0.5rem; border-bottom:1px solid #eee; padding-bottom:0.5rem;" onclick="this.nextElementSibling.classList.toggle('hidden')" style="cursor:pointer;">
+        Alternative Alimentari ▼
+      </h3>
+      <div class="hidden" style="line-height:1.6; padding-top:0.5rem;">
+        <div style="overflow-x:auto;">
+          <table style="width:100%; border-collapse: collapse; margin-top:0.5rem; font-size:0.95rem;">
+            <tr style="background:#eee;"><td colspan="2" style="padding:0.5rem; font-weight:bold;">Carboidrati (Rif: Pasta/Riso 70g)</td></tr>
+            <tr style="border-bottom:1px solid #ddd;"><td style="padding:0.5rem;">Gnocchi di patate</td><td style="text-align:right; padding:0.5rem;">190 g</td></tr>
+            <tr style="border-bottom:1px solid #ddd;"><td style="padding:0.5rem;">Farro, Orzo</td><td style="text-align:right; padding:0.5rem;">70 g</td></tr>
+            <tr style="border-bottom:1px solid #ddd;"><td style="padding:0.5rem;">Quinoa, Grano Saraceno, Amaranto</td><td style="text-align:right; padding:0.5rem;">60 g</td></tr>
+            <tr style="border-bottom:1px solid #ddd;"><td style="padding:0.5rem;">Pane</td><td style="text-align:right; padding:0.5rem;">90 g</td></tr>
+            <tr style="border-bottom:1px solid #ddd;"><td style="padding:0.5rem;">Piadina</td><td style="text-align:right; padding:0.5rem;">80 g</td></tr>
+            <tr style="border-bottom:1px solid #ddd;"><td style="padding:0.5rem;">Crackers, Grissini, Crostini</td><td style="text-align:right; padding:0.5rem;">60 g</td></tr>
+            <tr style="border-bottom:1px solid #ddd;"><td style="padding:0.5rem;">Polenta, cotta</td><td style="text-align:right; padding:0.5rem;">340 g</td></tr>
+            <tr style="border-bottom:1px solid #ddd;"><td style="padding:0.5rem;">Patate</td><td style="text-align:right; padding:0.5rem;">350 g</td></tr>
+            
+            <tr style="background:#eee;"><td colspan="2" style="padding:0.5rem; font-weight:bold;">Proteine (Rif: Pollame 200g)</td></tr>
+            <tr style="border-bottom:1px solid #ddd;"><td style="padding:0.5rem;">Manzo (tagli magri)</td><td style="text-align:right; padding:0.5rem;">150 g</td></tr>
+            <tr style="border-bottom:1px solid #ddd;"><td style="padding:0.5rem;">Maiale (tagli magri) / Affettati sgrassati</td><td style="text-align:right; padding:0.5rem;">100 g</td></tr>
+            <tr style="border-bottom:1px solid #ddd;"><td style="padding:0.5rem;">Crostacei, Molluschi</td><td style="text-align:right; padding:0.5rem;">300 g</td></tr>
+            <tr style="border-bottom:1px solid #ddd;"><td style="padding:0.5rem;">Merluzzo / Nasello / Sogliola</td><td style="text-align:right; padding:0.5rem;">250 g</td></tr>
+            <tr style="border-bottom:1px solid #ddd;"><td style="padding:0.5rem;">Pesce in scatola al naturale</td><td style="text-align:right; padding:0.5rem;">150 g</td></tr>
+            <tr style="border-bottom:1px solid #ddd;"><td style="padding:0.5rem;">Pesce in scatola sott'olio / Salmone / Sgombro</td><td style="text-align:right; padding:0.5rem;">100 g</td></tr>
+            <tr style="border-bottom:1px solid #ddd;"><td style="padding:0.5rem;">Fiocchi di latte / Uova intere</td><td style="text-align:right; padding:0.5rem;">180 g</td></tr>
+            <tr style="border-bottom:1px solid #ddd;"><td style="padding:0.5rem;">Montasio / Grana</td><td style="text-align:right; padding:0.5rem;">50 g</td></tr>
+            <tr style="border-bottom:1px solid #ddd;"><td style="padding:0.5rem;">Legumi in scatola o bolliti</td><td style="text-align:right; padding:0.5rem;">240 g</td></tr>
+            <tr style="border-bottom:1px solid #ddd;"><td style="padding:0.5rem;">Legumotti - Barilla</td><td style="text-align:right; padding:0.5rem;">80 g</td></tr>
+          </table>
+        </div>
+      </div>
+    </div>
+
     <div class="settings-section" style="margin-bottom:1rem;">
       <h3 style="color:var(--primary); margin-bottom:0.5rem; border-bottom:1px solid #eee; padding-bottom:0.5rem;" onclick="this.nextElementSibling.classList.toggle('hidden')" style="cursor:pointer;">
         Frequenze (Proteine) ▼
