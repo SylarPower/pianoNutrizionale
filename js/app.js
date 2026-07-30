@@ -261,22 +261,22 @@ async function renderPrep() {
   const todayKey = getTodayKey();
   const selectedDay = appState.deviceSettings.prepSelectedDay || todayKey;
   
-  // Trova il giorno successivo per il batch cooking
+  // Trova il giorno successivo
   const weekDays = ['monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday', 'sunday'];
   const nextDayIndex = (weekDays.indexOf(selectedDay) + 1) % 7;
-  const nextDay = weekDays[nextDayIndex];
+  const nextDayKey = weekDays[nextDayIndex];
   
   const s = appState.deviceSettings;
   const singleType = s.singlePersonType || 'm';
   
   let html = `
     <div class="flex-between" style="margin-bottom:1rem; flex-wrap:wrap; gap:0.5rem;">
-      <h2 style="margin:0;">Preparazione</h2>
+      <h2 style="margin:0;">Preparazione Serale</h2>
     </div>
     
     <div class="settings-section" style="padding:1rem; margin-bottom:1rem;">
       <div style="display:flex; justify-content:space-between; align-items:center;">
-        <span style="font-weight:600;">Giorno:</span>
+        <span style="font-weight:600;">Oggi è:</span>
         <select onchange="changePrepDay(this.value)" style="padding:0.3rem;">
           <option value="monday" ${selectedDay === 'monday' ? 'selected' : ''}>Lunedì</option>
           <option value="tuesday" ${selectedDay === 'tuesday' ? 'selected' : ''}>Martedì</option>
@@ -319,65 +319,89 @@ async function renderPrep() {
     else multiplier = 1;
   }
 
-  const plan = MEAL_PLAN[selectedDay];
-  const dayType = getDayType(selectedDay);
+  const todayPlan = MEAL_PLAN[selectedDay];
+  const todayType = getDayType(selectedDay);
+  const nextPlan = MEAL_PLAN[nextDayKey];
+  const nextType = getDayType(nextDayKey);
   
   // 1. CENA DI OGGI
-  const dinnerMealBase = plan.meals[dayType].find(m => m.slot === 'dinner');
+  const dinnerMealBase = todayPlan.meals[todayType].find(m => m.slot === 'dinner');
   const customDinner = await getCustomRecipe(dinnerMealBase.id);
   const dinner = customDinner || dinnerMealBase;
 
-  html += `<h3 style="margin-top:2rem; margin-bottom:1rem; border-bottom:2px solid var(--primary); padding-bottom:0.5rem;">🍽️ La Cena di ${plan.dayName}</h3>`;
-  
+  html += `<h3 style="margin-top:2rem; margin-bottom:1rem; border-bottom:2px solid var(--primary); padding-bottom:0.5rem;">🍽️ La Cena di stasera</h3>`;
   html += `<div class="settings-section">`;
   html += `<h4 style="margin-bottom:0.5rem;">${dinner.emoji} ${dinner.name}</h4>`;
-  
-  html += `<h5 style="color:var(--text-muted); margin-top:1rem; margin-bottom:0.5rem;">Ingredienti totali per la cena:</h5>`;
+  html += `<h5 style="color:var(--text-muted); margin-top:1rem; margin-bottom:0.5rem;">Ingredienti:</h5>`;
   html += `<ul style="list-style:none; padding:0; font-size:0.9rem;">`;
   dinner.ingredients.forEach(ing => {
     let finalQty = ing.quantity;
-    if (typeof finalQty === 'number') {
-      if(ing.unit !== 'pz' && ing.unit !== 'q.b.') finalQty = formatQty(finalQty * multiplier);
-    }
+    if (typeof finalQty === 'number' && ing.unit !== 'pz' && ing.unit !== 'q.b.') finalQty = formatQty(finalQty * multiplier);
     html += `<li style="padding:0.2rem 0; border-bottom:1px solid #f0f0f0;"><strong>${finalQty} ${ing.unit==='q.b.'||ing.unit==='pz'?'':ing.unit}</strong> - ${ing.name}</li>`;
   });
   html += `</ul>`;
-
-  html += `<h5 style="color:var(--text-muted); margin-top:1.5rem; margin-bottom:0.5rem;">Passaggi (Tappa per spuntare):</h5>`;
+  html += `<h5 style="color:var(--text-muted); margin-top:1.5rem; margin-bottom:0.5rem;">Passaggi:</h5>`;
   html += `<ul style="list-style:none; padding:0; font-size:0.9rem;">`;
   dinner.steps.forEach((step, i) => {
     html += `<li class="step-item" style="padding:0.4rem 0; border-bottom:1px solid #f0f0f0;" onclick="this.classList.toggle('done')"><strong>${i+1}.</strong> ${step}</li>`;
   });
-  html += `</ul>`;
-  html += `</div>`;
-
+  html += `</ul></div>`;
 
   // 2. BATCH COOKING
-  html += `<h3 style="margin-top:2rem; margin-bottom:1rem; border-bottom:2px solid var(--accent); padding-bottom:0.5rem;">🍳 Batch Cooking (Preparazione per ${MEAL_PLAN[nextDay].dayName})</h3>`;
-  
+  html += `<h3 style="margin-top:2rem; margin-bottom:1rem; border-bottom:2px solid var(--accent); padding-bottom:0.5rem;">🍳 Preparazioni Anticipate</h3>`;
   html += `<div class="settings-section">`;
-  if (plan.batchCooking.evening) {
-    html += `<p style="font-size:1.1rem; font-weight:bold; color:var(--accent); margin-bottom:1rem;">${plan.batchCooking.evening}</p>`;
-    
-    html += `<p class="text-muted" style="font-size:0.85rem; margin-bottom:1rem;"><em>💡 Consiglio: Le quantità indicate qui sotto includono GIA' le eventuali porzioni extra indicate nel batch cooking, sommate agli ingredienti della cena per comodità.</em></p>`;
-    
-    // Mostriamo anche i pasti del giorno DOPO che beneficiano del batch
-    const nextPlan = MEAL_PLAN[nextDay];
-    const nextDayType = getDayType(nextDay);
-    html += `<h5 style="color:var(--text-muted); margin-bottom:0.5rem;">Perché prepariamo queste cose?</h5>`;
-    html += `<ul style="list-style:none; padding:0; font-size:0.85rem; margin-bottom:1rem;">`;
-    
-    nextPlan.meals[nextDayType].forEach(nextMeal => {
-      if(nextMeal.prepNote || (nextMeal.name.toLowerCase().includes('pancake') && plan.batchCooking.evening.toLowerCase().includes('pancake'))) {
-        html += `<li>👉 <strong>${nextMeal.slot.toUpperCase()}:</strong> ${nextMeal.emoji} ${nextMeal.name}</li>`;
-      }
-    });
-    html += `</ul>`;
-    
+  if (todayPlan.batchCooking.evening) {
+    html += `<p style="font-size:1.1rem; font-weight:bold; color:var(--accent); margin-bottom:1rem;">${todayPlan.batchCooking.evening}</p>`;
   } else {
-    html += `<p class="text-muted" style="text-align:center; padding:1rem;">Nessuna preparazione anticipata per stasera! 🎉 Riposati.</p>`;
+    html += `<p class="text-muted" style="text-align:center; padding:1rem;">Nessuna preparazione anticipata obbligatoria stasera.</p>`;
   }
   html += `</div>`;
+
+  // 3. I PASTI DI DOMANI (Colazione, Spuntino, Pranzo, Merenda)
+  html += `<h3 style="margin-top:2rem; margin-bottom:1rem; border-bottom:2px solid var(--primary-light); padding-bottom:0.5rem;">🥡 Schiscette per Domani (${nextPlan.dayName})</h3>`;
+  html += `<p class="text-muted" style="margin-bottom:1rem; font-size:0.85rem;">Ingredienti aggregati per i pasti che consumerai domani fuori casa o durante il giorno.</p>`;
+  
+  let tomorrowIngsMap = {};
+  const tomorrowMeals = nextPlan.meals[nextType].filter(m => m.slot !== 'dinner');
+  
+  for (const tMealBase of tomorrowMeals) {
+    const customTMeal = await getCustomRecipe(tMealBase.id);
+    const tMeal = customTMeal || tMealBase;
+    tMeal.ingredients.forEach(ing => {
+      let fQty = ing.quantity;
+      if (typeof fQty === 'number' && ing.unit !== 'pz' && ing.unit !== 'q.b.') fQty = fQty * multiplier;
+      
+      const mapKey = ing.name.toLowerCase().trim() + "|" + ing.unit;
+      if (!tomorrowIngsMap[mapKey]) tomorrowIngsMap[mapKey] = { name: ing.name, qty: 0, unit: ing.unit, meals: [] };
+      if (typeof fQty === 'number') tomorrowIngsMap[mapKey].qty += fQty;
+      if (!tomorrowIngsMap[mapKey].meals.includes(tMeal.name)) tomorrowIngsMap[mapKey].meals.push(tMeal.name);
+    });
+  }
+
+  html += `<div class="settings-section">`;
+  html += `<h4 style="margin-bottom:1rem;">Ingredienti da preparare/pesare:</h4>`;
+  html += `<ul style="list-style:none; padding:0; font-size:0.9rem;">`;
+  Object.values(tomorrowIngsMap).forEach(ing => {
+    let q = (typeof ing.qty === 'number' && ing.unit !== 'pz' && ing.unit !== 'q.b.') ? formatQty(ing.qty) : ing.qty;
+    if (q === 0) q = "1"; // Fallback per q.b.
+    html += `
+      <li class="step-item" style="padding:0.5rem 0; border-bottom:1px solid #f0f0f0;" onclick="this.classList.toggle('done')">
+        <div style="font-weight:600;">${q} ${ing.unit==='q.b.'||ing.unit==='pz'?'':ing.unit} - ${ing.name}</div>
+        <div style="font-size:0.75rem; color:var(--text-muted);">Per: ${ing.meals.join(', ')}</div>
+      </li>
+    `;
+  });
+  html += `</ul></div>`;
+
+  // 4. RICETTE DI DOMANI
+  html += `<h4 style="margin-top:1.5rem; margin-bottom:0.5rem;">Cosa andranno a comporre:</h4>`;
+  tomorrowMeals.forEach(m => {
+    html += `
+      <div class="day-meal-item" onclick="openRecipeModal('${m.id}', '${nextDayKey}', '${nextType}')" style="background:#fff; border-radius:8px; padding:0.5rem; margin-bottom:0.5rem; box-shadow:0 1px 3px rgba(0,0,0,0.05); cursor:pointer;">
+        ${m.emoji} <strong>${m.name}</strong> <span class="text-muted" style="font-size:0.8rem;">(${MEAL_SLOTS.find(s=>s.id===m.slot).label})</span>
+      </div>
+    `;
+  });
 
   container.innerHTML = html;
 }
