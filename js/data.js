@@ -422,15 +422,16 @@ const SHOPPING_CATEGORIES = [
 
   // Carboidrati
   { id: "avena", name: "Farina d'avena", category: "🍚 Carboidrati / Cereali", unit: "g", days: { monday: { breakfast: {training:40, rest:40} }, tuesday: { breakfast: {training:40, rest:40} }, friday: { breakfast: {training:40, rest:40} }, saturday: { breakfast: {training:40, rest:40} } } },
-  { id: "riso", name: "Riso / Pasta", category: "🍚 Carboidrati / Cereali", unit: "g", days: { monday: { lunch: {training:90, rest:70} }, wednesday: { lunch: {training:90, rest:70} }, friday: { lunch: {training:90, rest:70} } } },
+  { id: "riso", name: "Riso bianco", category: "🍚 Carboidrati / Cereali", unit: "g", days: { monday: { lunch: {training:90, rest:70} }, friday: { lunch: {training:90, rest:70} } } },
+  { id: "pasta", name: "Pasta bianca", category: "🍚 Carboidrati / Cereali", unit: "g", days: { wednesday: { lunch: {training:90, rest:70} } } },
   { id: "patate", name: "Patate", category: "🍚 Carboidrati / Cereali", unit: "g", days: { monday: { dinner: {training:230, rest:230} }, thursday: { dinner: {training:230, rest:230} }, friday: { dinner: {training:460, rest:460} } } },
   { id: "crackers", name: "Crackers", category: "🍚 Carboidrati / Cereali", unit: "g", days: { monday: { snack1: {training:30, rest:0} }, tuesday: { snack1: {training:30, rest:0}, snack2: {training:30, rest:30} }, wednesday: { snack1: {training:30, rest:0} }, thursday: { snack1: {training:30, rest:0}, snack2: {training:30, rest:30} }, friday: { snack1: {training:30, rest:0}, snack2: {training:30, rest:30} }, saturday: { snack1: {training:30, rest:0} }, sunday: { snack1: {training:30, rest:0} } } },
   { id: "gnocchi", name: "Gnocchi di patate", category: "🍚 Carboidrati / Cereali", unit: "g", days: { tuesday: { lunch: {training:250, rest:250} } } },
   { id: "pane", name: "Pane bianco", category: "🍚 Carboidrati / Cereali", unit: "g", days: { tuesday: { dinner: {training:60, rest:60} }, wednesday: { dinner: {training:60, rest:60} }, saturday: { dinner: {training:60, rest:60} } } },
   { id: "cereali", name: "Cereali integrali / Fitness", category: "🍚 Carboidrati / Cereali", unit: "g", days: { wednesday: { breakfast: {training:50, rest:50} }, thursday: { breakfast: {training:50, rest:50} }, sunday: { breakfast: {training:50, rest:50} } } },
-  { id: "farro", name: "Farro perlato", category: "🍚 Carboidrati / Cereali", unit: "g", days: { thursday: { lunch: {training:90, rest:70} } } },
-  { id: "quinoa", name: "Quinoa", category: "🍚 Carboidrati / Cereali", unit: "g", days: { saturday: { lunch: {training:80, rest:60} } } },
-  { id: "legumotti", name: "Legumotti Barilla", category: "🍚 Carboidrati / Cereali", unit: "g", days: { sunday: { lunch: {training:80, rest:60} } } },
+  { id: "farro", name: "Farro perlato", category: "🍚 Carboidrati / Cereali", unit: "g", days: { thursday: { lunch: {training:70, rest:70} } } },
+  { id: "quinoa", name: "Quinoa", category: "🍚 Carboidrati / Cereali", unit: "g", days: { saturday: { lunch: {training:60, rest:60} } } },
+  { id: "legumotti", name: "Legumotti Barilla", category: "🍚 Carboidrati / Cereali", unit: "g", days: { sunday: { lunch: {training:60, rest:60} } } },
 
   // Legumi
   { id: "ceci", name: "Ceci in lattina", category: "🫘 Legumi", unit: "g", days: { monday: { lunch: {training:240, rest:240} } } },
