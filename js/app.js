@@ -723,7 +723,7 @@ function renderSettings() {
   const s = appState.settings;
   
   let html = `
-    <h2>Impostazioni</h2>
+    <h2>Impostazioni e Guida</h2>
     <div class="settings-section">
       <h3>Orari Pasti e Notifiche</h3>
       <p class="text-muted" style="margin-bottom:1rem; font-size:0.85rem;">Su PC le notifiche sono attive di default. Su mobile sono disabilitate.</p>
@@ -737,8 +737,193 @@ function renderSettings() {
       </div>
     `;
   });
-  
   html += `</div>`;
+
+  // --- INIZIO BLOCCO GUIDA (Spostato dentro Settings) ---
+  html += `
+    <h3 style="margin-top:2rem; margin-bottom:1rem;">Manuale Dieta</h3>
+    
+    <div class="settings-section" style="margin-bottom:1rem;">
+      <h3 style="color:var(--primary); margin-bottom:0.5rem; border-bottom:1px solid #eee; padding-bottom:0.5rem;" onclick="this.nextElementSibling.classList.toggle('hidden')" style="cursor:pointer;">
+        Struttura Dieta ▼
+      </h3>
+      <div class="hidden" style="line-height:1.6; padding-top:0.5rem;">
+        <ul style="padding-left:1.2rem; margin-top:0.5rem; margin-bottom:1rem;">
+          <li style="margin-bottom:0.5rem;"><strong>1° giorno: allenamento.</strong> Bilanciata, ricca di carboidrati. Crackers nello spuntino mattutino. Quote carboidrati e proteine aumentate a pranzo.</li>
+          <li style="margin-bottom:0.5rem;"><strong>2° giorno: riposo.</strong> Pasti bilanciati. Quota carboidrati e proteine leggermente ridotta. Niente crackers.</li>
+        </ul>
+        <p class="text-muted"><em>NB: preferisci fonti di carboidrati non integrali prima e dopo un allenamento e nel carico. Libera negli altri momenti.</em></p>
+      </div>
+    </div>
+
+    <div class="settings-section" style="margin-bottom:1rem;">
+      <h3 style="color:var(--primary); margin-bottom:0.5rem; border-bottom:1px solid #eee; padding-bottom:0.5rem;" onclick="this.nextElementSibling.classList.toggle('hidden')" style="cursor:pointer;">
+        1° Giorno (Allenamento) ▼
+      </h3>
+      <div class="hidden" style="line-height:1.6; padding-top:0.5rem; font-size:0.9rem;">
+        <h4 style="color:var(--accent);">COLAZIONE</h4>
+        <ul style="padding-left:1rem; margin-bottom:1rem;">
+          <li>Avena <strong>40g</strong>, Yogurt greco 0% <strong>100g</strong>, Marmellata <strong>15g</strong></li>
+          <li><em>Alt 1:</em> Kefir 100g o Uova intere 60g / Miele 10g</li>
+          <li><em>Alt 2 (Pancake Albume):</em> Albume 120g, Yogurt 40g, Avena 40g, Marmellata 30g</li>
+          <li><em>Alt 3:</em> Yogurt 200g, Cereali 50g, Marmellata 10g</li>
+          <li><em>Alt 4:</em> Latte parz. scremato 250g, Cereali 50g</li>
+        </ul>
+        
+        <h4 style="color:var(--accent);">SPUNTINO</h4>
+        <ul style="padding-left:1rem; margin-bottom:1rem;">
+          <li>Frutta fresca <strong>250g</strong>, Crackers <strong>30g</strong>, Proteine Whey <strong>30g</strong></li>
+        </ul>
+
+        <h4 style="color:var(--accent);">PRANZO</h4>
+        <ul style="padding-left:1rem; margin-bottom:1rem;">
+          <li>Pasta/Riso <strong>90g</strong> (<em>Alt:</em> Gnocchi 250g, Farro 90g, Quinoa 80g, Pane 120g, Patate 450g)</li>
+          <li>Pollame <strong>200g</strong> (<em>Alt:</em> Manzo 150g, Maiale 100g, Merluzzo 250g, Uova 180g)</li>
+          <li>Verdura <strong>200g</strong></li>
+          <li>Olio EVO <strong>10g</strong></li>
+        </ul>
+
+        <h4 style="color:var(--accent);">MERENDA</h4>
+        <ul style="padding-left:1rem; margin-bottom:1rem;">
+          <li>Yogurt greco 0% <strong>150g</strong>, Miele <strong>15g</strong></li>
+          <li><em>Alt:</em> Crackers 30g o Frutta secca 20g</li>
+        </ul>
+
+        <h4 style="color:var(--accent);">CENA</h4>
+        <ul style="padding-left:1rem; margin-bottom:1rem;">
+          <li>Pollame <strong>200g</strong> (<em>Alt:</em> Manzo 150g, Pesce 250g, Legumi 240g)</li>
+          <li>Pane <strong>60g</strong> (<em>Alt:</em> Crackers 40g, Patate 230g)</li>
+          <li>Verdura <strong>200g</strong></li>
+          <li>Olio EVO <strong>10g</strong></li>
+        </ul>
+        <p class="text-muted" style="margin-top:0.5rem; font-size:0.8rem;"><strong>Macro medie:</strong> 1903 kcal | PRO 135g (28%) | FAT 55g (26%) | CHO 213g (44%)</p>
+      </div>
+    </div>
+
+    <div class="settings-section" style="margin-bottom:1rem;">
+      <h3 style="color:var(--rest); margin-bottom:0.5rem; border-bottom:1px solid #eee; padding-bottom:0.5rem;" onclick="this.nextElementSibling.classList.toggle('hidden')" style="cursor:pointer;">
+        2° Giorno (Riposo) ▼
+      </h3>
+      <div class="hidden" style="line-height:1.6; padding-top:0.5rem; font-size:0.9rem;">
+        <h4 style="color:var(--rest);">COLAZIONE</h4>
+        <ul style="padding-left:1rem; margin-bottom:1rem;">
+          <li>Avena <strong>40g</strong>, Yogurt greco 0% <strong>100g</strong>, Marmellata <strong>15g</strong></li>
+          <li><em>Alt:</em> Vedi alternative allenamento.</li>
+        </ul>
+        
+        <h4 style="color:var(--rest);">SPUNTINO</h4>
+        <ul style="padding-left:1rem; margin-bottom:1rem;">
+          <li>Frutta fresca <strong>250g</strong>, Proteine Whey <strong>30g</strong></li>
+          <li style="color:var(--danger);"><em>Niente Crackers!</em></li>
+        </ul>
+
+        <h4 style="color:var(--rest);">PRANZO</h4>
+        <ul style="padding-left:1rem; margin-bottom:1rem;">
+          <li>Pasta/Riso <strong>70g</strong> (<em>Alt:</em> Gnocchi 190g, Farro 70g, Quinoa 60g, Pane 90g, Patate 350g)</li>
+          <li>Pollame <strong>200g</strong></li>
+          <li>Verdura <strong>200g</strong></li>
+          <li>Olio EVO <strong>10g</strong></li>
+        </ul>
+
+        <h4 style="color:var(--rest);">MERENDA</h4>
+        <ul style="padding-left:1rem; margin-bottom:1rem;">
+          <li>Yogurt greco 0% <strong>150g</strong>, Miele <strong>15g</strong></li>
+          <li><em>Alt:</em> Crackers 30g o Frutta secca 20g</li>
+        </ul>
+
+        <h4 style="color:var(--rest);">CENA</h4>
+        <ul style="padding-left:1rem; margin-bottom:1rem;">
+          <li>Pollame <strong>200g</strong></li>
+          <li>Pane <strong>60g</strong> (<em>Alt:</em> Crackers 40g, Patate 230g)</li>
+          <li>Verdura <strong>200g</strong></li>
+          <li>Olio EVO <strong>10g</strong></li>
+        </ul>
+        <p class="text-muted" style="margin-top:0.5rem; font-size:0.8rem;"><strong>Macro medie:</strong> 1719 kcal | PRO 130g (30%) | FAT 52g (27%) | CHO 180g (42%)</p>
+      </div>
+    </div>
+      
+    <div class="settings-section" style="margin-bottom:1rem;">
+      <h3 style="color:var(--primary); margin-bottom:0.5rem; border-bottom:1px solid #eee; padding-bottom:0.5rem;" onclick="this.nextElementSibling.classList.toggle('hidden')" style="cursor:pointer;">
+        Integrazione Syform ▼
+      </h3>
+      <div class="hidden" style="line-height:1.6; padding-top:0.5rem;">
+        <ul style="padding-left:1.2rem; margin-top:0.5rem; margin-bottom:1rem;">
+          <li style="margin-bottom:0.5rem;"><strong>Creatp Syform:</strong> 7g al giorno con acqua dopo colazione.</li>
+          <li style="margin-bottom:0.5rem;"><strong>Optiwhey Syform:</strong> seguendo lo schema della dieta.</li>
+        </ul>
+        <p>Sconto del 20% sul sito <a href="http://syform.com" target="_blank" style="color:var(--primary-light);">syform.com</a> con codice <strong>AD20MTML</strong>.</p>
+      </div>
+    </div>
+      
+    <div class="settings-section" style="margin-bottom:1rem;">
+      <h3 style="color:var(--primary); margin-bottom:0.5rem; border-bottom:1px solid #eee; padding-bottom:0.5rem;" onclick="this.nextElementSibling.classList.toggle('hidden')" style="cursor:pointer;">
+        Alternative Alimentari ▼
+      </h3>
+      <div class="hidden" style="line-height:1.6; padding-top:0.5rem;">
+        <div style="overflow-x:auto;">
+          <table style="width:100%; border-collapse: collapse; margin-top:0.5rem; font-size:0.95rem;">
+            <tr style="background:#eee;"><td colspan="2" style="padding:0.5rem; font-weight:bold;">Carboidrati (Rif: Pasta/Riso 70g)</td></tr>
+            <tr style="border-bottom:1px solid #ddd;"><td style="padding:0.5rem;">Gnocchi di patate</td><td style="text-align:right; padding:0.5rem;">190 g</td></tr>
+            <tr style="border-bottom:1px solid #ddd;"><td style="padding:0.5rem;">Farro, Orzo</td><td style="text-align:right; padding:0.5rem;">70 g</td></tr>
+            <tr style="border-bottom:1px solid #ddd;"><td style="padding:0.5rem;">Quinoa, Grano Saraceno, Amaranto</td><td style="text-align:right; padding:0.5rem;">60 g</td></tr>
+            <tr style="border-bottom:1px solid #ddd;"><td style="padding:0.5rem;">Pane</td><td style="text-align:right; padding:0.5rem;">90 g</td></tr>
+            <tr style="border-bottom:1px solid #ddd;"><td style="padding:0.5rem;">Piadina</td><td style="text-align:right; padding:0.5rem;">80 g</td></tr>
+            <tr style="border-bottom:1px solid #ddd;"><td style="padding:0.5rem;">Crackers, Grissini, Crostini</td><td style="text-align:right; padding:0.5rem;">60 g</td></tr>
+            <tr style="border-bottom:1px solid #ddd;"><td style="padding:0.5rem;">Polenta, cotta</td><td style="text-align:right; padding:0.5rem;">340 g</td></tr>
+            <tr style="border-bottom:1px solid #ddd;"><td style="padding:0.5rem;">Patate</td><td style="text-align:right; padding:0.5rem;">350 g</td></tr>
+            
+            <tr style="background:#eee;"><td colspan="2" style="padding:0.5rem; font-weight:bold;">Proteine (Rif: Pollame 200g)</td></tr>
+            <tr style="border-bottom:1px solid #ddd;"><td style="padding:0.5rem;">Manzo (tagli magri)</td><td style="text-align:right; padding:0.5rem;">150 g</td></tr>
+            <tr style="border-bottom:1px solid #ddd;"><td style="padding:0.5rem;">Maiale (tagli magri) / Affettati sgrassati</td><td style="text-align:right; padding:0.5rem;">100 g</td></tr>
+            <tr style="border-bottom:1px solid #ddd;"><td style="padding:0.5rem;">Crostacei, Molluschi</td><td style="text-align:right; padding:0.5rem;">300 g</td></tr>
+            <tr style="border-bottom:1px solid #ddd;"><td style="padding:0.5rem;">Merluzzo / Nasello / Sogliola</td><td style="text-align:right; padding:0.5rem;">250 g</td></tr>
+            <tr style="border-bottom:1px solid #ddd;"><td style="padding:0.5rem;">Pesce in scatola al naturale</td><td style="text-align:right; padding:0.5rem;">150 g</td></tr>
+            <tr style="border-bottom:1px solid #ddd;"><td style="padding:0.5rem;">Pesce in scatola sott'olio / Salmone / Sgombro</td><td style="text-align:right; padding:0.5rem;">100 g</td></tr>
+            <tr style="border-bottom:1px solid #ddd;"><td style="padding:0.5rem;">Fiocchi di latte / Uova intere</td><td style="text-align:right; padding:0.5rem;">180 g</td></tr>
+            <tr style="border-bottom:1px solid #ddd;"><td style="padding:0.5rem;">Montasio / Grana</td><td style="text-align:right; padding:0.5rem;">50 g</td></tr>
+            <tr style="border-bottom:1px solid #ddd;"><td style="padding:0.5rem;">Legumi in scatola o bolliti</td><td style="text-align:right; padding:0.5rem;">240 g</td></tr>
+            <tr style="border-bottom:1px solid #ddd;"><td style="padding:0.5rem;">Legumotti - Barilla</td><td style="text-align:right; padding:0.5rem;">80 g</td></tr>
+          </table>
+        </div>
+      </div>
+    </div>
+
+    <div class="settings-section" style="margin-bottom:1rem;">
+      <h3 style="color:var(--primary); margin-bottom:0.5rem; border-bottom:1px solid #eee; padding-bottom:0.5rem;" onclick="this.nextElementSibling.classList.toggle('hidden')" style="cursor:pointer;">
+        Frequenze (Proteine) ▼
+      </h3>
+      <div class="hidden" style="line-height:1.6; padding-top:0.5rem;">
+        <div style="overflow-x:auto;">
+          <table style="width:100%; border-collapse: collapse; margin-top:0.5rem; font-size:0.95rem;">
+            <tr style="border-bottom:1px solid #ddd;"><td style="padding:0.5rem; font-weight:600;">Pollame</td><td style="text-align:right; padding:0.5rem;">1-2 volte a settimana</td></tr>
+            <tr style="border-bottom:1px solid #ddd;"><td style="padding:0.5rem; font-weight:600;">Manzo, maiale, affettati</td><td style="text-align:right; padding:0.5rem;">Max 1 volta a settimana</td></tr>
+            <tr style="border-bottom:1px solid #ddd;"><td style="padding:0.5rem; font-weight:600;">Pesce ricco di omega-3</td><td style="text-align:right; padding:0.5rem;">Almeno 2-3 volte a settimana</td></tr>
+            <tr style="border-bottom:1px solid #ddd;"><td style="padding:0.5rem; font-weight:600;">Altro pesce e prodotti ittici</td><td style="text-align:right; padding:0.5rem;">1-2 volte a settimana</td></tr>
+            <tr style="border-bottom:1px solid #ddd;"><td style="padding:0.5rem; font-weight:600;">Latticini e Uova (a pranzo/cena)</td><td style="text-align:right; padding:0.5rem;">1-2 volte a settimana</td></tr>
+            <tr style="border-bottom:1px solid #ddd;"><td style="padding:0.5rem; font-weight:600;">Legumi e derivati</td><td style="text-align:right; padding:0.5rem;">Almeno 3-4 volte a settimana</td></tr>
+          </table>
+        </div>
+      </div>
+    </div>
+
+    <div class="settings-section" style="margin-bottom:1rem;">
+      <h3 style="color:var(--primary); margin-bottom:0.5rem; border-bottom:1px solid #eee; padding-bottom:0.5rem;" onclick="this.nextElementSibling.classList.toggle('hidden')" style="cursor:pointer;">
+        Altre info e FAQ ▼
+      </h3>
+      <div class="hidden" style="line-height:1.6; padding-top:0.5rem;">
+        <ul style="padding-left:1.2rem; margin-top:0.5rem; margin-bottom:1rem;">
+          <li style="margin-bottom:0.5rem;">Punta a un consumo di almeno 2-2,5 litri di acqua al giorno.</li>
+          <li style="margin-bottom:0.5rem;">Usa solo sale iodato. Sfrutta liberamente spezie, limone, aceto.</li>
+          <li style="margin-bottom:0.5rem;">Avrai a disposizione un pasto “sociale” a settimana.</li>
+          <li style="margin-bottom:0.5rem;">Puoi combinare due alternative di proteine dimezzandone le quantità.</li>
+          <li style="margin-bottom:0.5rem;">Non serve pesare la verdura.</li>
+        </ul>
+        <p style="margin-top:0.5rem;"><strong>Devo seguire lo schema rigido?</strong> No. Le opzioni sono intercambiabili.</p>
+        <p style="margin-top:1rem;"><strong>Come mi comporto con le quantità?</strong> I pesi si riferiscono ad alimenti a crudo.</p>
+        <p style="margin-top:1rem;"><strong>Cosa faccio se mangio fuori?</strong> Scegli carboidrati non conditi, proteine magre e verdure scondite (griglia/vapore).</p>
+      </div>
+    </div>
+  `;
   container.innerHTML = html;
 }
 
