@@ -37,9 +37,9 @@ function scheduleNotifications(settings, todayMeals, batchCookingNotes) {
     
     if (timeDiff > 0) {
       const timeoutId = setTimeout(() => {
-        let body = `${meal.name} — ${timeStr}`;
+        let body = `${timeStr}`;
         
-        new Notification(`${meal.emoji} È ora di: ${meal.slot.toUpperCase()}`, {
+        new Notification(`${meal.emoji} È ora di: ${meal.name}`, {
           body: body,
           icon: 'icons/icon-192.svg'
         });
