@@ -266,6 +266,7 @@ function renderShop() {
   const mode = shopData.mode || 'current';
   const persons = shopData.persons || 2;
   const twoType = shopData.twoPersonsType || 'mf';
+  const singleType = shopData.singlePersonType || 'm';
   const weekDays = ['monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday', 'sunday'];
   
   let html = `
@@ -287,7 +288,11 @@ function renderShop() {
             <option value="2" ${persons == 2 ? 'selected' : ''}>2 persone</option>
           </select>
         </div>
-        <div class="${persons == 1 ? 'hidden' : ''}" style="margin-top:0.5rem; font-size:0.9rem;">
+        <div class="${persons == 1 ? '' : 'hidden'}" style="margin-top:0.5rem; font-size:0.9rem;">
+          <label style="margin-right:1rem;"><input type="radio" name="shopSingleType" value="m" onchange="updateShopSingleType('m')" ${singleType === 'm' ? 'checked' : ''}> Uomo (×1)</label><br>
+          <label style="margin-right:1rem;"><input type="radio" name="shopSingleType" value="f" onchange="updateShopSingleType('f')" ${singleType === 'f' ? 'checked' : ''}> Donna (×0.75)</label>
+        </div>
+        <div class="${persons == 2 ? '' : 'hidden'}" style="margin-top:0.5rem; font-size:0.9rem;">
           <label style="margin-right:1rem;"><input type="radio" name="shopTwoType" value="mf" onchange="updateShopTwoType('mf')" ${twoType === 'mf' ? 'checked' : ''}> Uomo+Donna (×1.75)</label><br>
           <label style="margin-right:1rem;"><input type="radio" name="shopTwoType" value="fm" onchange="updateShopTwoType('fm')" ${twoType === 'fm' ? 'checked' : ''}> Donna+Uomo (×2.25)</label><br>
           <label><input type="radio" name="shopTwoType" value="same" onchange="updateShopTwoType('same')" ${twoType === 'same' ? 'checked' : ''}> Stesso sesso (×2)</label>
@@ -352,6 +357,9 @@ function renderShop() {
     if (twoType === 'mf') multiplier = 1.75;
     else if (twoType === 'fm') multiplier = 2.25;
     else multiplier = 2;
+  } else {
+    if (singleType === 'f') multiplier = 0.75;
+    else multiplier = 1;
   }
   
   let categoriesMap = {};
@@ -480,6 +488,7 @@ window.toggleShopMeal = async function(day, slot, isChecked) {
 }
 window.updateShopPersons = async function(val) { appState.shoppingList.persons = parseInt(val); await saveShoppingList(appState.shoppingList); renderShop(); }
 window.updateShopTwoType = async function(val) { appState.shoppingList.twoPersonsType = val; await saveShoppingList(appState.shoppingList); renderShop(); }
+window.updateShopSingleType = async function(val) { appState.shoppingList.singlePersonType = val; await saveShoppingList(appState.shoppingList); renderShop(); }
 window.toggleShopItem = async function(id, event) {
   if (event.target.tagName.toLowerCase() === 'input' && event.target.type === 'text') return;
   let list = appState.shoppingList.checkedItems || [];
@@ -772,6 +781,8 @@ function renderModalContent() {
   
   const selectorDiv = document.getElementById('modal-persons-selector');
   const s = appState.shoppingList;
+  const singleType = s.singlePersonType || 'm';
+  
   selectorDiv.innerHTML = `
     <div style="display:flex; justify-content:space-between; align-items:center;">
       <span style="font-weight:600; font-size:0.9rem;">Calcola per:</span>
@@ -780,7 +791,11 @@ function renderModalContent() {
         <option value="2" ${s.persons === 2 ? 'selected' : ''}>2 persone</option>
       </select>
     </div>
-    <div class="${s.persons === 1 ? 'hidden' : ''}" style="margin-top:0.5rem; font-size:0.85rem;">
+    <div class="${s.persons === 1 ? '' : 'hidden'}" style="margin-top:0.5rem; font-size:0.85rem;">
+      <label style="display:block; margin-bottom:0.2rem;"><input type="radio" name="modalSingleType" value="m" onchange="updateModalSingleType('m')" ${singleType === 'm' ? 'checked' : ''}> Uomo (×1)</label>
+      <label style="display:block; margin-bottom:0.2rem;"><input type="radio" name="modalSingleType" value="f" onchange="updateModalSingleType('f')" ${singleType === 'f' ? 'checked' : ''}> Donna (×0.75)</label>
+    </div>
+    <div class="${s.persons === 2 ? '' : 'hidden'}" style="margin-top:0.5rem; font-size:0.85rem;">
       <label style="display:block; margin-bottom:0.2rem;"><input type="radio" name="modalTwoType" value="mf" onchange="updateModalTwoType('mf')" ${s.twoPersonsType === 'mf' ? 'checked' : ''}> Uomo+Donna (×1.75)</label>
       <label style="display:block; margin-bottom:0.2rem;"><input type="radio" name="modalTwoType" value="fm" onchange="updateModalTwoType('fm')" ${s.twoPersonsType === 'fm' ? 'checked' : ''}> Donna+Uomo (×2.25)</label>
       <label style="display:block;"><input type="radio" name="modalTwoType" value="same" onchange="updateModalTwoType('same')" ${s.twoPersonsType === 'same' ? 'checked' : ''}> Stesso sesso (×2)</label>
@@ -795,6 +810,9 @@ function renderModalContent() {
     if (s.twoPersonsType === 'mf') multiplier = 1.75;
     else if (s.twoPersonsType === 'fm') multiplier = 2.25;
     else multiplier = 2;
+  } else {
+    if (singleType === 'f') multiplier = 0.75;
+    else multiplier = 1;
   }
   
   if (editMode) {
@@ -874,6 +892,7 @@ function renderModalContent() {
 function toggleEditMode() { editMode = !editMode; renderModalContent(); }
 window.updateModalPersons = async function(val) { appState.shoppingList.persons = val; await saveShoppingList(appState.shoppingList); renderModalContent(); renderShop(); }
 window.updateModalTwoType = async function(val) { appState.shoppingList.twoPersonsType = val; await saveShoppingList(appState.shoppingList); renderModalContent(); renderShop(); }
+window.updateModalSingleType = async function(val) { appState.shoppingList.singlePersonType = val; await saveShoppingList(appState.shoppingList); renderModalContent(); renderShop(); }
 window.addIngredient = function() { saveCurrentEditState(); currentModalMeal.data.ingredients.push({ name: "", quantity: 0, unit: "g" }); renderModalContent(); }
 window.removeIngredient = function(index) { saveCurrentEditState(); currentModalMeal.data.ingredients.splice(index, 1); renderModalContent(); }
 window.addStep = function() { saveCurrentEditState(); currentModalMeal.data.steps.push(""); renderModalContent(); }
