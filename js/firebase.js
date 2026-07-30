@@ -1,17 +1,17 @@
 // REPLACE WITH YOUR FIREBASE CONFIG
 const firebaseConfig = {
-  apiKey: "REPLACE_API_KEY",
-  authDomain: "REPLACE_AUTH_DOMAIN",
-  projectId: "REPLACE_PROJECT_ID",
-  storageBucket: "REPLACE_STORAGE_BUCKET",
-  messagingSenderId: "REPLACE_MESSAGING_SENDER_ID",
-  appId: "REPLACE_APP_ID"
+  apiKey: "AIzaSyCuV3KSAWMWRWJR-LhX_FCSJQLlXaJws7M",
+  authDomain: "piano-nutrizionale.firebaseapp.com",
+  projectId: "piano-nutrizionale",
+  storageBucket: "piano-nutrizionale.firebasestorage.app",
+  messagingSenderId: "117247692441",
+  appId: "1:117247692441:web:909efc3d3e6206fb95f208"
 };
 
 let db;
 
 function initFirebase() {
-  if (firebaseConfig.apiKey === "REPLACE_API_KEY") {
+  if (firebaseConfig.apiKey === "AIzaSyCuV3KSAWMWRWJR-LhX_FCSJQLlXaJws7M") {
     console.warn("Firebase not configured. Running in offline/mock mode.");
     return false;
   }
@@ -50,13 +50,13 @@ const mockStore = {
       snack2: "16:00",
       dinner: "20:00"
     },
-    persons: 1,
-    twoPersonsType: 'same',
+    persons: 2,
+    twoPersonsType: 'mf',
     notificationsEnabled: false
   },
   weekPlans: {},
   recipes: {},
-  shoppingList: { selectedDays: [], persons: 1, twoPersonsType: 'same', checkedItems: [] }
+  shoppingList: { selectedDays: [], persons: 2, twoPersonsType: 'mf', checkedItems: [] }
 };
 
 async function getGlobalSettings() {
