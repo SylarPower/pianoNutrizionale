@@ -461,3 +461,39 @@ input[type="checkbox"], input[type="radio"] {
 .settings-row:last-child {
   border-bottom: none;
 }
+/* Dark Mode (Full AMOLED) Specifics */
+body.dark-mode {
+  --bg: #000000;
+  --surface: #121212;
+  --text: #E0E0E0;
+  --text-muted: #9E9E9E;
+  --primary-light: #40916c;
+}
+
+body.dark-mode .card,
+body.dark-mode .settings-section,
+body.dark-mode .day-column {
+  box-shadow: 0 1px 3px rgba(255,255,255,0.05);
+  border: 1px solid #222;
+}
+
+body.dark-mode .bottom-nav {
+  border-top: 1px solid #222;
+  box-shadow: none;
+}
+
+body.dark-mode .pill-toggle {
+  background: #222;
+}
+
+body.dark-mode .pill-btn.active {
+  background: #333;
+}
+
+body.dark-mode input, 
+body.dark-mode select, 
+body.dark-mode textarea {
+  background-color: #222;
+  color: #fff;
+  border-color: #444;
+}
