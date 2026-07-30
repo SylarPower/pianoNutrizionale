@@ -10,7 +10,8 @@ const MEAL_SLOTS = [
 let appState = {
   settings: null,
   weekPlan: null,
-  shoppingList: null,
+  shoppingListCloud: null,
+  deviceSettings: null,
   customRecipes: {}
 };
 
@@ -18,17 +19,27 @@ let currentModalMeal = null;
 let editMode = false;
 let shopSettingsVisible = false;
 
+function repairMissingDays() {
+  if (!MEAL_PLAN.thursday.meals.training) MEAL_PLAN.thursday.meals.training = MEAL_PLAN.thursday.meals.rest;
+  if (!MEAL_PLAN.saturday.meals.training) MEAL_PLAN.saturday.meals.training = MEAL_PLAN.saturday.meals.rest;
+  if (!MEAL_PLAN.sunday.meals.training) MEAL_PLAN.sunday.meals.training = MEAL_PLAN.sunday.meals.rest;
+  if (!MEAL_PLAN.monday.meals.rest) MEAL_PLAN.monday.meals.rest = MEAL_PLAN.monday.meals.training;
+  if (!MEAL_PLAN.tuesday.meals.rest) MEAL_PLAN.tuesday.meals.rest = MEAL_PLAN.tuesday.meals.training;
+  if (!MEAL_PLAN.wednesday.meals.rest) MEAL_PLAN.wednesday.meals.rest = MEAL_PLAN.wednesday.meals.training;
+}
+
 // ------------------------------------
 // INITIALIZATION
 // ------------------------------------
 async function initApp() {
   initFirebase();
+  repairMissingDays();
   
   appState.settings = await getGlobalSettings();
   appState.weekPlan = await getWeekPlan();
-  appState.shoppingList = await getShoppingList();
+  appState.shoppingListCloud = await getShoppingListCloud();
+  appState.deviceSettings = getLocalDeviceSettings();
   
-  // Auto Notifiche da PC
   const isMobile = /Android|webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i.test(navigator.userAgent);
   if (!isMobile && ("Notification" in window)) {
     if (Notification.permission === "default") {
@@ -245,28 +256,28 @@ window.toggleShopSettings = function() {
 window.toggleShopAllWeek = async function(selectAll) {
   const weekDays = ['monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday', 'sunday'];
   weekDays.forEach(day => {
-    if (selectAll) appState.shoppingList.selectedMeals[day] = ['breakfast', 'snack1', 'lunch', 'snack2', 'dinner'];
-    else appState.shoppingList.selectedMeals[day] = [];
+    if (selectAll) appState.shoppingListCloud.selectedMeals[day] = ['breakfast', 'snack1', 'lunch', 'snack2', 'dinner'];
+    else appState.shoppingListCloud.selectedMeals[day] = [];
   });
-  await saveShoppingList(appState.shoppingList);
+  await saveShoppingListCloud(appState.shoppingListCloud);
   renderShop();
 }
 
 function renderShop() {
   const container = document.getElementById('view-shop');
   
-  let shopData = appState.shoppingList;
-  if (!shopData.selectedMeals) shopData.selectedMeals = { monday:[], tuesday:[], wednesday:[], thursday:[], friday:[], saturday:[], sunday:[] };
-  if (!shopData.customDays) shopData.customDays = { monday:'training', tuesday:'training', wednesday:'training', thursday:'rest', friday:'training', saturday:'rest', sunday:'rest' };
+  let shopCloud = appState.shoppingListCloud;
+  if (!shopCloud.selectedMeals) shopCloud.selectedMeals = { monday:[], tuesday:[], wednesday:[], thursday:[], friday:[], saturday:[], sunday:[] };
+  if (!shopCloud.customDays) shopCloud.customDays = { monday:'training', tuesday:'training', wednesday:'training', thursday:'rest', friday:'training', saturday:'rest', sunday:'rest' };
   
   let hasSelection = false;
-  Object.values(shopData.selectedMeals).forEach(arr => { if (arr.length > 0) hasSelection = true; });
+  Object.values(shopCloud.selectedMeals).forEach(arr => { if (arr.length > 0) hasSelection = true; });
   if (!hasSelection) shopSettingsVisible = true;
   
-  const mode = shopData.mode || 'current';
-  const persons = shopData.persons || 2;
-  const twoType = shopData.twoPersonsType || 'mf';
-  const singleType = shopData.singlePersonType || 'm';
+  const mode = shopCloud.mode || 'current';
+  const persons = appState.deviceSettings.persons;
+  const twoType = appState.deviceSettings.twoPersonsType;
+  const singleType = appState.deviceSettings.singlePersonType;
   const weekDays = ['monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday', 'sunday'];
   
   let html = `
@@ -297,6 +308,7 @@ function renderShop() {
           <label style="margin-right:1rem;"><input type="radio" name="shopTwoType" value="fm" onchange="updateShopTwoType('fm')" ${twoType === 'fm' ? 'checked' : ''}> Donna+Uomo (×2.25)</label><br>
           <label><input type="radio" name="shopTwoType" value="same" onchange="updateShopTwoType('same')" ${twoType === 'same' ? 'checked' : ''}> Stesso sesso (×2)</label>
         </div>
+        <p class="text-muted" style="margin-top:0.5rem; font-size:0.75rem;">Questa opzione viene salvata solo su questo dispositivo.</p>
       </div>
     `;
 
@@ -309,7 +321,7 @@ function renderShop() {
     if (mode === 'custom') {
       html += `<div style="display:grid; grid-template-columns: 1fr 1fr; gap:0.5rem; margin-top:1rem;">`;
       weekDays.forEach(day => {
-        const type = shopData.customDays[day];
+        const type = shopCloud.customDays[day];
         html += `
           <div style="background:#f9f9f9; padding:0.5rem; border-radius:6px; font-size:0.85rem;">
             <strong>${MEAL_PLAN[day].dayName.substring(0,3)}</strong>: 
@@ -333,7 +345,7 @@ function renderShop() {
         </div>
     `;
     weekDays.forEach(day => {
-      const selMeals = shopData.selectedMeals[day] || [];
+      const selMeals = shopCloud.selectedMeals[day] || [];
       const isWholeDay = selMeals.length === 5;
       html += `
         <div style="margin-bottom: 0.5rem; border: 1px solid #eee; border-radius: 8px; padding: 0.5rem;">
@@ -370,8 +382,8 @@ function renderShop() {
     let includedInDays = [];
     
     weekDays.forEach(day => {
-      const type = (mode === 'custom') ? shopData.customDays[day] : getDayType(day);
-      const mealsForDay = shopData.selectedMeals[day] || [];
+      const type = (mode === 'custom') ? shopCloud.customDays[day] : getDayType(day);
+      const mealsForDay = shopCloud.selectedMeals[day] || [];
       mealsForDay.forEach(slot => {
         if (item.days[day] && item.days[day][slot]) {
           const qtyObj = item.days[day][slot];
@@ -385,23 +397,23 @@ function renderShop() {
     });
     
     if (total > 0) {
-      let finalQty = item.unit === 'pz' ? 1 : total * multiplier;
+      let finalQty = item.unit === 'pz' || item.unit === 'q.b.' ? 1 : total * multiplier;
       finalQty = formatQty(finalQty);
       
       let splitText = "";
-      if (persons == 2 && item.unit !== 'pz') {
+      if (persons == 2 && item.unit !== 'pz' && item.unit !== 'q.b.') {
           let user1, user2;
-          if (twoType === 'mf') { user1 = formatQty(total * 1); user2 = formatQty(total * 0.75); splitText = `(Uomo: ${user1}${item.unit==='q.b.'?'':item.unit}, Donna: ${user2}${item.unit==='q.b.'?'':item.unit})`; }
-          else if (twoType === 'fm') { user1 = formatQty(total * 1); user2 = formatQty(total * 1.25); splitText = `(Donna: ${user1}${item.unit==='q.b.'?'':item.unit}, Uomo: ${user2}${item.unit==='q.b.'?'':item.unit})`; }
-          else { user1 = formatQty(total * 1); splitText = `(Ciascuno: ${user1}${item.unit==='q.b.'?'':item.unit})`; }
+          if (twoType === 'mf') { user1 = formatQty(total * 1); user2 = formatQty(total * 0.75); splitText = `(Uomo: ${user1}${item.unit}, Donna: ${user2}${item.unit})`; }
+          else if (twoType === 'fm') { user1 = formatQty(total * 1); user2 = formatQty(total * 1.25); splitText = `(Donna: ${user1}${item.unit}, Uomo: ${user2}${item.unit})`; }
+          else { user1 = formatQty(total * 1); splitText = `(Ciascuno: ${user1}${item.unit})`; }
       }
 
-      if (shopData.customQtys && shopData.customQtys[item.id] !== undefined) finalQty = shopData.customQtys[item.id];
+      if (shopCloud.customQtys && shopCloud.customQtys[item.id] !== undefined) finalQty = shopCloud.customQtys[item.id];
       
       if (!categoriesMap[item.category]) categoriesMap[item.category] = [];
       categoriesMap[item.category].push({
         id: item.id, name: item.name, qty: finalQty, unit: item.unit,
-        days: includedInDays.join(', '), checked: (shopData.checkedItems || []).includes(item.id),
+        days: includedInDays.join(', '), checked: (shopCloud.checkedItems || []).includes(item.id),
         splitText: splitText
       });
       totalItemsCount++;
@@ -427,7 +439,7 @@ function renderShop() {
             </div>
             <div class="shop-item-qty">
               <input type="text" inputmode="decimal" class="editable-qty" value="${item.qty}" onclick="event.stopPropagation()" onchange="updateShopItemQty('${item.id}', this.value)">
-              ${item.unit === 'q.b.' ? '' : `<span style="font-size:0.8rem; margin-left:2px;">${item.unit}</span>`}
+              ${item.unit === 'q.b.' || item.unit === 'pz' ? '' : `<span style="font-size:0.8rem; margin-left:2px;">${item.unit}</span>`}
             </div>
           </div>
         `;
@@ -474,41 +486,41 @@ window.shareShopWhatsApp = function() {
   }
 }
 
-window.setShopMode = async function(mode) { appState.shoppingList.mode = mode; await saveShoppingList(appState.shoppingList); renderShop(); }
-window.setCustomShopDayType = async function(day, type) { appState.shoppingList.customDays[day] = type; await saveShoppingList(appState.shoppingList); renderShop(); }
+window.setShopMode = async function(mode) { appState.shoppingListCloud.mode = mode; await saveShoppingListCloud(appState.shoppingListCloud); renderShop(); }
+window.setCustomShopDayType = async function(day, type) { appState.shoppingListCloud.customDays[day] = type; await saveShoppingListCloud(appState.shoppingListCloud); renderShop(); }
 window.toggleShopWholeDay = async function(day, isChecked) {
-  if (isChecked) appState.shoppingList.selectedMeals[day] = ['breakfast', 'snack1', 'lunch', 'snack2', 'dinner'];
-  else appState.shoppingList.selectedMeals[day] = [];
-  await saveShoppingList(appState.shoppingList); renderShop();
+  if (isChecked) appState.shoppingListCloud.selectedMeals[day] = ['breakfast', 'snack1', 'lunch', 'snack2', 'dinner'];
+  else appState.shoppingListCloud.selectedMeals[day] = [];
+  await saveShoppingListCloud(appState.shoppingListCloud); renderShop();
 }
 window.toggleShopMeal = async function(day, slot, isChecked) {
-  if (isChecked && !appState.shoppingList.selectedMeals[day].includes(slot)) appState.shoppingList.selectedMeals[day].push(slot);
-  else if (!isChecked) appState.shoppingList.selectedMeals[day] = appState.shoppingList.selectedMeals[day].filter(s => s !== slot);
-  await saveShoppingList(appState.shoppingList); renderShop();
+  if (isChecked && !appState.shoppingListCloud.selectedMeals[day].includes(slot)) appState.shoppingListCloud.selectedMeals[day].push(slot);
+  else if (!isChecked) appState.shoppingListCloud.selectedMeals[day] = appState.shoppingListCloud.selectedMeals[day].filter(s => s !== slot);
+  await saveShoppingListCloud(appState.shoppingListCloud); renderShop();
 }
-window.updateShopPersons = async function(val) { appState.shoppingList.persons = parseInt(val); await saveShoppingList(appState.shoppingList); renderShop(); }
-window.updateShopTwoType = async function(val) { appState.shoppingList.twoPersonsType = val; await saveShoppingList(appState.shoppingList); renderShop(); }
-window.updateShopSingleType = async function(val) { appState.shoppingList.singlePersonType = val; await saveShoppingList(appState.shoppingList); renderShop(); }
+window.updateShopPersons = function(val) { appState.deviceSettings.persons = parseInt(val); saveLocalDeviceSettings(appState.deviceSettings); renderShop(); }
+window.updateShopTwoType = function(val) { appState.deviceSettings.twoPersonsType = val; saveLocalDeviceSettings(appState.deviceSettings); renderShop(); }
+window.updateShopSingleType = function(val) { appState.deviceSettings.singlePersonType = val; saveLocalDeviceSettings(appState.deviceSettings); renderShop(); }
 window.toggleShopItem = async function(id, event) {
   if (event.target.tagName.toLowerCase() === 'input' && event.target.type === 'text') return;
-  let list = appState.shoppingList.checkedItems || [];
+  let list = appState.shoppingListCloud.checkedItems || [];
   if (list.includes(id)) list = list.filter(i => i !== id); else list.push(id);
-  appState.shoppingList.checkedItems = list;
-  await saveShoppingList(appState.shoppingList); renderShop();
+  appState.shoppingListCloud.checkedItems = list;
+  await saveShoppingListCloud(appState.shoppingListCloud); renderShop();
 }
 window.updateShopItemQty = async function(id, val) {
-  if (!appState.shoppingList.customQtys) appState.shoppingList.customQtys = {};
-  appState.shoppingList.customQtys[id] = val;
-  await saveShoppingList(appState.shoppingList); renderShop();
+  if (!appState.shoppingListCloud.customQtys) appState.shoppingListCloud.customQtys = {};
+  appState.shoppingListCloud.customQtys[id] = val;
+  await saveShoppingListCloud(appState.shoppingListCloud); renderShop();
 }
 window.resetShopChecks = async function() {
-  if (confirm("Rimuovere le spunte?")) { appState.shoppingList.checkedItems = []; await saveShoppingList(appState.shoppingList); renderShop(); }
+  if (confirm("Rimuovere le spunte?")) { appState.shoppingListCloud.checkedItems = []; await saveShoppingListCloud(appState.shoppingListCloud); renderShop(); }
 }
 window.resetShopList = async function() {
   if (confirm("Azzerare le selezioni?")) {
-    appState.shoppingList.selectedMeals = { monday:[], tuesday:[], wednesday:[], thursday:[], friday:[], saturday:[], sunday:[] };
-    appState.shoppingList.checkedItems = []; appState.shoppingList.customQtys = {}; shopSettingsVisible = true;
-    await saveShoppingList(appState.shoppingList); renderShop();
+    appState.shoppingListCloud.selectedMeals = { monday:[], tuesday:[], wednesday:[], thursday:[], friday:[], saturday:[], sunday:[] };
+    appState.shoppingListCloud.checkedItems = []; appState.shoppingListCloud.customQtys = {}; shopSettingsVisible = true;
+    await saveShoppingListCloud(appState.shoppingListCloud); renderShop();
   }
 }
 
@@ -780,7 +792,7 @@ function renderModalContent() {
   document.getElementById('modal-time').innerHTML = `${MEAL_SLOTS.find(s=>s.id===meal.slot)?.label} • ${timeStr || ''} • Prep: ${meal.prepTime || '-'}`;
   
   const selectorDiv = document.getElementById('modal-persons-selector');
-  const s = appState.shoppingList;
+  const s = appState.deviceSettings;
   const singleType = s.singlePersonType || 'm';
   
   selectorDiv.innerHTML = `
@@ -832,13 +844,13 @@ function renderModalContent() {
       let finalQty = ing.quantity;
       let splitText = "";
       if (typeof finalQty === 'number') {
-        if (s.persons === 2 && ing.unit !== 'pz') {
+        if (s.persons === 2 && ing.unit !== 'pz' && ing.unit !== 'q.b.') {
           let user1, user2;
-          if (s.twoPersonsType === 'mf') { user1 = formatQty(finalQty * 1); user2 = formatQty(finalQty * 0.75); splitText = `(Uomo: ${user1}${ing.unit==='q.b.'?'':ing.unit}, Donna: ${user2}${ing.unit==='q.b.'?'':ing.unit})`; }
-          else if (s.twoPersonsType === 'fm') { user1 = formatQty(finalQty * 1); user2 = formatQty(finalQty * 1.25); splitText = `(Donna: ${user1}${ing.unit==='q.b.'?'':ing.unit}, Uomo: ${user2}${ing.unit==='q.b.'?'':ing.unit})`; }
-          else { user1 = formatQty(finalQty * 1); splitText = `(Ciascuno: ${user1}${ing.unit==='q.b.'?'':ing.unit})`; }
+          if (s.twoPersonsType === 'mf') { user1 = formatQty(finalQty * 1); user2 = formatQty(finalQty * 0.75); splitText = `(Uomo: ${user1}${ing.unit}, Donna: ${user2}${ing.unit})`; }
+          else if (s.twoPersonsType === 'fm') { user1 = formatQty(finalQty * 1); user2 = formatQty(finalQty * 1.25); splitText = `(Donna: ${user1}${ing.unit}, Uomo: ${user2}${ing.unit})`; }
+          else { user1 = formatQty(finalQty * 1); splitText = `(Ciascuno: ${user1}${ing.unit})`; }
         }
-        if(ing.unit !== 'pz') { finalQty = finalQty * multiplier; }
+        if(ing.unit !== 'pz' && ing.unit !== 'q.b.') { finalQty = finalQty * multiplier; }
         finalQty = formatQty(finalQty);
       }
       ingUl.innerHTML += `
@@ -890,9 +902,9 @@ function renderModalContent() {
 }
 
 function toggleEditMode() { editMode = !editMode; renderModalContent(); }
-window.updateModalPersons = async function(val) { appState.shoppingList.persons = val; await saveShoppingList(appState.shoppingList); renderModalContent(); renderShop(); }
-window.updateModalTwoType = async function(val) { appState.shoppingList.twoPersonsType = val; await saveShoppingList(appState.shoppingList); renderModalContent(); renderShop(); }
-window.updateModalSingleType = async function(val) { appState.shoppingList.singlePersonType = val; await saveShoppingList(appState.shoppingList); renderModalContent(); renderShop(); }
+window.updateModalPersons = function(val) { appState.deviceSettings.persons = val; saveLocalDeviceSettings(appState.deviceSettings); renderModalContent(); renderShop(); }
+window.updateModalTwoType = function(val) { appState.deviceSettings.twoPersonsType = val; saveLocalDeviceSettings(appState.deviceSettings); renderModalContent(); renderShop(); }
+window.updateModalSingleType = function(val) { appState.deviceSettings.singlePersonType = val; saveLocalDeviceSettings(appState.deviceSettings); renderModalContent(); renderShop(); }
 window.addIngredient = function() { saveCurrentEditState(); currentModalMeal.data.ingredients.push({ name: "", quantity: 0, unit: "g" }); renderModalContent(); }
 window.removeIngredient = function(index) { saveCurrentEditState(); currentModalMeal.data.ingredients.splice(index, 1); renderModalContent(); }
 window.addStep = function() { saveCurrentEditState(); currentModalMeal.data.steps.push(""); renderModalContent(); }
