@@ -50,7 +50,8 @@ function getLocalDeviceSettings() {
   const defaults = { 
     persons: 2, 
     twoPersonsType: 'mf', 
-    singlePersonType: 'm'
+    singlePersonType: 'm',
+    darkMode: false
   };
   const stored = localStorage.getItem('pn_device_settings');
   return stored ? { ...defaults, ...JSON.parse(stored) } : defaults;
