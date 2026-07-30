@@ -6,12 +6,9 @@ const MEAL_PLAN = {
         {
           id: "monday_breakfast", slot: "breakfast", name: "Frozen Porridge \"Sacher\"", emoji: "🥣", prepTime: "5 min", prepNote: "Preparare domenica sera",
           ingredients: [
-            { name: "Farina d'avena", quantity: 40, unit: "g" },
-            { name: "Yogurt greco 0%", quantity: 100, unit: "g" },
-            { name: "Cacao amaro", quantity: 1, unit: "cucchiaio" },
-            { name: "Marmellata albicocche", quantity: 15, unit: "g" },
-            { name: "Cioccolato fondente", quantity: 10, unit: "g" },
-            { name: "Sale", quantity: 1, unit: "pizzico" }
+            { name: "Farina d'avena", quantity: 40, unit: "g" }, { name: "Yogurt greco 0%", quantity: 100, unit: "g" },
+            { name: "Cacao amaro", quantity: 1, unit: "cucchiaio" }, { name: "Marmellata albicocche", quantity: 15, unit: "g" },
+            { name: "Cioccolato fondente", quantity: 10, unit: "g" }, { name: "Sale", quantity: 1, unit: "pizzico" }
           ],
           steps: ["Mescola yogurt + cacao + sale", "Aggiungi avena", "Marmellata sopra senza mescolare", "Cioccolato sciolto a filo", "Chiudi e frigo. Mattino: tira fuori 5 min prima, mescola e consuma."],
           batchNote: "Prepara domenica sera; apri e scola lattine ceci + lenticchie, tieni in frigo", supplement: "7g creatina in acqua dopo colazione"
@@ -114,7 +111,7 @@ const MEAL_PLAN = {
         {
           id: "wednesday_lunch", slot: "lunch", name: "Pasta al Limone con Pollo e Zucchine", emoji: "🍝", prepTime: "15 min",
           ingredients: [
-            { name: "Pasta bianca", quantity: 90, unit: "g" }, { name: "Petto di pollo", quantity: 200, unit: "g" },
+            { name: "Pasta bianca", quantity: 90, unit: "g" }, { name: "Petto di pollo già cotto", quantity: 200, unit: "g" },
             { name: "Zucchine", quantity: 200, unit: "g" }, { name: "Olio EVO", quantity: 10, unit: "g" },
             { name: "Limone", quantity: 1, unit: "pz" }, { name: "Prezzemolo fresco", quantity: 1, unit: "q.b." }, { name: "Aglio (fresco o polvere)", quantity: 1, unit: "q.b." }, { name: "Sale / Sale grosso", quantity: 1, unit: "q.b." }, { name: "Pepe", quantity: 1, unit: "q.b." }
           ],
@@ -129,7 +126,7 @@ const MEAL_PLAN = {
         {
           id: "wednesday_dinner", slot: "dinner", name: "Frittata ai Peperoni, Basilico e Spinaci con Pane", emoji: "🍳", prepTime: "15 min",
           ingredients: [
-            { name: "Uova intere", quantity: 180, unit: "g" }, { name: "Peperoni", quantity: 200, unit: "g" },
+            { name: "Uova intere", quantity: 180, unit: "g" }, { name: "Peperoni saltati dal frigo ieri", quantity: 200, unit: "g" },
             { name: "Spinacini freschi", quantity: 100, unit: "g" }, { name: "Pane bianco", quantity: 60, unit: "g" },
             { name: "Olio EVO", quantity: 10, unit: "g" }, { name: "Aglio (fresco o polvere)", quantity: 1, unit: "q.b." }, { name: "Basilico fresco", quantity: 1, unit: "q.b." }, { name: "Sale / Sale grosso", quantity: 1, unit: "q.b." }, { name: "Pepe", quantity: 1, unit: "q.b." }
           ],
@@ -356,13 +353,9 @@ const MEAL_PLAN = {
   }
 };
 
-MEAL_PLAN.thursday.meals.training = MEAL_PLAN.thursday.meals.rest;
-MEAL_PLAN.saturday.meals.training = MEAL_PLAN.saturday.meals.rest;
-MEAL_PLAN.sunday.meals.training = MEAL_PLAN.sunday.meals.rest;
-
 const SHOPPING_CATEGORIES = [
   // Latticini / Uova
-  { id: "yogurt_greco", name: "Yogurt greco 0%", category: "🥚 Uova e Latticini", unit: "g", days: { monday: { breakfast: {training:100, rest:100}, snack2: {training:150, rest:150} }, tuesday: { breakfast: {training:40, rest:40} }, wednesday: { breakfast: {training:200, rest:200}, snack2: {training:150, rest:150} }, friday: { breakfast: {training:100, rest:100} }, saturday: { breakfast: {training:40, rest:40}, snack2: {training:150, rest:150} }, sunday: { breakfast: {training:200, rest:200}, snack2: {training:150, rest:150} } } },
+  { id: "yogurt_greco", name: "Yogurt greco 0%", category: "🥚 Uova e Latticini", unit: "g", days: { monday: { breakfast: {training:100, rest:100}, snack2: {training:150, rest:150} }, tuesday: { breakfast: {training:40, rest:40} }, wednesday: { breakfast: {training:200, rest:200}, snack2: {training:150, rest:150} }, thursday: { }, friday: { breakfast: {training:100, rest:100} }, saturday: { breakfast: {training:40, rest:40}, snack2: {training:150, rest:150} }, sunday: { breakfast: {training:200, rest:200}, snack2: {training:150, rest:150} } } },
   { id: "albumi", name: "Albumi", category: "🥚 Uova e Latticini", unit: "g", days: { tuesday: { breakfast: {training:120, rest:120} }, saturday: { breakfast: {training:120, rest:120} } } },
   { id: "uova_intere", name: "Uova intere", category: "🥚 Uova e Latticini", unit: "g", days: { wednesday: { dinner: {training:180, rest:180} }, friday: { breakfast: {training:60, rest:60} }, saturday: { dinner: {training:180, rest:180} } } },
   { id: "fiocchi_latte", name: "Fiocchi di latte", category: "🥚 Uova e Latticini", unit: "g", days: { thursday: { dinner: {training:180, rest:180} } } },
@@ -423,20 +416,20 @@ const SHOPPING_CATEGORIES = [
   { id: "cioccolato", name: "Cioccolato fondente", category: "🥫 Dispensa / Condimenti", unit: "g", days: { monday: { breakfast: {training:10, rest:10} } } },
   
   // Spezie e Aromi
-  { id: "sale", name: "Sale / Sale grosso", category: "🌿 Spezie e Aromi", unit: "q.b.", days: { monday: { breakfast: {training:1, rest:1}, lunch: {training:1, rest:1}, dinner: {training:1, rest:1} }, tuesday: { lunch: {training:1, rest:1}, dinner: {training:1, rest:1} }, wednesday: { lunch: {training:1, rest:1}, dinner: {training:1, rest:1} }, thursday: { lunch: {training:1, rest:1}, dinner: {training:1, rest:1} }, friday: { breakfast: {training:1, rest:1}, lunch: {training:1, rest:1}, dinner: {training:1, rest:1} }, saturday: { lunch: {training:1, rest:1}, dinner: {training:1, rest:1} }, sunday: { lunch: {training:1, rest:1}, dinner: {training:1, rest:1} } } },
-  { id: "pepe", name: "Pepe", category: "🌿 Spezie e Aromi", unit: "q.b.", days: { monday: { lunch: {training:1, rest:1}, dinner: {training:1, rest:1} }, tuesday: { lunch: {training:1, rest:1}, dinner: {training:1, rest:1} }, wednesday: { lunch: {training:1, rest:1}, dinner: {training:1, rest:1} }, thursday: { lunch: {training:1, rest:1}, dinner: {training:1, rest:1} }, friday: { dinner: {training:1, rest:1} }, saturday: { lunch: {training:1, rest:1}, dinner: {training:1, rest:1} }, sunday: { lunch: {training:1, rest:1}, dinner: {training:1, rest:1} } } },
-  { id: "aglio", name: "Aglio (fresco o polvere)", category: "🌿 Spezie e Aromi", unit: "q.b.", days: { monday: { lunch: {training:1, rest:1} }, tuesday: { lunch: {training:1, rest:1}, dinner: {training:1, rest:1} }, wednesday: { lunch: {training:1, rest:1}, dinner: {training:1, rest:1} }, friday: { dinner: {training:1, rest:1} }, saturday: { dinner: {training:1, rest:1} }, sunday: { lunch: {training:1, rest:1} } } },
-  { id: "prezzemolo", name: "Prezzemolo fresco", category: "🌿 Spezie e Aromi", unit: "q.b.", days: { monday: { dinner: {training:1, rest:1} }, wednesday: { lunch: {training:1, rest:1} }, thursday: { lunch: {training:1, rest:1} }, friday: { lunch: {training:1, rest:1}, dinner: {training:1, rest:1} }, saturday: { lunch: {training:1, rest:1} }, sunday: { lunch: {training:1, rest:1} } } },
-  { id: "basilico", name: "Basilico fresco", category: "🌿 Spezie e Aromi", unit: "q.b.", days: { tuesday: { lunch: {training:1, rest:1} }, wednesday: { dinner: {training:1, rest:1} }, saturday: { dinner: {training:1, rest:1} }, sunday: { dinner: {training:1, rest:1} } } },
-  { id: "origano", name: "Origano", category: "🌿 Spezie e Aromi", unit: "q.b.", days: { tuesday: { lunch: {training:1, rest:1} }, friday: { lunch: {training:1, rest:1} }, saturday: { lunch: {training:1, rest:1} } } },
+  { id: "sale", name: "Sale / Sale grosso", category: "🌿 Spezie e Aromi", unit: "pz", days: { monday: { breakfast: {training:1, rest:1}, lunch: {training:1, rest:1}, dinner: {training:1, rest:1} }, tuesday: { lunch: {training:1, rest:1}, dinner: {training:1, rest:1} }, wednesday: { lunch: {training:1, rest:1}, dinner: {training:1, rest:1} }, thursday: { lunch: {training:1, rest:1}, dinner: {training:1, rest:1} }, friday: { breakfast: {training:1, rest:1}, lunch: {training:1, rest:1}, dinner: {training:1, rest:1} }, saturday: { lunch: {training:1, rest:1}, dinner: {training:1, rest:1} }, sunday: { lunch: {training:1, rest:1}, dinner: {training:1, rest:1} } } },
+  { id: "pepe", name: "Pepe", category: "🌿 Spezie e Aromi", unit: "pz", days: { monday: { lunch: {training:1, rest:1}, dinner: {training:1, rest:1} }, tuesday: { lunch: {training:1, rest:1}, dinner: {training:1, rest:1} }, wednesday: { lunch: {training:1, rest:1}, dinner: {training:1, rest:1} }, thursday: { lunch: {training:1, rest:1}, dinner: {training:1, rest:1} }, friday: { dinner: {training:1, rest:1} }, saturday: { lunch: {training:1, rest:1}, dinner: {training:1, rest:1} }, sunday: { lunch: {training:1, rest:1}, dinner: {training:1, rest:1} } } },
+  { id: "aglio", name: "Aglio (fresco o polvere)", category: "🌿 Spezie e Aromi", unit: "pz", days: { monday: { lunch: {training:1, rest:1} }, tuesday: { lunch: {training:1, rest:1}, dinner: {training:1, rest:1} }, wednesday: { lunch: {training:1, rest:1}, dinner: {training:1, rest:1} }, friday: { dinner: {training:1, rest:1} }, saturday: { dinner: {training:1, rest:1} }, sunday: { lunch: {training:1, rest:1} } } },
+  { id: "prezzemolo", name: "Prezzemolo fresco", category: "🌿 Spezie e Aromi", unit: "pz", days: { monday: { dinner: {training:1, rest:1} }, wednesday: { lunch: {training:1, rest:1} }, thursday: { lunch: {training:1, rest:1} }, friday: { lunch: {training:1, rest:1}, dinner: {training:1, rest:1} }, saturday: { lunch: {training:1, rest:1} }, sunday: { lunch: {training:1, rest:1} } } },
+  { id: "basilico", name: "Basilico fresco", category: "🌿 Spezie e Aromi", unit: "pz", days: { tuesday: { lunch: {training:1, rest:1} }, wednesday: { dinner: {training:1, rest:1} }, saturday: { dinner: {training:1, rest:1} }, sunday: { dinner: {training:1, rest:1} } } },
+  { id: "origano", name: "Origano", category: "🌿 Spezie e Aromi", unit: "pz", days: { tuesday: { lunch: {training:1, rest:1} }, friday: { lunch: {training:1, rest:1} }, saturday: { lunch: {training:1, rest:1} } } },
   { id: "limone", name: "Limone", category: "🌿 Spezie e Aromi", unit: "pz", days: { monday: { lunch: {training:0.5, rest:0.5}, dinner: {training:0.5, rest:0.5} }, tuesday: { dinner: {training:0.5, rest:0.5} }, wednesday: { lunch: {training:1, rest:1} }, thursday: { lunch: {training:0.5, rest:0.5}, dinner: {training:0.5, rest:0.5} }, friday: { lunch: {training:0.5, rest:0.5}, dinner: {training:0.5, rest:0.5} }, saturday: { lunch: {training:0.5, rest:0.5} }, sunday: { lunch: {training:0.5, rest:0.5}, dinner: {training:0.5, rest:0.5} } } },
-  { id: "curcuma", name: "Curcuma in polvere", category: "🌿 Spezie e Aromi", unit: "q.b.", days: { monday: { lunch: {training:1, rest:1} } } },
-  { id: "rosmarino", name: "Rosmarino fresco", category: "🌿 Spezie e Aromi", unit: "q.b.", days: { monday: { dinner: {training:1, rest:1} } } },
-  { id: "paprika", name: "Paprika (affumicata/dolce)", category: "🌿 Spezie e Aromi", unit: "q.b.", days: { tuesday: { dinner: {training:1, rest:1} }, thursday: { dinner: {training:1, rest:1} } } },
-  { id: "cumino", name: "Cumino in polvere", category: "🌿 Spezie e Aromi", unit: "q.b.", days: { thursday: { lunch: {training:1, rest:1} } } },
-  { id: "zenzero", name: "Zenzero fresco", category: "🌿 Spezie e Aromi", unit: "q.b.", days: { thursday: { lunch: {training:1, rest:1} } } },
-  { id: "cannella", name: "Cannella", category: "🌿 Spezie e Aromi", unit: "q.b.", days: { friday: { breakfast: {training:1, rest:1} } } },
-  { id: "erbacipollina", name: "Erba cipollina", category: "🌿 Spezie e Aromi", unit: "q.b.", days: { thursday: { dinner: {training:1, rest:1} } } },
-  { id: "capperi", name: "Capperi", category: "🌿 Spezie e Aromi", unit: "q.b.", days: { friday: { lunch: {training:1, rest:1} } } },
-  { id: "peperoncino", name: "Peperoncino", category: "🌿 Spezie e Aromi", unit: "q.b.", days: { saturday: { dinner: {training:1, rest:1} } } }
+  { id: "curcuma", name: "Curcuma in polvere", category: "🌿 Spezie e Aromi", unit: "pz", days: { monday: { lunch: {training:1, rest:1} } } },
+  { id: "rosmarino", name: "Rosmarino fresco", category: "🌿 Spezie e Aromi", unit: "pz", days: { monday: { dinner: {training:1, rest:1} } } },
+  { id: "paprika", name: "Paprika (affumicata/dolce)", category: "🌿 Spezie e Aromi", unit: "pz", days: { tuesday: { dinner: {training:1, rest:1} }, thursday: { dinner: {training:1, rest:1} } } },
+  { id: "cumino", name: "Cumino in polvere", category: "🌿 Spezie e Aromi", unit: "pz", days: { thursday: { lunch: {training:1, rest:1} } } },
+  { id: "zenzero", name: "Zenzero fresco", category: "🌿 Spezie e Aromi", unit: "pz", days: { thursday: { lunch: {training:1, rest:1} } } },
+  { id: "cannella", name: "Cannella", category: "🌿 Spezie e Aromi", unit: "pz", days: { friday: { breakfast: {training:1, rest:1} } } },
+  { id: "erbacipollina", name: "Erba cipollina", category: "🌿 Spezie e Aromi", unit: "pz", days: { thursday: { dinner: {training:1, rest:1} } } },
+  { id: "capperi", name: "Capperi", category: "🌿 Spezie e Aromi", unit: "pz", days: { friday: { lunch: {training:1, rest:1} } } },
+  { id: "peperoncino", name: "Peperoncino", category: "🌿 Spezie e Aromi", unit: "pz", days: { saturday: { dinner: {training:1, rest:1} } } }
 ];
