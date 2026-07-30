@@ -42,7 +42,6 @@ function initFirebase() {
 // ------------------------------------
 const mockStore = {
   settings: {
-    trainingDays: ['monday', 'tuesday', 'wednesday', 'friday'],
     notificationTimes: {
       breakfast: "08:30",
       snack1: "10:00",
@@ -52,11 +51,19 @@ const mockStore = {
     },
     persons: 2,
     twoPersonsType: 'mf',
-    notificationsEnabled: false
+    notificationsEnabled: false // verrà auto-settato su PC da app.js
   },
   weekPlans: {},
   recipes: {},
-  shoppingList: { selectedDays: [], persons: 2, twoPersonsType: 'mf', checkedItems: [] }
+  shoppingList: { 
+    mode: 'current',
+    customDays: { monday: 'training', tuesday: 'training', wednesday: 'training', thursday: 'rest', friday: 'training', saturday: 'rest', sunday: 'rest' },
+    selectedMeals: { monday: [], tuesday: [], wednesday: [], thursday: [], friday: [], saturday: [], sunday: [] },
+    persons: 2, 
+    twoPersonsType: 'mf', 
+    checkedItems: [],
+    customQtys: {}
+  }
 };
 
 async function getGlobalSettings() {
