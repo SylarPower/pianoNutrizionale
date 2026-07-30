@@ -444,6 +444,7 @@ function renderShop() {
 window.shareShopWhatsApp = function() {
   let text = "🛒 *Lista della Spesa*\n\n";
   const orderedCategories = ["🥩 Carne", "🐟 Pesce e Frutti di Mare", "🥚 Uova e Latticini", "🫘 Legumi", "🍚 Carboidrati / Cereali", "🥬 Verdura Fresca", "🍑 Frutta Fresca", "🥫 Dispensa / Condimenti", "🌿 Spezie e Aromi"];
+  
   orderedCategories.forEach(cat => {
     if (window.currentCategoriesMap[cat] && window.currentCategoriesMap[cat].length > 0) {
       const uncheckedItems = window.currentCategoriesMap[cat].filter(i => !i.checked);
@@ -456,8 +457,16 @@ window.shareShopWhatsApp = function() {
       }
     }
   });
-  const url = `https://wa.me/?text=${encodeURIComponent(text)}`;
-  window.open(url, '_blank');
+
+  if (navigator.share) {
+    navigator.share({
+      title: 'Lista della Spesa',
+      text: text
+    }).catch((error) => console.log('Errore nella condivisione nativa', error));
+  } else {
+    const url = `https://api.whatsapp.com/send?text=${encodeURIComponent(text)}`;
+    window.open(url, '_blank');
+  }
 }
 
 window.setShopMode = async function(mode) {
