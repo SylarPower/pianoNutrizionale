@@ -18,11 +18,21 @@ let currentModalMeal = null;
 let editMode = false;
 let shopSettingsVisible = false;
 
+function repairMissingDays() {
+  if (!MEAL_PLAN.thursday.meals.training) MEAL_PLAN.thursday.meals.training = MEAL_PLAN.thursday.meals.rest;
+  if (!MEAL_PLAN.saturday.meals.training) MEAL_PLAN.saturday.meals.training = MEAL_PLAN.saturday.meals.rest;
+  if (!MEAL_PLAN.sunday.meals.training) MEAL_PLAN.sunday.meals.training = MEAL_PLAN.sunday.meals.rest;
+  if (!MEAL_PLAN.monday.meals.rest) MEAL_PLAN.monday.meals.rest = MEAL_PLAN.monday.meals.training;
+  if (!MEAL_PLAN.tuesday.meals.rest) MEAL_PLAN.tuesday.meals.rest = MEAL_PLAN.tuesday.meals.training;
+  if (!MEAL_PLAN.wednesday.meals.rest) MEAL_PLAN.wednesday.meals.rest = MEAL_PLAN.wednesday.meals.training;
+}
+
 // ------------------------------------
 // INITIALIZATION
 // ------------------------------------
 async function initApp() {
   initFirebase();
+  repairMissingDays();
   
   appState.settings = await getGlobalSettings();
   appState.weekPlan = await getWeekPlan();
@@ -58,21 +68,12 @@ async function initApp() {
 }
 
 function scheduleDailyNotifications() {
-  if (!appState.settings) return;
+  if (!appState.settings || !appState.settings.notificationsEnabled) return;
   const todayKey = getTodayKey();
   const dayType = getDayType(todayKey);
   const plan = MEAL_PLAN[todayKey];
-  
-  if (!MEAL_PLAN.thursday.meals.training) MEAL_PLAN.thursday.meals.training = MEAL_PLAN.thursday.meals.rest;
-  if (!MEAL_PLAN.saturday.meals.training) MEAL_PLAN.saturday.meals.training = MEAL_PLAN.saturday.meals.rest;
-  if (!MEAL_PLAN.sunday.meals.training) MEAL_PLAN.sunday.meals.training = MEAL_PLAN.sunday.meals.rest;
-  if (!MEAL_PLAN.monday.meals.rest) MEAL_PLAN.monday.meals.rest = MEAL_PLAN.monday.meals.training;
-  if (!MEAL_PLAN.tuesday.meals.rest) MEAL_PLAN.tuesday.meals.rest = MEAL_PLAN.tuesday.meals.training;
-  if (!MEAL_PLAN.wednesday.meals.rest) MEAL_PLAN.wednesday.meals.rest = MEAL_PLAN.wednesday.meals.training;
-
   const meals = plan.meals[dayType];
   const batch = plan.batchCooking.evening;
-  
   scheduleNotifications(appState.settings, meals, batch);
 }
 
@@ -158,17 +159,7 @@ async function renderToday() {
     <div class="meal-timeline">
   `;
   
-  // Mappatura training/rest per la vista TODAY per prevenire crash
-  if (!MEAL_PLAN.thursday.meals.training) MEAL_PLAN.thursday.meals.training = MEAL_PLAN.thursday.meals.rest;
-  if (!MEAL_PLAN.saturday.meals.training) MEAL_PLAN.saturday.meals.training = MEAL_PLAN.saturday.meals.rest;
-  if (!MEAL_PLAN.sunday.meals.training) MEAL_PLAN.sunday.meals.training = MEAL_PLAN.sunday.meals.rest;
-  if (!MEAL_PLAN.monday.meals.rest) MEAL_PLAN.monday.meals.rest = MEAL_PLAN.monday.meals.training;
-  if (!MEAL_PLAN.tuesday.meals.rest) MEAL_PLAN.tuesday.meals.rest = MEAL_PLAN.tuesday.meals.training;
-  if (!MEAL_PLAN.wednesday.meals.rest) MEAL_PLAN.wednesday.meals.rest = MEAL_PLAN.wednesday.meals.training;
-
   const meals = plan.meals[dayType];
-  
-  // Highlight logic: find next upcoming meal
   const now = new Date();
   let nextMealId = null;
   for (const meal of meals) {
@@ -219,17 +210,8 @@ function renderWeek() {
   const container = document.getElementById('view-week');
   const todayKey = getTodayKey();
   let html = `<h2>Piano Settimanale</h2><p class="text-muted" style="margin-bottom:1rem;">Qui puoi variare i giorni di allenamento. Le quantità si adatteranno istantaneamente.</p><div class="week-grid">`;
-  // order: monday to sunday
   const weekDays = ['monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday', 'sunday'];
   
-  // Mappatura per prevenire crash su weekDays non assegnati
-  if (!MEAL_PLAN.thursday.meals.training) MEAL_PLAN.thursday.meals.training = MEAL_PLAN.thursday.meals.rest;
-  if (!MEAL_PLAN.saturday.meals.training) MEAL_PLAN.saturday.meals.training = MEAL_PLAN.saturday.meals.rest;
-  if (!MEAL_PLAN.sunday.meals.training) MEAL_PLAN.sunday.meals.training = MEAL_PLAN.sunday.meals.rest;
-  if (!MEAL_PLAN.monday.meals.rest) MEAL_PLAN.monday.meals.rest = MEAL_PLAN.monday.meals.training;
-  if (!MEAL_PLAN.tuesday.meals.rest) MEAL_PLAN.tuesday.meals.rest = MEAL_PLAN.tuesday.meals.training;
-  if (!MEAL_PLAN.wednesday.meals.rest) MEAL_PLAN.wednesday.meals.rest = MEAL_PLAN.wednesday.meals.training;
-
   weekDays.forEach(dayKey => {
     const plan = MEAL_PLAN[dayKey];
     const dayType = getDayType(dayKey);
@@ -287,6 +269,10 @@ function renderShop() {
   if (!shopData.selectedMeals) shopData.selectedMeals = { monday:[], tuesday:[], wednesday:[], thursday:[], friday:[], saturday:[], sunday:[] };
   if (!shopData.customDays) shopData.customDays = { monday:'training', tuesday:'training', wednesday:'training', thursday:'rest', friday:'training', saturday:'rest', sunday:'rest' };
   
+  let hasSelection = false;
+  Object.values(shopData.selectedMeals).forEach(arr => { if (arr.length > 0) hasSelection = true; });
+  if (!hasSelection) shopSettingsVisible = true;
+  
   const mode = shopData.mode || 'current';
   const persons = shopData.persons || 2;
   const twoType = shopData.twoPersonsType || 'mf';
@@ -302,7 +288,6 @@ function renderShop() {
   `;
   
   if (shopSettingsVisible) {
-    // SECTION: Persons
     html += `
       <div class="settings-section" style="padding:1rem; margin-bottom:1rem;">
         <div style="display:flex; justify-content:space-between; align-items:center;">
@@ -320,7 +305,6 @@ function renderShop() {
       </div>
     `;
 
-    // SECTION: Mode
     html += `
       <div class="settings-section" style="margin-bottom:1rem;">
         <h3 style="margin-bottom:0.5rem;">Impostazioni Giorni</h3>
@@ -345,7 +329,6 @@ function renderShop() {
     }
     html += `</div>`;
 
-    // SECTION: Select Meals
     html += `
       <div class="settings-section" style="margin-bottom:1.5rem;">
         <h3>Seleziona cosa comprare</h3>
@@ -372,9 +355,8 @@ function renderShop() {
       html += `</div></div>`;
     });
     html += `</div>`;
-  } // end if shopSettingsVisible
+  }
 
-  // Calculate Aggregation
   let multiplier = 1;
   if (persons == 2) {
     if (twoType === 'mf') multiplier = 1.75;
@@ -405,11 +387,11 @@ function renderShop() {
     });
     
     if (total > 0) {
-      let finalQty = total * multiplier;
+      let finalQty = item.unit === 'pz' ? 1 : total * multiplier;
       finalQty = formatQty(finalQty);
       
       let splitText = "";
-      if (persons == 2) {
+      if (persons == 2 && item.unit !== 'pz') {
           let user1, user2;
           if (twoType === 'mf') { user1 = formatQty(total * 1); user2 = formatQty(total * 0.75); splitText = `(Uomo: ${user1}${item.unit==='q.b.'?'':item.unit}, Donna: ${user2}${item.unit==='q.b.'?'':item.unit})`; }
           else if (twoType === 'fm') { user1 = formatQty(total * 1); user2 = formatQty(total * 1.25); splitText = `(Donna: ${user1}${item.unit==='q.b.'?'':item.unit}, Uomo: ${user2}${item.unit==='q.b.'?'':item.unit})`; }
@@ -430,7 +412,7 @@ function renderShop() {
 
   const orderedCategories = ["🥩 Carne", "🐟 Pesce e Frutti di Mare", "🥚 Uova e Latticini", "🫘 Legumi", "🍚 Carboidrati / Cereali", "🥬 Verdura Fresca", "🍑 Frutta Fresca", "🥫 Dispensa / Condimenti", "🌿 Spezie e Aromi"];
   
-  window.currentCategoriesMap = categoriesMap; // Save for whatsapp export
+  window.currentCategoriesMap = categoriesMap; 
   
   orderedCategories.forEach(cat => {
     if (categoriesMap[cat] && categoriesMap[cat].length > 0) {
@@ -456,7 +438,7 @@ function renderShop() {
     }
   });
   
-  if (totalItemsCount === 0) html += `<p class="text-muted" style="text-align:center; padding:2rem 0;">Seleziona i pasti per cui vuoi fare la spesa.</p>`;
+  if (totalItemsCount === 0) html += `<p class="text-muted" style="text-align:center; padding:2rem 0;">Nessun pasto selezionato.</p>`;
   html += `
     <div style="display:flex; flex-direction:column; gap:0.5rem; margin-top:2rem;">
       <button class="btn btn-primary" style="width:100%; background-color:#25D366; color:white; border:none;" onclick="shareShopWhatsApp()">Invia su WhatsApp</button>
@@ -479,7 +461,7 @@ window.shareShopWhatsApp = function() {
       if (uncheckedItems.length > 0) {
         text += `*${cat}*\n`;
         uncheckedItems.forEach(item => {
-          text += `- ${item.name}: ${item.qty}${item.unit === 'q.b.' ? '' : item.unit}\n`;
+          text += `- ${item.name}: ${item.qty}${item.unit === 'q.b.' || item.unit === 'pz' ? '' : item.unit}\n`;
         });
         text += `\n`;
       }
@@ -487,72 +469,47 @@ window.shareShopWhatsApp = function() {
   });
 
   if (navigator.share) {
-    navigator.share({
-      title: 'Lista della Spesa',
-      text: text
-    }).catch((error) => console.log('Errore nella condivisione nativa', error));
+    navigator.share({ title: 'Lista della Spesa', text: text }).catch((error) => console.log('Errore condivisione', error));
   } else {
     const url = `https://api.whatsapp.com/send?text=${encodeURIComponent(text)}`;
     window.open(url, '_blank');
   }
 }
 
-window.setShopMode = async function(mode) {
-  appState.shoppingList.mode = mode;
-  await saveShoppingList(appState.shoppingList);
-  renderShop();
-}
-
-window.setCustomShopDayType = async function(day, type) {
-  appState.shoppingList.customDays[day] = type;
-  await saveShoppingList(appState.shoppingList);
-  renderShop();
-}
-
+window.setShopMode = async function(mode) { appState.shoppingList.mode = mode; await saveShoppingList(appState.shoppingList); renderShop(); }
+window.setCustomShopDayType = async function(day, type) { appState.shoppingList.customDays[day] = type; await saveShoppingList(appState.shoppingList); renderShop(); }
 window.toggleShopWholeDay = async function(day, isChecked) {
   if (isChecked) appState.shoppingList.selectedMeals[day] = ['breakfast', 'snack1', 'lunch', 'snack2', 'dinner'];
   else appState.shoppingList.selectedMeals[day] = [];
-  await saveShoppingList(appState.shoppingList);
-  renderShop();
+  await saveShoppingList(appState.shoppingList); renderShop();
 }
-
 window.toggleShopMeal = async function(day, slot, isChecked) {
   if (isChecked && !appState.shoppingList.selectedMeals[day].includes(slot)) appState.shoppingList.selectedMeals[day].push(slot);
   else if (!isChecked) appState.shoppingList.selectedMeals[day] = appState.shoppingList.selectedMeals[day].filter(s => s !== slot);
-  await saveShoppingList(appState.shoppingList);
-  renderShop();
+  await saveShoppingList(appState.shoppingList); renderShop();
 }
-
 window.updateShopPersons = async function(val) { appState.shoppingList.persons = parseInt(val); await saveShoppingList(appState.shoppingList); renderShop(); }
 window.updateShopTwoType = async function(val) { appState.shoppingList.twoPersonsType = val; await saveShoppingList(appState.shoppingList); renderShop(); }
-
 window.toggleShopItem = async function(id, event) {
   if (event.target.tagName.toLowerCase() === 'input' && event.target.type === 'text') return;
   let list = appState.shoppingList.checkedItems || [];
   if (list.includes(id)) list = list.filter(i => i !== id); else list.push(id);
   appState.shoppingList.checkedItems = list;
-  await saveShoppingList(appState.shoppingList);
-  renderShop();
+  await saveShoppingList(appState.shoppingList); renderShop();
 }
-
 window.updateShopItemQty = async function(id, val) {
   if (!appState.shoppingList.customQtys) appState.shoppingList.customQtys = {};
   appState.shoppingList.customQtys[id] = val;
-  await saveShoppingList(appState.shoppingList);
-  renderShop();
+  await saveShoppingList(appState.shoppingList); renderShop();
 }
-
 window.resetShopChecks = async function() {
   if (confirm("Rimuovere le spunte?")) { appState.shoppingList.checkedItems = []; await saveShoppingList(appState.shoppingList); renderShop(); }
 }
-
 window.resetShopList = async function() {
   if (confirm("Azzerare le selezioni?")) {
     appState.shoppingList.selectedMeals = { monday:[], tuesday:[], wednesday:[], thursday:[], friday:[], saturday:[], sunday:[] };
-    appState.shoppingList.checkedItems = [];
-    appState.shoppingList.customQtys = {};
-    await saveShoppingList(appState.shoppingList);
-    renderShop();
+    appState.shoppingList.checkedItems = []; appState.shoppingList.customQtys = {}; shopSettingsVisible = true;
+    await saveShoppingList(appState.shoppingList); renderShop();
   }
 }
 
@@ -563,73 +520,125 @@ function renderGuide() {
   const container = document.getElementById('view-guide');
   container.innerHTML = `
     <h2>Linee Guida di Meller</h2>
-    <div class="settings-section" style="line-height:1.6;">
-      <p>La dieta è strutturata su 2 giorni.</p>
-      <ul style="padding-left:1.2rem; margin-top:0.5rem; margin-bottom:1rem;">
-        <li style="margin-bottom:0.5rem;"><strong>1° giorno: allenamento.</strong> La giornata è bilanciata e ricca di carboidrati. Lo spuntino mattutino include i crackers, e i carboidrati a pranzo sono aumentati.</li>
-        <li style="margin-bottom:0.5rem;"><strong>2° giorno: riposo.</strong> Pasti bilanciati. La quota di carboidrati a pranzo è leggermente ridotta.</li>
-      </ul>
-      <p class="text-muted"><em>NB: preferisci fonti di carboidrati non integrali prima e dopo un allenamento e nel carico. Libera negli altri momenti.</em></p>
-      
-      <h3 style="margin-top:1.5rem; color:var(--primary);">Integrazione</h3>
-      <ul style="padding-left:1.2rem; margin-top:0.5rem; margin-bottom:1rem;">
-        <li style="margin-bottom:0.5rem;"><strong>Creatp Syform:</strong> 7g al giorno con acqua dopo colazione.</li>
-        <li style="margin-bottom:0.5rem;"><strong>Optiwhey Syform:</strong> seguendo lo schema della dieta.</li>
-      </ul>
-      <p>Sconto del 20% sul sito <a href="http://syform.com" target="_blank" style="color:var(--primary-light);">syform.com</a> con codice <strong>AD20MTML</strong>.</p>
-      
-      <h3 style="margin-top:1.5rem; color:var(--primary);">Alternative Alimentari</h3>
-      <div style="overflow-x:auto;">
-        <table style="width:100%; border-collapse: collapse; margin-top:0.5rem; font-size:0.95rem;">
-          <tr style="background:#eee;"><td colspan="2" style="padding:0.5rem; font-weight:bold;">Pasta, Riso 70 g</td></tr>
-          <tr style="border-bottom:1px solid #ddd;"><td style="padding:0.5rem;">Gnocchi di patate</td><td style="text-align:right; padding:0.5rem;">190 g</td></tr>
-          <tr style="border-bottom:1px solid #ddd;"><td style="padding:0.5rem;">Farro, Orzo</td><td style="text-align:right; padding:0.5rem;">70 g</td></tr>
-          <tr style="border-bottom:1px solid #ddd;"><td style="padding:0.5rem;">Quinoa, Grano Saraceno, Amaranto</td><td style="text-align:right; padding:0.5rem;">60 g</td></tr>
-          <tr style="border-bottom:1px solid #ddd;"><td style="padding:0.5rem;">Pane</td><td style="text-align:right; padding:0.5rem;">90 g</td></tr>
-          <tr style="border-bottom:1px solid #ddd;"><td style="padding:0.5rem;">Piadina</td><td style="text-align:right; padding:0.5rem;">80 g</td></tr>
-          <tr style="border-bottom:1px solid #ddd;"><td style="padding:0.5rem;">Crackers, Grissini, Crostini</td><td style="text-align:right; padding:0.5rem;">60 g</td></tr>
-          <tr style="border-bottom:1px solid #ddd;"><td style="padding:0.5rem;">Polenta, cotta</td><td style="text-align:right; padding:0.5rem;">340 g</td></tr>
-          <tr style="border-bottom:1px solid #ddd;"><td style="padding:0.5rem;">Patate</td><td style="text-align:right; padding:0.5rem;">350 g</td></tr>
-          
-          <tr style="background:#eee;"><td colspan="2" style="padding:0.5rem; font-weight:bold;">Pollame 200 g</td></tr>
-          <tr style="border-bottom:1px solid #ddd;"><td style="padding:0.5rem;">Manzo (tagli magri)</td><td style="text-align:right; padding:0.5rem;">150 g</td></tr>
-          <tr style="border-bottom:1px solid #ddd;"><td style="padding:0.5rem;">Maiale (tagli magri) / Affettati sgrassati</td><td style="text-align:right; padding:0.5rem;">100 g</td></tr>
-          <tr style="border-bottom:1px solid #ddd;"><td style="padding:0.5rem;">Crostacei, Molluschi</td><td style="text-align:right; padding:0.5rem;">300 g</td></tr>
-          <tr style="border-bottom:1px solid #ddd;"><td style="padding:0.5rem;">Merluzzo / Nasello / Sogliola</td><td style="text-align:right; padding:0.5rem;">250 g</td></tr>
-          <tr style="border-bottom:1px solid #ddd;"><td style="padding:0.5rem;">Pesce in scatola al naturale</td><td style="text-align:right; padding:0.5rem;">150 g</td></tr>
-          <tr style="border-bottom:1px solid #ddd;"><td style="padding:0.5rem;">Pesce in scatola sott'olio / Salmone (anche affumicato) / Sgombro</td><td style="text-align:right; padding:0.5rem;">100 g</td></tr>
-          <tr style="border-bottom:1px solid #ddd;"><td style="padding:0.5rem;">Fiocchi di latte / Uova intere</td><td style="text-align:right; padding:0.5rem;">180 g</td></tr>
-          <tr style="border-bottom:1px solid #ddd;"><td style="padding:0.5rem;">Montasio / Grana</td><td style="text-align:right; padding:0.5rem;">50 g</td></tr>
-          <tr style="border-bottom:1px solid #ddd;"><td style="padding:0.5rem;">Legumi in scatola o bolliti</td><td style="text-align:right; padding:0.5rem;">240 g</td></tr>
-          <tr style="border-bottom:1px solid #ddd;"><td style="padding:0.5rem;">Legumotti - Barilla</td><td style="text-align:right; padding:0.5rem;">80 g</td></tr>
-        </table>
+    
+    <div class="settings-section" style="margin-bottom:1rem;">
+      <h3 style="color:var(--primary); margin-bottom:0.5rem; border-bottom:1px solid #eee; padding-bottom:0.5rem;" onclick="this.nextElementSibling.classList.toggle('hidden')" style="cursor:pointer;">
+        Struttura Dieta ▼
+      </h3>
+      <div style="line-height:1.6; padding-top:0.5rem;">
+        <ul style="padding-left:1.2rem; margin-top:0.5rem; margin-bottom:1rem;">
+          <li style="margin-bottom:0.5rem;"><strong>1° giorno: allenamento.</strong> Bilanciata, ricca di carboidrati. Crackers nello spuntino mattutino. Quote carboidrati e proteine aumentate a pranzo.</li>
+          <li style="margin-bottom:0.5rem;"><strong>2° giorno: riposo.</strong> Pasti bilanciati. Quota carboidrati e proteine leggermente ridotta. Niente crackers.</li>
+        </ul>
+        <p class="text-muted"><em>NB: preferisci fonti di carboidrati non integrali prima e dopo un allenamento e nel carico. Libera negli altri momenti.</em></p>
       </div>
+    </div>
 
-      <h3 style="margin-top:1.5rem; color:var(--primary);">Frequenze di utilizzo (Proteine)</h3>
-      <div style="overflow-x:auto;">
-        <table style="width:100%; border-collapse: collapse; margin-top:0.5rem; font-size:0.95rem;">
-          <tr style="border-bottom:1px solid #ddd;"><td style="padding:0.5rem; font-weight:600;">Pollame</td><td style="text-align:right; padding:0.5rem;">1-2 volte a settimana</td></tr>
-          <tr style="border-bottom:1px solid #ddd;"><td style="padding:0.5rem; font-weight:600;">Manzo, maiale, affettati</td><td style="text-align:right; padding:0.5rem;">Max 1 volta a settimana</td></tr>
-          <tr style="border-bottom:1px solid #ddd;"><td style="padding:0.5rem; font-weight:600;">Pesce ricco di omega-3</td><td style="text-align:right; padding:0.5rem;">Almeno 2-3 volte a settimana</td></tr>
-          <tr style="border-bottom:1px solid #ddd;"><td style="padding:0.5rem; font-weight:600;">Altro pesce e prodotti ittici</td><td style="text-align:right; padding:0.5rem;">1-2 volte a settimana</td></tr>
-          <tr style="border-bottom:1px solid #ddd;"><td style="padding:0.5rem; font-weight:600;">Latticini e Uova (a pranzo/cena)</td><td style="text-align:right; padding:0.5rem;">1-2 volte a settimana</td></tr>
-          <tr style="border-bottom:1px solid #ddd;"><td style="padding:0.5rem; font-weight:600;">Legumi e derivati</td><td style="text-align:right; padding:0.5rem;">Almeno 3-4 volte a settimana</td></tr>
-        </table>
+    <div class="settings-section" style="margin-bottom:1rem;">
+      <h3 style="color:var(--primary); margin-bottom:0.5rem; border-bottom:1px solid #eee; padding-bottom:0.5rem;" onclick="this.nextElementSibling.classList.toggle('hidden')" style="cursor:pointer;">
+        Menù Meller Originale ▼
+      </h3>
+      <div class="hidden" style="line-height:1.6; padding-top:0.5rem; font-size:0.9rem;">
+        <h4 style="margin-top:1rem;">Giornata Allenamento</h4>
+        <ul style="padding-left:1rem; margin-bottom:1rem;">
+          <li><strong>Colazione:</strong> Avena 40g, Yogurt 100g (o kefir 100g, uova 60g), Marmellata 15g (o miele 10g).</li>
+          <li><strong>Spuntino:</strong> Frutta 250g, Crackers 30g, Proteine 30g.</li>
+          <li><strong>Pranzo:</strong> Riso/Pasta 90g, Pollame 200g, Verdure 200g, Olio 10g.</li>
+          <li><strong>Merenda:</strong> Yogurt 150g, Miele 15g (o Crackers 30g).</li>
+          <li><strong>Cena:</strong> Pollame 200g, Verdura 200g, Pane 60g, Olio 10g.</li>
+        </ul>
+        
+        <h4 style="margin-top:1rem;">Giornata Riposo</h4>
+        <ul style="padding-left:1rem; margin-bottom:1rem;">
+          <li><strong>Colazione:</strong> Avena 40g, Yogurt 100g, Marmellata 15g.</li>
+          <li><strong>Spuntino:</strong> Frutta 250g, Proteine 30g. (NO Crackers).</li>
+          <li><strong>Pranzo:</strong> Riso/Pasta 70g, Pollame 200g, Verdure 200g, Olio 10g.</li>
+          <li><strong>Merenda:</strong> Yogurt 150g, Miele 15g (o Crackers 30g).</li>
+          <li><strong>Cena:</strong> Pollame 200g, Verdura 200g, Pane 60g, Olio 10g.</li>
+        </ul>
       </div>
+    </div>
+      
+    <div class="settings-section" style="margin-bottom:1rem;">
+      <h3 style="color:var(--primary); margin-bottom:0.5rem; border-bottom:1px solid #eee; padding-bottom:0.5rem;" onclick="this.nextElementSibling.classList.toggle('hidden')" style="cursor:pointer;">
+        Integrazione Syform ▼
+      </h3>
+      <div class="hidden" style="line-height:1.6; padding-top:0.5rem;">
+        <ul style="padding-left:1.2rem; margin-top:0.5rem; margin-bottom:1rem;">
+          <li style="margin-bottom:0.5rem;"><strong>Creatp Syform:</strong> 7g al giorno con acqua dopo colazione.</li>
+          <li style="margin-bottom:0.5rem;"><strong>Optiwhey Syform:</strong> seguendo lo schema della dieta.</li>
+        </ul>
+        <p>Sconto del 20% sul sito <a href="http://syform.com" target="_blank" style="color:var(--primary-light);">syform.com</a> con codice <strong>AD20MTML</strong>.</p>
+      </div>
+    </div>
+      
+    <div class="settings-section" style="margin-bottom:1rem;">
+      <h3 style="color:var(--primary); margin-bottom:0.5rem; border-bottom:1px solid #eee; padding-bottom:0.5rem;" onclick="this.nextElementSibling.classList.toggle('hidden')" style="cursor:pointer;">
+        Alternative Alimentari ▼
+      </h3>
+      <div class="hidden" style="line-height:1.6; padding-top:0.5rem;">
+        <div style="overflow-x:auto;">
+          <table style="width:100%; border-collapse: collapse; margin-top:0.5rem; font-size:0.95rem;">
+            <tr style="background:#eee;"><td colspan="2" style="padding:0.5rem; font-weight:bold;">Carboidrati (Rif: Pasta/Riso 70g)</td></tr>
+            <tr style="border-bottom:1px solid #ddd;"><td style="padding:0.5rem;">Gnocchi di patate</td><td style="text-align:right; padding:0.5rem;">190 g</td></tr>
+            <tr style="border-bottom:1px solid #ddd;"><td style="padding:0.5rem;">Farro, Orzo</td><td style="text-align:right; padding:0.5rem;">70 g</td></tr>
+            <tr style="border-bottom:1px solid #ddd;"><td style="padding:0.5rem;">Quinoa, Grano Saraceno, Amaranto</td><td style="text-align:right; padding:0.5rem;">60 g</td></tr>
+            <tr style="border-bottom:1px solid #ddd;"><td style="padding:0.5rem;">Pane</td><td style="text-align:right; padding:0.5rem;">90 g</td></tr>
+            <tr style="border-bottom:1px solid #ddd;"><td style="padding:0.5rem;">Piadina</td><td style="text-align:right; padding:0.5rem;">80 g</td></tr>
+            <tr style="border-bottom:1px solid #ddd;"><td style="padding:0.5rem;">Crackers, Grissini, Crostini</td><td style="text-align:right; padding:0.5rem;">60 g</td></tr>
+            <tr style="border-bottom:1px solid #ddd;"><td style="padding:0.5rem;">Polenta, cotta</td><td style="text-align:right; padding:0.5rem;">340 g</td></tr>
+            <tr style="border-bottom:1px solid #ddd;"><td style="padding:0.5rem;">Patate</td><td style="text-align:right; padding:0.5rem;">350 g</td></tr>
+            
+            <tr style="background:#eee;"><td colspan="2" style="padding:0.5rem; font-weight:bold;">Proteine (Rif: Pollame 200g)</td></tr>
+            <tr style="border-bottom:1px solid #ddd;"><td style="padding:0.5rem;">Manzo (tagli magri)</td><td style="text-align:right; padding:0.5rem;">150 g</td></tr>
+            <tr style="border-bottom:1px solid #ddd;"><td style="padding:0.5rem;">Maiale (tagli magri) / Affettati sgrassati</td><td style="text-align:right; padding:0.5rem;">100 g</td></tr>
+            <tr style="border-bottom:1px solid #ddd;"><td style="padding:0.5rem;">Crostacei, Molluschi</td><td style="text-align:right; padding:0.5rem;">300 g</td></tr>
+            <tr style="border-bottom:1px solid #ddd;"><td style="padding:0.5rem;">Merluzzo / Nasello / Sogliola</td><td style="text-align:right; padding:0.5rem;">250 g</td></tr>
+            <tr style="border-bottom:1px solid #ddd;"><td style="padding:0.5rem;">Pesce in scatola al naturale</td><td style="text-align:right; padding:0.5rem;">150 g</td></tr>
+            <tr style="border-bottom:1px solid #ddd;"><td style="padding:0.5rem;">Pesce in scatola sott'olio / Salmone / Sgombro</td><td style="text-align:right; padding:0.5rem;">100 g</td></tr>
+            <tr style="border-bottom:1px solid #ddd;"><td style="padding:0.5rem;">Fiocchi di latte / Uova intere</td><td style="text-align:right; padding:0.5rem;">180 g</td></tr>
+            <tr style="border-bottom:1px solid #ddd;"><td style="padding:0.5rem;">Montasio / Grana</td><td style="text-align:right; padding:0.5rem;">50 g</td></tr>
+            <tr style="border-bottom:1px solid #ddd;"><td style="padding:0.5rem;">Legumi in scatola o bolliti</td><td style="text-align:right; padding:0.5rem;">240 g</td></tr>
+            <tr style="border-bottom:1px solid #ddd;"><td style="padding:0.5rem;">Legumotti - Barilla</td><td style="text-align:right; padding:0.5rem;">80 g</td></tr>
+          </table>
+        </div>
+      </div>
+    </div>
 
-      <h3 style="margin-top:1.5rem; color:var(--primary);">Informazioni supplementari</h3>
-      <ul style="padding-left:1.2rem; margin-top:0.5rem; margin-bottom:1rem;">
-        <li style="margin-bottom:0.5rem;">Punta a un consumo di almeno 2-2,5 litri di acqua al giorno.</li>
-        <li style="margin-bottom:0.5rem;">Usa solo sale iodato. Sfrutta liberamente spezie, limone, aceto.</li>
-        <li style="margin-bottom:0.5rem;">Avrai a disposizione un pasto “sociale” a settimana.</li>
-        <li style="margin-bottom:0.5rem;">Puoi combinare due alternative di proteine dimezzandone le quantità.</li>
-        <li style="margin-bottom:0.5rem;">Non serve pesare la verdura.</li>
-      </ul>
+    <div class="settings-section" style="margin-bottom:1rem;">
+      <h3 style="color:var(--primary); margin-bottom:0.5rem; border-bottom:1px solid #eee; padding-bottom:0.5rem;" onclick="this.nextElementSibling.classList.toggle('hidden')" style="cursor:pointer;">
+        Frequenze (Proteine) ▼
+      </h3>
+      <div class="hidden" style="line-height:1.6; padding-top:0.5rem;">
+        <div style="overflow-x:auto;">
+          <table style="width:100%; border-collapse: collapse; margin-top:0.5rem; font-size:0.95rem;">
+            <tr style="border-bottom:1px solid #ddd;"><td style="padding:0.5rem; font-weight:600;">Pollame</td><td style="text-align:right; padding:0.5rem;">1-2 volte a settimana</td></tr>
+            <tr style="border-bottom:1px solid #ddd;"><td style="padding:0.5rem; font-weight:600;">Manzo, maiale, affettati</td><td style="text-align:right; padding:0.5rem;">Max 1 volta a settimana</td></tr>
+            <tr style="border-bottom:1px solid #ddd;"><td style="padding:0.5rem; font-weight:600;">Pesce ricco di omega-3</td><td style="text-align:right; padding:0.5rem;">Almeno 2-3 volte a settimana</td></tr>
+            <tr style="border-bottom:1px solid #ddd;"><td style="padding:0.5rem; font-weight:600;">Altro pesce e prodotti ittici</td><td style="text-align:right; padding:0.5rem;">1-2 volte a settimana</td></tr>
+            <tr style="border-bottom:1px solid #ddd;"><td style="padding:0.5rem; font-weight:600;">Latticini e Uova (a pranzo/cena)</td><td style="text-align:right; padding:0.5rem;">1-2 volte a settimana</td></tr>
+            <tr style="border-bottom:1px solid #ddd;"><td style="padding:0.5rem; font-weight:600;">Legumi e derivati</td><td style="text-align:right; padding:0.5rem;">Almeno 3-4 volte a settimana</td></tr>
+          </table>
+        </div>
+      </div>
+    </div>
 
-      <h3 style="margin-top:1.5rem; color:var(--primary);">Domande frequenti</h3>
-      <p style="margin-top:0.5rem;"><strong>Devo seguire lo schema rigido?</strong> No. Le opzioni sono intercambiabili.</p>
-      <p style="margin-top:1rem;"><strong>Come mi comporto con le quantità?</strong> I pesi si riferiscono ad alimenti a crudo.</p>
-      <p style="margin-top:1rem;"><strong>Cosa faccio se mangio fuori?</strong> Scegli carboidrati non conditi, proteine magre e verdure scondite (griglia/vapore).</p>
+    <div class="settings-section" style="margin-bottom:1rem;">
+      <h3 style="color:var(--primary); margin-bottom:0.5rem; border-bottom:1px solid #eee; padding-bottom:0.5rem;" onclick="this.nextElementSibling.classList.toggle('hidden')" style="cursor:pointer;">
+        Altre info e FAQ ▼
+      </h3>
+      <div class="hidden" style="line-height:1.6; padding-top:0.5rem;">
+        <ul style="padding-left:1.2rem; margin-top:0.5rem; margin-bottom:1rem;">
+          <li style="margin-bottom:0.5rem;">Punta a un consumo di almeno 2-2,5 litri di acqua al giorno.</li>
+          <li style="margin-bottom:0.5rem;">Usa solo sale iodato. Sfrutta liberamente spezie, limone, aceto.</li>
+          <li style="margin-bottom:0.5rem;">Avrai a disposizione un pasto “sociale” a settimana.</li>
+          <li style="margin-bottom:0.5rem;">Puoi combinare due alternative di proteine dimezzandone le quantità.</li>
+          <li style="margin-bottom:0.5rem;">Non serve pesare la verdura.</li>
+        </ul>
+        <p style="margin-top:0.5rem;"><strong>Devo seguire lo schema rigido?</strong> No. Le opzioni sono intercambiabili.</p>
+        <p style="margin-top:1rem;"><strong>Come mi comporto con le quantità?</strong> I pesi si riferiscono ad alimenti a crudo.</p>
+        <p style="margin-top:1rem;"><strong>Cosa faccio se mangio fuori?</strong> Scegli carboidrati non conditi, proteine magre e verdure scondite (griglia/vapore).</p>
+      </div>
     </div>
   `;
 }
@@ -754,18 +763,18 @@ function renderModalContent() {
       let finalQty = ing.quantity;
       let splitText = "";
       if (typeof finalQty === 'number') {
-        if (s.persons === 2) {
+        if (s.persons === 2 && ing.unit !== 'pz') {
           let user1, user2;
           if (s.twoPersonsType === 'mf') { user1 = formatQty(finalQty * 1); user2 = formatQty(finalQty * 0.75); splitText = `(Uomo: ${user1}${ing.unit==='q.b.'?'':ing.unit}, Donna: ${user2}${ing.unit==='q.b.'?'':ing.unit})`; }
           else if (s.twoPersonsType === 'fm') { user1 = formatQty(finalQty * 1); user2 = formatQty(finalQty * 1.25); splitText = `(Donna: ${user1}${ing.unit==='q.b.'?'':ing.unit}, Uomo: ${user2}${ing.unit==='q.b.'?'':ing.unit})`; }
           else { user1 = formatQty(finalQty * 1); splitText = `(Ciascuno: ${user1}${ing.unit==='q.b.'?'':ing.unit})`; }
         }
-        finalQty = finalQty * multiplier;
+        if(ing.unit !== 'pz') { finalQty = finalQty * multiplier; }
         finalQty = formatQty(finalQty);
       }
       ingUl.innerHTML += `
         <li style="display:flex; flex-direction:column; padding:0.5rem 0; border-bottom:1px solid #eee;">
-          <div class="flex-between"><span>${ing.name}</span><strong>${finalQty} ${ing.unit === 'q.b.' ? '' : ing.unit}</strong></div>
+          <div class="flex-between"><span>${ing.name}</span><strong>${finalQty} ${ing.unit === 'q.b.' || ing.unit === 'pz' ? '' : ing.unit}</strong></div>
           ${splitText ? `<div class="text-muted" style="font-size:0.75rem; text-align:right;">${splitText}</div>` : ''}
         </li>
       `;
