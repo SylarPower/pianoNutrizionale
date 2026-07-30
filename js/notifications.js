@@ -38,13 +38,10 @@ function scheduleNotifications(settings, todayMeals, batchCookingNotes) {
     if (timeDiff > 0) {
       const timeoutId = setTimeout(() => {
         let body = `${meal.name} — ${timeStr}`;
-        if (meal.slot === 'dinner' && batchCookingNotes) {
-          body += `\n🍳 Ricordati: ${batchCookingNotes}`;
-        }
         
         new Notification(`${meal.emoji} È ora di: ${meal.slot.toUpperCase()}`, {
           body: body,
-          icon: 'https://via.placeholder.com/192x192/2D6A4F/FFFFFF?text=' + encodeURIComponent(meal.emoji)
+          icon: 'icons/icon-192.svg'
         });
       }, timeDiff);
       
@@ -57,7 +54,7 @@ function scheduleNotifications(settings, todayMeals, batchCookingNotes) {
           const batchTimeoutId = setTimeout(() => {
             new Notification(`🍳 Promemoria Preparazione`, {
               body: batchCookingNotes,
-              icon: 'https://via.placeholder.com/192x192/2D6A4F/FFFFFF?text=' + encodeURIComponent('🍳')
+              icon: 'icons/icon-192.svg'
             });
           }, batchDiff);
           notificationTimeouts.push(batchTimeoutId);
@@ -72,8 +69,6 @@ function scheduleNotifications(settings, todayMeals, batchCookingNotes) {
   const msToMidnight = midnight.getTime() - now.getTime();
   
   const midnightTimeoutId = setTimeout(() => {
-    // In a real app we would want to reload the data for the new day here
-    // or trigger an event that app.js listens to.
     window.dispatchEvent(new CustomEvent('midnight-refresh'));
   }, msToMidnight);
   
