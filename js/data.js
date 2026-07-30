@@ -354,19 +354,15 @@ const MEAL_PLAN = {
 };
 
 
-// Routine generatrice dinamica per far esistere SEMPRE le varianti Training/Rest di ogni giorno.
-// Aumenta o toglie carboidrati/crackers in base alle regole
+// Routine generatrice dinamica
 const weekDays = ['monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday', 'sunday'];
 weekDays.forEach(day => {
   const plan = MEAL_PLAN[day];
   
   if (plan.meals.training && !plan.meals.rest) {
     plan.meals.rest = JSON.parse(JSON.stringify(plan.meals.training));
-    // Applica le regole "Rest" ad un pasto nativo Training:
-    // 1. Togli crackers dallo spuntino
     const snack1 = plan.meals.rest.find(m => m.slot === 'snack1');
     if(snack1) snack1.ingredients = snack1.ingredients.filter(i => i.name !== 'Crackers');
-    // 2. Riduci carboidrati pranzo da 90 a 70 o proporzionalmente
     const lunch = plan.meals.rest.find(m => m.slot === 'lunch');
     if (lunch) {
       lunch.ingredients.forEach(i => {
@@ -376,16 +372,12 @@ weekDays.forEach(day => {
       });
     }
   } 
-  
   else if (plan.meals.rest && !plan.meals.training) {
     plan.meals.training = JSON.parse(JSON.stringify(plan.meals.rest));
-    // Applica regole "Training" ad un pasto nativo Rest:
-    // 1. Aggiungi crackers allo spuntino 1
     const snack1 = plan.meals.training.find(m => m.slot === 'snack1');
     if(snack1 && !snack1.ingredients.find(i=>i.name==='Crackers')) {
       snack1.ingredients.push({ name: "Crackers", quantity: 30, unit: "g" });
     }
-    // 2. Aumenta carboidrati pranzo da 70/60 a 90/80
     const lunch = plan.meals.training.find(m => m.slot === 'lunch');
     if (lunch) {
       lunch.ingredients.forEach(i => {
