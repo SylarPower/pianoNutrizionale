@@ -128,6 +128,7 @@ function handleRoute() {
   if (hash === '#today') renderToday();
   else if (hash === '#week') renderWeek();
   else if (hash === '#shop') renderShop();
+  else if (hash === '#guide') renderGuide();
   else if (hash === '#settings') renderSettings();
 }
 
@@ -476,6 +477,60 @@ window.updateShopItemQty = async function(id, val) {
 }
 
 // ------------------------------------
+// RENDER GUIDE
+// ------------------------------------
+function renderGuide() {
+  const container = document.getElementById('view-guide');
+  container.innerHTML = `
+    <h2>Linee Guida di Meller</h2>
+    <div class="settings-section" style="line-height:1.6;">
+      <p>La dieta è strutturata su 2 giorni.</p>
+      <ul style="padding-left:1.2rem; margin-top:0.5rem; margin-bottom:1rem;">
+        <li style="margin-bottom:0.5rem;"><strong>1° giorno: allenamento.</strong> La giornata è bilanciata e ricca di carboidrati per sostenere la performance. Lo spuntino mattutino include anche un pacchetto di crackers, e la quota di carboidrati del pranzo è aumentata.</li>
+        <li style="margin-bottom:0.5rem;"><strong>2° giorno: riposo.</strong> Pasti bilanciati. La quota di carboidrati a pranzo è leggermente ridotta.</li>
+      </ul>
+      <p class="text-muted"><em>NB: preferisci fonti di carboidrati non integrali (pane/fette biscottate/pasta/riso) prima e dopo di un allenamento e durante il carico di carboidrati. La scelta è libera negli altri momenti.</em></p>
+      
+      <h3 style="margin-top:1.5rem; color:var(--primary);">Integrazione</h3>
+      <ul style="padding-left:1.2rem; margin-top:0.5rem; margin-bottom:1rem;">
+        <li style="margin-bottom:0.5rem;"><strong>Creatp Syform (polvere):</strong> 7g al giorno con acqua dopo colazione.</li>
+        <li style="margin-bottom:0.5rem;"><strong>Optiwhey Syform (polvere):</strong> seguendo lo schema della dieta (“proteine del siero del latte”).</li>
+      </ul>
+      <p>Puoi acquistare i prodotti Syform direttamente dal sito <a href="http://syform.com" target="_blank" style="color:var(--primary-light);">syform.com</a> inserendo al check-out il codice <strong>AD20MTML</strong> per il 20% di sconto sul totale.</p>
+      <p class="text-muted" style="margin-top:0.5rem;"><em>Se in casa hai prodotti diversi scrivimi: ti farò sapere se e come utilizzarli.</em></p>
+      
+      <h3 style="margin-top:1.5rem; color:var(--primary);">Frequenze di utilizzo delle fonti di proteine</h3>
+      <div style="overflow-x:auto;">
+        <table style="width:100%; border-collapse: collapse; margin-top:0.5rem; font-size:0.95rem;">
+          <tr style="border-bottom:1px solid #ddd;"><td style="padding:0.5rem; font-weight:600;">Pollame</td><td style="text-align:right; padding:0.5rem;">1-2 volte a settimana</td></tr>
+          <tr style="border-bottom:1px solid #ddd;"><td style="padding:0.5rem; font-weight:600;">Manzo, maiale</td><td style="text-align:right; padding:0.5rem;">Massimo 1 volta a settimana</td></tr>
+          <tr style="border-bottom:1px solid #ddd;"><td style="padding:0.5rem; font-weight:600;">Affettati e carni trasformate</td><td style="text-align:right; padding:0.5rem;">Massimo 1 volta a settimana</td></tr>
+          <tr style="border-bottom:1px solid #ddd;"><td style="padding:0.5rem; font-weight:600;">Pesce ricco di omega-3 fresco/conservato</td><td style="text-align:right; padding:0.5rem;">Almeno 2-3 volte a settimana</td></tr>
+          <tr style="border-bottom:1px solid #ddd;"><td style="padding:0.5rem; font-weight:600;">Altro pesce e prodotti ittici</td><td style="text-align:right; padding:0.5rem;">1-2 volte a settimana</td></tr>
+          <tr style="border-bottom:1px solid #ddd;"><td style="padding:0.5rem; font-weight:600;">Latticini e formaggi (a pranzo e cena)</td><td style="text-align:right; padding:0.5rem;">1-2 volte a settimana</td></tr>
+          <tr style="border-bottom:1px solid #ddd;"><td style="padding:0.5rem; font-weight:600;">Uova (a pranzo e cena)</td><td style="text-align:right; padding:0.5rem;">1-2 volte a settimana</td></tr>
+          <tr style="border-bottom:1px solid #ddd;"><td style="padding:0.5rem; font-weight:600;">Legumi e derivati</td><td style="text-align:right; padding:0.5rem;">Almeno 3-4 volte a settimana</td></tr>
+        </table>
+      </div>
+
+      <h3 style="margin-top:1.5rem; color:var(--primary);">Informazioni supplementari</h3>
+      <ul style="padding-left:1.2rem; margin-top:0.5rem; margin-bottom:1rem;">
+        <li style="margin-bottom:0.5rem;">Bevi regolarmente durante il giorno, senza aspettare la sete. Punta a un consumo di almeno 2-2,5 litri di acqua al giorno, che puoi integrare con tè, tisane, infusi e caffè non zuccherati. Riduci al minimo le bevande alcoliche.</li>
+        <li style="margin-bottom:0.5rem;">Usa solo sale iodato e con moderazione. Sfrutta liberamente spezie, limone, aceto (anche balsamico) e salsa di soia. Prediligi cotture come vapore, microonde, bollitura, cartoccio, griglia e padella antiaderente.</li>
+        <li style="margin-bottom:0.5rem;">Avrai a disposizione un pasto “sociale” a settimana. In questa occasione potrai uscire dallo schema della dieta, mantenendo moderazione e buon senso per quanto riguarda le quantità. Sfrutta questa possibilità nelle situazioni di convivialità, come pranzi e cene di famiglia o ritrovi con amici.</li>
+        <li style="margin-bottom:0.5rem;">Puoi combinare più alimenti tra loro. Se un alimento presenta alternative, puoi combinarne due dimezzando le quantità indicate (vedi fonti di proteine a pranzo/cena).</li>
+        <li style="margin-bottom:0.5rem;">Non serve pesare la verdura. La quantità indicata è un riferimento: puoi usarla liberamente.</li>
+      </ul>
+
+      <h3 style="margin-top:1.5rem; color:var(--primary);">Domande frequenti sul piano</h3>
+      <p style="margin-top:0.5rem;"><strong>Devo seguire uno schema rigido da lunedì a domenica?</strong><br>No. Il piano è strutturato con opzioni intercambiabili all'interno di ciascun pasto per garantirti la massima flessibilità e facilità di gestione. Puoi ruotare liberamente le alternative proposte. Se per esigenze organizzative personali preferisci un menù settimanale fisso, fammelo sapere.</p>
+      <p style="margin-top:1rem;"><strong>Come mi comporto con le quantità degli alimenti?</strong><br>I pesi indicati si riferiscono agli alimenti a crudo e al netto degli scarti, salvo diversamente specificato.</p>
+      <p style="margin-top:1rem;"><strong>Cosa faccio in caso di pranzi o cene fuori?</strong><br>Scegli fonti di carboidrati non condite (pane, patate lesse, polenta, riso o pasta in bianco), fonti di proteine magre e verdure crude o cotte senza aggiunta di grassi (griglia, vapore).</p>
+    </div>
+  `;
+}
+
+// ------------------------------------
 // RENDER SETTINGS
 // ------------------------------------
 function renderSettings() {
@@ -577,6 +632,11 @@ window.updateDefaultDayType = async function(day, type) {
   appState.settings.trainingDays = tDays;
   appState.settings.restDays = rDays;
   await saveGlobalSettings({trainingDays: tDays, restDays: rDays});
+  scheduleDailyNotifications();
+  renderSettings();
+  if (window.location.hash === '#today') renderToday();
+  if (window.location.hash === '#week') renderWeek();
+  if (window.location.hash === '#shop') renderShop();
 }
 
 // ------------------------------------
@@ -625,13 +685,30 @@ function renderModalContent() {
   document.getElementById('modal-time').innerHTML = `${MEAL_SLOTS.find(s=>s.id===meal.slot)?.label} • ${timeStr || ''} • Prep: ${meal.prepTime || '-'}`;
   
   // Ingredients
+  const selectorDiv = document.getElementById('modal-persons-selector');
+  const s = appState.settings;
+  selectorDiv.innerHTML = `
+    <div style="display:flex; justify-content:space-between; align-items:center;">
+      <span style="font-weight:600; font-size:0.9rem;">Quantità per:</span>
+      <select style="padding:0.2rem; font-size:0.9rem; border-radius:4px; border:1px solid #ccc;" onchange="updateModalPersons(parseInt(this.value))">
+        <option value="1" ${s.persons === 1 ? 'selected' : ''}>1 persona</option>
+        <option value="2" ${s.persons === 2 ? 'selected' : ''}>2 persone</option>
+      </select>
+    </div>
+    <div id="modal-two-persons-options" class="${s.persons === 1 ? 'hidden' : ''}" style="margin-top:0.5rem; font-size:0.85rem;">
+      <label style="display:block; margin-bottom:0.2rem;"><input type="radio" name="modalTwoType" value="mf" onchange="updateModalTwoType('mf')" ${s.twoPersonsType === 'mf' ? 'checked' : ''}> Io uomo, lei donna (×1.75)</label>
+      <label style="display:block; margin-bottom:0.2rem;"><input type="radio" name="modalTwoType" value="fm" onchange="updateModalTwoType('fm')" ${s.twoPersonsType === 'fm' ? 'checked' : ''}> Io donna, lui uomo (×2.25)</label>
+      <label style="display:block;"><input type="radio" name="modalTwoType" value="same" onchange="updateModalTwoType('same')" ${(!s.twoPersonsType || s.twoPersonsType === 'same') ? 'checked' : ''}> Stesso sesso (×2)</label>
+    </div>
+  `;
+
   const ingUl = document.getElementById('modal-ingredients-list');
   ingUl.innerHTML = '';
   
   let multiplier = 1;
-  if (appState.settings.persons === 2) {
-    if (appState.settings.twoPersonsType === 'mf') multiplier = 1.75;
-    else if (appState.settings.twoPersonsType === 'fm') multiplier = 2.25;
+  if (s.persons === 2) {
+    if (s.twoPersonsType === 'mf') multiplier = 1.75;
+    else if (s.twoPersonsType === 'fm') multiplier = 2.25;
     else multiplier = 2;
   }
   
@@ -714,6 +791,16 @@ function renderModalContent() {
 
 function toggleEditMode() {
   editMode = !editMode;
+  renderModalContent();
+}
+
+window.updateModalPersons = async function(val) {
+  await updateSetting('persons', val);
+  renderModalContent();
+}
+
+window.updateModalTwoType = async function(val) {
+  await updateSetting('twoPersonsType', val);
   renderModalContent();
 }
 
