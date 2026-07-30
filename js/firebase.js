@@ -32,7 +32,7 @@ function initFirebase() {
 const mockStore = {
   settings: {
     notificationTimes: { breakfast: "08:30", snack1: "10:00", lunch: "13:30", snack2: "16:00", dinner: "20:00" },
-    persons: 2, twoPersonsType: 'mf', notificationsEnabled: false
+    persons: 2, twoPersonsType: 'mf', singlePersonType: 'm', notificationsEnabled: false
   },
   weekPlans: {},
   recipes: {},
@@ -40,7 +40,7 @@ const mockStore = {
     mode: 'current',
     customDays: { monday: 'training', tuesday: 'training', wednesday: 'training', thursday: 'rest', friday: 'training', saturday: 'rest', sunday: 'rest' },
     selectedMeals: { monday: [], tuesday: [], wednesday: [], thursday: [], friday: [], saturday: [], sunday: [] },
-    persons: 2, twoPersonsType: 'mf', checkedItems: [], customQtys: {}
+    persons: 2, twoPersonsType: 'mf', singlePersonType: 'm', checkedItems: [], customQtys: {}
   }
 };
 
