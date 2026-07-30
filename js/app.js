@@ -38,7 +38,6 @@ async function initApp() {
   appState.weekPlan = await getWeekPlan();
   appState.shoppingList = await getShoppingList();
   
-  // Auto Notifiche da PC
   const isMobile = /Android|webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i.test(navigator.userAgent);
   if (!isMobile && ("Notification" in window)) {
     if (Notification.permission === "default") {
@@ -536,26 +535,87 @@ function renderGuide() {
 
     <div class="settings-section" style="margin-bottom:1rem;">
       <h3 style="color:var(--primary); margin-bottom:0.5rem; border-bottom:1px solid #eee; padding-bottom:0.5rem;" onclick="this.nextElementSibling.classList.toggle('hidden')" style="cursor:pointer;">
-        Menù Meller Originale ▼
+        1° Giorno (Allenamento) ▼
       </h3>
       <div class="hidden" style="line-height:1.6; padding-top:0.5rem; font-size:0.9rem;">
-        <h4 style="margin-top:1rem;">Giornata Allenamento</h4>
+        <h4 style="color:var(--accent);">COLAZIONE</h4>
         <ul style="padding-left:1rem; margin-bottom:1rem;">
-          <li><strong>Colazione:</strong> Avena 40g, Yogurt 100g (o kefir 100g, uova 60g), Marmellata 15g (o miele 10g).</li>
-          <li><strong>Spuntino:</strong> Frutta 250g, Crackers 30g, Proteine 30g.</li>
-          <li><strong>Pranzo:</strong> Riso/Pasta 90g, Pollame 200g, Verdure 200g, Olio 10g.</li>
-          <li><strong>Merenda:</strong> Yogurt 150g, Miele 15g (o Crackers 30g).</li>
-          <li><strong>Cena:</strong> Pollame 200g, Verdura 200g, Pane 60g, Olio 10g.</li>
+          <li>Avena <strong>40g</strong>, Yogurt greco 0% <strong>100g</strong>, Marmellata <strong>15g</strong></li>
+          <li><em>Alt 1:</em> Kefir 100g o Uova intere 60g / Miele 10g</li>
+          <li><em>Alt 2 (Pancake Albume):</em> Albume 120g, Yogurt 40g, Avena 40g, Marmellata 30g</li>
+          <li><em>Alt 3:</em> Yogurt 200g, Cereali 50g, Marmellata 10g</li>
+          <li><em>Alt 4:</em> Latte parz. scremato 250g, Cereali 50g</li>
         </ul>
         
-        <h4 style="margin-top:1rem;">Giornata Riposo</h4>
+        <h4 style="color:var(--accent);">SPUNTINO</h4>
         <ul style="padding-left:1rem; margin-bottom:1rem;">
-          <li><strong>Colazione:</strong> Avena 40g, Yogurt 100g, Marmellata 15g.</li>
-          <li><strong>Spuntino:</strong> Frutta 250g, Proteine 30g. (NO Crackers).</li>
-          <li><strong>Pranzo:</strong> Riso/Pasta 70g, Pollame 200g, Verdure 200g, Olio 10g.</li>
-          <li><strong>Merenda:</strong> Yogurt 150g, Miele 15g (o Crackers 30g).</li>
-          <li><strong>Cena:</strong> Pollame 200g, Verdura 200g, Pane 60g, Olio 10g.</li>
+          <li>Frutta fresca <strong>250g</strong>, Crackers <strong>30g</strong>, Proteine Whey <strong>30g</strong></li>
         </ul>
+
+        <h4 style="color:var(--accent);">PRANZO</h4>
+        <ul style="padding-left:1rem; margin-bottom:1rem;">
+          <li>Pasta/Riso <strong>90g</strong> (<em>Alt:</em> Gnocchi 250g, Farro 90g, Quinoa 80g, Pane 120g, Patate 450g)</li>
+          <li>Pollame <strong>200g</strong> (<em>Alt:</em> Manzo 150g, Maiale 100g, Merluzzo 250g, Uova 180g)</li>
+          <li>Verdura <strong>200g</strong></li>
+          <li>Olio EVO <strong>10g</strong></li>
+        </ul>
+
+        <h4 style="color:var(--accent);">MERENDA</h4>
+        <ul style="padding-left:1rem; margin-bottom:1rem;">
+          <li>Yogurt greco 0% <strong>150g</strong>, Miele <strong>15g</strong></li>
+          <li><em>Alt:</em> Crackers 30g o Frutta secca 20g</li>
+        </ul>
+
+        <h4 style="color:var(--accent);">CENA</h4>
+        <ul style="padding-left:1rem; margin-bottom:1rem;">
+          <li>Pollame <strong>200g</strong> (<em>Alt:</em> Manzo 150g, Pesce 250g, Legumi 240g)</li>
+          <li>Pane <strong>60g</strong> (<em>Alt:</em> Crackers 40g, Patate 230g)</li>
+          <li>Verdura <strong>200g</strong></li>
+          <li>Olio EVO <strong>10g</strong></li>
+        </ul>
+        <p class="text-muted" style="margin-top:0.5rem; font-size:0.8rem;"><strong>Macro medie:</strong> 1903 kcal | PRO 135g (28%) | FAT 55g (26%) | CHO 213g (44%)</p>
+      </div>
+    </div>
+
+    <div class="settings-section" style="margin-bottom:1rem;">
+      <h3 style="color:var(--rest); margin-bottom:0.5rem; border-bottom:1px solid #eee; padding-bottom:0.5rem;" onclick="this.nextElementSibling.classList.toggle('hidden')" style="cursor:pointer;">
+        2° Giorno (Riposo) ▼
+      </h3>
+      <div class="hidden" style="line-height:1.6; padding-top:0.5rem; font-size:0.9rem;">
+        <h4 style="color:var(--rest);">COLAZIONE</h4>
+        <ul style="padding-left:1rem; margin-bottom:1rem;">
+          <li>Avena <strong>40g</strong>, Yogurt greco 0% <strong>100g</strong>, Marmellata <strong>15g</strong></li>
+          <li><em>Alt:</em> Vedi alternative allenamento.</li>
+        </ul>
+        
+        <h4 style="color:var(--rest);">SPUNTINO</h4>
+        <ul style="padding-left:1rem; margin-bottom:1rem;">
+          <li>Frutta fresca <strong>250g</strong>, Proteine Whey <strong>30g</strong></li>
+          <li style="color:var(--danger);"><em>Niente Crackers!</em></li>
+        </ul>
+
+        <h4 style="color:var(--rest);">PRANZO</h4>
+        <ul style="padding-left:1rem; margin-bottom:1rem;">
+          <li>Pasta/Riso <strong>70g</strong> (<em>Alt:</em> Gnocchi 190g, Farro 70g, Quinoa 60g, Pane 90g, Patate 350g)</li>
+          <li>Pollame <strong>200g</strong></li>
+          <li>Verdura <strong>200g</strong></li>
+          <li>Olio EVO <strong>10g</strong></li>
+        </ul>
+
+        <h4 style="color:var(--rest);">MERENDA</h4>
+        <ul style="padding-left:1rem; margin-bottom:1rem;">
+          <li>Yogurt greco 0% <strong>150g</strong>, Miele <strong>15g</strong></li>
+          <li><em>Alt:</em> Crackers 30g o Frutta secca 20g</li>
+        </ul>
+
+        <h4 style="color:var(--rest);">CENA</h4>
+        <ul style="padding-left:1rem; margin-bottom:1rem;">
+          <li>Pollame <strong>200g</strong></li>
+          <li>Pane <strong>60g</strong> (<em>Alt:</em> Crackers 40g, Patate 230g)</li>
+          <li>Verdura <strong>200g</strong></li>
+          <li>Olio EVO <strong>10g</strong></li>
+        </ul>
+        <p class="text-muted" style="margin-top:0.5rem; font-size:0.8rem;"><strong>Macro medie:</strong> 1719 kcal | PRO 130g (30%) | FAT 52g (27%) | CHO 180g (42%)</p>
       </div>
     </div>
       
@@ -572,39 +632,6 @@ function renderGuide() {
       </div>
     </div>
       
-    <div class="settings-section" style="margin-bottom:1rem;">
-      <h3 style="color:var(--primary); margin-bottom:0.5rem; border-bottom:1px solid #eee; padding-bottom:0.5rem;" onclick="this.nextElementSibling.classList.toggle('hidden')" style="cursor:pointer;">
-        Alternative Alimentari ▼
-      </h3>
-      <div class="hidden" style="line-height:1.6; padding-top:0.5rem;">
-        <div style="overflow-x:auto;">
-          <table style="width:100%; border-collapse: collapse; margin-top:0.5rem; font-size:0.95rem;">
-            <tr style="background:#eee;"><td colspan="2" style="padding:0.5rem; font-weight:bold;">Carboidrati (Rif: Pasta/Riso 70g)</td></tr>
-            <tr style="border-bottom:1px solid #ddd;"><td style="padding:0.5rem;">Gnocchi di patate</td><td style="text-align:right; padding:0.5rem;">190 g</td></tr>
-            <tr style="border-bottom:1px solid #ddd;"><td style="padding:0.5rem;">Farro, Orzo</td><td style="text-align:right; padding:0.5rem;">70 g</td></tr>
-            <tr style="border-bottom:1px solid #ddd;"><td style="padding:0.5rem;">Quinoa, Grano Saraceno, Amaranto</td><td style="text-align:right; padding:0.5rem;">60 g</td></tr>
-            <tr style="border-bottom:1px solid #ddd;"><td style="padding:0.5rem;">Pane</td><td style="text-align:right; padding:0.5rem;">90 g</td></tr>
-            <tr style="border-bottom:1px solid #ddd;"><td style="padding:0.5rem;">Piadina</td><td style="text-align:right; padding:0.5rem;">80 g</td></tr>
-            <tr style="border-bottom:1px solid #ddd;"><td style="padding:0.5rem;">Crackers, Grissini, Crostini</td><td style="text-align:right; padding:0.5rem;">60 g</td></tr>
-            <tr style="border-bottom:1px solid #ddd;"><td style="padding:0.5rem;">Polenta, cotta</td><td style="text-align:right; padding:0.5rem;">340 g</td></tr>
-            <tr style="border-bottom:1px solid #ddd;"><td style="padding:0.5rem;">Patate</td><td style="text-align:right; padding:0.5rem;">350 g</td></tr>
-            
-            <tr style="background:#eee;"><td colspan="2" style="padding:0.5rem; font-weight:bold;">Proteine (Rif: Pollame 200g)</td></tr>
-            <tr style="border-bottom:1px solid #ddd;"><td style="padding:0.5rem;">Manzo (tagli magri)</td><td style="text-align:right; padding:0.5rem;">150 g</td></tr>
-            <tr style="border-bottom:1px solid #ddd;"><td style="padding:0.5rem;">Maiale (tagli magri) / Affettati sgrassati</td><td style="text-align:right; padding:0.5rem;">100 g</td></tr>
-            <tr style="border-bottom:1px solid #ddd;"><td style="padding:0.5rem;">Crostacei, Molluschi</td><td style="text-align:right; padding:0.5rem;">300 g</td></tr>
-            <tr style="border-bottom:1px solid #ddd;"><td style="padding:0.5rem;">Merluzzo / Nasello / Sogliola</td><td style="text-align:right; padding:0.5rem;">250 g</td></tr>
-            <tr style="border-bottom:1px solid #ddd;"><td style="padding:0.5rem;">Pesce in scatola al naturale</td><td style="text-align:right; padding:0.5rem;">150 g</td></tr>
-            <tr style="border-bottom:1px solid #ddd;"><td style="padding:0.5rem;">Pesce in scatola sott'olio / Salmone / Sgombro</td><td style="text-align:right; padding:0.5rem;">100 g</td></tr>
-            <tr style="border-bottom:1px solid #ddd;"><td style="padding:0.5rem;">Fiocchi di latte / Uova intere</td><td style="text-align:right; padding:0.5rem;">180 g</td></tr>
-            <tr style="border-bottom:1px solid #ddd;"><td style="padding:0.5rem;">Montasio / Grana</td><td style="text-align:right; padding:0.5rem;">50 g</td></tr>
-            <tr style="border-bottom:1px solid #ddd;"><td style="padding:0.5rem;">Legumi in scatola o bolliti</td><td style="text-align:right; padding:0.5rem;">240 g</td></tr>
-            <tr style="border-bottom:1px solid #ddd;"><td style="padding:0.5rem;">Legumotti - Barilla</td><td style="text-align:right; padding:0.5rem;">80 g</td></tr>
-          </table>
-        </div>
-      </div>
-    </div>
-
     <div class="settings-section" style="margin-bottom:1rem;">
       <h3 style="color:var(--primary); margin-bottom:0.5rem; border-bottom:1px solid #eee; padding-bottom:0.5rem;" onclick="this.nextElementSibling.classList.toggle('hidden')" style="cursor:pointer;">
         Frequenze (Proteine) ▼
