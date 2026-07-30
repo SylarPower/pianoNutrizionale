@@ -15,13 +15,10 @@ function initFirebase() {
     console.warn("Firebase not configured. Running in offline/mock mode.");
     return false;
   }
-  
   try {
     firebase.initializeApp(firebaseConfig);
     db = firebase.firestore();
-    db.enablePersistence().catch((err) => {
-      console.warn("Offline persistence not enabled:", err.code);
-    });
+    db.enablePersistence().catch((err) => console.warn("Offline persistence not enabled:", err.code));
     return true;
   } catch (e) {
     console.error("Firebase init error", e);
@@ -29,21 +26,43 @@ function initFirebase() {
   }
 }
 
+// Global Cloud Mocks
 const mockStore = {
   settings: {
     notificationTimes: { breakfast: "08:30", snack1: "10:00", lunch: "13:30", snack2: "16:00", dinner: "20:00" },
-    persons: 2, twoPersonsType: 'mf', singlePersonType: 'm', notificationsEnabled: false
+    notificationsEnabled: false
   },
   weekPlans: {},
   recipes: {},
-  shoppingList: { 
+  shoppingListCloud: { 
     mode: 'current',
     customDays: { monday: 'training', tuesday: 'training', wednesday: 'training', thursday: 'rest', friday: 'training', saturday: 'rest', sunday: 'rest' },
     selectedMeals: { monday: [], tuesday: [], wednesday: [], thursday: [], friday: [], saturday: [], sunday: [] },
-    persons: 2, twoPersonsType: 'mf', singlePersonType: 'm', checkedItems: [], customQtys: {}
+    checkedItems: [],
+    customQtys: {}
   }
 };
 
+// ============================================
+// DEVICE-SPECIFIC SETTINGS (Local Storage)
+// ============================================
+function getLocalDeviceSettings() {
+  const defaults = { 
+    persons: 2, 
+    twoPersonsType: 'mf', 
+    singlePersonType: 'm'
+  };
+  const stored = localStorage.getItem('pn_device_settings');
+  return stored ? { ...defaults, ...JSON.parse(stored) } : defaults;
+}
+
+function saveLocalDeviceSettings(settings) {
+  localStorage.setItem('pn_device_settings', JSON.stringify(settings));
+}
+
+// ============================================
+// CLOUD SETTINGS (Firebase)
+// ============================================
 async function getGlobalSettings() {
   if (!db) return mockStore.settings;
   const doc = await db.collection('settings').doc('global').get();
@@ -74,15 +93,15 @@ async function saveWeekPlan(plan) {
   await db.collection('weekPlans').doc(weekId).set(plan, { merge: true });
 }
 
-async function getShoppingList() {
-  if (!db) return mockStore.shoppingList;
-  const doc = await db.collection('shoppingList').doc('current').get();
-  return doc.exists ? doc.data() : mockStore.shoppingList;
+async function getShoppingListCloud() {
+  if (!db) return mockStore.shoppingListCloud;
+  const doc = await db.collection('shoppingList').doc('shared').get();
+  return doc.exists ? doc.data() : mockStore.shoppingListCloud;
 }
 
-async function saveShoppingList(listData) {
-  if (!db) { mockStore.shoppingList = { ...mockStore.shoppingList, ...listData }; return; }
-  await db.collection('shoppingList').doc('current').set(listData, { merge: true });
+async function saveShoppingListCloud(listData) {
+  if (!db) { mockStore.shoppingListCloud = { ...mockStore.shoppingListCloud, ...listData }; return; }
+  await db.collection('shoppingList').doc('shared').set(listData, { merge: true });
 }
 
 async function getCustomRecipe(mealId) {
