@@ -16,6 +16,7 @@ let appState = {
 
 let currentModalMeal = null;
 let editMode = false;
+let shopSettingsVisible = false;
 
 // ------------------------------------
 // INITIALIZATION
@@ -89,6 +90,11 @@ function formatTimeRemaining(timeStr) {
   const diffMins = Math.floor((diffMs % 3600000) / 60000);
   if (diffHrs > 0) return `Tra ${diffHrs}h ${diffMins}m`;
   return `Tra ${diffMins}m`;
+}
+
+function formatQty(qty) {
+  if (qty > 10) return Math.round(qty / 5) * 5;
+  return Math.round(qty * 10) / 10;
 }
 
 // ------------------------------------
@@ -219,6 +225,7 @@ function renderWeek() {
 }
 
 window.toggleDayType = async function(dayKey, type) {
+  if (!appState.weekPlan) appState.weekPlan = {};
   appState.weekPlan[dayKey] = type;
   await saveWeekPlan(appState.weekPlan);
   scheduleDailyNotifications();
@@ -230,6 +237,21 @@ window.toggleDayType = async function(dayKey, type) {
 // ------------------------------------
 // RENDER SHOP
 // ------------------------------------
+window.toggleShopSettings = function() {
+  shopSettingsVisible = !shopSettingsVisible;
+  renderShop();
+}
+
+window.toggleShopAllWeek = async function(selectAll) {
+  const weekDays = ['monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday', 'sunday'];
+  weekDays.forEach(day => {
+    if (selectAll) appState.shoppingList.selectedMeals[day] = ['breakfast', 'snack1', 'lunch', 'snack2', 'dinner'];
+    else appState.shoppingList.selectedMeals[day] = [];
+  });
+  await saveShoppingList(appState.shoppingList);
+  renderShop();
+}
+
 function renderShop() {
   const container = document.getElementById('view-shop');
   
@@ -242,71 +264,87 @@ function renderShop() {
   const twoType = shopData.twoPersonsType || 'mf';
   const weekDays = ['monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday', 'sunday'];
   
-  let html = `<h2>Lista della Spesa</h2>`;
-  
-  // SECTION: Persons
-  html += `
-    <div class="settings-section" style="padding:1rem;">
-      <div style="display:flex; justify-content:space-between; align-items:center;">
-        <span style="font-weight:600;">Calcola per:</span>
-        <select onchange="updateShopPersons(this.value)" style="padding:0.3rem;">
-          <option value="1" ${persons == 1 ? 'selected' : ''}>1 persona</option>
-          <option value="2" ${persons == 2 ? 'selected' : ''}>2 persone</option>
-        </select>
-      </div>
-      <div class="${persons == 1 ? 'hidden' : ''}" style="margin-top:0.5rem; font-size:0.9rem;">
-        <label style="margin-right:1rem;"><input type="radio" name="shopTwoType" value="mf" onchange="updateShopTwoType('mf')" ${twoType === 'mf' ? 'checked' : ''}> Uomo+Donna (×1.75)</label><br>
-        <label style="margin-right:1rem;"><input type="radio" name="shopTwoType" value="fm" onchange="updateShopTwoType('fm')" ${twoType === 'fm' ? 'checked' : ''}> Donna+Uomo (×2.25)</label><br>
-        <label><input type="radio" name="shopTwoType" value="same" onchange="updateShopTwoType('same')" ${twoType === 'same' ? 'checked' : ''}> Stesso sesso (×2)</label>
-      </div>
+  let html = `
+    <div class="flex-between" style="margin-bottom:1rem; flex-wrap:wrap; gap:0.5rem;">
+      <h2 style="margin:0;">Lista Spesa</h2>
+      <button class="btn btn-outline" style="min-height:30px; padding:0.25rem 0.5rem; font-size:0.85rem;" onclick="toggleShopSettings()">
+        ${shopSettingsVisible ? 'Nascondi Impostazioni ▲' : 'Mostra Impostazioni ▼'}
+      </button>
     </div>
   `;
-
-  // SECTION: Mode
-  html += `
-    <div class="settings-section">
-      <h3 style="margin-bottom:0.5rem;">Impostazioni Giorni</h3>
-      <label style="display:block; margin-bottom:0.5rem;"><input type="radio" name="shopMode" value="current" ${mode==='current'?'checked':''} onchange="setShopMode('current')"> Usa piano settimana corrente</label>
-      <label style="display:block;"><input type="radio" name="shopMode" value="custom" ${mode==='custom'?'checked':''} onchange="setShopMode('custom')"> Personalizza (Scegli tu i giorni)</label>
-  `;
-  if (mode === 'custom') {
-    html += `<div style="display:grid; grid-template-columns: 1fr 1fr; gap:0.5rem; margin-top:1rem;">`;
-    weekDays.forEach(day => {
-      const type = shopData.customDays[day];
-      html += `
-        <div style="background:#f9f9f9; padding:0.5rem; border-radius:6px; font-size:0.85rem;">
-          <strong>${MEAL_PLAN[day].dayName.substring(0,3)}</strong>: 
-          <select onchange="setCustomShopDayType('${day}', this.value)" style="margin-left:0.5rem; padding:0.1rem;">
-            <option value="training" ${type==='training'?'selected':''}>🏋️</option>
-            <option value="rest" ${type==='rest'?'selected':''}>😴</option>
+  
+  if (shopSettingsVisible) {
+    // SECTION: Persons
+    html += `
+      <div class="settings-section" style="padding:1rem; margin-bottom:1rem;">
+        <div style="display:flex; justify-content:space-between; align-items:center;">
+          <span style="font-weight:600;">Calcola per:</span>
+          <select onchange="updateShopPersons(this.value)" style="padding:0.3rem;">
+            <option value="1" ${persons == 1 ? 'selected' : ''}>1 persona</option>
+            <option value="2" ${persons == 2 ? 'selected' : ''}>2 persone</option>
           </select>
         </div>
+        <div class="${persons == 1 ? 'hidden' : ''}" style="margin-top:0.5rem; font-size:0.9rem;">
+          <label style="margin-right:1rem;"><input type="radio" name="shopTwoType" value="mf" onchange="updateShopTwoType('mf')" ${twoType === 'mf' ? 'checked' : ''}> Uomo+Donna (×1.75)</label><br>
+          <label style="margin-right:1rem;"><input type="radio" name="shopTwoType" value="fm" onchange="updateShopTwoType('fm')" ${twoType === 'fm' ? 'checked' : ''}> Donna+Uomo (×2.25)</label><br>
+          <label><input type="radio" name="shopTwoType" value="same" onchange="updateShopTwoType('same')" ${twoType === 'same' ? 'checked' : ''}> Stesso sesso (×2)</label>
+        </div>
+      </div>
+    `;
+
+    // SECTION: Mode
+    html += `
+      <div class="settings-section" style="margin-bottom:1rem;">
+        <h3 style="margin-bottom:0.5rem;">Impostazioni Giorni</h3>
+        <label style="display:block; margin-bottom:0.5rem;"><input type="radio" name="shopMode" value="current" ${mode==='current'?'checked':''} onchange="setShopMode('current')"> Usa piano settimana corrente</label>
+        <label style="display:block;"><input type="radio" name="shopMode" value="custom" ${mode==='custom'?'checked':''} onchange="setShopMode('custom')"> Personalizza (Scegli tu i giorni)</label>
+    `;
+    if (mode === 'custom') {
+      html += `<div style="display:grid; grid-template-columns: 1fr 1fr; gap:0.5rem; margin-top:1rem;">`;
+      weekDays.forEach(day => {
+        const type = shopData.customDays[day];
+        html += `
+          <div style="background:#f9f9f9; padding:0.5rem; border-radius:6px; font-size:0.85rem;">
+            <strong>${MEAL_PLAN[day].dayName.substring(0,3)}</strong>: 
+            <select onchange="setCustomShopDayType('${day}', this.value)" style="margin-left:0.5rem; padding:0.1rem;">
+              <option value="training" ${type==='training'?'selected':''}>🏋️</option>
+              <option value="rest" ${type==='rest'?'selected':''}>😴</option>
+            </select>
+          </div>
+        `;
+      });
+      html += `</div>`;
+    }
+    html += `</div>`;
+
+    // SECTION: Select Meals
+    html += `
+      <div class="settings-section" style="margin-bottom:1.5rem;">
+        <h3>Seleziona cosa comprare</h3>
+        <div style="display:flex; gap:0.5rem; margin-bottom:1rem;">
+          <button class="btn btn-outline" style="flex:1; padding:0.25rem; font-size:0.8rem;" onclick="toggleShopAllWeek(true)">Seleziona Tutto</button>
+          <button class="btn btn-outline" style="flex:1; padding:0.25rem; font-size:0.8rem;" onclick="toggleShopAllWeek(false)">Deseleziona Tutto</button>
+        </div>
+    `;
+    weekDays.forEach(day => {
+      const selMeals = shopData.selectedMeals[day] || [];
+      const isWholeDay = selMeals.length === 5;
+      html += `
+        <div style="margin-bottom: 0.5rem; border: 1px solid #eee; border-radius: 8px; padding: 0.5rem;">
+          <div class="flex-between">
+            <label style="font-weight:bold;"><input type="checkbox" onchange="toggleShopWholeDay('${day}', this.checked)" ${isWholeDay?'checked':''}> ${MEAL_PLAN[day].dayName}</label>
+            <button class="btn btn-icon" style="min-height:30px; font-size:0.8rem; background:#eee;" onclick="document.getElementById('shop-det-${day}').classList.toggle('hidden')">Dettagli ▼</button>
+          </div>
+          <div id="shop-det-${day}" class="hidden" style="margin-top:0.5rem; padding-left: 1.5rem; display:flex; flex-wrap:wrap; gap:0.5rem; font-size:0.85rem;">
       `;
+      MEAL_SLOTS.forEach(slot => {
+        const isChecked = selMeals.includes(slot.id);
+        html += `<label><input type="checkbox" onchange="toggleShopMeal('${day}', '${slot.id}', this.checked)" ${isChecked?'checked':''}> ${slot.label}</label>`;
+      });
+      html += `</div></div>`;
     });
     html += `</div>`;
-  }
-  html += `</div>`;
-
-  // SECTION: Select Meals
-  html += `<div class="settings-section"><h3>Seleziona cosa comprare</h3>`;
-  weekDays.forEach(day => {
-    const selMeals = shopData.selectedMeals[day] || [];
-    const isWholeDay = selMeals.length === 5;
-    html += `
-      <div style="margin-bottom: 0.5rem; border: 1px solid #eee; border-radius: 8px; padding: 0.5rem;">
-        <div class="flex-between">
-          <label style="font-weight:bold;"><input type="checkbox" onchange="toggleShopWholeDay('${day}', this.checked)" ${isWholeDay?'checked':''}> ${MEAL_PLAN[day].dayName}</label>
-          <button class="btn btn-icon" style="min-height:30px; font-size:0.8rem; background:#eee;" onclick="document.getElementById('shop-det-${day}').classList.toggle('hidden')">Dettagli ▼</button>
-        </div>
-        <div id="shop-det-${day}" class="hidden" style="margin-top:0.5rem; padding-left: 1.5rem; display:flex; flex-wrap:wrap; gap:0.5rem; font-size:0.85rem;">
-    `;
-    MEAL_SLOTS.forEach(slot => {
-      const isChecked = selMeals.includes(slot.id);
-      html += `<label><input type="checkbox" onchange="toggleShopMeal('${day}', '${slot.id}', this.checked)" ${isChecked?'checked':''}> ${slot.label}</label>`;
-    });
-    html += `</div></div>`;
-  });
-  html += `</div>`;
+  } // end if shopSettingsVisible
 
   // Calculate Aggregation
   let multiplier = 1;
@@ -340,21 +378,31 @@ function renderShop() {
     
     if (total > 0) {
       let finalQty = total * multiplier;
-      if (finalQty > 10) finalQty = Math.round(finalQty / 5) * 5;
-      else finalQty = Math.round(finalQty * 10) / 10;
+      finalQty = formatQty(finalQty);
       
+      let splitText = "";
+      if (persons == 2) {
+          let user1, user2;
+          if (twoType === 'mf') { user1 = formatQty(total * 1); user2 = formatQty(total * 0.75); splitText = `(Uomo: ${user1}${item.unit==='q.b.'?'':item.unit}, Donna: ${user2}${item.unit==='q.b.'?'':item.unit})`; }
+          else if (twoType === 'fm') { user1 = formatQty(total * 1); user2 = formatQty(total * 1.25); splitText = `(Donna: ${user1}${item.unit==='q.b.'?'':item.unit}, Uomo: ${user2}${item.unit==='q.b.'?'':item.unit})`; }
+          else { user1 = formatQty(total * 1); splitText = `(Ciascuno: ${user1}${item.unit==='q.b.'?'':item.unit})`; }
+      }
+
       if (shopData.customQtys && shopData.customQtys[item.id] !== undefined) finalQty = shopData.customQtys[item.id];
       
       if (!categoriesMap[item.category]) categoriesMap[item.category] = [];
       categoriesMap[item.category].push({
         id: item.id, name: item.name, qty: finalQty, unit: item.unit,
-        days: includedInDays.join(', '), checked: (shopData.checkedItems || []).includes(item.id)
+        days: includedInDays.join(', '), checked: (shopData.checkedItems || []).includes(item.id),
+        splitText: splitText
       });
       totalItemsCount++;
     }
   });
 
   const orderedCategories = ["🥩 Carne", "🐟 Pesce e Frutti di Mare", "🥚 Uova e Latticini", "🫘 Legumi", "🍚 Carboidrati / Cereali", "🥬 Verdura Fresca", "🍑 Frutta Fresca", "🥫 Dispensa / Condimenti", "🌿 Spezie e Aromi"];
+  
+  window.currentCategoriesMap = categoriesMap; // Save for whatsapp export
   
   orderedCategories.forEach(cat => {
     if (categoriesMap[cat] && categoriesMap[cat].length > 0) {
@@ -367,6 +415,7 @@ function renderShop() {
             <div class="shop-item-details">
               <div>${item.name}</div>
               <div class="shop-item-tags">${item.days}</div>
+              ${item.splitText ? `<div class="text-muted" style="font-size:0.7rem; margin-top:2px;">${item.splitText}</div>` : ''}
             </div>
             <div class="shop-item-qty">
               <input type="text" inputmode="decimal" class="editable-qty" value="${item.qty}" onclick="event.stopPropagation()" onchange="updateShopItemQty('${item.id}', this.value)">
@@ -381,12 +430,34 @@ function renderShop() {
   
   if (totalItemsCount === 0) html += `<p class="text-muted" style="text-align:center; padding:2rem 0;">Seleziona i pasti per cui vuoi fare la spesa.</p>`;
   html += `
-    <div style="display:flex; gap:1rem; margin-top:2rem;">
-      <button class="btn btn-outline" style="flex:1;" onclick="resetShopChecks()">Reset spunte</button>
-      <button class="btn btn-danger" style="flex:1;" onclick="resetShopList()">Svuota lista</button>
+    <div style="display:flex; flex-direction:column; gap:0.5rem; margin-top:2rem;">
+      <button class="btn btn-primary" style="width:100%; background-color:#25D366; color:white; border:none;" onclick="shareShopWhatsApp()">Invia su WhatsApp</button>
+      <div style="display:flex; gap:0.5rem;">
+        <button class="btn btn-outline" style="flex:1;" onclick="resetShopChecks()">Reset spunte</button>
+        <button class="btn btn-danger" style="flex:1;" onclick="resetShopList()">Svuota lista</button>
+      </div>
     </div>
   `;
   container.innerHTML = html;
+}
+
+window.shareShopWhatsApp = function() {
+  let text = "🛒 *Lista della Spesa*\n\n";
+  const orderedCategories = ["🥩 Carne", "🐟 Pesce e Frutti di Mare", "🥚 Uova e Latticini", "🫘 Legumi", "🍚 Carboidrati / Cereali", "🥬 Verdura Fresca", "🍑 Frutta Fresca", "🥫 Dispensa / Condimenti", "🌿 Spezie e Aromi"];
+  orderedCategories.forEach(cat => {
+    if (window.currentCategoriesMap[cat] && window.currentCategoriesMap[cat].length > 0) {
+      const uncheckedItems = window.currentCategoriesMap[cat].filter(i => !i.checked);
+      if (uncheckedItems.length > 0) {
+        text += `*${cat}*\n`;
+        uncheckedItems.forEach(item => {
+          text += `- ${item.name}: ${item.qty}${item.unit === 'q.b.' ? '' : item.unit}\n`;
+        });
+        text += `\n`;
+      }
+    }
+  });
+  const url = `https://wa.me/?text=${encodeURIComponent(text)}`;
+  window.open(url, '_blank');
 }
 
 window.setShopMode = async function(mode) {
@@ -644,12 +715,23 @@ function renderModalContent() {
   } else {
     meal.ingredients.forEach(ing => {
       let finalQty = ing.quantity;
+      let splitText = "";
       if (typeof finalQty === 'number') {
+        if (s.persons === 2) {
+          let user1, user2;
+          if (s.twoPersonsType === 'mf') { user1 = formatQty(finalQty * 1); user2 = formatQty(finalQty * 0.75); splitText = `(Uomo: ${user1}${ing.unit==='q.b.'?'':ing.unit}, Donna: ${user2}${ing.unit==='q.b.'?'':ing.unit})`; }
+          else if (s.twoPersonsType === 'fm') { user1 = formatQty(finalQty * 1); user2 = formatQty(finalQty * 1.25); splitText = `(Donna: ${user1}${ing.unit==='q.b.'?'':ing.unit}, Uomo: ${user2}${ing.unit==='q.b.'?'':ing.unit})`; }
+          else { user1 = formatQty(finalQty * 1); splitText = `(Ciascuno: ${user1}${ing.unit==='q.b.'?'':ing.unit})`; }
+        }
         finalQty = finalQty * multiplier;
-        if (finalQty > 10) finalQty = Math.round(finalQty / 5) * 5;
-        else finalQty = Math.round(finalQty * 10) / 10;
+        finalQty = formatQty(finalQty);
       }
-      ingUl.innerHTML += `<li class="flex-between"><span>${ing.name}</span><strong>${finalQty} ${ing.unit === 'q.b.' ? '' : ing.unit}</strong></li>`;
+      ingUl.innerHTML += `
+        <li style="display:flex; flex-direction:column; padding:0.5rem 0; border-bottom:1px solid #eee;">
+          <div class="flex-between"><span>${ing.name}</span><strong>${finalQty} ${ing.unit === 'q.b.' ? '' : ing.unit}</strong></div>
+          ${splitText ? `<div class="text-muted" style="font-size:0.75rem; text-align:right;">${splitText}</div>` : ''}
+        </li>
+      `;
     });
   }
 
