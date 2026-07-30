@@ -39,6 +39,7 @@ async function initApp() {
   appState.weekPlan = await getWeekPlan();
   appState.shoppingListCloud = await getShoppingListCloud();
   appState.deviceSettings = getLocalDeviceSettings();
+  if (appState.deviceSettings.darkMode) document.body.classList.add('dark-mode');
   
   const isMobile = /Android|webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i.test(navigator.userAgent);
   if (!isMobile && ("Notification" in window)) {
@@ -721,9 +722,19 @@ function renderGuide() {
 function renderSettings() {
   const container = document.getElementById('view-settings');
   const s = appState.settings;
+  const deviceS = appState.deviceSettings;
   
   let html = `
     <h2>Impostazioni e Guida</h2>
+    
+    <div class="settings-section">
+      <h3>Aspetto (Solo questo dispositivo)</h3>
+      <div class="settings-row">
+        <label>Tema Scuro (AMOLED)</label>
+        <input type="checkbox" ${deviceS.darkMode ? 'checked' : ''} onchange="toggleDarkMode(this.checked)">
+      </div>
+    </div>
+    
     <div class="settings-section">
       <h3>Orari Pasti e Notifiche</h3>
       <p class="text-muted" style="margin-bottom:1rem; font-size:0.85rem;">Su PC le notifiche sono attive di default. Su mobile sono disabilitate.</p>
@@ -925,6 +936,13 @@ function renderSettings() {
     </div>
   `;
   container.innerHTML = html;
+}
+
+window.toggleDarkMode = function(isDark) {
+  appState.deviceSettings.darkMode = isDark;
+  saveLocalDeviceSettings(appState.deviceSettings);
+  if (isDark) document.body.classList.add('dark-mode');
+  else document.body.classList.remove('dark-mode');
 }
 
 window.updateNotificationTime = async function(slotId, value) {
