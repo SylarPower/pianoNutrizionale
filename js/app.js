@@ -58,12 +58,21 @@ async function initApp() {
 }
 
 function scheduleDailyNotifications() {
-  if (!appState.settings || !appState.settings.notificationsEnabled) return;
+  if (!appState.settings) return;
   const todayKey = getTodayKey();
   const dayType = getDayType(todayKey);
   const plan = MEAL_PLAN[todayKey];
+  
+  if (!MEAL_PLAN.thursday.meals.training) MEAL_PLAN.thursday.meals.training = MEAL_PLAN.thursday.meals.rest;
+  if (!MEAL_PLAN.saturday.meals.training) MEAL_PLAN.saturday.meals.training = MEAL_PLAN.saturday.meals.rest;
+  if (!MEAL_PLAN.sunday.meals.training) MEAL_PLAN.sunday.meals.training = MEAL_PLAN.sunday.meals.rest;
+  if (!MEAL_PLAN.monday.meals.rest) MEAL_PLAN.monday.meals.rest = MEAL_PLAN.monday.meals.training;
+  if (!MEAL_PLAN.tuesday.meals.rest) MEAL_PLAN.tuesday.meals.rest = MEAL_PLAN.tuesday.meals.training;
+  if (!MEAL_PLAN.wednesday.meals.rest) MEAL_PLAN.wednesday.meals.rest = MEAL_PLAN.wednesday.meals.training;
+
   const meals = plan.meals[dayType];
   const batch = plan.batchCooking.evening;
+  
   scheduleNotifications(appState.settings, meals, batch);
 }
 
@@ -149,7 +158,17 @@ async function renderToday() {
     <div class="meal-timeline">
   `;
   
+  // Mappatura training/rest per la vista TODAY per prevenire crash
+  if (!MEAL_PLAN.thursday.meals.training) MEAL_PLAN.thursday.meals.training = MEAL_PLAN.thursday.meals.rest;
+  if (!MEAL_PLAN.saturday.meals.training) MEAL_PLAN.saturday.meals.training = MEAL_PLAN.saturday.meals.rest;
+  if (!MEAL_PLAN.sunday.meals.training) MEAL_PLAN.sunday.meals.training = MEAL_PLAN.sunday.meals.rest;
+  if (!MEAL_PLAN.monday.meals.rest) MEAL_PLAN.monday.meals.rest = MEAL_PLAN.monday.meals.training;
+  if (!MEAL_PLAN.tuesday.meals.rest) MEAL_PLAN.tuesday.meals.rest = MEAL_PLAN.tuesday.meals.training;
+  if (!MEAL_PLAN.wednesday.meals.rest) MEAL_PLAN.wednesday.meals.rest = MEAL_PLAN.wednesday.meals.training;
+
   const meals = plan.meals[dayType];
+  
+  // Highlight logic: find next upcoming meal
   const now = new Date();
   let nextMealId = null;
   for (const meal of meals) {
@@ -200,8 +219,17 @@ function renderWeek() {
   const container = document.getElementById('view-week');
   const todayKey = getTodayKey();
   let html = `<h2>Piano Settimanale</h2><p class="text-muted" style="margin-bottom:1rem;">Qui puoi variare i giorni di allenamento. Le quantità si adatteranno istantaneamente.</p><div class="week-grid">`;
+  // order: monday to sunday
   const weekDays = ['monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday', 'sunday'];
   
+  // Mappatura per prevenire crash su weekDays non assegnati
+  if (!MEAL_PLAN.thursday.meals.training) MEAL_PLAN.thursday.meals.training = MEAL_PLAN.thursday.meals.rest;
+  if (!MEAL_PLAN.saturday.meals.training) MEAL_PLAN.saturday.meals.training = MEAL_PLAN.saturday.meals.rest;
+  if (!MEAL_PLAN.sunday.meals.training) MEAL_PLAN.sunday.meals.training = MEAL_PLAN.sunday.meals.rest;
+  if (!MEAL_PLAN.monday.meals.rest) MEAL_PLAN.monday.meals.rest = MEAL_PLAN.monday.meals.training;
+  if (!MEAL_PLAN.tuesday.meals.rest) MEAL_PLAN.tuesday.meals.rest = MEAL_PLAN.tuesday.meals.training;
+  if (!MEAL_PLAN.wednesday.meals.rest) MEAL_PLAN.wednesday.meals.rest = MEAL_PLAN.wednesday.meals.training;
+
   weekDays.forEach(dayKey => {
     const plan = MEAL_PLAN[dayKey];
     const dayType = getDayType(dayKey);
