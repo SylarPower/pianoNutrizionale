@@ -248,7 +248,7 @@ window.toggleDayType = async function(dayKey, type) {
 
 
 // ------------------------------------
-// RENDER PREP (Centro di Comando Serale)
+// RENDER PREP (Variante 1: Flusso di Lavoro)
 // ------------------------------------
 window.changePrepDay = function(val) {
   appState.deviceSettings.prepSelectedDay = val;
@@ -256,59 +256,21 @@ window.changePrepDay = function(val) {
   renderPrep();
 }
 
+window.togglePrepAccordion = function(id) {
+  document.getElementById(id).classList.toggle('hidden');
+}
+
 async function renderPrep() {
   const container = document.getElementById('view-prep');
   const todayKey = getTodayKey();
   const selectedDay = appState.deviceSettings.prepSelectedDay || todayKey;
   
-  // Trova il giorno successivo
   const weekDays = ['monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday', 'sunday'];
-  const nextDayIndex = (weekDays.indexOf(selectedDay) + 1) % 7;
-  const nextDayKey = weekDays[nextDayIndex];
+  const nextDayKey = weekDays[(weekDays.indexOf(selectedDay) + 1) % 7];
   
   const s = appState.deviceSettings;
   const singleType = s.singlePersonType || 'm';
   
-  let html = `
-    <div class="flex-between" style="margin-bottom:1rem; flex-wrap:wrap; gap:0.5rem;">
-      <h2 style="margin:0;">Preparazione Serale</h2>
-    </div>
-    
-    <div class="settings-section" style="padding:1rem; margin-bottom:1rem;">
-      <div style="display:flex; justify-content:space-between; align-items:center;">
-        <span style="font-weight:600;">Oggi è:</span>
-        <select onchange="changePrepDay(this.value)" style="padding:0.3rem;">
-          <option value="monday" ${selectedDay === 'monday' ? 'selected' : ''}>Lunedì</option>
-          <option value="tuesday" ${selectedDay === 'tuesday' ? 'selected' : ''}>Martedì</option>
-          <option value="wednesday" ${selectedDay === 'wednesday' ? 'selected' : ''}>Mercoledì</option>
-          <option value="thursday" ${selectedDay === 'thursday' ? 'selected' : ''}>Giovedì</option>
-          <option value="friday" ${selectedDay === 'friday' ? 'selected' : ''}>Venerdì</option>
-          <option value="saturday" ${selectedDay === 'saturday' ? 'selected' : ''}>Sabato</option>
-          <option value="sunday" ${selectedDay === 'sunday' ? 'selected' : ''}>Domenica</option>
-        </select>
-      </div>
-      
-      <div style="display:flex; justify-content:space-between; align-items:center; margin-top:1rem; border-top:1px solid #eee; padding-top:1rem;">
-        <span style="font-weight:600;">Calcola per:</span>
-        <select style="padding:0.3rem;" onchange="updateShopPersons(parseInt(this.value)); renderPrep();">
-          <option value="1" ${s.persons === 1 ? 'selected' : ''}>1 persona</option>
-          <option value="2" ${s.persons === 2 ? 'selected' : ''}>2 persone</option>
-        </select>
-      </div>
-      
-      <div class="${s.persons === 1 ? '' : 'hidden'}" style="margin-top:0.5rem; font-size:0.9rem;">
-        <label style="margin-right:1rem;"><input type="radio" name="prepSingleType" value="m" onchange="updateShopSingleType('m'); renderPrep();" ${singleType === 'm' ? 'checked' : ''}> Uomo (×1)</label>
-        <label style="margin-right:1rem;"><input type="radio" name="prepSingleType" value="f" onchange="updateShopSingleType('f'); renderPrep();" ${singleType === 'f' ? 'checked' : ''}> Donna (×0.75)</label>
-      </div>
-      <div class="${s.persons === 2 ? '' : 'hidden'}" style="margin-top:0.5rem; font-size:0.9rem;">
-        <label style="margin-right:1rem;"><input type="radio" name="prepTwoType" value="mf" onchange="updateShopTwoType('mf'); renderPrep();" ${s.twoPersonsType === 'mf' ? 'checked' : ''}> Uomo+Donna (×1.75)</label><br>
-        <label style="margin-right:1rem;"><input type="radio" name="prepTwoType" value="fm" onchange="updateShopTwoType('fm'); renderPrep();" ${s.twoPersonsType === 'fm' ? 'checked' : ''}> Donna+Uomo (×2.25)</label><br>
-        <label><input type="radio" name="prepTwoType" value="same" onchange="updateShopTwoType('same'); renderPrep();" ${s.twoPersonsType === 'same' ? 'checked' : ''}> Stesso sesso (×2)</label>
-      </div>
-    </div>
-  `;
-
-  // Moltiplicatore
   let multiplier = 1;
   if (s.persons === 2) {
     if (s.twoPersonsType === 'mf') multiplier = 1.75;
@@ -324,84 +286,90 @@ async function renderPrep() {
   const nextPlan = MEAL_PLAN[nextDayKey];
   const nextType = getDayType(nextDayKey);
   
-  // 1. CENA DI OGGI
   const dinnerMealBase = todayPlan.meals[todayType].find(m => m.slot === 'dinner');
-  const customDinner = await getCustomRecipe(dinnerMealBase.id);
-  const dinner = customDinner || dinnerMealBase;
+  const dinner = await getCustomRecipe(dinnerMealBase.id) || dinnerMealBase;
 
-  html += `<h3 style="margin-top:2rem; margin-bottom:1rem; border-bottom:2px solid var(--primary); padding-bottom:0.5rem;">🍽️ La Cena di stasera</h3>`;
-  html += `<div class="settings-section">`;
-  html += `<h4 style="margin-bottom:0.5rem;">${dinner.emoji} ${dinner.name}</h4>`;
-  html += `<h5 style="color:var(--text-muted); margin-top:1rem; margin-bottom:0.5rem;">Ingredienti:</h5>`;
-  html += `<ul style="list-style:none; padding:0; font-size:0.9rem;">`;
-  dinner.ingredients.forEach(ing => {
-    let finalQty = ing.quantity;
-    if (typeof finalQty === 'number' && ing.unit !== 'pz' && ing.unit !== 'q.b.') finalQty = formatQty(finalQty * multiplier);
-    html += `<li style="padding:0.2rem 0; border-bottom:1px solid #f0f0f0;"><strong>${finalQty} ${ing.unit==='q.b.'||ing.unit==='pz'?'':ing.unit}</strong> - ${ing.name}</li>`;
-  });
-  html += `</ul>`;
-  html += `<h5 style="color:var(--text-muted); margin-top:1.5rem; margin-bottom:0.5rem;">Passaggi:</h5>`;
-  html += `<ul style="list-style:none; padding:0; font-size:0.9rem;">`;
-  dinner.steps.forEach((step, i) => {
-    html += `<li class="step-item" style="padding:0.4rem 0; border-bottom:1px solid #f0f0f0;" onclick="this.classList.toggle('done')"><strong>${i+1}.</strong> ${step}</li>`;
-  });
-  html += `</ul></div>`;
+  let html = `
+    <div class="flex-between" style="margin-bottom:1rem;">
+      <h2 style="margin:0;">Chef Mode 👨‍🍳</h2>
+      <select onchange="changePrepDay(this.value)" style="padding:0.3rem; border-radius:6px; border:1px solid #ddd;">
+        <option value="monday" ${selectedDay === 'monday' ? 'selected' : ''}>Lunedì</option>
+        <option value="tuesday" ${selectedDay === 'tuesday' ? 'selected' : ''}>Martedì</option>
+        <option value="wednesday" ${selectedDay === 'wednesday' ? 'selected' : ''}>Mercoledì</option>
+        <option value="thursday" ${selectedDay === 'thursday' ? 'selected' : ''}>Giovedì</option>
+        <option value="friday" ${selectedDay === 'friday' ? 'selected' : ''}>Venerdì</option>
+        <option value="saturday" ${selectedDay === 'saturday' ? 'selected' : ''}>Sabato</option>
+        <option value="sunday" ${selectedDay === 'sunday' ? 'selected' : ''}>Domenica</option>
+      </select>
+    </div>
+  `;
 
-  // 2. BATCH COOKING
-  html += `<h3 style="margin-top:2rem; margin-bottom:1rem; border-bottom:2px solid var(--accent); padding-bottom:0.5rem;">🍳 Preparazioni Anticipate</h3>`;
-  html += `<div class="settings-section">`;
+  // 1. BATCH COOKING
+  html += `<h3 style="color:var(--accent); margin-top:1.5rem; margin-bottom:0.5rem;">1. Priorità (Batch Cooking)</h3>`;
+  html += `<div class="settings-section" style="border-left: 4px solid var(--accent);">`;
   if (todayPlan.batchCooking.evening) {
-    html += `<p style="font-size:1.1rem; font-weight:bold; color:var(--accent); margin-bottom:1rem;">${todayPlan.batchCooking.evening}</p>`;
+    html += `<p style="font-weight:bold; font-size:1.05rem;">${todayPlan.batchCooking.evening}</p>`;
+    html += `<p class="text-muted" style="font-size:0.8rem; margin-top:0.5rem;">💡 Le porzioni citate qui potrebbero essere per più giorni. Leggi bene per non sbagliare.</p>`;
   } else {
-    html += `<p class="text-muted" style="text-align:center; padding:1rem;">Nessuna preparazione anticipata obbligatoria stasera.</p>`;
+    html += `<p class="text-muted">Nessuna preparazione anticipata richiesta stasera.</p>`;
   }
   html += `</div>`;
 
-  // 3. I PASTI DI DOMANI (Colazione, Spuntino, Pranzo, Merenda)
-  html += `<h3 style="margin-top:2rem; margin-bottom:1rem; border-bottom:2px solid var(--primary-light); padding-bottom:0.5rem;">🥡 Schiscette per Domani (${nextPlan.dayName})</h3>`;
-  html += `<p class="text-muted" style="margin-bottom:1rem; font-size:0.85rem;">Ingredienti aggregati per i pasti che consumerai domani fuori casa o durante il giorno.</p>`;
+  // 2. CENA DI STASERA
+  html += `<h3 style="color:var(--primary); margin-top:1.5rem; margin-bottom:0.5rem;">2. La Cena (${todayPlan.dayName})</h3>`;
+  html += `<div class="settings-section" style="border-left: 4px solid var(--primary);">`;
+  html += `<h4 style="margin-bottom:1rem;">${dinner.emoji} ${dinner.name}</h4>`;
   
-  let tomorrowIngsMap = {};
+  html += `<div style="display:flex; gap:1rem;">`;
+  html += `<div style="flex:1;">`;
+  html += `<h5 style="color:var(--text-muted); margin-bottom:0.5rem;">Ingredienti:</h5>`;
+  html += `<ul style="list-style:none; padding:0; font-size:0.85rem;">`;
+  dinner.ingredients.forEach(ing => {
+    let finalQty = ing.quantity;
+    if (typeof finalQty === 'number' && ing.unit !== 'pz' && ing.unit !== 'q.b.') finalQty = formatQty(finalQty * multiplier);
+    html += `<li style="padding:0.2rem 0; border-bottom:1px solid #eee;"><strong>${finalQty} ${ing.unit==='q.b.'||ing.unit==='pz'?'':ing.unit}</strong> ${ing.name}</li>`;
+  });
+  html += `</ul></div>`;
+  
+  html += `<div style="flex:1.5;">`;
+  html += `<h5 style="color:var(--text-muted); margin-bottom:0.5rem;">Passaggi:</h5>`;
+  html += `<ul style="list-style:none; padding:0; font-size:0.85rem;">`;
+  dinner.steps.forEach((step, i) => {
+    html += `<li class="step-item" style="padding:0.3rem 0; border-bottom:1px solid #eee;" onclick="this.classList.toggle('done')"><strong>${i+1}.</strong> ${step}</li>`;
+  });
+  html += `</ul></div>`;
+  html += `</div></div>`;
+
+  // 3. SCHISCETTE DI DOMANI (Accordion)
+  html += `<h3 style="color:var(--rest); margin-top:1.5rem; margin-bottom:0.5rem;">3. Schiscette per Domani (${nextPlan.dayName})</h3>`;
+  html += `<p class="text-muted" style="font-size:0.85rem; margin-bottom:1rem;">Apri i menu per assembrare i box.</p>`;
+  
   const tomorrowMeals = nextPlan.meals[nextType].filter(m => m.slot !== 'dinner');
   
   for (const tMealBase of tomorrowMeals) {
-    const customTMeal = await getCustomRecipe(tMealBase.id);
-    const tMeal = customTMeal || tMealBase;
+    const tMeal = await getCustomRecipe(tMealBase.id) || tMealBase;
+    const slotLabel = MEAL_SLOTS.find(s=>s.id===tMeal.slot).label;
+    const accId = `prep-acc-${tMeal.id}`;
+    
+    html += `
+      <div class="settings-section" style="margin-bottom:0.5rem; padding:0.5rem 1rem;">
+        <div class="flex-between" style="cursor:pointer;" onclick="togglePrepAccordion('${accId}')">
+          <span style="font-weight:600;">${slotLabel}</span>
+          <span style="color:var(--text-muted);">${tMeal.emoji} ${tMeal.name} ▼</span>
+        </div>
+        <div id="${accId}" class="hidden" style="margin-top:1rem; border-top:1px solid #eee; padding-top:0.5rem;">
+          <ul style="list-style:none; padding:0; font-size:0.85rem;">
+    `;
     tMeal.ingredients.forEach(ing => {
       let fQty = ing.quantity;
-      if (typeof fQty === 'number' && ing.unit !== 'pz' && ing.unit !== 'q.b.') fQty = fQty * multiplier;
-      
-      const mapKey = ing.name.toLowerCase().trim() + "|" + ing.unit;
-      if (!tomorrowIngsMap[mapKey]) tomorrowIngsMap[mapKey] = { name: ing.name, qty: 0, unit: ing.unit, meals: [] };
-      if (typeof fQty === 'number') tomorrowIngsMap[mapKey].qty += fQty;
-      if (!tomorrowIngsMap[mapKey].meals.includes(tMeal.name)) tomorrowIngsMap[mapKey].meals.push(tMeal.name);
+      if (typeof fQty === 'number' && ing.unit !== 'pz' && ing.unit !== 'q.b.') fQty = formatQty(fQty * multiplier);
+      html += `<li class="step-item" style="padding:0.3rem 0; border-bottom:1px solid #f9f9f9;" onclick="this.classList.toggle('done')"><strong>${fQty} ${ing.unit==='q.b.'||ing.unit==='pz'?'':ing.unit}</strong> ${ing.name}</li>`;
     });
+    html += `</ul>`;
+    if(tMeal.prepNote) html += `<p style="font-size:0.8rem; color:var(--accent); margin-top:0.5rem;">💡 ${tMeal.prepNote}</p>`;
+    html += `<button class="btn btn-outline" style="width:100%; margin-top:0.5rem; font-size:0.8rem; padding:0.3rem;" onclick="openRecipeModal('${tMeal.id}', '${nextDayKey}', '${nextType}')">Apri ricetta completa</button>`;
+    html += `</div></div>`;
   }
-
-  html += `<div class="settings-section">`;
-  html += `<h4 style="margin-bottom:1rem;">Ingredienti da preparare/pesare:</h4>`;
-  html += `<ul style="list-style:none; padding:0; font-size:0.9rem;">`;
-  Object.values(tomorrowIngsMap).forEach(ing => {
-    let q = (typeof ing.qty === 'number' && ing.unit !== 'pz' && ing.unit !== 'q.b.') ? formatQty(ing.qty) : ing.qty;
-    if (q === 0) q = "1"; // Fallback per q.b.
-    html += `
-      <li class="step-item" style="padding:0.5rem 0; border-bottom:1px solid #f0f0f0;" onclick="this.classList.toggle('done')">
-        <div style="font-weight:600;">${q} ${ing.unit==='q.b.'||ing.unit==='pz'?'':ing.unit} - ${ing.name}</div>
-        <div style="font-size:0.75rem; color:var(--text-muted);">Per: ${ing.meals.join(', ')}</div>
-      </li>
-    `;
-  });
-  html += `</ul></div>`;
-
-  // 4. RICETTE DI DOMANI
-  html += `<h4 style="margin-top:1.5rem; margin-bottom:0.5rem;">Cosa andranno a comporre:</h4>`;
-  tomorrowMeals.forEach(m => {
-    html += `
-      <div class="day-meal-item" onclick="openRecipeModal('${m.id}', '${nextDayKey}', '${nextType}')" style="background:#fff; border-radius:8px; padding:0.5rem; margin-bottom:0.5rem; box-shadow:0 1px 3px rgba(0,0,0,0.05); cursor:pointer;">
-        ${m.emoji} <strong>${m.name}</strong> <span class="text-muted" style="font-size:0.8rem;">(${MEAL_SLOTS.find(s=>s.id===m.slot).label})</span>
-      </div>
-    `;
-  });
 
   container.innerHTML = html;
 }
