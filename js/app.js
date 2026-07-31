@@ -344,7 +344,7 @@ async function renderPrep() {
   html += `<h3 style="color:var(--rest); margin-top:1.5rem; margin-bottom:0.5rem;">3. Pasti per Domani (${nextPlan.dayName})</h3>`;
   html += `<p class="text-muted" style="font-size:0.85rem; margin-bottom:1rem;">Apri i menu per assembrare i box.</p>`;
   
-  const tomorrowMeals = nextPlan.meals[nextType].filter(m => m.slot !== 'dinner');
+  const tomorrowMeals = nextPlan.meals[nextType];
   
   for (const tMealBase of tomorrowMeals) {
     const tMeal = await getCustomRecipe(tMealBase.id) || tMealBase;
