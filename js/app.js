@@ -19,21 +19,11 @@ let currentModalMeal = null;
 let editMode = false;
 let shopSettingsVisible = false;
 
-function repairMissingDays() {
-  if (!MEAL_PLAN.thursday.meals.training) MEAL_PLAN.thursday.meals.training = MEAL_PLAN.thursday.meals.rest;
-  if (!MEAL_PLAN.saturday.meals.training) MEAL_PLAN.saturday.meals.training = MEAL_PLAN.saturday.meals.rest;
-  if (!MEAL_PLAN.sunday.meals.training) MEAL_PLAN.sunday.meals.training = MEAL_PLAN.sunday.meals.rest;
-  if (!MEAL_PLAN.monday.meals.rest) MEAL_PLAN.monday.meals.rest = MEAL_PLAN.monday.meals.training;
-  if (!MEAL_PLAN.tuesday.meals.rest) MEAL_PLAN.tuesday.meals.rest = MEAL_PLAN.tuesday.meals.training;
-  if (!MEAL_PLAN.wednesday.meals.rest) MEAL_PLAN.wednesday.meals.rest = MEAL_PLAN.wednesday.meals.training;
-}
-
 // ------------------------------------
 // INITIALIZATION
 // ------------------------------------
 async function initApp() {
   initFirebase();
-  repairMissingDays();
   
   appState.settings = await getGlobalSettings();
   appState.weekPlan = await getWeekPlan();
@@ -132,14 +122,13 @@ function handleRoute() {
 }
 
 // ------------------------------------
-// RENDER TODAY (Apertura inline a fisarmonica)
+// RENDER TODAY 
 // ------------------------------------
 let todaySettingsVisible = false;
 window.toggleTodaySettings = function() {
   todaySettingsVisible = !todaySettingsVisible;
   renderToday();
 }
-
 window.toggleTodayAccordion = function(id) {
   document.getElementById(id).classList.toggle('hidden');
 }
@@ -205,12 +194,10 @@ async function renderToday() {
       <button class="pill-btn ${dayType === 'rest' ? 'active rest' : ''}">😴 Riposo</button>
     </div>
     <p class="text-muted" style="font-size:0.8rem; margin-top:-0.5rem; margin-bottom:1.5rem;">(Modificabile dalla vista Settimana)</p>
-    
     <div class="meal-timeline">
   `;
   
   const meals = plan.meals[dayType];
-  
   const now = new Date();
   let nextMealId = null;
   if(appState.settings && appState.settings.notificationTimes) {
@@ -218,12 +205,8 @@ async function renderToday() {
       const timeStr = appState.settings.notificationTimes[meal.slot];
       if (timeStr) {
         const [h, m] = timeStr.split(':').map(Number);
-        const d = new Date();
-        d.setHours(h, m, 0, 0);
-        if (d > now) {
-          nextMealId = meal.id;
-          break;
-        }
+        const d = new Date(); d.setHours(h, m, 0, 0);
+        if (d > now) { nextMealId = meal.id; break; }
       }
     }
   }
@@ -262,7 +245,6 @@ async function renderToday() {
 
     html += `<div style="display:flex; gap:1rem; flex-wrap:wrap; margin-top:0.5rem;">`;
     
-    // Ingredienti
     html += `<div style="flex:1; min-width:140px;">`;
     html += `<h5 style="color:var(--text-muted); margin-bottom:0.5rem;">Ingredienti:</h5>`;
     html += `<ul style="list-style:none; padding:0; font-size:0.85rem;">`;
@@ -273,7 +255,6 @@ async function renderToday() {
     });
     html += `</ul></div>`;
     
-    // Passaggi
     html += `<div style="flex:1.5; min-width:200px;">`;
     html += `<h5 style="color:var(--text-muted); margin-bottom:0.5rem;">Passaggi:</h5>`;
     html += `<ul style="list-style:none; padding:0; font-size:0.85rem;">`;
@@ -281,19 +262,16 @@ async function renderToday() {
       html += `<li class="step-item" style="padding:0.3rem 0; border-bottom:1px solid #eee;" onclick="this.classList.toggle('done')"><strong>${i+1}.</strong> ${step}</li>`;
     });
     html += `</ul></div>`;
-    html += `</div>`; // Fine flexbox split
+    html += `</div>`; 
     
     html += `<button class="btn btn-outline" style="width:100%; margin-top:1rem; font-size:0.8rem; padding:0.3rem;" onclick="openRecipeModal('${meal.id}', '${todayKey}', '${dayType}')">Modifica Ricetta Base</button>`;
-    
-    html += `</div></div>`; // Chiusura accordion e card
+    html += `</div></div>`;
   }
   
   html += `</div>`;
-  
   if (plan.batchCooking.evening) {
     html += `<div class="batch-banner"><strong>🍳 Stasera:</strong><br>${plan.batchCooking.evening}</div>`;
   }
-  
   container.innerHTML = html;
 }
 
@@ -333,21 +311,20 @@ window.toggleDayType = async function(dayKey, type) {
   appState.weekPlan[dayKey] = type;
   await saveWeekPlan(appState.weekPlan);
   scheduleDailyNotifications();
-  if (window.location.hash === '#today') renderToday();
-  if (window.location.hash === '#week') renderWeek();
-  if (window.location.hash === '#prep') renderPrep();
-  if (window.location.hash === '#shop') renderShop();
+  if (window.location.hash === '#today') setTimeout(renderToday, 50);
+  if (window.location.hash === '#week') setTimeout(renderWeek, 50);
+  if (window.location.hash === '#prep') setTimeout(renderPrep, 50);
+  if (window.location.hash === '#shop') setTimeout(renderShop, 50);
 };
 
 // ------------------------------------
-// RENDER PREP (Variante 1 - Migliorata)
+// RENDER PREP
 // ------------------------------------
 window.changePrepDay = function(val) {
   appState.deviceSettings.prepSelectedDay = val;
   saveLocalDeviceSettings(appState.deviceSettings);
   renderPrep();
 }
-
 window.togglePrepAccordion = function(id) {
   document.getElementById(id).classList.toggle('hidden');
 }
@@ -394,7 +371,6 @@ async function renderPrep() {
         <option value="sunday" ${selectedDay === 'sunday' ? 'selected' : ''}>Domenica</option>
       </select>
     </div>
-    
     <div class="settings-section" style="padding:0.75rem; margin-bottom:1rem;">
       <div style="display:flex; justify-content:space-between; align-items:center;">
         <span style="font-weight:600; font-size:0.9rem;">Porzioni:</span>
@@ -415,7 +391,6 @@ async function renderPrep() {
     </div>
   `;
 
-  // 1. BATCH COOKING
   html += `<h3 style="color:var(--accent); margin-top:1.5rem; margin-bottom:0.5rem;">1. Priorità (Batch Cooking)</h3>`;
   html += `<div class="settings-section" style="border-left: 4px solid var(--accent);">`;
   if (todayPlan.batchCooking.evening) {
@@ -426,11 +401,9 @@ async function renderPrep() {
   }
   html += `</div>`;
 
-  // 2. CENA DI STASERA
   html += `<h3 style="color:var(--primary); margin-top:1.5rem; margin-bottom:0.5rem;">2. La Cena (${todayPlan.dayName})</h3>`;
   html += `<div class="settings-section" style="border-left: 4px solid var(--primary);">`;
   html += `<h4 style="margin-bottom:1rem;">${dinner.emoji} ${dinner.name}</h4>`;
-  
   html += `<div style="display:flex; gap:1rem; flex-wrap:wrap;">`;
   html += `<div style="flex:1; min-width:140px;">`;
   html += `<h5 style="color:var(--text-muted); margin-bottom:0.5rem;">Ingredienti:</h5>`;
@@ -441,22 +414,18 @@ async function renderPrep() {
     html += `<li style="padding:0.2rem 0; border-bottom:1px solid #eee;"><strong>${finalQty} ${ing.unit==='q.b.'||ing.unit==='pz'?'':ing.unit}</strong> ${ing.name}</li>`;
   });
   html += `</ul></div>`;
-  
   html += `<div style="flex:1.5; min-width:200px;">`;
   html += `<h5 style="color:var(--text-muted); margin-bottom:0.5rem;">Passaggi:</h5>`;
   html += `<ul style="list-style:none; padding:0; font-size:0.85rem;">`;
   dinner.steps.forEach((step, i) => {
     html += `<li class="step-item" style="padding:0.3rem 0; border-bottom:1px solid #eee;" onclick="this.classList.toggle('done')"><strong>${i+1}.</strong> ${step}</li>`;
   });
-  html += `</ul></div>`;
-  html += `</div></div>`;
+  html += `</ul></div></div></div>`;
 
-  // 3. SCHISCETTE DI DOMANI
   html += `<h3 style="color:var(--rest); margin-top:1.5rem; margin-bottom:0.5rem;">3. Pasti per Domani (${nextPlan.dayName})</h3>`;
   html += `<p class="text-muted" style="font-size:0.85rem; margin-bottom:1rem;">Apri i menu per assembrare i box.</p>`;
   
   const tomorrowMeals = nextPlan.meals[nextType];
-  
   for (const tMealBase of tomorrowMeals) {
     const tMeal = await getCustomRecipe(tMealBase.id) || tMealBase;
     const slotLabel = MEAL_SLOTS.find(s=>s.id===tMeal.slot).label;
@@ -470,7 +439,6 @@ async function renderPrep() {
         </div>
         <div id="${accId}" class="hidden" style="margin-top:1rem; border-top:1px solid #eee; padding-top:0.5rem;">
     `;
-    
     if(tMeal.prepNote || tMeal.batchNote) {
       html += `
         <div style="background-color:#fffdf7; border-left:4px solid var(--accent); padding:0.5rem; margin-bottom:1rem; border-radius:4px;">
@@ -478,9 +446,7 @@ async function renderPrep() {
         </div>
       `;
     }
-
     html += `<div style="display:flex; gap:1rem; flex-wrap:wrap;">`;
-    
     html += `<div style="flex:1; min-width:140px;">`;
     html += `<h5 style="color:var(--text-muted); margin-bottom:0.5rem;">Ingredienti:</h5>`;
     html += `<ul style="list-style:none; padding:0; font-size:0.85rem;">`;
@@ -497,11 +463,8 @@ async function renderPrep() {
     tMeal.steps.forEach((step, i) => {
       html += `<li class="step-item" style="padding:0.3rem 0; border-bottom:1px solid #eee;" onclick="this.classList.toggle('done')"><strong>${i+1}.</strong> ${step}</li>`;
     });
-    html += `</ul></div>`;
-    
-    html += `</div></div></div>`;
+    html += `</ul></div></div></div></div>`;
   }
-
   container.innerHTML = html;
 }
 
@@ -515,17 +478,10 @@ window.toggleShopSettings = function() {
 
 window.toggleShopAllWeek = async function(selectAll) {
   const weekDays = ['monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday', 'sunday'];
-  
-  if (!appState.shoppingListCloud.selectedMeals) {
-    appState.shoppingListCloud.selectedMeals = { monday:[], tuesday:[], wednesday:[], thursday:[], friday:[], saturday:[], sunday:[] };
-  }
-  
+  if (!appState.shoppingListCloud.selectedMeals) appState.shoppingListCloud.selectedMeals = {};
   weekDays.forEach(day => {
-    if (selectAll) {
-      appState.shoppingListCloud.selectedMeals[day] = ['breakfast', 'snack1', 'lunch', 'snack2', 'dinner'];
-    } else {
-      appState.shoppingListCloud.selectedMeals[day] = [];
-    }
+    if (selectAll) appState.shoppingListCloud.selectedMeals[day] = ['breakfast', 'snack1', 'lunch', 'snack2', 'dinner'];
+    else appState.shoppingListCloud.selectedMeals[day] = [];
   });
   await saveShoppingListCloud(appState.shoppingListCloud);
   renderShop();
@@ -533,7 +489,6 @@ window.toggleShopAllWeek = async function(selectAll) {
 
 function renderShop() {
   const container = document.getElementById('view-shop');
-  
   let shopCloud = appState.shoppingListCloud;
   if (!shopCloud.selectedMeals) shopCloud.selectedMeals = { monday:[], tuesday:[], wednesday:[], thursday:[], friday:[], saturday:[], sunday:[] };
   if (!shopCloud.customDays) shopCloud.customDays = { monday:'training', tuesday:'training', wednesday:'training', thursday:'rest', friday:'training', saturday:'rest', sunday:'rest' };
@@ -563,15 +518,15 @@ function renderShop() {
         <div style="display:flex; justify-content:space-between; align-items:center;">
           <span style="font-weight:600;">Calcola per:</span>
           <select onchange="updateShopPersons(this.value)" style="padding:0.3rem;">
-            <option value="1" ${persons === 1 ? 'selected' : ''}>1 persona</option>
-            <option value="2" ${persons === 2 ? 'selected' : ''}>2 persone</option>
+            <option value="1" ${persons == 1 ? 'selected' : ''}>1 persona</option>
+            <option value="2" ${persons == 2 ? 'selected' : ''}>2 persone</option>
           </select>
         </div>
-        <div class="${persons === 1 ? '' : 'hidden'}" style="margin-top:0.5rem; font-size:0.9rem;">
+        <div class="${persons == 1 ? '' : 'hidden'}" style="margin-top:0.5rem; font-size:0.9rem;">
           <label style="margin-right:1rem;"><input type="radio" name="shopSingleType" value="m" onchange="updateShopSingleType('m')" ${singleType === 'm' ? 'checked' : ''}> Uomo (×1)</label><br>
           <label style="margin-right:1rem;"><input type="radio" name="shopSingleType" value="f" onchange="updateShopSingleType('f')" ${singleType === 'f' ? 'checked' : ''}> Donna (×0.75)</label>
         </div>
-        <div class="${persons === 2 ? '' : 'hidden'}" style="margin-top:0.5rem; font-size:0.9rem;">
+        <div class="${persons == 2 ? '' : 'hidden'}" style="margin-top:0.5rem; font-size:0.9rem;">
           <label style="margin-right:1rem;"><input type="radio" name="shopTwoType" value="mf" onchange="updateShopTwoType('mf')" ${twoType === 'mf' ? 'checked' : ''}> Uomo+Donna (×1.75)</label><br>
           <label style="margin-right:1rem;"><input type="radio" name="shopTwoType" value="fm" onchange="updateShopTwoType('fm')" ${twoType === 'fm' ? 'checked' : ''}> Donna+Uomo (×2.25)</label><br>
           <label><input type="radio" name="shopTwoType" value="same" onchange="updateShopTwoType('same')" ${twoType === 'same' ? 'checked' : ''}> Stesso sesso (×2)</label>
@@ -633,7 +588,7 @@ function renderShop() {
   }
 
   let multiplier = 1;
-  if (persons === 2) {
+  if (persons == 2) {
     if (twoType === 'mf') multiplier = 1.75;
     else if (twoType === 'fm') multiplier = 2.25;
     else multiplier = 2;
@@ -645,35 +600,94 @@ function renderShop() {
   let categoriesMap = {};
   let totalItemsCount = 0;
 
-  SHOPPING_CATEGORIES.forEach(item => {
-    let total = 0;
-    let includedInDays = [];
+  // Usa l'array di tutti i possibli ingredienti
+  const allIngredients = [
+    { id: "yogurt_greco", name: "Yogurt greco 0%", category: "🥚 Uova e Latticini", unit: "g" },
+    { id: "albumi", name: "Albumi", category: "🥚 Uova e Latticini", unit: "g" },
+    { id: "uova_intere", name: "Uova intere", category: "🥚 Uova e Latticini", unit: "g" },
+    { id: "fiocchi_latte", name: "Fiocchi di latte", category: "🥚 Uova e Latticini", unit: "g" },
+    { id: "manzo", name: "Manzo magro", category: "🥩 Carne", unit: "g" },
+    { id: "pollo", name: "Petto di pollo", category: "🥩 Carne", unit: "g" },
+    { id: "merluzzo", name: "Merluzzo", category: "🐟 Pesce", unit: "g" },
+    { id: "sgombro", name: "Sgombro al naturale", category: "🐟 Pesce", unit: "g" },
+    { id: "salmone", name: "Salmone fresco", category: "🐟 Pesce", unit: "g" },
+    { id: "polpo", name: "Polpo già cotto", category: "🐟 Pesce", unit: "g" },
+    { id: "nasello", name: "Nasello", category: "🐟 Pesce", unit: "g" },
+    { id: "gamberetti", name: "Gamberetti", category: "🐟 Pesce", unit: "g" },
+    { id: "avena", name: "Farina d'avena", category: "🍚 Carboidrati", unit: "g" },
+    { id: "riso", name: "Riso bianco", category: "🍚 Carboidrati", unit: "g" },
+    { id: "pasta", name: "Pasta bianca", category: "🍚 Carboidrati", unit: "g" },
+    { id: "patate", name: "Patate", category: "🍚 Carboidrati", unit: "g" },
+    { id: "gnocchi", name: "Gnocchi di patate", category: "🍚 Carboidrati", unit: "g" },
+    { id: "pane", name: "Pane bianco", category: "🍚 Carboidrati", unit: "g" },
+    { id: "farro", name: "Farro perlato", category: "🍚 Carboidrati", unit: "g" },
+    { id: "quinoa", name: "Quinoa", category: "🍚 Carboidrati", unit: "g" },
+    { id: "legumotti", name: "Legumotti Barilla", category: "🍚 Carboidrati", unit: "g" },
+    { id: "ceci", name: "Ceci in lattina", category: "🫘 Legumi", unit: "g" },
+    { id: "lenticchie", name: "Lenticchie in lattina", category: "🫘 Legumi", unit: "g" },
+    { id: "borlotti", name: "Fagioli borlotti", category: "🫘 Legumi", unit: "g" },
+    { id: "rucola", name: "Rucola fresca", category: "🥬 Verdura", unit: "g" },
+    { id: "insalata", name: "Insalata mista", category: "🥬 Verdura", unit: "g" },
+    { id: "pomodorini", name: "Pomodorini", category: "🥬 Verdura", unit: "g" },
+    { id: "melanzane", name: "Melanzane", category: "🥬 Verdura", unit: "g" },
+    { id: "peperoni", name: "Peperoni", category: "🥬 Verdura", unit: "g" },
+    { id: "zucchine", name: "Zucchine", category: "🥬 Verdura", unit: "g" },
+    { id: "cetriolo", name: "Cetriolo", category: "🥬 Verdura", unit: "g" },
+    { id: "melone", name: "Melone", category: "🍑 Frutta", unit: "g" },
+    { id: "avocado", name: "Avocado", category: "🍑 Frutta", unit: "pz" },
+    { id: "frutta_stagione", name: "Frutta fresca stagionale", category: "🍑 Frutta", unit: "g" },
+    { id: "whey", name: "Proteine Whey", category: "🥫 Dispensa", unit: "g" },
+    { id: "marmellata", name: "Marmellata", category: "🥫 Dispensa", unit: "g" },
+    { id: "miele", name: "Miele", category: "🥫 Dispensa", unit: "g" },
+    { id: "olio", name: "Olio EVO", category: "🥫 Dispensa", unit: "g" },
+    { id: "latte", name: "Latte parz. scremato", category: "🥫 Dispensa", unit: "g" },
+    { id: "cereali", name: "Cereali integrali / Fitness", category: "🍚 Carboidrati", unit: "g" },
+    { id: "crackers", name: "Crackers", category: "🍚 Carboidrati", unit: "g" }
+  ];
+
+  // Aggrega dinamico pescando direttamente dalle ricette!
+  let aggList = {};
+
+  weekDays.forEach(day => {
+    const type = (mode === 'custom') ? shopCloud.customDays[day] : getDayType(day);
+    const mealsForDay = shopCloud.selectedMeals[day] || [];
+    const planMeals = MEAL_PLAN[day].meals[type];
     
-    weekDays.forEach(day => {
-      const type = (mode === 'custom') ? shopCloud.customDays[day] : getDayType(day);
-      const mealsForDay = shopCloud.selectedMeals[day] || [];
-      mealsForDay.forEach(slot => {
-        if (item.days[day] && item.days[day][slot]) {
-          const qtyObj = item.days[day][slot];
-          const qty = qtyObj[type] !== undefined ? qtyObj[type] : qtyObj.training;
-          if (qty > 0) {
-            total += qty;
-            if (!includedInDays.includes(MEAL_PLAN[day].dayName.substring(0,3))) includedInDays.push(MEAL_PLAN[day].dayName.substring(0,3));
+    mealsForDay.forEach(slot => {
+      const meal = planMeals.find(m => m.slot === slot);
+      if(meal) {
+        meal.ingredients.forEach(ing => {
+          // Trova categoria da allIngredients o assegna default
+          let catBase = allIngredients.find(a => ing.name.includes(a.name) || a.name.includes(ing.name));
+          let catName = catBase ? catBase.category : "🌿 Spezie e Aromi";
+          let u = ing.unit;
+          let q = ing.quantity;
+          
+          let hashId = ing.name.toLowerCase().replace(/[^a-z0-9]/g, '');
+          
+          if (!aggList[hashId]) {
+            aggList[hashId] = { id: hashId, name: ing.name, category: catName, unit: u, qty: 0, days: [] };
           }
-        }
-      });
+          if (typeof q === 'number') aggList[hashId].qty += q;
+          if (!aggList[hashId].days.includes(MEAL_PLAN[day].dayName.substring(0,3))) {
+            aggList[hashId].days.push(MEAL_PLAN[day].dayName.substring(0,3));
+          }
+        });
+      }
     });
-    
-    if (total > 0) {
-      let finalQty = item.unit === 'pz' || item.unit === 'q.b.' ? 1 : total * multiplier;
+  });
+
+  Object.values(aggList).forEach(item => {
+    if (item.qty > 0 || item.unit === 'q.b.' || item.unit === 'pz') {
+      let finalQty = item.unit === 'pz' || item.unit === 'q.b.' ? 1 : item.qty * multiplier;
       finalQty = formatQty(finalQty);
       
       let splitText = "";
-      if (persons === 2 && item.unit !== 'pz' && item.unit !== 'q.b.') {
+      if (persons == 2 && item.unit !== 'pz' && item.unit !== 'q.b.') {
           let user1, user2;
-          if (twoType === 'mf') { user1 = formatQty(total * 1); user2 = formatQty(total * 0.75); splitText = `(Uomo: ${user1}${item.unit}, Donna: ${user2}${item.unit})`; }
-          else if (twoType === 'fm') { user1 = formatQty(total * 1); user2 = formatQty(total * 1.25); splitText = `(Donna: ${user1}${item.unit}, Uomo: ${user2}${item.unit})`; }
-          else { user1 = formatQty(total * 1); splitText = `(Ciascuno: ${user1}${item.unit})`; }
+          if (twoType === 'mf') { user1 = formatQty(item.qty * 1); user2 = formatQty(item.qty * 0.75); splitText = `(Uomo: ${user1}${item.unit}, Donna: ${user2}${item.unit})`; }
+          else if (twoType === 'fm') { user1 = formatQty(item.qty * 1); user2 = formatQty(item.qty * 1.25); splitText = `(Donna: ${user1}${item.unit}, Uomo: ${user2}${item.unit})`; }
+          else { user1 = formatQty(item.qty * 1); splitText = `(Ciascuno: ${user1}${item.unit})`; }
       }
 
       if (shopCloud.customQtys && shopCloud.customQtys[item.id] !== undefined) finalQty = shopCloud.customQtys[item.id];
@@ -681,14 +695,14 @@ function renderShop() {
       if (!categoriesMap[item.category]) categoriesMap[item.category] = [];
       categoriesMap[item.category].push({
         id: item.id, name: item.name, qty: finalQty, unit: item.unit,
-        days: includedInDays.join(', '), checked: (shopCloud.checkedItems || []).includes(item.id),
+        days: item.days.join(', '), checked: (shopCloud.checkedItems || []).includes(item.id),
         splitText: splitText
       });
       totalItemsCount++;
     }
   });
 
-  const orderedCategories = ["🥩 Carne", "🐟 Pesce e Frutti di Mare", "🥚 Uova e Latticini", "🫘 Legumi", "🍚 Carboidrati / Cereali", "🥬 Verdura Fresca", "🍑 Frutta Fresca", "🥫 Dispensa / Condimenti", "🌿 Spezie e Aromi"];
+  const orderedCategories = ["🥩 Carne", "🐟 Pesce", "🥚 Uova e Latticini", "🫘 Legumi", "🍚 Carboidrati", "🥬 Verdura", "🍑 Frutta", "🥫 Dispensa", "🌿 Spezie e Aromi"];
   window.currentCategoriesMap = categoriesMap; 
   
   orderedCategories.forEach(cat => {
@@ -730,7 +744,7 @@ function renderShop() {
 
 window.shareShopWhatsApp = function() {
   let text = "🛒 *Lista della Spesa*\n\n";
-  const orderedCategories = ["🥩 Carne", "🐟 Pesce e Frutti di Mare", "🥚 Uova e Latticini", "🫘 Legumi", "🍚 Carboidrati / Cereali", "🥬 Verdura Fresca", "🍑 Frutta Fresca", "🥫 Dispensa / Condimenti", "🌿 Spezie e Aromi"];
+  const orderedCategories = ["🥩 Carne", "🐟 Pesce", "🥚 Uova e Latticini", "🫘 Legumi", "🍚 Carboidrati", "🥬 Verdura", "🍑 Frutta", "🥫 Dispensa", "🌿 Spezie e Aromi"];
   
   orderedCategories.forEach(cat => {
     if (window.currentCategoriesMap[cat] && window.currentCategoriesMap[cat].length > 0) {
