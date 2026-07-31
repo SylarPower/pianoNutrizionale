@@ -37,7 +37,7 @@ const MEAL_PLAN = {
             "Salta i ceci 3-4 min con l'aglio, poi unisci il riso.",
             "Spegni il fuoco e aggiungi la rucola fresca: il calore residuo la farà appassire senza distruggere i nutrienti."
           ],
-          batchNote: "La rucola sostituisce gli spinacini per stagionalità. Scola lenticchie per giovedì.", 
+          batchNote: null, 
           supplement: null
         },
         {
@@ -92,7 +92,7 @@ const MEAL_PLAN = {
             "Aggiungi l'olio e i pomodorini finché scoppiano, poi il merluzzo a pezzi per 5 min.",
             "Cuoci gli gnocchi, scolali e saltali nel sugo con abbondante basilico fresco strappato a mano."
           ],
-          batchNote: "Pasto espresso. Non avanzare gnocchi.", 
+          batchNote: null, 
           supplement: null
         },
         {
@@ -221,7 +221,7 @@ const MEAL_PLAN = {
             "Servi i fiocchi di latte freschi con erba cipollina e pepe.",
             "Accompagna con l'insalata condita con l'olio rimasto e limone."
           ],
-          batchNote: "Cena pronta in 5 minuti grazie al batch cooking di lunedì.", 
+          batchNote: null, 
           supplement: null
         }
       ]
@@ -255,7 +255,7 @@ const MEAL_PLAN = {
             "Aggiungi capperi, prezzemolo fresco e origano per dare gusto senza eccedere col sale.",
             "Condisci con olio e limone. Ideale da mangiare tiepido."
           ],
-          batchNote: "Usa sgombro di qualità per un apporto ottimale di Omega-3 antinfiammatori.", 
+          batchNote: null, 
           supplement: null
         },
         {
@@ -310,7 +310,7 @@ const MEAL_PLAN = {
             "In una ciotola unisci quinoa cotta, fagioli, cetrioli.",
             "Condisci a freddo con olio, limone e menta fresca per un effetto drenante."
           ],
-          batchNote: "Il cetriolo sostituisce il finocchio per maggiore freschezza e stagionalità.", 
+          batchNote: null, 
           supplement: null
         },
         {
@@ -330,7 +330,7 @@ const MEAL_PLAN = {
             "Rompi le uova direttamente nel sugo, copri e cuoci finché il bianco è rappreso ma il tuorlo resta morbido.",
             "Accompagna con zucchine saltate velocemente in padella e il pane per la 'scarpetta'."
           ],
-          batchNote: "Pasto conviviale e semplice.", 
+          batchNote: null, 
           supplement: null
         }
       ]
