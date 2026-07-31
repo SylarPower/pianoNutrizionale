@@ -1010,7 +1010,15 @@ window.toggleDarkMode = function(isDark) {
 // RECIPE MODAL
 // ------------------------------------
 function setupModal() {
+  const modalEl = document.getElementById('recipe-modal');
+  
+  // Chiudi cliccando la "X"
   document.getElementById('modal-close').addEventListener('click', closeRecipeModal);
+  
+  // Chiudi cliccando fuori dalla finestra (sul background scuro)
+  modalEl.addEventListener('click', (e) => {
+    if (e.target === modalEl) closeRecipeModal();
+  });
   
   document.querySelectorAll('.tab-btn').forEach(btn => {
     btn.addEventListener('click', (e) => {
@@ -1049,28 +1057,13 @@ function renderModalContent() {
   document.getElementById('modal-title').innerHTML = `${meal.emoji || ''} ${meal.name}`;
   document.getElementById('modal-time').innerHTML = `${MEAL_SLOTS.find(s=>s.id===meal.slot)?.label} • ${timeStr || ''} • Prep: ${meal.prepTime || '-'}`;
   
-  const selectorDiv = document.getElementById('modal-persons-selector');
   const s = appState.deviceSettings;
   const singleType = s.singlePersonType || 'm';
-  
-  selectorDiv.innerHTML = `
-    <div style="display:flex; justify-content:space-between; align-items:center;">
-      <span style="font-weight:600; font-size:0.9rem;">Calcola per:</span>
-      <select style="padding:0.2rem; font-size:0.9rem; border-radius:4px; border:1px solid #ccc;" onchange="updateModalPersons(parseInt(this.value))">
-        <option value="1" ${s.persons === 1 ? 'selected' : ''}>1 persona</option>
-        <option value="2" ${s.persons === 2 ? 'selected' : ''}>2 persone</option>
-      </select>
-    </div>
-    <div class="${s.persons === 1 ? '' : 'hidden'}" style="margin-top:0.5rem; font-size:0.85rem;">
-      <label style="display:block; margin-bottom:0.2rem;"><input type="radio" name="modalSingleType" value="m" onchange="updateModalSingleType('m')" ${singleType === 'm' ? 'checked' : ''}> Uomo (×1)</label>
-      <label style="display:block; margin-bottom:0.2rem;"><input type="radio" name="modalSingleType" value="f" onchange="updateModalSingleType('f')" ${singleType === 'f' ? 'checked' : ''}> Donna (×0.75)</label>
-    </div>
-    <div class="${s.persons === 2 ? '' : 'hidden'}" style="margin-top:0.5rem; font-size:0.85rem;">
-      <label style="display:block; margin-bottom:0.2rem;"><input type="radio" name="modalTwoType" value="mf" onchange="updateModalTwoType('mf')" ${s.twoPersonsType === 'mf' ? 'checked' : ''}> Uomo+Donna (×1.75)</label>
-      <label style="display:block; margin-bottom:0.2rem;"><input type="radio" name="modalTwoType" value="fm" onchange="updateModalTwoType('fm')" ${s.twoPersonsType === 'fm' ? 'checked' : ''}> Donna+Uomo (×2.25)</label>
-      <label style="display:block;"><input type="radio" name="modalTwoType" value="same" onchange="updateModalTwoType('same')" ${s.twoPersonsType === 'same' ? 'checked' : ''}> Stesso sesso (×2)</label>
-    </div>
-  `;
+
+  // Rimosso l'HTML del selectorDiv (è stato spostato nella vista Oggi)
+  const selectorDiv = document.getElementById('modal-persons-selector');
+  selectorDiv.innerHTML = ``;
+  selectorDiv.classList.add('hidden');
 
   const ingUl = document.getElementById('modal-ingredients-list');
   ingUl.innerHTML = '';
