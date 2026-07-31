@@ -132,7 +132,7 @@ function handleRoute() {
 }
 
 // ------------------------------------
-// RENDER TODAY
+// RENDER TODAY (Apertura inline a fisarmonica)
 // ------------------------------------
 let todaySettingsVisible = false;
 window.toggleTodaySettings = function() {
@@ -257,6 +257,7 @@ async function renderToday() {
 
     html += `<div style="display:flex; gap:1rem; flex-wrap:wrap; margin-top:0.5rem;">`;
     
+    // Ingredienti
     html += `<div style="flex:1; min-width:140px;">`;
     html += `<h5 style="color:var(--text-muted); margin-bottom:0.5rem;">Ingredienti:</h5>`;
     html += `<ul style="list-style:none; padding:0; font-size:0.85rem;">`;
@@ -267,6 +268,7 @@ async function renderToday() {
     });
     html += `</ul></div>`;
     
+    // Passaggi
     html += `<div style="flex:1.5; min-width:200px;">`;
     html += `<h5 style="color:var(--text-muted); margin-bottom:0.5rem;">Passaggi:</h5>`;
     html += `<ul style="list-style:none; padding:0; font-size:0.85rem;">`;
@@ -790,9 +792,11 @@ window.resetShopList = async function() {
 }
 
 // ------------------------------------
-// RENDER SETTINGS & GUIDE
+// RENDER SETTINGS E GUIDA
 // ------------------------------------
-function renderGuide() {}
+function renderGuide() {
+  // Funzione obsoleta poichè unita in renderSettings()
+}
 
 function renderSettings() {
   const container = document.getElementById('view-settings');
@@ -997,7 +1001,7 @@ function renderSettings() {
       </h3>
       <div class="hidden" style="line-height:1.6; padding-top:0.5rem;">
         <ul style="padding-left:1.2rem; margin-top:0.5rem; margin-bottom:1rem;">
-          <li style="margin-bottom:0.5rem;">Punta a un consumo di অন্তত 2-2,5 litri di acqua al giorno.</li>
+          <li style="margin-bottom:0.5rem;">Punta a un consumo di almeno 2-2,5 litri di acqua al giorno.</li>
           <li style="margin-bottom:0.5rem;">Usa solo sale iodato. Sfrutta liberamente spezie, limone, aceto.</li>
           <li style="margin-bottom:0.5rem;">Avrai a disposizione un pasto “sociale” a settimana.</li>
           <li style="margin-bottom:0.5rem;">Puoi combinare due alternative di proteine dimezzandone le quantità.</li>
