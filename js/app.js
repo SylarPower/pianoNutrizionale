@@ -248,7 +248,7 @@ window.toggleDayType = async function(dayKey, type) {
 
 
 // ------------------------------------
-// RENDER PREP (Variante 1: Flusso di Lavoro)
+// RENDER PREP (Variante 3: A Scompartimenti)
 // ------------------------------------
 window.changePrepDay = function(val) {
   appState.deviceSettings.prepSelectedDay = val;
@@ -256,8 +256,11 @@ window.changePrepDay = function(val) {
   renderPrep();
 }
 
-window.togglePrepAccordion = function(id) {
-  document.getElementById(id).classList.toggle('hidden');
+window.togglePrepTab = function(tabId) {
+  document.querySelectorAll('.prep-tab-btn').forEach(btn => btn.classList.remove('active'));
+  document.querySelectorAll('.prep-tab-content').forEach(content => content.classList.add('hidden'));
+  document.getElementById('btn-' + tabId).classList.add('active');
+  document.getElementById(tabId).classList.remove('hidden');
 }
 
 async function renderPrep() {
@@ -290,7 +293,7 @@ async function renderPrep() {
   const dinner = await getCustomRecipe(dinnerMealBase.id) || dinnerMealBase;
 
   let html = `
-    <div class="flex-between" style="margin-bottom:1rem;">
+    <div class="flex-between" style="margin-bottom:0.5rem;">
       <h2 style="margin:0;">Chef Mode 👨‍🍳</h2>
       <select onchange="changePrepDay(this.value)" style="padding:0.3rem; border-radius:6px; border:1px solid #ddd;">
         <option value="monday" ${selectedDay === 'monday' ? 'selected' : ''}>Lunedì</option>
@@ -302,78 +305,70 @@ async function renderPrep() {
         <option value="sunday" ${selectedDay === 'sunday' ? 'selected' : ''}>Domenica</option>
       </select>
     </div>
+    
+    <div class="tabs" style="margin-top:1rem; margin-bottom:1rem;">
+      <button id="btn-tab-prep-oggi" class="tab-btn prep-tab-btn active" onclick="togglePrepTab('tab-prep-oggi')">🍽️ Cena Stasera</button>
+      <button id="btn-tab-prep-domani" class="tab-btn prep-tab-btn" onclick="togglePrepTab('tab-prep-domani')">🍱 Box Domani</button>
+    </div>
   `;
 
-  // 1. BATCH COOKING
-  html += `<h3 style="color:var(--accent); margin-top:1.5rem; margin-bottom:0.5rem;">1. Priorità (Batch Cooking)</h3>`;
-  html += `<div class="settings-section" style="border-left: 4px solid var(--accent);">`;
-  if (todayPlan.batchCooking.evening) {
-    html += `<p style="font-weight:bold; font-size:1.05rem;">${todayPlan.batchCooking.evening}</p>`;
-    html += `<p class="text-muted" style="font-size:0.8rem; margin-top:0.5rem;">💡 Le porzioni citate qui potrebbero essere per più giorni. Leggi bene per non sbagliare.</p>`;
-  } else {
-    html += `<p class="text-muted">Nessuna preparazione anticipata richiesta stasera.</p>`;
-  }
-  html += `</div>`;
-
-  // 2. CENA DI STASERA
-  html += `<h3 style="color:var(--primary); margin-top:1.5rem; margin-bottom:0.5rem;">2. La Cena (${todayPlan.dayName})</h3>`;
-  html += `<div class="settings-section" style="border-left: 4px solid var(--primary);">`;
-  html += `<h4 style="margin-bottom:1rem;">${dinner.emoji} ${dinner.name}</h4>`;
+  // TAB 1: CENA OGGI
+  html += `<div id="tab-prep-oggi" class="prep-tab-content">`;
   
-  html += `<div style="display:flex; gap:1rem;">`;
-  html += `<div style="flex:1;">`;
-  html += `<h5 style="color:var(--text-muted); margin-bottom:0.5rem;">Ingredienti:</h5>`;
-  html += `<ul style="list-style:none; padding:0; font-size:0.85rem;">`;
+  if (todayPlan.batchCooking.evening) {
+    html += `<div class="settings-section" style="border-left:4px solid var(--accent); margin-bottom:1rem; background-color:#fffdf7;">`;
+    html += `<p style="font-weight:bold; font-size:0.95rem; color:var(--accent);">⚠️ BATCH COOKING RICHIESTO</p>`;
+    html += `<p style="font-size:0.9rem;">${todayPlan.batchCooking.evening}</p>`;
+    html += `</div>`;
+  }
+
+  html += `<div class="settings-section">`;
+  html += `<h3 style="margin-bottom:1rem;">${dinner.emoji} ${dinner.name}</h3>`;
+  
+  html += `<h5 style="color:var(--text-muted); margin-bottom:0.5rem;">Ingredienti della cena:</h5>`;
+  html += `<ul style="list-style:none; padding:0; font-size:0.85rem; display:grid; grid-template-columns: 1fr 1fr; gap:0.5rem; margin-bottom:1.5rem;">`;
   dinner.ingredients.forEach(ing => {
     let finalQty = ing.quantity;
     if (typeof finalQty === 'number' && ing.unit !== 'pz' && ing.unit !== 'q.b.') finalQty = formatQty(finalQty * multiplier);
-    html += `<li style="padding:0.2rem 0; border-bottom:1px solid #eee;"><strong>${finalQty} ${ing.unit==='q.b.'||ing.unit==='pz'?'':ing.unit}</strong> ${ing.name}</li>`;
+    html += `<li style="background:#f9f9f9; padding:0.4rem; border-radius:6px;"><strong>${finalQty} ${ing.unit==='q.b.'||ing.unit==='pz'?'':ing.unit}</strong><br>${ing.name}</li>`;
   });
-  html += `</ul></div>`;
+  html += `</ul>`;
   
-  html += `<div style="flex:1.5;">`;
-  html += `<h5 style="color:var(--text-muted); margin-bottom:0.5rem;">Passaggi:</h5>`;
-  html += `<ul style="list-style:none; padding:0; font-size:0.85rem;">`;
+  html += `<h5 style="color:var(--text-muted); margin-bottom:0.5rem;">Cosa fare:</h5>`;
+  html += `<ul style="list-style:none; padding:0; font-size:0.9rem;">`;
   dinner.steps.forEach((step, i) => {
-    html += `<li class="step-item" style="padding:0.3rem 0; border-bottom:1px solid #eee;" onclick="this.classList.toggle('done')"><strong>${i+1}.</strong> ${step}</li>`;
+    html += `<li class="step-item" style="padding:0.4rem 0; border-bottom:1px solid #eee;" onclick="this.classList.toggle('done')"><strong>${i+1}.</strong> ${step}</li>`;
   });
-  html += `</ul></div>`;
-  html += `</div></div>`;
+  html += `</ul></div></div>`;
 
-  // 3. SCHISCETTE DI DOMANI (Accordion)
-  html += `<h3 style="color:var(--rest); margin-top:1.5rem; margin-bottom:0.5rem;">3. Schiscette per Domani (${nextPlan.dayName})</h3>`;
-  html += `<p class="text-muted" style="font-size:0.85rem; margin-bottom:1rem;">Apri i menu per assembrare i box.</p>`;
-  
+  // TAB 2: BOX DOMANI
+  html += `<div id="tab-prep-domani" class="prep-tab-content hidden">`;
   const tomorrowMeals = nextPlan.meals[nextType].filter(m => m.slot !== 'dinner');
   
   for (const tMealBase of tomorrowMeals) {
     const tMeal = await getCustomRecipe(tMealBase.id) || tMealBase;
     const slotLabel = MEAL_SLOTS.find(s=>s.id===tMeal.slot).label;
-    const accId = `prep-acc-${tMeal.id}`;
     
-    html += `
-      <div class="settings-section" style="margin-bottom:0.5rem; padding:0.5rem 1rem;">
-        <div class="flex-between" style="cursor:pointer;" onclick="togglePrepAccordion('${accId}')">
-          <span style="font-weight:600;">${slotLabel}</span>
-          <span style="color:var(--text-muted);">${tMeal.emoji} ${tMeal.name} ▼</span>
-        </div>
-        <div id="${accId}" class="hidden" style="margin-top:1rem; border-top:1px solid #eee; padding-top:0.5rem;">
-          <ul style="list-style:none; padding:0; font-size:0.85rem;">
-    `;
+    html += `<div class="settings-section" style="margin-bottom:1rem;">`;
+    html += `<div class="flex-between" style="border-bottom:1px solid #eee; padding-bottom:0.5rem; margin-bottom:0.5rem;">`;
+    html += `<span style="font-weight:bold; color:var(--primary);">${slotLabel}</span>`;
+    html += `<span>${tMeal.emoji} ${tMeal.name}</span>`;
+    html += `</div>`;
+    
+    html += `<ul style="list-style:none; padding:0; font-size:0.85rem;">`;
     tMeal.ingredients.forEach(ing => {
       let fQty = ing.quantity;
       if (typeof fQty === 'number' && ing.unit !== 'pz' && ing.unit !== 'q.b.') fQty = formatQty(fQty * multiplier);
-      html += `<li class="step-item" style="padding:0.3rem 0; border-bottom:1px solid #f9f9f9;" onclick="this.classList.toggle('done')"><strong>${fQty} ${ing.unit==='q.b.'||ing.unit==='pz'?'':ing.unit}</strong> ${ing.name}</li>`;
+      html += `<li class="step-item" style="padding:0.25rem 0;" onclick="this.classList.toggle('done')"><strong>${fQty} ${ing.unit==='q.b.'||ing.unit==='pz'?'':ing.unit}</strong> - ${ing.name}</li>`;
     });
     html += `</ul>`;
     if(tMeal.prepNote) html += `<p style="font-size:0.8rem; color:var(--accent); margin-top:0.5rem;">💡 ${tMeal.prepNote}</p>`;
-    html += `<button class="btn btn-outline" style="width:100%; margin-top:0.5rem; font-size:0.8rem; padding:0.3rem;" onclick="openRecipeModal('${tMeal.id}', '${nextDayKey}', '${nextType}')">Apri ricetta completa</button>`;
-    html += `</div></div>`;
+    html += `</div>`;
   }
+  html += `</div>`;
 
   container.innerHTML = html;
 }
-
 // ------------------------------------
 // RENDER SHOP
 // ------------------------------------
