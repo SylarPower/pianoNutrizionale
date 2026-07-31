@@ -138,6 +138,12 @@ function handleRoute() {
 // ------------------------------------
 // RENDER TODAY (Apertura inline a fisarmonica)
 // ------------------------------------
+let todaySettingsVisible = false;
+window.toggleTodaySettings = function() {
+  todaySettingsVisible = !todaySettingsVisible;
+  renderToday();
+}
+
 window.toggleTodayAccordion = function(id) {
   document.getElementById(id).classList.toggle('hidden');
 }
@@ -165,9 +171,39 @@ async function renderToday() {
   }
   
   let html = `
-    <h2>Giornata di oggi</h2>
+    <div class="flex-between" style="margin-bottom:0.5rem;">
+      <h2 style="margin:0;">Giornata di oggi</h2>
+      <button class="btn btn-outline" style="padding:0.2rem 0.5rem; font-size:0.8rem;" onclick="toggleTodaySettings()">
+        ⚙️ Porzioni
+      </button>
+    </div>
     <p class="text-muted" style="text-transform: capitalize; margin-bottom:0.5rem;">${dateStr}</p>
-    
+  `;
+
+  if (todaySettingsVisible) {
+    html += `
+      <div class="settings-section" style="padding:1rem; margin-bottom:1rem;">
+        <div style="display:flex; justify-content:space-between; align-items:center;">
+          <span style="font-weight:600;">Calcola porzioni per:</span>
+          <select onchange="updateShopPersons(parseInt(this.value)); renderToday();" style="padding:0.3rem;">
+            <option value="1" ${s.persons === 1 ? 'selected' : ''}>1 persona</option>
+            <option value="2" ${s.persons === 2 ? 'selected' : ''}>2 persone</option>
+          </select>
+        </div>
+        <div class="${s.persons === 1 ? '' : 'hidden'}" style="margin-top:0.5rem; font-size:0.9rem;">
+          <label style="margin-right:1rem;"><input type="radio" name="todaySingleType" value="m" onchange="updateShopSingleType('m'); renderToday();" ${singleType === 'm' ? 'checked' : ''}> Uomo (×1)</label>
+          <label style="margin-right:1rem;"><input type="radio" name="todaySingleType" value="f" onchange="updateShopSingleType('f'); renderToday();" ${singleType === 'f' ? 'checked' : ''}> Donna (×0.75)</label>
+        </div>
+        <div class="${s.persons === 2 ? '' : 'hidden'}" style="margin-top:0.5rem; font-size:0.9rem;">
+          <label style="margin-right:1rem;"><input type="radio" name="todayTwoType" value="mf" onchange="updateShopTwoType('mf'); renderToday();" ${s.twoPersonsType === 'mf' ? 'checked' : ''}> Uomo+Donna (×1.75)</label><br>
+          <label style="margin-right:1rem;"><input type="radio" name="todayTwoType" value="fm" onchange="updateShopTwoType('fm'); renderToday();" ${s.twoPersonsType === 'fm' ? 'checked' : ''}> Donna+Uomo (×2.25)</label><br>
+          <label><input type="radio" name="todayTwoType" value="same" onchange="updateShopTwoType('same'); renderToday();" ${s.twoPersonsType === 'same' ? 'checked' : ''}> Stesso sesso (×2)</label>
+        </div>
+      </div>
+    `;
+  }
+  
+  html += `
     <div class="pill-toggle" style="opacity:0.9; pointer-events:none;">
       <button class="pill-btn ${dayType === 'training' ? 'active training' : ''}">🏋️ Allenamento</button>
       <button class="pill-btn ${dayType === 'rest' ? 'active rest' : ''}">😴 Riposo</button>
@@ -179,7 +215,6 @@ async function renderToday() {
   
   const meals = plan.meals[dayType];
   
-  // Highlight logic: find next upcoming meal
   const now = new Date();
   let nextMealId = null;
   if(appState.settings && appState.settings.notificationTimes) {
@@ -252,7 +287,7 @@ async function renderToday() {
     html += `</ul></div>`;
     html += `</div>`; // Fine flexbox split
     
-    html += `<button class="btn btn-outline" style="width:100%; margin-top:1rem; font-size:0.8rem; padding:0.3rem;" onclick="openRecipeModal('${meal.id}', '${todayKey}', '${dayType}')">Modifica Ricetta / Persone</button>`;
+    html += `<button class="btn btn-outline" style="width:100%; margin-top:1rem; font-size:0.8rem; padding:0.3rem;" onclick="openRecipeModal('${meal.id}', '${todayKey}', '${dayType}')">Modifica Ricetta Base</button>`;
     
     html += `</div></div>`; // Chiusura accordion e card
   }
