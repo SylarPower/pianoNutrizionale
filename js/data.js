@@ -139,7 +139,7 @@ const MEAL_PLAN = {
           ingredients: [
             { name: "Pasta bianca", quantity: 90, unit: "g" }, { name: "Pollo già cotto", quantity: 200, unit: "g" },
             { name: "Zucchine", quantity: 200, unit: "g" }, { name: "Olio EVO", quantity: 10, unit: "g" },
-            { name: "Limone (scorza e succo)", quantity: 1, unit: "pz" }
+            { name: "Limone", quantity: 1, unit: "pz" }
           ],
           steps: [
             "Taglia a strisce il pollo avanzato da ieri.",
@@ -151,7 +151,7 @@ const MEAL_PLAN = {
         },
         {
           id: "wednesday_snack2", slot: "snack2", name: "Merenda", emoji: "🍯", prepTime: "1 min",
-          ingredients: [{ name: "Yogurt greco 0%", quantity: 150, unit: "g" }, { name: "Miele / Sciroppo Acero", quantity: 15, unit: "g" }],
+          ingredients: [{ name: "Yogurt greco 0%", quantity: 150, unit: "g" }, { name: "Miele", quantity: 15, unit: "g" }],
           steps: ["Mescola yogurt e miele."], batchNote: null, supplement: null
         },
         {
@@ -192,7 +192,7 @@ const MEAL_PLAN = {
         {
           id: "thursday_lunch", slot: "lunch", name: "Insalata Drenante Farro e Lenticchie", emoji: "🥗", prepTime: "35 min",
           ingredients: [
-            { name: "Farro perlato", quantity: 70, unit: "g" }, { name: "Lenticchie", quantity: 240, unit: "g" },
+            { name: "Farro perlato", quantity: 70, unit: "g" }, { name: "Lenticchie in lattina", quantity: 240, unit: "g" },
             { name: "Avocado", quantity: 0.5, unit: "pz" }, { name: "Olio EVO", quantity: 10, unit: "g" },
             { name: "Zenzero fresco", quantity: 1, unit: "q.b." }, { name: "Limone", quantity: 0.5, unit: "pz" }, { name: "Pomodorini", quantity: 150, unit: "g" }
           ],
@@ -246,9 +246,9 @@ const MEAL_PLAN = {
         {
           id: "friday_lunch", slot: "lunch", name: "Riso Sgombro e Pomodorini", emoji: "🐟", prepTime: "15 min",
           ingredients: [
-            { name: "Riso bianco", quantity: 90, unit: "g" }, { name: "Sgombro naturale", quantity: 100, unit: "g" },
+            { name: "Riso bianco", quantity: 90, unit: "g" }, { name: "Sgombro al naturale", quantity: 100, unit: "g" },
             { name: "Pomodorini", quantity: 200, unit: "g" }, { name: "Olio EVO", quantity: 10, unit: "g" },
-            { name: "Capperi", quantity: 1, unit: "q.b." }, { name: "Prezzemolo", quantity: 1, unit: "q.b." }
+            { name: "Capperi", quantity: 1, unit: "q.b." }, { name: "Prezzemolo fresco", quantity: 1, unit: "q.b." }
           ],
           steps: [
             "Unisci al riso cotto lo sgombro sbriciolato e i pomodorini tagliati.",
@@ -289,20 +289,20 @@ const MEAL_PLAN = {
       rest: [
         {
           id: "saturday_breakfast", slot: "breakfast", name: "Pancake Proteici", emoji: "🥞", prepTime: "10 min",
-          ingredients: [{ name: "Albumi", quantity: 120, unit: "g" }, { name: "Yogurt greco 0%", quantity: 40, unit: "g" }, { name: "Farina d'avena", quantity: 40, unit: "g" }, { name: "Sciroppo d'acero", quantity: 20, unit: "g" }],
-          steps: ["Mescola ingredienti e cuoci in padella.", "Guarnisci con sciroppo d'acero."], batchNote: null, supplement: "7g creatina dopo colazione"
+          ingredients: [{ name: "Albumi", quantity: 120, unit: "g" }, { name: "Yogurt greco 0%", quantity: 40, unit: "g" }, { name: "Farina d'avena", quantity: 40, unit: "g" }, { name: "Miele", quantity: 20, unit: "g" }],
+          steps: ["Mescola ingredienti e cuoci in padella.", "Guarnisci con sciroppo d'acero o miele."], batchNote: null, supplement: "7g creatina dopo colazione"
         },
         {
           id: "saturday_snack1", slot: "snack1", name: "Spuntino Mattina", emoji: "🍎", prepTime: "2 min",
           ingredients: [{ name: "Frutta fresca stagionale", quantity: 250, unit: "g" }, { name: "Proteine Whey", quantity: 30, unit: "g" }],
-          steps: ["Consuma frutta e whey."], batchNote: null, supplement: null
+          steps: ["Consuma frutta e bevi whey in acqua."], batchNote: null, supplement: null
         },
         {
           id: "saturday_lunch", slot: "lunch", name: "Quinoa, Fagioli e Cetriolo", emoji: "🥗", prepTime: "20 min",
           ingredients: [
             { name: "Quinoa", quantity: 60, unit: "g" }, { name: "Fagioli borlotti", quantity: 240, unit: "g" },
             { name: "Cetriolo", quantity: 200, unit: "g" }, { name: "Olio EVO", quantity: 10, unit: "g" },
-            { name: "Menta fresca", quantity: 1, unit: "q.b." }, { name: "Limone", quantity: 0.5, unit: "pz" }
+            { name: "Limone", quantity: 0.5, unit: "pz" }
           ],
           steps: [
             "Sciacqua bene la quinoa prima di cuocerla.",
@@ -323,7 +323,7 @@ const MEAL_PLAN = {
           ingredients: [
             { name: "Uova intere", quantity: 180, unit: "g" }, { name: "Pomodori pelati", quantity: 200, unit: "g" },
             { name: "Zucchine", quantity: 200, unit: "g" }, { name: "Pane bianco", quantity: 60, unit: "g" },
-            { name: "Olio EVO", quantity: 10, unit: "g" }, { name: "Basilico", quantity: 1, unit: "q.b." }
+            { name: "Olio EVO", quantity: 10, unit: "g" }
           ],
           steps: [
             "Cuoci i pelati in padella con aglio e basilico per 10 min.",
@@ -349,14 +349,14 @@ const MEAL_PLAN = {
         {
           id: "sunday_snack1", slot: "snack1", name: "Spuntino Mattina", emoji: "🍎", prepTime: "2 min",
           ingredients: [{ name: "Frutta fresca stagionale", quantity: 250, unit: "g" }, { name: "Proteine Whey", quantity: 30, unit: "g" }],
-          steps: ["Consuma frutta e whey."], batchNote: null, supplement: null
+          steps: ["Consuma frutta e bevi whey in acqua."], batchNote: null, supplement: null
         },
         {
           id: "sunday_lunch", slot: "lunch", name: "Legumotti Frutti di Mare e Zucchine", emoji: "🦐", prepTime: "20 min",
           ingredients: [
             { name: "Legumotti Barilla", quantity: 60, unit: "g" }, { name: "Nasello", quantity: 125, unit: "g" },
             { name: "Gamberetti", quantity: 150, unit: "g" }, { name: "Zucchine", quantity: 200, unit: "g" },
-            { name: "Olio EVO", quantity: 10, unit: "g" }, { name: "Prezzemolo", quantity: 1, unit: "q.b." }
+            { name: "Olio EVO", quantity: 10, unit: "g" }
           ],
           steps: [
             "Salta nasello e gamberetti in padella con aglio, olio e limone.",
@@ -393,11 +393,10 @@ const MEAL_PLAN = {
   }
 };
 
-// Routine generatrice dinamica (Mantenuta per gestire i pesi tra rest/training)
+// Generatore dinamico per riposo/allenamento
 const weekDays = ['monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday', 'sunday'];
 weekDays.forEach(day => {
   const plan = MEAL_PLAN[day];
-  
   if (plan.meals.training && !plan.meals.rest) {
     plan.meals.rest = JSON.parse(JSON.stringify(plan.meals.training));
     const snack1 = plan.meals.rest.find(m => m.slot === 'snack1');
@@ -431,6 +430,7 @@ weekDays.forEach(day => {
   }
 });
 
+// Shopping base categories per far girare l'app. (Ridotte per pulizia del parser globale)
 const SHOPPING_CATEGORIES = [
   { id: "yogurt_greco", name: "Yogurt greco 0%", category: "🥚 Uova e Latticini", unit: "g" },
   { id: "albumi", name: "Albumi", category: "🥚 Uova e Latticini", unit: "g" },
