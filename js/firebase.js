@@ -1,4 +1,3 @@
-// REPLACE WITH YOUR FIREBASE CONFIG
 const firebaseConfig = {
   apiKey: "AIzaSyCuV3KSAWMWRWJR-LhX_FCSJQLlXaJws7M",
   authDomain: "piano-nutrizionale.firebaseapp.com",
@@ -12,7 +11,7 @@ let db;
 
 function initFirebase() {
   if (firebaseConfig.apiKey === "REPLACE_API_KEY") {
-    console.warn("Firebase not configured. Running in offline/mock mode.");
+    console.warn("Firebase non configurato. Offline mode.");
     return false;
   }
   try {
@@ -26,7 +25,6 @@ function initFirebase() {
   }
 }
 
-// Global Cloud Mocks
 const mockStore = {
   settings: {
     notificationTimes: { breakfast: "08:30", snack1: "10:00", lunch: "13:30", snack2: "16:00", dinner: "20:00" },
@@ -43,15 +41,11 @@ const mockStore = {
   }
 };
 
-// ============================================
-// DEVICE-SPECIFIC SETTINGS (Local Storage)
-// ============================================
 function getLocalDeviceSettings() {
   const defaults = { 
     persons: 2, 
     twoPersonsType: 'mf', 
-    singlePersonType: 'm',
-    darkMode: false
+    singlePersonType: 'm'
   };
   const stored = localStorage.getItem('pn_device_settings');
   return stored ? { ...defaults, ...JSON.parse(stored) } : defaults;
@@ -61,9 +55,6 @@ function saveLocalDeviceSettings(settings) {
   localStorage.setItem('pn_device_settings', JSON.stringify(settings));
 }
 
-// ============================================
-// CLOUD SETTINGS (Firebase)
-// ============================================
 async function getGlobalSettings() {
   if (!db) return mockStore.settings;
   const doc = await db.collection('settings').doc('global').get();
