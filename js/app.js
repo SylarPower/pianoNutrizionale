@@ -210,6 +210,7 @@ async function renderToday() {
   `;
   
   const meals = plan.meals[dayType];
+  
   const now = new Date();
   let nextMealId = null;
   if(appState.settings && appState.settings.notificationTimes) {
@@ -217,8 +218,12 @@ async function renderToday() {
       const timeStr = appState.settings.notificationTimes[meal.slot];
       if (timeStr) {
         const [h, m] = timeStr.split(':').map(Number);
-        const d = new Date(); d.setHours(h, m, 0, 0);
-        if (d > now) { nextMealId = meal.id; break; }
+        const d = new Date();
+        d.setHours(h, m, 0, 0);
+        if (d > now) {
+          nextMealId = meal.id;
+          break;
+        }
       }
     }
   }
@@ -276,11 +281,11 @@ async function renderToday() {
       html += `<li class="step-item" style="padding:0.3rem 0; border-bottom:1px solid #eee;" onclick="this.classList.toggle('done')"><strong>${i+1}.</strong> ${step}</li>`;
     });
     html += `</ul></div>`;
-    html += `</div>`; 
+    html += `</div>`; // Fine flexbox split
     
     html += `<button class="btn btn-outline" style="width:100%; margin-top:1rem; font-size:0.8rem; padding:0.3rem;" onclick="openRecipeModal('${meal.id}', '${todayKey}', '${dayType}')">Modifica Ricetta Base</button>`;
     
-    html += `</div></div>`;
+    html += `</div></div>`; // Chiusura accordion e card
   }
   
   html += `</div>`;
@@ -335,7 +340,7 @@ window.toggleDayType = async function(dayKey, type) {
 };
 
 // ------------------------------------
-// RENDER PREP (Chef Mode)
+// RENDER PREP (Variante 1 - Migliorata)
 // ------------------------------------
 window.changePrepDay = function(val) {
   appState.deviceSettings.prepSelectedDay = val;
@@ -496,6 +501,7 @@ async function renderPrep() {
     
     html += `</div></div></div>`;
   }
+
   container.innerHTML = html;
 }
 
@@ -509,9 +515,17 @@ window.toggleShopSettings = function() {
 
 window.toggleShopAllWeek = async function(selectAll) {
   const weekDays = ['monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday', 'sunday'];
+  
+  if (!appState.shoppingListCloud.selectedMeals) {
+    appState.shoppingListCloud.selectedMeals = { monday:[], tuesday:[], wednesday:[], thursday:[], friday:[], saturday:[], sunday:[] };
+  }
+  
   weekDays.forEach(day => {
-    if (selectAll) appState.shoppingListCloud.selectedMeals[day] = ['breakfast', 'snack1', 'lunch', 'snack2', 'dinner'];
-    else appState.shoppingListCloud.selectedMeals[day] = [];
+    if (selectAll) {
+      appState.shoppingListCloud.selectedMeals[day] = ['breakfast', 'snack1', 'lunch', 'snack2', 'dinner'];
+    } else {
+      appState.shoppingListCloud.selectedMeals[day] = [];
+    }
   });
   await saveShoppingListCloud(appState.shoppingListCloud);
   renderShop();
@@ -529,9 +543,9 @@ function renderShop() {
   if (!hasSelection) shopSettingsVisible = true;
   
   const mode = shopCloud.mode || 'current';
-  const persons = appState.deviceSettings.persons;
-  const twoType = appState.deviceSettings.twoPersonsType;
-  const singleType = appState.deviceSettings.singlePersonType;
+  const persons = appState.deviceSettings.persons || 2;
+  const twoType = appState.deviceSettings.twoPersonsType || 'mf';
+  const singleType = appState.deviceSettings.singlePersonType || 'm';
   const weekDays = ['monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday', 'sunday'];
   
   let html = `
@@ -549,15 +563,15 @@ function renderShop() {
         <div style="display:flex; justify-content:space-between; align-items:center;">
           <span style="font-weight:600;">Calcola per:</span>
           <select onchange="updateShopPersons(this.value)" style="padding:0.3rem;">
-            <option value="1" ${persons == 1 ? 'selected' : ''}>1 persona</option>
-            <option value="2" ${persons == 2 ? 'selected' : ''}>2 persone</option>
+            <option value="1" ${persons === 1 ? 'selected' : ''}>1 persona</option>
+            <option value="2" ${persons === 2 ? 'selected' : ''}>2 persone</option>
           </select>
         </div>
-        <div class="${persons == 1 ? '' : 'hidden'}" style="margin-top:0.5rem; font-size:0.9rem;">
+        <div class="${persons === 1 ? '' : 'hidden'}" style="margin-top:0.5rem; font-size:0.9rem;">
           <label style="margin-right:1rem;"><input type="radio" name="shopSingleType" value="m" onchange="updateShopSingleType('m')" ${singleType === 'm' ? 'checked' : ''}> Uomo (×1)</label><br>
           <label style="margin-right:1rem;"><input type="radio" name="shopSingleType" value="f" onchange="updateShopSingleType('f')" ${singleType === 'f' ? 'checked' : ''}> Donna (×0.75)</label>
         </div>
-        <div class="${persons == 2 ? '' : 'hidden'}" style="margin-top:0.5rem; font-size:0.9rem;">
+        <div class="${persons === 2 ? '' : 'hidden'}" style="margin-top:0.5rem; font-size:0.9rem;">
           <label style="margin-right:1rem;"><input type="radio" name="shopTwoType" value="mf" onchange="updateShopTwoType('mf')" ${twoType === 'mf' ? 'checked' : ''}> Uomo+Donna (×1.75)</label><br>
           <label style="margin-right:1rem;"><input type="radio" name="shopTwoType" value="fm" onchange="updateShopTwoType('fm')" ${twoType === 'fm' ? 'checked' : ''}> Donna+Uomo (×2.25)</label><br>
           <label><input type="radio" name="shopTwoType" value="same" onchange="updateShopTwoType('same')" ${twoType === 'same' ? 'checked' : ''}> Stesso sesso (×2)</label>
@@ -619,7 +633,7 @@ function renderShop() {
   }
 
   let multiplier = 1;
-  if (persons == 2) {
+  if (persons === 2) {
     if (twoType === 'mf') multiplier = 1.75;
     else if (twoType === 'fm') multiplier = 2.25;
     else multiplier = 2;
@@ -655,7 +669,7 @@ function renderShop() {
       finalQty = formatQty(finalQty);
       
       let splitText = "";
-      if (persons == 2 && item.unit !== 'pz' && item.unit !== 'q.b.') {
+      if (persons === 2 && item.unit !== 'pz' && item.unit !== 'q.b.') {
           let user1, user2;
           if (twoType === 'mf') { user1 = formatQty(total * 1); user2 = formatQty(total * 0.75); splitText = `(Uomo: ${user1}${item.unit}, Donna: ${user2}${item.unit})`; }
           else if (twoType === 'fm') { user1 = formatQty(total * 1); user2 = formatQty(total * 1.25); splitText = `(Donna: ${user1}${item.unit}, Uomo: ${user2}${item.unit})`; }
@@ -792,11 +806,9 @@ window.resetShopList = async function() {
 }
 
 // ------------------------------------
-// RENDER SETTINGS E GUIDA
+// RENDER SETTINGS & GUIDE
 // ------------------------------------
-function renderGuide() {
-  // Funzione obsoleta poichè unita in renderSettings()
-}
+function renderGuide() {}
 
 function renderSettings() {
   const container = document.getElementById('view-settings');
