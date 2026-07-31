@@ -136,8 +136,12 @@ function handleRoute() {
 }
 
 // ------------------------------------
-// RENDER TODAY
+// RENDER TODAY (Apertura inline a fisarmonica)
 // ------------------------------------
+window.toggleTodayAccordion = function(id) {
+  document.getElementById(id).classList.toggle('hidden');
+}
+
 async function renderToday() {
   const container = document.getElementById('view-today');
   const todayKey = getTodayKey();
@@ -146,6 +150,19 @@ async function renderToday() {
   
   const dateOptions = { weekday: 'long', month: 'long', day: 'numeric' };
   const dateStr = new Date().toLocaleDateString('it-IT', dateOptions);
+  
+  const s = appState.deviceSettings || getLocalDeviceSettings();
+  const singleType = s.singlePersonType || 'm';
+  
+  let multiplier = 1;
+  if (s.persons === 2) {
+    if (s.twoPersonsType === 'mf') multiplier = 1.75;
+    else if (s.twoPersonsType === 'fm') multiplier = 2.25;
+    else multiplier = 2;
+  } else {
+    if (singleType === 'f') multiplier = 0.75;
+    else multiplier = 1;
+  }
   
   let html = `
     <h2>Giornata di oggi</h2>
@@ -161,46 +178,91 @@ async function renderToday() {
   `;
   
   const meals = plan.meals[dayType];
+  
+  // Highlight logic: find next upcoming meal
   const now = new Date();
   let nextMealId = null;
-  for (const meal of meals) {
-    const timeStr = appState.settings.notificationTimes[meal.slot];
-    if (timeStr) {
-      const [h, m] = timeStr.split(':').map(Number);
-      const d = new Date(); d.setHours(h, m, 0, 0);
-      if (d > now) { nextMealId = meal.id; break; }
+  if(appState.settings && appState.settings.notificationTimes) {
+    for (const meal of meals) {
+      const timeStr = appState.settings.notificationTimes[meal.slot];
+      if (timeStr) {
+        const [h, m] = timeStr.split(':').map(Number);
+        const d = new Date();
+        d.setHours(h, m, 0, 0);
+        if (d > now) {
+          nextMealId = meal.id;
+          break;
+        }
+      }
     }
   }
 
   for (const meal of meals) {
     const customRecipe = await getCustomRecipe(meal.id);
     const finalMeal = customRecipe || meal;
-    const timeStr = appState.settings.notificationTimes[meal.slot];
+    const timeStr = appState.settings ? appState.settings.notificationTimes[meal.slot] : '';
     const isNext = meal.id === nextMealId;
+    const accId = `today-acc-${meal.id}`;
     
     html += `
-      <div class="card ${dayType} ${isNext ? 'highlight' : ''}" onclick="openRecipeModal('${meal.id}', '${todayKey}', '${dayType}')">
-        <div class="flex-between">
+      <div class="card ${dayType} ${isNext ? 'highlight' : ''}" style="padding:0; overflow:hidden;">
+        <div class="flex-between" style="padding:1rem; cursor:pointer;" onclick="toggleTodayAccordion('${accId}')">
           <div style="display:flex; align-items:center; gap: 0.5rem;">
             <span style="font-size: 1.5rem;">${finalMeal.emoji || meal.emoji}</span>
             <div>
               <div style="font-weight: 600;">${finalMeal.name}</div>
-              <div class="text-muted">${MEAL_SLOTS.find(s=>s.id===meal.slot)?.label} • ${timeStr || ''}</div>
+              <div class="text-muted">${MEAL_SLOTS.find(s=>s.id===meal.slot)?.label} • ${timeStr || ''} ▼</div>
             </div>
           </div>
           <div class="text-muted" style="text-align:right; font-size: 0.8rem;">
             ${formatTimeRemaining(timeStr)}
           </div>
         </div>
-        ${meal.slot === 'breakfast' && finalMeal.supplement ? `<div class="text-muted" style="margin-top:0.5rem; font-size:0.8rem;">💡 ${finalMeal.supplement}</div>` : ''}
-      </div>
+        
+        <div id="${accId}" class="hidden" style="padding:0 1rem 1rem 1rem; border-top:1px solid #eee; background-color:#fafafa;">
     `;
+
+    if(finalMeal.supplement) {
+      html += `<div style="margin-top:0.5rem; margin-bottom:1rem; padding:0.5rem; background:#fffdf7; border-left:4px solid var(--accent); font-size:0.85rem; border-radius:4px;">💡 <strong>Integrazione:</strong> ${finalMeal.supplement}</div>`;
+    }
+    if(finalMeal.prepNote || finalMeal.batchNote) {
+      html += `<div style="margin-top:0.5rem; margin-bottom:1rem; padding:0.5rem; background:#fffdf7; border-left:4px solid var(--accent); font-size:0.85rem; border-radius:4px;">⚠️ <strong>Nota:</strong> ${finalMeal.prepNote || finalMeal.batchNote}</div>`;
+    }
+
+    html += `<div style="display:flex; gap:1rem; flex-wrap:wrap; margin-top:0.5rem;">`;
+    
+    // Ingredienti
+    html += `<div style="flex:1; min-width:140px;">`;
+    html += `<h5 style="color:var(--text-muted); margin-bottom:0.5rem;">Ingredienti:</h5>`;
+    html += `<ul style="list-style:none; padding:0; font-size:0.85rem;">`;
+    finalMeal.ingredients.forEach(ing => {
+      let fQty = ing.quantity;
+      if (typeof fQty === 'number' && ing.unit !== 'pz' && ing.unit !== 'q.b.') fQty = formatQty(fQty * multiplier);
+      html += `<li class="step-item" style="padding:0.2rem 0; border-bottom:1px solid #eee;" onclick="this.classList.toggle('done')"><strong>${fQty} ${ing.unit==='q.b.'||ing.unit==='pz'?'':ing.unit}</strong> ${ing.name}</li>`;
+    });
+    html += `</ul></div>`;
+    
+    // Passaggi
+    html += `<div style="flex:1.5; min-width:200px;">`;
+    html += `<h5 style="color:var(--text-muted); margin-bottom:0.5rem;">Passaggi:</h5>`;
+    html += `<ul style="list-style:none; padding:0; font-size:0.85rem;">`;
+    finalMeal.steps.forEach((step, i) => {
+      html += `<li class="step-item" style="padding:0.3rem 0; border-bottom:1px solid #eee;" onclick="this.classList.toggle('done')"><strong>${i+1}.</strong> ${step}</li>`;
+    });
+    html += `</ul></div>`;
+    html += `</div>`; // Fine flexbox split
+    
+    html += `<button class="btn btn-outline" style="width:100%; margin-top:1rem; font-size:0.8rem; padding:0.3rem;" onclick="openRecipeModal('${meal.id}', '${todayKey}', '${dayType}')">Modifica Ricetta / Persone</button>`;
+    
+    html += `</div></div>`; // Chiusura accordion e card
   }
   
   html += `</div>`;
+  
   if (plan.batchCooking.evening) {
     html += `<div class="batch-banner"><strong>🍳 Stasera:</strong><br>${plan.batchCooking.evening}</div>`;
   }
+  
   container.innerHTML = html;
 }
 
