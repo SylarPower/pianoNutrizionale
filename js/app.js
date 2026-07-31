@@ -80,9 +80,6 @@ function scheduleDailyNotifications() {
   scheduleNotifications(appState.settings, meals, batch);
 }
 
-// ------------------------------------
-// UTILS
-// ------------------------------------
 function getTodayKey() { return DAYS[new Date().getDay()]; }
 
 function getDayType(dayKey) {
@@ -110,9 +107,6 @@ function formatQty(qty) {
   return Math.round(qty * 10) / 10;
 }
 
-// ------------------------------------
-// ROUTING
-// ------------------------------------
 function setupRouter() {
   window.addEventListener('hashchange', handleRoute);
   if (!window.location.hash) window.location.hash = '#today';
@@ -138,7 +132,7 @@ function handleRoute() {
 }
 
 // ------------------------------------
-// RENDER TODAY (Apertura inline a fisarmonica)
+// RENDER TODAY
 // ------------------------------------
 let todaySettingsVisible = false;
 window.toggleTodaySettings = function() {
@@ -159,7 +153,7 @@ async function renderToday() {
   const dateOptions = { weekday: 'long', month: 'long', day: 'numeric' };
   const dateStr = new Date().toLocaleDateString('it-IT', dateOptions);
   
-  const s = appState.deviceSettings;
+  const s = appState.deviceSettings || getLocalDeviceSettings();
   const singleType = s.singlePersonType || 'm';
   
   let multiplier = 1;
@@ -223,8 +217,7 @@ async function renderToday() {
       const timeStr = appState.settings.notificationTimes[meal.slot];
       if (timeStr) {
         const [h, m] = timeStr.split(':').map(Number);
-        const d = new Date();
-        d.setHours(h, m, 0, 0);
+        const d = new Date(); d.setHours(h, m, 0, 0);
         if (d > now) { nextMealId = meal.id; break; }
       }
     }
@@ -264,7 +257,6 @@ async function renderToday() {
 
     html += `<div style="display:flex; gap:1rem; flex-wrap:wrap; margin-top:0.5rem;">`;
     
-    // Ingredienti
     html += `<div style="flex:1; min-width:140px;">`;
     html += `<h5 style="color:var(--text-muted); margin-bottom:0.5rem;">Ingredienti:</h5>`;
     html += `<ul style="list-style:none; padding:0; font-size:0.85rem;">`;
@@ -275,7 +267,6 @@ async function renderToday() {
     });
     html += `</ul></div>`;
     
-    // Passaggi
     html += `<div style="flex:1.5; min-width:200px;">`;
     html += `<h5 style="color:var(--text-muted); margin-bottom:0.5rem;">Passaggi:</h5>`;
     html += `<ul style="list-style:none; padding:0; font-size:0.85rem;">`;
@@ -283,7 +274,7 @@ async function renderToday() {
       html += `<li class="step-item" style="padding:0.3rem 0; border-bottom:1px solid #eee;" onclick="this.classList.toggle('done')"><strong>${i+1}.</strong> ${step}</li>`;
     });
     html += `</ul></div>`;
-    html += `</div>`;
+    html += `</div>`; 
     
     html += `<button class="btn btn-outline" style="width:100%; margin-top:1rem; font-size:0.8rem; padding:0.3rem;" onclick="openRecipeModal('${meal.id}', '${todayKey}', '${dayType}')">Modifica Ricetta Base</button>`;
     
@@ -342,7 +333,7 @@ window.toggleDayType = async function(dayKey, type) {
 };
 
 // ------------------------------------
-// RENDER PREP (Variante 1 - Migliorata)
+// RENDER PREP (Chef Mode)
 // ------------------------------------
 window.changePrepDay = function(val) {
   appState.deviceSettings.prepSelectedDay = val;
@@ -396,6 +387,25 @@ async function renderPrep() {
         <option value="sunday" ${selectedDay === 'sunday' ? 'selected' : ''}>Domenica</option>
       </select>
     </div>
+    
+    <div class="settings-section" style="padding:0.75rem; margin-bottom:1rem;">
+      <div style="display:flex; justify-content:space-between; align-items:center;">
+        <span style="font-weight:600; font-size:0.9rem;">Porzioni:</span>
+        <select style="padding:0.2rem; border-radius:4px;" onchange="updateShopPersons(parseInt(this.value)); setTimeout(renderPrep,50);">
+          <option value="1" ${s.persons === 1 ? 'selected' : ''}>1 persona</option>
+          <option value="2" ${s.persons === 2 ? 'selected' : ''}>2 persone</option>
+        </select>
+      </div>
+      <div class="${s.persons === 1 ? '' : 'hidden'}" style="margin-top:0.5rem; font-size:0.85rem;">
+        <label style="margin-right:1rem;"><input type="radio" name="prepSingleType" value="m" onchange="updateShopSingleType('m'); setTimeout(renderPrep,50);" ${singleType === 'm' ? 'checked' : ''}> Uomo (×1)</label>
+        <label style="margin-right:1rem;"><input type="radio" name="prepSingleType" value="f" onchange="updateShopSingleType('f'); setTimeout(renderPrep,50);" ${singleType === 'f' ? 'checked' : ''}> Donna (×0.75)</label>
+      </div>
+      <div class="${s.persons === 2 ? '' : 'hidden'}" style="margin-top:0.5rem; font-size:0.85rem;">
+        <label style="margin-right:1rem;"><input type="radio" name="prepTwoType" value="mf" onchange="updateShopTwoType('mf'); setTimeout(renderPrep,50);" ${s.twoPersonsType === 'mf' ? 'checked' : ''}> Uomo+Donna (×1.75)</label><br>
+        <label style="margin-right:1rem;"><input type="radio" name="prepTwoType" value="fm" onchange="updateShopTwoType('fm'); setTimeout(renderPrep,50);" ${s.twoPersonsType === 'fm' ? 'checked' : ''}> Donna+Uomo (×2.25)</label><br>
+        <label><input type="radio" name="prepTwoType" value="same" onchange="updateShopTwoType('same'); setTimeout(renderPrep,50);" ${s.twoPersonsType === 'same' ? 'checked' : ''}> Stesso sesso (×2)</label>
+      </div>
+    </div>
   `;
 
   // 1. BATCH COOKING
@@ -434,7 +444,7 @@ async function renderPrep() {
   html += `</ul></div>`;
   html += `</div></div>`;
 
-  // 3. SCHISCETTE DI DOMANI (Accordion)
+  // 3. SCHISCETTE DI DOMANI
   html += `<h3 style="color:var(--rest); margin-top:1.5rem; margin-bottom:0.5rem;">3. Pasti per Domani (${nextPlan.dayName})</h3>`;
   html += `<p class="text-muted" style="font-size:0.85rem; margin-bottom:1rem;">Apri i menu per assembrare i box.</p>`;
   
@@ -464,7 +474,6 @@ async function renderPrep() {
 
     html += `<div style="display:flex; gap:1rem; flex-wrap:wrap;">`;
     
-    // Ingredienti
     html += `<div style="flex:1; min-width:140px;">`;
     html += `<h5 style="color:var(--text-muted); margin-bottom:0.5rem;">Ingredienti:</h5>`;
     html += `<ul style="list-style:none; padding:0; font-size:0.85rem;">`;
@@ -475,7 +484,6 @@ async function renderPrep() {
     });
     html += `</ul></div>`;
     
-    // Passaggi
     html += `<div style="flex:1.5; min-width:200px;">`;
     html += `<h5 style="color:var(--text-muted); margin-bottom:0.5rem;">Cosa fare:</h5>`;
     html += `<ul style="list-style:none; padding:0; font-size:0.85rem;">`;
@@ -741,24 +749,21 @@ window.toggleShopMeal = async function(day, slot, isChecked) {
   else if (!isChecked) appState.shoppingListCloud.selectedMeals[day] = appState.shoppingListCloud.selectedMeals[day].filter(s => s !== slot);
   await saveShoppingListCloud(appState.shoppingListCloud); renderShop();
 }
+
 window.updateShopPersons = function(val) { 
   appState.deviceSettings.persons = parseInt(val); 
   saveLocalDeviceSettings(appState.deviceSettings); 
-  // Aggiorna le viste in background senza ricaricare la pagina di forza
   if(window.location.hash === '#shop') setTimeout(renderShop, 50); 
-  if(window.location.hash === '#prep') setTimeout(renderPrep, 50);
 }
 window.updateShopTwoType = function(val) { 
   appState.deviceSettings.twoPersonsType = val; 
   saveLocalDeviceSettings(appState.deviceSettings); 
   if(window.location.hash === '#shop') setTimeout(renderShop, 50); 
-  if(window.location.hash === '#prep') setTimeout(renderPrep, 50);
 }
 window.updateShopSingleType = function(val) { 
   appState.deviceSettings.singlePersonType = val; 
   saveLocalDeviceSettings(appState.deviceSettings); 
   if(window.location.hash === '#shop') setTimeout(renderShop, 50); 
-  if(window.location.hash === '#prep') setTimeout(renderPrep, 50);
 }
 
 window.toggleShopItem = async function(id, event) {
@@ -785,11 +790,9 @@ window.resetShopList = async function() {
 }
 
 // ------------------------------------
-// RENDER SETTINGS E GUIDA
+// RENDER SETTINGS & GUIDE
 // ------------------------------------
-function renderGuide() {
-  // Funzione obsoleta poichè unita in renderSettings()
-}
+function renderGuide() {}
 
 function renderSettings() {
   const container = document.getElementById('view-settings');
@@ -994,7 +997,7 @@ function renderSettings() {
       </h3>
       <div class="hidden" style="line-height:1.6; padding-top:0.5rem;">
         <ul style="padding-left:1.2rem; margin-top:0.5rem; margin-bottom:1rem;">
-          <li style="margin-bottom:0.5rem;">Punta a un consumo di almeno 2-2,5 litri di acqua al giorno.</li>
+          <li style="margin-bottom:0.5rem;">Punta a un consumo di অন্তত 2-2,5 litri di acqua al giorno.</li>
           <li style="margin-bottom:0.5rem;">Usa solo sale iodato. Sfrutta liberamente spezie, limone, aceto.</li>
           <li style="margin-bottom:0.5rem;">Avrai a disposizione un pasto “sociale” a settimana.</li>
           <li style="margin-bottom:0.5rem;">Puoi combinare due alternative di proteine dimezzandone le quantità.</li>
@@ -1069,26 +1072,9 @@ function renderModalContent() {
   
   document.getElementById('modal-title').innerHTML = `${meal.emoji || ''} ${meal.name}`;
   document.getElementById('modal-time').innerHTML = `${MEAL_SLOTS.find(s=>s.id===meal.slot)?.label} • ${timeStr || ''} • Prep: ${meal.prepTime || '-'}`;
-  
-  const s = appState.deviceSettings;
-  const singleType = s.singlePersonType || 'm';
-
-  const selectorDiv = document.getElementById('modal-persons-selector');
-  selectorDiv.innerHTML = ``;
-  selectorDiv.classList.add('hidden');
 
   const ingUl = document.getElementById('modal-ingredients-list');
   ingUl.innerHTML = '';
-  
-  let multiplier = 1;
-  if (s.persons === 2) {
-    if (s.twoPersonsType === 'mf') multiplier = 1.75;
-    else if (s.twoPersonsType === 'fm') multiplier = 2.25;
-    else multiplier = 2;
-  } else {
-    if (singleType === 'f') multiplier = 0.75;
-    else multiplier = 1;
-  }
   
   if (editMode) {
     meal.ingredients.forEach((ing, i) => {
@@ -1101,28 +1087,16 @@ function renderModalContent() {
         </li>
       `;
     });
-    ingUl.innerHTML += `<li><button class="btn btn-outline" style="width:100%;" onclick="addIngredient()">+ Aggiungi ingrediente</button></li>`;
+    ingUl.innerHTML += `<li><button class="btn btn-outline" style="width:100%;" onclick="addIngredient()">+ Aggiungi ingrediente base</button></li>`;
   } else {
     meal.ingredients.forEach(ing => {
-      let finalQty = ing.quantity;
-      let splitText = "";
-      if (typeof finalQty === 'number') {
-        if (s.persons === 2 && ing.unit !== 'pz' && ing.unit !== 'q.b.') {
-          let user1, user2;
-          if (s.twoPersonsType === 'mf') { user1 = formatQty(finalQty * 1); user2 = formatQty(finalQty * 0.75); splitText = `(Uomo: ${user1}${ing.unit}, Donna: ${user2}${ing.unit})`; }
-          else if (s.twoPersonsType === 'fm') { user1 = formatQty(finalQty * 1); user2 = formatQty(finalQty * 1.25); splitText = `(Donna: ${user1}${ing.unit}, Uomo: ${user2}${ing.unit})`; }
-          else { user1 = formatQty(finalQty * 1); splitText = `(Ciascuno: ${user1}${ing.unit})`; }
-        }
-        if(ing.unit !== 'pz' && ing.unit !== 'q.b.') { finalQty = finalQty * multiplier; }
-        finalQty = formatQty(finalQty);
-      }
       ingUl.innerHTML += `
         <li style="display:flex; flex-direction:column; padding:0.5rem 0; border-bottom:1px solid #eee;">
-          <div class="flex-between"><span>${ing.name}</span><strong>${finalQty} ${ing.unit === 'q.b.' || ing.unit === 'pz' ? '' : ing.unit}</strong></div>
-          ${splitText ? `<div class="text-muted" style="font-size:0.75rem; text-align:right;">${splitText}</div>` : ''}
+          <div class="flex-between"><span>${ing.name}</span><strong>${ing.quantity} ${ing.unit === 'q.b.' || ing.unit === 'pz' ? '' : ing.unit}</strong></div>
         </li>
       `;
     });
+    ingUl.innerHTML += `<li class="text-muted" style="font-size:0.75rem; text-align:center; padding:1rem 0;">Questi sono i valori base della ricetta per 1 Uomo. I moltiplicatori si applicano nelle viste Oggi, Spesa e Prep.</li>`;
   }
 
   const prepUl = document.getElementById('modal-prep-list');
@@ -1201,6 +1175,7 @@ async function saveRecipeEdit() {
   editMode = false;
   renderModalContent();
   if (window.location.hash === '#today') renderToday();
+  if (window.location.hash === '#week') renderWeek();
   if (window.location.hash === '#prep') renderPrep();
 }
 
@@ -1212,6 +1187,7 @@ async function revertRecipe() {
     currentModalMeal.isCustom = false;
     renderModalContent();
     if (window.location.hash === '#today') renderToday();
+    if (window.location.hash === '#week') renderWeek();
     if (window.location.hash === '#prep') renderPrep();
   }
 }
