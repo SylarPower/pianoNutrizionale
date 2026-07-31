@@ -57,11 +57,13 @@ async function initApp() {
     appState.settings.notificationsEnabled = false;
   }
   
+  if (appState.deviceSettings.darkMode) document.body.classList.add('dark-mode');
+  
   setupRouter();
   setupModal();
   
   window.addEventListener('midnight-refresh', () => {
-    renderToday();
+    if (window.location.hash === '#today') renderToday();
     scheduleDailyNotifications();
   });
   
@@ -157,7 +159,7 @@ async function renderToday() {
   const dateOptions = { weekday: 'long', month: 'long', day: 'numeric' };
   const dateStr = new Date().toLocaleDateString('it-IT', dateOptions);
   
-  const s = appState.deviceSettings || getLocalDeviceSettings();
+  const s = appState.deviceSettings;
   const singleType = s.singlePersonType || 'm';
   
   let multiplier = 1;
@@ -185,19 +187,19 @@ async function renderToday() {
       <div class="settings-section" style="padding:1rem; margin-bottom:1rem;">
         <div style="display:flex; justify-content:space-between; align-items:center;">
           <span style="font-weight:600;">Calcola porzioni per:</span>
-          <select onchange="updateShopPersons(parseInt(this.value)); renderToday();" style="padding:0.3rem;">
+          <select onchange="updateShopPersons(parseInt(this.value)); setTimeout(renderToday, 50);" style="padding:0.3rem;">
             <option value="1" ${s.persons === 1 ? 'selected' : ''}>1 persona</option>
             <option value="2" ${s.persons === 2 ? 'selected' : ''}>2 persone</option>
           </select>
         </div>
         <div class="${s.persons === 1 ? '' : 'hidden'}" style="margin-top:0.5rem; font-size:0.9rem;">
-          <label style="margin-right:1rem;"><input type="radio" name="todaySingleType" value="m" onchange="updateShopSingleType('m'); renderToday();" ${singleType === 'm' ? 'checked' : ''}> Uomo (×1)</label>
-          <label style="margin-right:1rem;"><input type="radio" name="todaySingleType" value="f" onchange="updateShopSingleType('f'); renderToday();" ${singleType === 'f' ? 'checked' : ''}> Donna (×0.75)</label>
+          <label style="margin-right:1rem;"><input type="radio" name="todaySingleType" value="m" onchange="updateShopSingleType('m'); setTimeout(renderToday, 50);" ${singleType === 'm' ? 'checked' : ''}> Uomo (×1)</label>
+          <label style="margin-right:1rem;"><input type="radio" name="todaySingleType" value="f" onchange="updateShopSingleType('f'); setTimeout(renderToday, 50);" ${singleType === 'f' ? 'checked' : ''}> Donna (×0.75)</label>
         </div>
         <div class="${s.persons === 2 ? '' : 'hidden'}" style="margin-top:0.5rem; font-size:0.9rem;">
-          <label style="margin-right:1rem;"><input type="radio" name="todayTwoType" value="mf" onchange="updateShopTwoType('mf'); renderToday();" ${s.twoPersonsType === 'mf' ? 'checked' : ''}> Uomo+Donna (×1.75)</label><br>
-          <label style="margin-right:1rem;"><input type="radio" name="todayTwoType" value="fm" onchange="updateShopTwoType('fm'); renderToday();" ${s.twoPersonsType === 'fm' ? 'checked' : ''}> Donna+Uomo (×2.25)</label><br>
-          <label><input type="radio" name="todayTwoType" value="same" onchange="updateShopTwoType('same'); renderToday();" ${s.twoPersonsType === 'same' ? 'checked' : ''}> Stesso sesso (×2)</label>
+          <label style="margin-right:1rem;"><input type="radio" name="todayTwoType" value="mf" onchange="updateShopTwoType('mf'); setTimeout(renderToday, 50);" ${s.twoPersonsType === 'mf' ? 'checked' : ''}> Uomo+Donna (×1.75)</label><br>
+          <label style="margin-right:1rem;"><input type="radio" name="todayTwoType" value="fm" onchange="updateShopTwoType('fm'); setTimeout(renderToday, 50);" ${s.twoPersonsType === 'fm' ? 'checked' : ''}> Donna+Uomo (×2.25)</label><br>
+          <label><input type="radio" name="todayTwoType" value="same" onchange="updateShopTwoType('same'); setTimeout(renderToday, 50);" ${s.twoPersonsType === 'same' ? 'checked' : ''}> Stesso sesso (×2)</label>
         </div>
       </div>
     `;
@@ -214,7 +216,6 @@ async function renderToday() {
   `;
   
   const meals = plan.meals[dayType];
-  
   const now = new Date();
   let nextMealId = null;
   if(appState.settings && appState.settings.notificationTimes) {
@@ -224,10 +225,7 @@ async function renderToday() {
         const [h, m] = timeStr.split(':').map(Number);
         const d = new Date();
         d.setHours(h, m, 0, 0);
-        if (d > now) {
-          nextMealId = meal.id;
-          break;
-        }
+        if (d > now) { nextMealId = meal.id; break; }
       }
     }
   }
@@ -285,11 +283,11 @@ async function renderToday() {
       html += `<li class="step-item" style="padding:0.3rem 0; border-bottom:1px solid #eee;" onclick="this.classList.toggle('done')"><strong>${i+1}.</strong> ${step}</li>`;
     });
     html += `</ul></div>`;
-    html += `</div>`; // Fine flexbox split
+    html += `</div>`;
     
     html += `<button class="btn btn-outline" style="width:100%; margin-top:1rem; font-size:0.8rem; padding:0.3rem;" onclick="openRecipeModal('${meal.id}', '${todayKey}', '${dayType}')">Modifica Ricetta Base</button>`;
     
-    html += `</div></div>`; // Chiusura accordion e card
+    html += `</div></div>`;
   }
   
   html += `</div>`;
@@ -342,7 +340,6 @@ window.toggleDayType = async function(dayKey, type) {
   if (window.location.hash === '#prep') renderPrep();
   if (window.location.hash === '#shop') renderShop();
 };
-
 
 // ------------------------------------
 // RENDER PREP (Variante 1 - Migliorata)
@@ -457,7 +454,6 @@ async function renderPrep() {
         <div id="${accId}" class="hidden" style="margin-top:1rem; border-top:1px solid #eee; padding-top:0.5rem;">
     `;
     
-    // Evidenza Batch Cooking o Note di Preparazione
     if(tMeal.prepNote || tMeal.batchNote) {
       html += `
         <div style="background-color:#fffdf7; border-left:4px solid var(--accent); padding:0.5rem; margin-bottom:1rem; border-radius:4px;">
@@ -468,7 +464,7 @@ async function renderPrep() {
 
     html += `<div style="display:flex; gap:1rem; flex-wrap:wrap;">`;
     
-    // Ingredienti a sinistra
+    // Ingredienti
     html += `<div style="flex:1; min-width:140px;">`;
     html += `<h5 style="color:var(--text-muted); margin-bottom:0.5rem;">Ingredienti:</h5>`;
     html += `<ul style="list-style:none; padding:0; font-size:0.85rem;">`;
@@ -479,7 +475,7 @@ async function renderPrep() {
     });
     html += `</ul></div>`;
     
-    // Passaggi a destra
+    // Passaggi
     html += `<div style="flex:1.5; min-width:200px;">`;
     html += `<h5 style="color:var(--text-muted); margin-bottom:0.5rem;">Cosa fare:</h5>`;
     html += `<ul style="list-style:none; padding:0; font-size:0.85rem;">`;
@@ -490,9 +486,9 @@ async function renderPrep() {
     
     html += `</div></div></div>`;
   }
-
   container.innerHTML = html;
 }
+
 // ------------------------------------
 // RENDER SHOP
 // ------------------------------------
@@ -669,7 +665,6 @@ function renderShop() {
   });
 
   const orderedCategories = ["🥩 Carne", "🐟 Pesce e Frutti di Mare", "🥚 Uova e Latticini", "🫘 Legumi", "🍚 Carboidrati / Cereali", "🥬 Verdura Fresca", "🍑 Frutta Fresca", "🥫 Dispensa / Condimenti", "🌿 Spezie e Aromi"];
-  
   window.currentCategoriesMap = categoriesMap; 
   
   orderedCategories.forEach(cat => {
@@ -746,9 +741,26 @@ window.toggleShopMeal = async function(day, slot, isChecked) {
   else if (!isChecked) appState.shoppingListCloud.selectedMeals[day] = appState.shoppingListCloud.selectedMeals[day].filter(s => s !== slot);
   await saveShoppingListCloud(appState.shoppingListCloud); renderShop();
 }
-window.updateShopPersons = function(val) { appState.deviceSettings.persons = parseInt(val); saveLocalDeviceSettings(appState.deviceSettings); renderShop(); }
-window.updateShopTwoType = function(val) { appState.deviceSettings.twoPersonsType = val; saveLocalDeviceSettings(appState.deviceSettings); renderShop(); }
-window.updateShopSingleType = function(val) { appState.deviceSettings.singlePersonType = val; saveLocalDeviceSettings(appState.deviceSettings); renderShop(); }
+window.updateShopPersons = function(val) { 
+  appState.deviceSettings.persons = parseInt(val); 
+  saveLocalDeviceSettings(appState.deviceSettings); 
+  // Aggiorna le viste in background senza ricaricare la pagina di forza
+  if(window.location.hash === '#shop') setTimeout(renderShop, 50); 
+  if(window.location.hash === '#prep') setTimeout(renderPrep, 50);
+}
+window.updateShopTwoType = function(val) { 
+  appState.deviceSettings.twoPersonsType = val; 
+  saveLocalDeviceSettings(appState.deviceSettings); 
+  if(window.location.hash === '#shop') setTimeout(renderShop, 50); 
+  if(window.location.hash === '#prep') setTimeout(renderPrep, 50);
+}
+window.updateShopSingleType = function(val) { 
+  appState.deviceSettings.singlePersonType = val; 
+  saveLocalDeviceSettings(appState.deviceSettings); 
+  if(window.location.hash === '#shop') setTimeout(renderShop, 50); 
+  if(window.location.hash === '#prep') setTimeout(renderPrep, 50);
+}
+
 window.toggleShopItem = async function(id, event) {
   if (event.target.tagName.toLowerCase() === 'input' && event.target.type === 'text') return;
   let list = appState.shoppingListCloud.checkedItems || [];
@@ -773,8 +785,12 @@ window.resetShopList = async function() {
 }
 
 // ------------------------------------
-// RENDER SETTINGS & GUIDE
+// RENDER SETTINGS E GUIDA
 // ------------------------------------
+function renderGuide() {
+  // Funzione obsoleta poichè unita in renderSettings()
+}
+
 function renderSettings() {
   const container = document.getElementById('view-settings');
   const s = appState.settings;
@@ -1012,10 +1028,7 @@ window.toggleDarkMode = function(isDark) {
 function setupModal() {
   const modalEl = document.getElementById('recipe-modal');
   
-  // Chiudi cliccando la "X"
   document.getElementById('modal-close').addEventListener('click', closeRecipeModal);
-  
-  // Chiudi cliccando fuori dalla finestra (sul background scuro)
   modalEl.addEventListener('click', (e) => {
     if (e.target === modalEl) closeRecipeModal();
   });
@@ -1060,7 +1073,6 @@ function renderModalContent() {
   const s = appState.deviceSettings;
   const singleType = s.singlePersonType || 'm';
 
-  // Rimosso l'HTML del selectorDiv (è stato spostato nella vista Oggi)
   const selectorDiv = document.getElementById('modal-persons-selector');
   selectorDiv.innerHTML = ``;
   selectorDiv.classList.add('hidden');
@@ -1153,23 +1165,6 @@ function renderModalContent() {
 }
 
 function toggleEditMode() { editMode = !editMode; renderModalContent(); }
-window.updateModalPersons = function(val) { appState.deviceSettings.persons = val; saveLocalDeviceSettings(appState.deviceSettings); renderModalContent(); renderShop(); if (window.location.hash === '#prep') renderPrep(); }
-window.updateModalTwoType = function(val) { appState.deviceSettings.twoPersonsType = val; saveLocalDeviceSettings(appState.deviceSettings); renderModalContent(); renderShop(); if (window.location.hash === '#prep') renderPrep(); }
-window.updateModalSingleType = function(val) { appState.deviceSettings.singlePersonType = val; saveLocalDeviceSettings(appState.deviceSettings); renderModalContent(); renderShop(); if (window.location.hash === '#prep') renderPrep(); }
-window.addIngredient = function() { saveCurrentEditState(); currentModalMeal.data.ingredients.push({ name: "", quantity: 0, unit: "g" }); renderModalContent(); }
-window.removeIngredient = function(index) { saveCurrentEditState(); currentModalMeal.data.ingredients.splice(index, 1); renderModalContent(); }
-window.addStep = function() { saveCurrentEditState(); currentModalMeal.data.steps.push(""); renderModalContent(); }
-window.removeStep = function(index) { saveCurrentEditState(); currentModalMeal.data.steps.splice(index, 1); renderModalContent(); }
-window.moveStep = function(index, dir) {
-  saveCurrentEditState();
-  if (index + dir >= 0 && index + dir < currentModalMeal.data.steps.length) {
-    const temp = currentModalMeal.data.steps[index];
-    currentModalMeal.data.steps[index] = currentModalMeal.data.steps[index + dir];
-    currentModalMeal.data.steps[index + dir] = temp;
-    renderModalContent();
-  }
-}
-
 function saveCurrentEditState() {
   const meal = currentModalMeal.data;
   meal.ingredients.forEach((ing, i) => {
@@ -1184,6 +1179,19 @@ function saveCurrentEditState() {
     const stepEl = document.getElementById(`edit-step-${i}`);
     if (stepEl) meal.steps[i] = stepEl.value;
   });
+}
+window.addIngredient = function() { saveCurrentEditState(); currentModalMeal.data.ingredients.push({ name: "", quantity: 0, unit: "g" }); renderModalContent(); }
+window.removeIngredient = function(index) { saveCurrentEditState(); currentModalMeal.data.ingredients.splice(index, 1); renderModalContent(); }
+window.addStep = function() { saveCurrentEditState(); currentModalMeal.data.steps.push(""); renderModalContent(); }
+window.removeStep = function(index) { saveCurrentEditState(); currentModalMeal.data.steps.splice(index, 1); renderModalContent(); }
+window.moveStep = function(index, dir) {
+  saveCurrentEditState();
+  if (index + dir >= 0 && index + dir < currentModalMeal.data.steps.length) {
+    const temp = currentModalMeal.data.steps[index];
+    currentModalMeal.data.steps[index] = currentModalMeal.data.steps[index + dir];
+    currentModalMeal.data.steps[index + dir] = temp;
+    renderModalContent();
+  }
 }
 
 async function saveRecipeEdit() {
