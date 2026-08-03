@@ -8,6 +8,7 @@
   --text: #1B1B1E;
   --text-muted: #6C757D;
   --danger: #E63946;
+  --header-height: 54px;
 }
 
 * {
@@ -22,6 +23,7 @@ body {
   background-color: var(--bg);
   color: var(--text);
   padding-bottom: 70px; /* Space for bottom nav */
+  padding-top: calc(var(--header-height) + 10px); /* Space for top header */
   line-height: 1.5;
 }
 
@@ -53,6 +55,38 @@ h1, h2, h3, h4 {
 @keyframes fadeIn {
   from { opacity: 0; }
   to { opacity: 1; }
+}
+
+/* Header Globale (Sticky Top) */
+.global-header {
+  position: fixed;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: var(--header-height);
+  background: var(--primary);
+  color: white;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.5rem;
+  z-index: 100;
+  box-shadow: 0 2px 8px rgba(0,0,0,0.1);
+  padding: 0 1rem;
+}
+
+.global-header select {
+  background: rgba(255,255,255,0.2);
+  color: white;
+  border: 1px solid rgba(255,255,255,0.3);
+  padding: 0.2rem;
+  border-radius: 4px;
+  font-size: 0.85rem;
+  min-height: 30px;
+}
+
+.global-header select option {
+  color: #000; /* reset select color for mobile dropdown */
 }
 
 /* Bottom Navigation */
@@ -103,12 +137,7 @@ h1, h2, h3, h4 {
   padding: 1rem;
   margin-bottom: 1rem;
   box-shadow: 0 2px 8px rgba(0,0,0,0.08);
-  cursor: pointer;
   transition: transform 200ms ease, box-shadow 200ms ease;
-}
-
-.card:active {
-  transform: scale(0.98);
 }
 
 .card.training {
@@ -255,11 +284,6 @@ h1, h2, h3, h4 {
   list-style: none;
 }
 
-.tab-content li {
-  padding: 0.5rem 0;
-  border-bottom: 1px solid #eee;
-}
-
 .step-item {
   cursor: pointer;
   transition: opacity 200ms;
@@ -283,7 +307,7 @@ h1, h2, h3, h4 {
 }
 
 /* Forms & Inputs */
-input, select {
+input, select, textarea {
   padding: 0.5rem;
   border: 1px solid #ccc;
   border-radius: 6px;
@@ -314,7 +338,7 @@ input[type="checkbox"], input[type="radio"] {
 
 .pill-toggle {
   display: inline-flex;
-  background: #eee;
+  background: rgba(0,0,0,0.05);
   border-radius: 20px;
   padding: 4px;
   margin: 0.5rem 0;
@@ -348,10 +372,10 @@ input[type="checkbox"], input[type="radio"] {
   margin-top: 1.5rem;
 }
 .batch-banner {
-  background-color: var(--primary-light);
-  color: white;
+  background-color: rgba(244, 162, 97, 0.1);
+  border-left: 4px solid var(--accent);
   padding: 1rem;
-  border-radius: 12px;
+  border-radius: 8px;
   margin-top: 1.5rem;
   font-weight: 500;
 }
@@ -373,7 +397,7 @@ input[type="checkbox"], input[type="radio"] {
   display: flex;
   align-items: center;
   padding: 0.5rem 0;
-  border-bottom: 1px solid #eee;
+  border-bottom: 1px solid rgba(0,0,0,0.05);
   cursor: pointer;
 }
 
@@ -395,7 +419,7 @@ input[type="checkbox"], input[type="radio"] {
 .shop-item-tags {
   font-size: 0.7rem;
   color: var(--text-muted);
-  background: #eee;
+  background: rgba(0,0,0,0.05);
   padding: 2px 6px;
   border-radius: 4px;
   margin-top: 2px;
@@ -437,7 +461,7 @@ input[type="checkbox"], input[type="radio"] {
 .day-meal-item {
   font-size: 0.85rem;
   padding: 0.5rem 0;
-  border-bottom: 1px solid #eee;
+  border-bottom: 1px solid rgba(0,0,0,0.05);
   cursor: pointer;
 }
 
@@ -455,12 +479,13 @@ input[type="checkbox"], input[type="radio"] {
   justify-content: space-between;
   align-items: center;
   padding: 0.75rem 0;
-  border-bottom: 1px solid #eee;
+  border-bottom: 1px solid rgba(0,0,0,0.05);
 }
 
 .settings-row:last-child {
   border-bottom: none;
 }
+
 /* Dark Mode (Full AMOLED) Specifics */
 body.dark-mode {
   --bg: #000000;
@@ -475,6 +500,11 @@ body.dark-mode .settings-section,
 body.dark-mode .day-column {
   box-shadow: 0 1px 3px rgba(255,255,255,0.05);
   border: 1px solid #222;
+  background-color: var(--surface);
+}
+
+body.dark-mode .day-column.current-day {
+  border: 2px solid var(--primary-light); /* FIX: Evidenzia il giorno corrente in AMOLED */
 }
 
 body.dark-mode .bottom-nav {
@@ -496,4 +526,70 @@ body.dark-mode textarea {
   background-color: #222;
   color: #fff;
   border-color: #444;
+}
+
+body.dark-mode .modal-content {
+  background: var(--surface);
+  border-top: 1px solid #333;
+}
+
+body.dark-mode .tab-btn {
+  color: #999;
+}
+
+body.dark-mode .tab-btn.active {
+  color: var(--primary-light);
+  border-bottom-color: var(--primary-light);
+}
+
+/* Header Globale per Chef Mode */
+.global-header {
+  background: var(--primary);
+  color: white;
+  padding: 1rem;
+  border-radius: 0 0 16px 16px;
+  margin: -1rem -1rem 1rem -1rem;
+  box-shadow: 0 4px 12px rgba(0,0,0,0.1);
+}
+body.dark-mode .global-header {
+  background: #111;
+  border-bottom: 1px solid #333;
+}
+.global-header select, .global-header input[type="radio"] {
+  background: rgba(255,255,255,0.2);
+  color: white;
+  border: 1px solid rgba(255,255,255,0.3);
+}
+/* Swap Modal Specifics */
+.swap-item {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 0.75rem;
+  border: 1px solid rgba(0,0,0,0.1);
+  border-radius: 8px;
+  margin-bottom: 0.5rem;
+  cursor: pointer;
+  transition: background-color 200ms;
+}
+.swap-item:active, .swap-item:hover {
+  background-color: rgba(45, 106, 79, 0.1);
+  border-color: var(--primary);
+}
+body.dark-mode .swap-item {
+  border-color: #333;
+}
+body.dark-mode .swap-item:active, body.dark-mode .swap-item:hover {
+  background-color: #222;
+}
+.btn-swap {
+  font-size: 0.75rem;
+  padding: 0.2rem 0.5rem;
+  min-height: 24px;
+  background: rgba(0,0,0,0.05);
+  color: var(--text);
+}
+body.dark-mode .btn-swap {
+  background: #333;
+  color: #fff;
 }
