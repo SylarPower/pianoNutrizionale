@@ -12,9 +12,9 @@
 <body>
   
   <div id="app-container">
-    <div id="view-today" class="view hidden"></div>
+    <div id="view-chef" class="view hidden"></div>
+    <div id="view-recipes" class="view hidden"></div>
     <div id="view-week" class="view hidden"></div>
-    <div id="view-prep" class="view hidden"></div>
     <div id="view-shop" class="view hidden"></div>
     <div id="view-settings" class="view hidden"></div>
   </div>
@@ -34,7 +34,6 @@
       </div>
       
       <div id="tab-ingredients" class="tab-content active">
-        <div id="modal-persons-selector" style="margin-bottom: 1rem; padding: 0.75rem; background: #f0f0f0; border-radius: 8px;"></div>
         <ul id="modal-ingredients-list"></ul>
       </div>
       
@@ -47,25 +46,25 @@
       </div>
       
       <div class="modal-footer">
-        <button id="modal-edit-btn" class="btn btn-primary">Modifica ricetta</button>
+        <button id="modal-edit-btn" class="btn btn-primary">Modifica ricetta base</button>
         <button id="modal-revert-btn" class="btn btn-outline hidden">Ripristina originale</button>
-        <button id="modal-save-btn" class="btn btn-primary hidden">Salva</button>
+        <button id="modal-save-btn" class="btn btn-primary hidden">Salva nel Ricettario</button>
       </div>
     </div>
   </div>
 
   <nav class="bottom-nav">
+    <a href="#chef" class="nav-item active" id="nav-chef">
+      <span class="nav-icon">👨‍🍳</span>
+      <span class="nav-label">Oggi</span>
+    </a>
     <a href="#week" class="nav-item" id="nav-week">
       <span class="nav-icon">📅</span>
       <span class="nav-label">Settimana</span>
     </a>
-    <a href="#today" class="nav-item active" id="nav-today">
-      <span class="nav-icon">⭐</span>
-      <span class="nav-label">Oggi</span>
-    </a>
-    <a href="#prep" class="nav-item" id="nav-prep">
-      <span class="nav-icon">👨‍🍳</span>
-      <span class="nav-label">Prep</span>
+    <a href="#recipes" class="nav-item" id="nav-recipes">
+      <span class="nav-icon">🍲</span>
+      <span class="nav-label">Ricettario</span>
     </a>
     <a href="#shop" class="nav-item" id="nav-shop">
       <span class="nav-icon">🛒</span>
