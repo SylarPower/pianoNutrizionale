@@ -4,20 +4,14 @@ const MEAL_PLAN = {
     meals: {
       training: [
         {
-          id: "monday_breakfast", slot: "breakfast", name: "Frozen Porridge \"Sacher\"", emoji: "🥣", prepTime: "5 min",
+          id: "monday_breakfast", slot: "breakfast", name: "Frozen Porridge \"Sacher\"", emoji: "🥣", prepTime: "5 min", prepNote: "Preparare domenica sera",
           ingredients: [
             { name: "Farina d'avena", quantity: 40, unit: "g" }, { name: "Yogurt greco 0%", quantity: 100, unit: "g" },
             { name: "Cacao amaro", quantity: 1, unit: "cucchiaio" }, { name: "Marmellata albicocche", quantity: 15, unit: "g" },
             { name: "Cioccolato fondente", quantity: 10, unit: "g" }, { name: "Sale", quantity: 1, unit: "pizzico" }
           ],
-          steps: [
-            "In una ciotola, mescola l'avena con yogurt, cacao e sale fino a ottenere una consistenza cremosa.",
-            "Versa in un bicchiere e aggiungi la marmellata senza mescolare per l'effetto 'swirl'.",
-            "Sciogli il cioccolato e versalo a filo sopra il porridge.",
-            "Lascia riposare in frigo tutta la notte. Tira fuori 5 min prima di mangiare."
-          ],
-          batchNote: "PREPARAZIONE: Da fare la domenica sera. Scola già i ceci per il pranzo di oggi e le lenticchie per giovedì.",
-          supplement: "7g creatina in acqua dopo colazione"
+          steps: ["Mescola yogurt + cacao + sale", "Aggiungi avena", "Marmellata sopra senza mescolare", "Cioccolato sciolto a filo", "Chiudi e frigo. Mattino: tira fuori 5 min prima, mescola e consuma."],
+          batchNote: "Prepara domenica sera; apri e scola lattine ceci + lenticchie, tieni in frigo", supplement: "7g creatina in acqua dopo colazione"
         },
         {
           id: "monday_snack1", slot: "snack1", name: "Spuntino Mattina", emoji: "🍎", prepTime: "2 min",
@@ -25,20 +19,15 @@ const MEAL_PLAN = {
           steps: ["Consuma la frutta e i crackers.", "Sciogli le whey in acqua e bevi."], batchNote: null, supplement: null
         },
         {
-          id: "monday_lunch", slot: "lunch", name: "Riso e Ceci alla Curcuma con Rucola", emoji: "🍛", prepTime: "20 min",
+          id: "monday_lunch", slot: "lunch", name: "Riso e Ceci alla Curcuma con Spinaci", emoji: "🍛", prepTime: "20 min",
           ingredients: [
-            { name: "Riso bianco", quantity: 90, unit: "g" }, { name: "Ceci bolliti", quantity: 240, unit: "g" },
-            { name: "Rucola fresca", quantity: 200, unit: "g" }, { name: "Olio EVO", quantity: 10, unit: "g" },
-            { name: "Curcuma", quantity: 1, unit: "cucchiaino" }, { name: "Pepe nero", quantity: 1, unit: "q.b." }, { name: "Aglio", quantity: 1, unit: "q.b." }
+            { name: "Riso bianco", quantity: 90, unit: "g" }, { name: "Ceci bolliti scolati", quantity: 240, unit: "g" },
+            { name: "Spinacini freschi", quantity: 200, unit: "g" }, { name: "Olio EVO", quantity: 10, unit: "g" },
+            { name: "Aglio (fresco o polvere)", quantity: 1, unit: "q.b." }, { name: "Curcuma in polvere", quantity: 1, unit: "q.b." },
+            { name: "Pepe", quantity: 1, unit: "q.b." }, { name: "Sale / Sale grosso", quantity: 1, unit: "q.b." }, { name: "Limone", quantity: 0.5, unit: "pz" }
           ],
-          steps: [
-            "Cuoci il riso al dente.",
-            "In padella scalda l'olio con curcuma e pepe nero (fondamentale per attivare la curcumina).",
-            "Salta i ceci 3-4 min con l'aglio, poi unisci il riso.",
-            "Spegni il fuoco e aggiungi la rucola fresca: il calore residuo la farà appassire senza distruggere i nutrienti."
-          ],
-          batchNote: null, 
-          supplement: null
+          steps: ["Cuoci riso ~10min, scola;", "Scalda olio+aglio 1min fuoco basso;", "Aggiungi curcuma+pepe 30sec;", "Aggiungi ceci 3-4min;", "Aggiungi spinacini +1cucchiaio acqua, copri 2min;", "Unisci riso, aggiusta sale;", "Servi con succo limone"],
+          batchNote: "Apri anche lattina lenticchie → scola e tieni in frigo per giovedì pranzo", supplement: null
         },
         {
           id: "monday_snack2", slot: "snack2", name: "Merenda", emoji: "🥄", prepTime: "1 min",
@@ -46,24 +35,19 @@ const MEAL_PLAN = {
           steps: ["Mescola yogurt e marmellata."], batchNote: null, supplement: null
         },
         {
-          id: "monday_dinner", slot: "dinner", name: "Tagliata di Manzo e Patate", emoji: "🥩", prepTime: "30 min",
+          id: "monday_dinner", slot: "dinner", name: "Tagliata di Manzo al Rosmarino con Patate e Insalata", emoji: "🥩", prepTime: "30 min",
           ingredients: [
-            { name: "Manzo magro", quantity: 150, unit: "g" }, { name: "Patate", quantity: 230, unit: "g" },
+            { name: "Manzo magro (controfiletto o fesa)", quantity: 150, unit: "g" }, { name: "Patate", quantity: 230, unit: "g" },
             { name: "Insalata mista", quantity: 200, unit: "g" }, { name: "Olio EVO", quantity: 10, unit: "g" },
-            { name: "Sale grosso", quantity: 1, unit: "q.b." }, { name: "Rosmarino", quantity: 1, unit: "q.b." }
+            { name: "Sale / Sale grosso", quantity: 1, unit: "q.b." }, { name: "Pepe", quantity: 1, unit: "q.b." },
+            { name: "Rosmarino fresco", quantity: 1, unit: "q.b." }, { name: "Prezzemolo fresco", quantity: 1, unit: "q.b." }, { name: "Limone", quantity: 0.5, unit: "pz" }
           ],
-          steps: [
-            "Lessa le patate con la buccia (20-25 min) per preservare i minerali.",
-            "Cuoci la carne su piastra rovente 2-3 min per lato.",
-            "IMPORTANTE: Sala solo alla fine con sale grosso per non indurire le fibre della carne.",
-            "Condisci le patate sbucciate con 5g di olio e rosmarino."
-          ],
-          batchNote: "BATCH COOKING: Cuoci 460g di patate totali. 230g per stasera, 230g in frigo per la cena di giovedì.", 
-          supplement: null
+          steps: ["Lessa patate con buccia in acqua salata 20-25min → sbuccia, taglia, condisci con 5g olio+sale+prezzemolo;", "Tira carne fuori frigo 15min prima;", "Scalda padella rigata a fuoco molto alto finché fuma;", "Cuoci carne 2-3min per lato;", "Sala solo a fine cottura con sale grosso;", "Riposa su tagliere 3min poi affetta in diagonale controfibra;", "Insalata con 5g olio+limone+sale"],
+          batchNote: "BATCH COOKING: Cuoci dose doppia di patate per giovedì.", supplement: null
         }
       ]
     },
-    batchCooking: { evening: "Lessa 460g di patate (metà per giovedì). Prepara il batter per i pancake di domani (60g albumi+40g yogurt+40g avena)." }
+    batchCooking: { evening: "Cuoci {patate*4.6} di patate (metà conservale in frigo per giovedì). Prepara batter pancake per domani mattina ({albumi*1.2} albumi, {yogurt_greco*0.4} yogurt, {avena*0.4} avena, 1g vanillina in frigo)." }
   },
   tuesday: {
     dayName: "Martedì", dayKey: "tuesday", defaultType: "training",
@@ -81,19 +65,14 @@ const MEAL_PLAN = {
           steps: ["Consuma la frutta e i crackers.", "Sciogli le whey in acqua e bevi."], batchNote: null, supplement: null
         },
         {
-          id: "tuesday_lunch", slot: "lunch", name: "Gnocchi Merluzzo e Melanzane", emoji: "🍝", prepTime: "20 min",
+          id: "tuesday_lunch", slot: "lunch", name: "Gnocchi al Merluzzo, Pomodorini e Melanzane", emoji: "🍝", prepTime: "20 min",
           ingredients: [
-            { name: "Gnocchi di patate", quantity: 250, unit: "g" }, { name: "Merluzzo", quantity: 250, unit: "g" },
-            { name: "Pomodorini", quantity: 200, unit: "g" }, { name: "Melanzana", quantity: 150, unit: "g" },
-            { name: "Olio EVO", quantity: 10, unit: "g" }, { name: "Basilico", quantity: 1, unit: "q.b." }, { name: "Origano", quantity: 1, unit: "q.b." }
+            { name: "Gnocchi di patate", quantity: 250, unit: "g" }, { name: "Merluzzo surgelato", quantity: 250, unit: "g" },
+            { name: "Pomodorini ciliegino", quantity: 200, unit: "g" }, { name: "Melanzane", quantity: 150, unit: "g" },
+            { name: "Olio EVO", quantity: 10, unit: "g" }, { name: "Aglio (fresco o polvere)", quantity: 1, unit: "q.b." }, { name: "Origano", quantity: 1, unit: "q.b." }, { name: "Sale / Sale grosso", quantity: 1, unit: "q.b." }, { name: "Pepe", quantity: 1, unit: "q.b." }, { name: "Basilico fresco", quantity: 1, unit: "q.b." }
           ],
-          steps: [
-            "Cuoci la melanzana a cubetti con acqua e origano (senza olio) per 10 min.",
-            "Aggiungi l'olio e i pomodorini finché scoppiano, poi il merluzzo a pezzi per 5 min.",
-            "Cuoci gli gnocchi, scolali e saltali nel sugo con abbondante basilico fresco strappato a mano."
-          ],
-          batchNote: null, 
-          supplement: null
+          steps: ["Taglia melanzana a cubetti, cuoci in padella senza olio con 3cucchiai acqua+origano 8-10min coperta;", "Stessa padella: scalda olio+aglio 1min;", "Aggiungi pomodorini interi fuoco vivo 3-4min finché scoppiano, schiaccia;", "Aggiungi merluzzo surgelato a bocconi, sala, pepa, cuoci 4-5min;", "Unisci melanzane 2min;", "Cuoci gnocchi in acqua salata finché vengono a galla (1-2min);", "Scola e salta nel sugo 1min;", "Servi con basilico fresco"],
+          batchNote: null, supplement: null
         },
         {
           id: "tuesday_snack2", slot: "snack2", name: "Merenda", emoji: "🍘", prepTime: "1 min",
@@ -101,23 +80,18 @@ const MEAL_PLAN = {
           steps: ["Consuma i crackers."], batchNote: null, supplement: null
         },
         {
-          id: "tuesday_dinner", slot: "dinner", name: "Pollo alla Paprika e Peperoni", emoji: "🍗", prepTime: "25 min",
+          id: "tuesday_dinner", slot: "dinner", name: "Petto di Pollo alla Paprika con Peperoni", emoji: "🍗", prepTime: "25 min",
           ingredients: [
             { name: "Petto di pollo", quantity: 200, unit: "g" }, { name: "Peperoni", quantity: 200, unit: "g" },
             { name: "Pane bianco", quantity: 60, unit: "g" }, { name: "Olio EVO", quantity: 10, unit: "g" },
-            { name: "Paprika", quantity: 1, unit: "q.b." }, { name: "Limone", quantity: 0.5, unit: "pz" }
+            { name: "Paprika (affumicata/dolce)", quantity: 1, unit: "q.b." }, { name: "Aglio (fresco o polvere)", quantity: 1, unit: "q.b." }, { name: "Limone", quantity: 0.5, unit: "pz" }, { name: "Sale / Sale grosso", quantity: 1, unit: "q.b." }, { name: "Pepe", quantity: 1, unit: "q.b." }
           ],
-          steps: [
-            "Marina il pollo con limone, paprika e aglio.",
-            "Cuoci su piastra rovente 5-6 min per lato.",
-            "Salta i peperoni con olio e sfuma con aceto balsamico a fine cottura."
-          ],
-          batchNote: "BATCH COOKING: Cuoci 400g di pollo e 400g di peperoni. Conserva la metà in frigo per domani.", 
-          supplement: null
+          steps: ["Batti i petti (cuoci la dose doppia totali) per uniformare spessore;", "Marina i petti: paprika affumicata+aglio polvere+limone+sale+pepe almeno 10min;", "Cuoci su padella rigata fuoco medio-alto 5-6min per lato;", "Metti metà in contenitore con olio+limone → frigo per domani;", "Taglia peperoni a striscioline (cuoci la dose doppia) → salta con 5g olio 8-10min fuoco vivo, sfuma con aceto balsamico;", "Metti metà peperoni in contenitore → frigo per domani;", "Servi il piatto."],
+          batchNote: "BATCH COOKING: Cuoci dose doppia di pollo e peperoni per domani.", supplement: null
         }
       ]
     },
-    batchCooking: { evening: "Cuoci dose doppia di pollo (400g) e peperoni (400g) per i pasti di domani." }
+    batchCooking: { evening: "BATCH COOKING: Cuoci {pollo*4} di pollo e {peperoni*4} di peperoni (Quantità doppia pesata). Conserva la metà esatta in frigo per domani." }
   },
   wednesday: {
     dayName: "Mercoledì", dayKey: "wednesday", defaultType: "training",
@@ -135,44 +109,33 @@ const MEAL_PLAN = {
           steps: ["Consuma frutta, crackers e bevi whey in acqua."], batchNote: null, supplement: null
         },
         {
-          id: "wednesday_lunch", slot: "lunch", name: "Pasta Limone e Pollo", emoji: "🍋", prepTime: "15 min",
+          id: "wednesday_lunch", slot: "lunch", name: "Pasta al Limone con Pollo e Zucchine", emoji: "🍝", prepTime: "15 min",
           ingredients: [
-            { name: "Pasta bianca", quantity: 90, unit: "g" }, { name: "Pollo già cotto", quantity: 200, unit: "g" },
+            { name: "Pasta bianca", quantity: 90, unit: "g" }, { name: "Petto di pollo già cotto", quantity: 200, unit: "g" },
             { name: "Zucchine", quantity: 200, unit: "g" }, { name: "Olio EVO", quantity: 10, unit: "g" },
-            { name: "Limone", quantity: 1, unit: "pz" }
+            { name: "Limone", quantity: 1, unit: "pz" }, { name: "Prezzemolo fresco", quantity: 1, unit: "q.b." }, { name: "Aglio (fresco o polvere)", quantity: 1, unit: "q.b." }, { name: "Sale / Sale grosso", quantity: 1, unit: "q.b." }, { name: "Pepe", quantity: 1, unit: "q.b." }
           ],
-          steps: [
-            "Taglia a strisce il pollo avanzato da ieri.",
-            "Salta le zucchine a rondelle in padella con olio per 5 min.",
-            "Scola la pasta e manteca in padella con il pollo, acqua di cottura, scorza e succo di limone per un effetto drenante."
-          ],
-          batchNote: "USO AVANZI: Usa i 200g di pollo cotti martedì sera.", 
-          supplement: null
+          steps: ["Taglia pollo a striscioline → scalda in padella con metà olio 2min;", "Stessa padella: olio rimasto+zucchine a rondelle sottili fuoco vivo 5min;", "Cuoci pasta, conserva 1 mestolo acqua cottura prima di scolare;", "Unisci pasta+pollo+zucchine in padella, manteca con acqua cottura+scorza limone+succo;", "Aggiungi prezzemolo abbondante, aggiusta sale"],
+          batchNote: "USO AVANZI: Usa pollo cotto martedì sera.", supplement: null
         },
         {
           id: "wednesday_snack2", slot: "snack2", name: "Merenda", emoji: "🍯", prepTime: "1 min",
-          ingredients: [{ name: "Yogurt greco 0%", quantity: 150, unit: "g" }, { name: "Miele", quantity: 15, unit: "g" }],
+          ingredients: [{ name: "Yogurt greco 0%", quantity: 150, unit: "g" }, { name: "Miele / Sciroppo Acero", quantity: 15, unit: "g" }],
           steps: ["Mescola yogurt e miele."], batchNote: null, supplement: null
         },
         {
-          id: "wednesday_dinner", slot: "dinner", name: "Frittata Peperoni e Rucola", emoji: "🍳", prepTime: "15 min",
+          id: "wednesday_dinner", slot: "dinner", name: "Frittata ai Peperoni, Basilico e Spinaci con Pane", emoji: "🍳", prepTime: "15 min",
           ingredients: [
-            { name: "Uova intere", quantity: 180, unit: "g" }, { name: "Peperoni cotti", quantity: 200, unit: "g" },
-            { name: "Rucola fresca", quantity: 100, unit: "g" }, { name: "Pane bianco", quantity: 60, unit: "g" },
-            { name: "Olio EVO", quantity: 5, unit: "g" }
+            { name: "Uova intere", quantity: 180, unit: "g" }, { name: "Peperoni saltati dal frigo ieri", quantity: 200, unit: "g" },
+            { name: "Spinacini freschi", quantity: 100, unit: "g" }, { name: "Pane bianco", quantity: 60, unit: "g" },
+            { name: "Olio EVO", quantity: 10, unit: "g" }, { name: "Aglio (fresco o polvere)", quantity: 1, unit: "q.b." }, { name: "Basilico fresco", quantity: 1, unit: "q.b." }, { name: "Sale / Sale grosso", quantity: 1, unit: "q.b." }, { name: "Pepe", quantity: 1, unit: "q.b." }
           ],
-          steps: [
-            "Scalda i peperoni di ieri in padella con la rucola per 1 min.",
-            "Versa le uova sbattute con sale e pepe.",
-            "TECNICA: Copri con coperchio e cuoci a fuoco basso 8-10 min. Non girare la frittata per mantenerla soffice e idratata.",
-            "Servi con pane."
-          ],
-          batchNote: "USO AVANZI: Usa i 200g di peperoni cotti martedì sera.", 
-          supplement: null
+          steps: ["Scalda metà olio → aggiungi peperoni avanzati 2min;", "Aggiungi spinacini, appassisci 1min;", "Sbatti uova con sale+pepe+basilico spezzettato;", "Olio rimasto in padella, versa uova sulle verdure, distribuisci;", "Copri con coperchio, fuoco basso 8-10min finché superficie rappresa; non girare;", "Servi con pane"],
+          batchNote: "USO AVANZI: Usa i peperoni di martedì. E intanto metti a lessare le patate per domani.", supplement: null
         }
       ]
     },
-    batchCooking: { evening: "Se non hai patate pronte, lessane 230g stasera per domani." }
+    batchCooking: { evening: "Se non l'hai fatto lunedì, lessa {patate*2.3} di patate per domani." }
   },
   thursday: {
     dayName: "Giovedì", dayKey: "thursday", defaultType: "rest",
@@ -190,19 +153,14 @@ const MEAL_PLAN = {
           steps: ["Consuma la frutta e le proteine in acqua. Niente crackers in giorno di riposo."], batchNote: null, supplement: null
         },
         {
-          id: "thursday_lunch", slot: "lunch", name: "Insalata Drenante Farro e Lenticchie", emoji: "🥗", prepTime: "35 min",
+          id: "thursday_lunch", slot: "lunch", name: "Insalata Drenante Farro, Lenticchie", emoji: "🥗", prepTime: "35 min",
           ingredients: [
             { name: "Farro perlato", quantity: 70, unit: "g" }, { name: "Lenticchie in lattina", quantity: 240, unit: "g" },
-            { name: "Avocado", quantity: 0.5, unit: "pz" }, { name: "Olio EVO", quantity: 10, unit: "g" },
-            { name: "Zenzero fresco", quantity: 1, unit: "q.b." }, { name: "Limone", quantity: 0.5, unit: "pz" }, { name: "Pomodorini", quantity: 150, unit: "g" }
+            { name: "Avocado", quantity: 0.5, unit: "pz" }, { name: "Pomodorini", quantity: 150, unit: "g" },
+            { name: "Olio EVO", quantity: 10, unit: "g" }, { name: "Limone", quantity: 0.5, unit: "pz" }, { name: "Prezzemolo fresco", quantity: 1, unit: "q.b." }, { name: "Cumino in polvere", quantity: 1, unit: "q.b." }, { name: "Zenzero fresco", quantity: 1, unit: "q.b." }, { name: "Sale / Sale grosso", quantity: 1, unit: "q.b." }, { name: "Pepe", quantity: 1, unit: "q.b." }
           ],
-          steps: [
-            "Cuoci il farro e raffreddalo subito sotto acqua: l'amido retrogradato abbassa l'indice glicemico.",
-            "Prepara un dressing emulsionando olio, limone e zenzero fresco grattugiato.",
-            "In una ciotola unisci farro, lenticchie scolate, avocado e pomodorini. Lascia insaporire 10 min."
-          ],
-          batchNote: "Usa le lenticchie scolate lunedì. Piatto fresco ideale per luglio.", 
-          supplement: null
+          steps: ["Cuoci farro in acqua salata 25-30min → scola e raffredda sotto acqua fredda;", "Taglia avocado a cubetti + pomodorini a metà;", "In ciotola: farro+lenticchie+avocado+pomodorini+prezzemolo;", "Dressing: olio+succo limone+cumino+zenzero grattugiato (1cm)+pepe → emulsiona;", "Condisci, mescola delicatamente, aggiusta sale; servire tiepido o freddo"],
+          batchNote: null, supplement: null
         },
         {
           id: "thursday_snack2", slot: "snack2", name: "Merenda", emoji: "🍘", prepTime: "1 min",
@@ -210,87 +168,110 @@ const MEAL_PLAN = {
           steps: ["Consuma i crackers."], batchNote: null, supplement: null
         },
         {
-          id: "thursday_dinner", slot: "dinner", name: "Fiocchi di Latte e Patate", emoji: "🥣", prepTime: "5 min",
+          id: "thursday_dinner", slot: "dinner", name: "Fiocchi di Latte con Patate Tiepide e Insalata", emoji: "🥗", prepTime: "5 min",
           ingredients: [
-            { name: "Fiocchi di latte", quantity: 180, unit: "g" }, { name: "Patate bollite", quantity: 230, unit: "g" },
+            { name: "Fiocchi di latte", quantity: 180, unit: "g" }, { name: "Patate", quantity: 230, unit: "g" },
             { name: "Insalata mista", quantity: 200, unit: "g" }, { name: "Olio EVO", quantity: 10, unit: "g" },
-            { name: "Paprika", quantity: 1, unit: "q.b." }, { name: "Erba cipollina", quantity: 1, unit: "q.b." }
+            { name: "Erba cipollina", quantity: 1, unit: "q.b." }, { name: "Limone", quantity: 0.5, unit: "pz" }, { name: "Paprika (affumicata/dolce)", quantity: 1, unit: "q.b." }, { name: "Sale / Sale grosso", quantity: 1, unit: "q.b." }, { name: "Pepe", quantity: 1, unit: "q.b." }
           ],
-          steps: [
-            "Scalda le patate avanzate da lunedì (in padella o microonde) e condiscile con 5g di olio, paprika e sale.",
-            "Servi i fiocchi di latte freschi con erba cipollina e pepe.",
-            "Accompagna con l'insalata condita con l'olio rimasto e limone."
-          ],
-          batchNote: null, 
-          supplement: null
+          steps: ["Taglia patate a tocchetti → scalda 2min in padella senza olio o 1min microonde;", "Condisci patate con 5g olio+limone+paprika+sale;", "Insalata con 5g olio rimanente+limone+sale;", "Impiatta: insalata nel piatto, fiocchi di latte al centro, patate a lato con erba cipollina e pepe"],
+          batchNote: null, supplement: null
         }
       ]
     },
-    batchCooking: { evening: "Nessuna preparazione." }
+    batchCooking: { evening: null }
   },
   friday: {
     dayName: "Venerdì", dayKey: "friday", defaultType: "training",
     meals: {
       training: [
         {
-          id: "friday_breakfast", slot: "breakfast", name: "Pancake Avena e Miele", emoji: "🥞", prepTime: "10 min",
-          ingredients: [{ name: "Farina d'avena", quantity: 40, unit: "g" }, { name: "Uova intere", quantity: 60, unit: "g" }, { name: "Yogurt greco 0%", quantity: 100, unit: "g" }, { name: "Miele", quantity: 10, unit: "g" }, { name: "Cannella", quantity: 1, unit: "q.b." }],
-          steps: ["Sbatti uovo con yogurt, aggiungi avena e cannella;", "Cuoci 3-4 pancake in padella antiaderente;", "Guarnisci con miele."],
+          id: "friday_breakfast_t", slot: "breakfast", name: "Pancake Avena con Miele", emoji: "🥞", prepTime: "10 min",
+          ingredients: [{ name: "Farina d'avena", quantity: 40, unit: "g" }, { name: "Uova intere", quantity: 60, unit: "g" }, { name: "Yogurt greco 0%", quantity: 100, unit: "g" }, { name: "Miele / Sciroppo Acero", quantity: 10, unit: "g" }, { name: "Cannella", quantity: 1, unit: "q.b." }, { name: "Sale / Sale grosso", quantity: 1, unit: "q.b." }],
+          steps: ["Sbatti uovo con yogurt fino a composto omogeneo;", "Aggiungi avena+cannella+sale+lievito, mescola eliminando grumi;", "Scalda padella antiaderente fuoco medio-basso senza olio;", "Versa a cucchiaiate formando 3-4 dischetti 8-10cm;", "Cuoci 2-3min per lato (gira quando compaiono bollicine);", "Servi con miele caldo sopra"],
           batchNote: null, supplement: "7g creatina dopo colazione"
         },
         {
-          id: "friday_snack1", slot: "snack1", name: "Spuntino Mattina", emoji: "🍎", prepTime: "2 min",
+          id: "friday_snack1_t", slot: "snack1", name: "Spuntino Mattina", emoji: "🍎", prepTime: "2 min",
           ingredients: [{ name: "Frutta fresca stagionale", quantity: 250, unit: "g" }, { name: "Crackers", quantity: 30, unit: "g" }, { name: "Proteine Whey", quantity: 30, unit: "g" }],
           steps: ["Consuma frutta, crackers e bevi whey in acqua."], batchNote: null, supplement: null
         },
         {
-          id: "friday_lunch", slot: "lunch", name: "Riso Sgombro e Pomodorini", emoji: "🐟", prepTime: "15 min",
+          id: "friday_lunch_t", slot: "lunch", name: "Riso con Sgombro al Naturale, Pomodorini", emoji: "🐟", prepTime: "15 min",
           ingredients: [
             { name: "Riso bianco", quantity: 90, unit: "g" }, { name: "Sgombro al naturale", quantity: 100, unit: "g" },
             { name: "Pomodorini", quantity: 200, unit: "g" }, { name: "Olio EVO", quantity: 10, unit: "g" },
-            { name: "Capperi", quantity: 1, unit: "q.b." }, { name: "Prezzemolo fresco", quantity: 1, unit: "q.b." }
+            { name: "Capperi", quantity: 1, unit: "q.b." }, { name: "Prezzemolo fresco", quantity: 1, unit: "q.b." }, { name: "Origano", quantity: 1, unit: "q.b." }, { name: "Limone", quantity: 0.5, unit: "pz" }, { name: "Sale / Sale grosso", quantity: 1, unit: "q.b." }
           ],
-          steps: [
-            "Unisci al riso cotto lo sgombro sbriciolato e i pomodorini tagliati.",
-            "Aggiungi capperi, prezzemolo fresco e origano per dare gusto senza eccedere col sale.",
-            "Condisci con olio e limone. Ideale da mangiare tiepido."
-          ],
-          batchNote: null, 
-          supplement: null
+          steps: ["Cuoci riso in acqua salata → scola e intiepidisci;", "Taglia pomodorini a metà, condisci con origano+sale, lascia insaporire;", "Sgocciola e sbriciola sgombro in lattina;", "In ciotola: riso+sgombro+pomodorini+capperi+prezzemolo abbondante;", "Condisci con olio+succo limone, mescola delicatamente; servire tiepido o a temperatura ambiente"],
+          batchNote: null, supplement: null
         },
         {
-          id: "friday_snack2", slot: "snack2", name: "Merenda", emoji: "🍘", prepTime: "1 min",
+          id: "friday_snack2_t", slot: "snack2", name: "Merenda", emoji: "🍘", prepTime: "1 min",
           ingredients: [{ name: "Crackers", quantity: 30, unit: "g" }],
           steps: ["Consuma i crackers."], batchNote: null, supplement: null
         },
         {
-          id: "friday_dinner", slot: "dinner", name: "Salmone e Rucola con Patate", emoji: "🍣", prepTime: "30 min",
+          id: "friday_dinner_t", slot: "dinner", name: "Salmone in Padella con Spinaci e Patate", emoji: "🍣", prepTime: "30 min",
           ingredients: [
-            { name: "Salmone fresco", quantity: 100, unit: "g" }, { name: "Rucola fresca", quantity: 200, unit: "g" },
+            { name: "Salmone fresco", quantity: 100, unit: "g" }, { name: "Spinacini freschi", quantity: 200, unit: "g" },
             { name: "Patate", quantity: 230, unit: "g" }, { name: "Olio EVO", quantity: 10, unit: "g" },
-            { name: "Limone", quantity: 0.5, unit: "pz" }
+            { name: "Aglio (fresco o polvere)", quantity: 1, unit: "q.b." }, { name: "Limone", quantity: 0.5, unit: "pz" }, { name: "Prezzemolo fresco", quantity: 1, unit: "q.b." }, { name: "Sale / Sale grosso", quantity: 1, unit: "q.b." }, { name: "Pepe", quantity: 1, unit: "q.b." }
           ],
-          steps: [
-            "Lessa le patate (dose doppia per la prossima settimana).",
-            "Asciuga bene il salmone con carta da cucina: è il segreto per la crosticina.",
-            "Cuoci 3 min per lato in padella rovente senza muoverlo.",
-            "Servi su un letto di rucola fresca con patate condite con olio e limone."
+          steps: ["Lessa patate con buccia (cuocine dose doppia) 20-25min → sbuccia, taglia, condisci con aceto+prezzemolo+sale;", "Scalda 5g olio fuoco medio-alto; asciuga salmone con carta;", "Cuoci salmone 3min per lato senza muoverlo; sfuma con succo limone a fine cottura, sala e aggiungi aneto;", "Spinaci in altra padella con aglio+1cucchiaio acqua+5g olio 3-4min, spremi limone sopra;", "Impiatta: salmone al centro, spinaci e patate ai lati"],
+          batchNote: "BATCH COOKING: Cuoci patate doppie per lunedì prossimo", supplement: null
+        }
+      ],
+      rest: [
+        {
+          id: "friday_breakfast_r", slot: "breakfast", name: "Pancake Avena con Miele", emoji: "🥞", prepTime: "10 min",
+          ingredients: [{ name: "Farina d'avena", quantity: 40, unit: "g" }, { name: "Uova intere", quantity: 60, unit: "g" }, { name: "Yogurt greco 0%", quantity: 100, unit: "g" }, { name: "Miele / Sciroppo Acero", quantity: 10, unit: "g" }, { name: "Cannella", quantity: 1, unit: "q.b." }, { name: "Sale / Sale grosso", quantity: 1, unit: "q.b." }],
+          steps: ["Sbatti uovo con yogurt fino a composto omogeneo;", "Aggiungi avena+cannella+sale+lievito, mescola eliminando grumi;", "Scalda padella antiaderente fuoco medio-basso senza olio;", "Versa a cucchiaiate formando 3-4 dischetti 8-10cm;", "Cuoci 2-3min per lato (gira quando compaiono bollicine);", "Servi con miele caldo sopra"],
+          batchNote: null, supplement: "7g creatina dopo colazione"
+        },
+        {
+          id: "friday_snack1_r", slot: "snack1", name: "Spuntino Mattina", emoji: "🍎", prepTime: "2 min",
+          ingredients: [{ name: "Frutta fresca stagionale", quantity: 250, unit: "g" }, { name: "Proteine Whey", quantity: 30, unit: "g" }],
+          steps: ["Consuma frutta e whey. Niente crackers (giorno di riposo)."], batchNote: null, supplement: null
+        },
+        {
+          id: "friday_lunch_r", slot: "lunch", name: "Riso con Sgombro al Naturale, Pomodorini", emoji: "🐟", prepTime: "15 min",
+          ingredients: [
+            { name: "Riso bianco", quantity: 70, unit: "g" }, { name: "Sgombro al naturale", quantity: 100, unit: "g" },
+            { name: "Pomodorini", quantity: 200, unit: "g" }, { name: "Olio EVO", quantity: 10, unit: "g" },
+            { name: "Capperi", quantity: 1, unit: "q.b." }, { name: "Prezzemolo fresco", quantity: 1, unit: "q.b." }, { name: "Origano", quantity: 1, unit: "q.b." }, { name: "Limone", quantity: 0.5, unit: "pz" }, { name: "Sale / Sale grosso", quantity: 1, unit: "q.b." }
           ],
-          batchNote: "BATCH COOKING: Cuoci 460g di patate totali. 230g stasera, 230g in frigo per lunedì.", 
-          supplement: null
+          steps: ["Cuoci riso in acqua salata → scola e intiepidisci;", "Taglia pomodorini a metà, condisci con origano+sale, lascia insaporire;", "Sgocciola e sbriciola sgombro in lattina;", "In ciotola: riso+sgombro+pomodorini+capperi+prezzemolo abbondante;", "Condisci con olio+succo limone, mescola delicatamente; servire tiepido o a temperatura ambiente"],
+          batchNote: null, supplement: null
+        },
+        {
+          id: "friday_snack2_r", slot: "snack2", name: "Merenda", emoji: "🍘", prepTime: "1 min",
+          ingredients: [{ name: "Crackers", quantity: 30, unit: "g" }],
+          steps: ["Consuma i crackers."], batchNote: null, supplement: null
+        },
+        {
+          id: "friday_dinner_r", slot: "dinner", name: "Salmone in Padella con Spinaci e Patate", emoji: "🍣", prepTime: "30 min",
+          ingredients: [
+            { name: "Salmone fresco", quantity: 100, unit: "g" }, { name: "Spinacini freschi", quantity: 200, unit: "g" },
+            { name: "Patate", quantity: 230, unit: "g" }, { name: "Olio EVO", quantity: 10, unit: "g" },
+            { name: "Aglio (fresco o polvere)", quantity: 1, unit: "q.b." }, { name: "Limone", quantity: 0.5, unit: "pz" }, { name: "Prezzemolo fresco", quantity: 1, unit: "q.b." }, { name: "Sale / Sale grosso", quantity: 1, unit: "q.b." }, { name: "Pepe", quantity: 1, unit: "q.b." }
+          ],
+          steps: ["Lessa patate con buccia (cuocine dose doppia) 20-25min → sbuccia, taglia, condisci con aceto+prezzemolo+sale;", "Scalda 5g olio fuoco medio-alto; asciuga salmone con carta;", "Cuoci salmone 3min per lato senza muoverlo; sfuma con succo limone a fine cottura, sala e aggiungi aneto;", "Spinaci in altra padella con aglio+1cucchiaio acqua+5g olio 3-4min, spremi limone sopra;", "Impiatta: salmone al centro, spinaci e patate ai lati"],
+          batchNote: "BATCH COOKING: Cuoci patate doppie per lunedì prossimo", supplement: null
         }
       ]
     },
-    batchCooking: { evening: "Cuoci 460g di patate (metà per lunedì prossimo)." }
+    batchCooking: { evening: "Cuoci {patate*4.6} di patate stasera (metà conservale in frigo per lunedì)." }
   },
   saturday: {
     dayName: "Sabato", dayKey: "saturday", defaultType: "rest",
     meals: {
       rest: [
         {
-          id: "saturday_breakfast", slot: "breakfast", name: "Pancake Proteici", emoji: "🥞", prepTime: "10 min",
-          ingredients: [{ name: "Albumi", quantity: 120, unit: "g" }, { name: "Yogurt greco 0%", quantity: 40, unit: "g" }, { name: "Farina d'avena", quantity: 40, unit: "g" }, { name: "Miele", quantity: 20, unit: "g" }],
-          steps: ["Mescola ingredienti e cuoci in padella.", "Guarnisci con sciroppo d'acero o miele."], batchNote: null, supplement: "7g creatina dopo colazione"
+          id: "saturday_breakfast", slot: "breakfast", name: "Pancake Proteici con Sciroppo d'Acero", emoji: "🥞", prepTime: "10 min",
+          ingredients: [{ name: "Albumi", quantity: 120, unit: "g" }, { name: "Yogurt greco 0%", quantity: 40, unit: "g" }, { name: "Farina d'avena", quantity: 40, unit: "g" }, { name: "Miele / Sciroppo Acero", quantity: 20, unit: "g" }],
+          steps: ["Monta leggermente albumi con forchetta (solo schiumosi);", "Aggiungi yogurt+avena+vanillina, mescola fino a pastella liscia;", "Cuoci in padella antiaderente fuoco basso 2min per lato;", "Versa sciroppo d'acero sopra caldo"],
+          batchNote: null, supplement: "7g creatina dopo colazione"
         },
         {
           id: "saturday_snack1", slot: "snack1", name: "Spuntino Mattina", emoji: "🍎", prepTime: "2 min",
@@ -298,20 +279,14 @@ const MEAL_PLAN = {
           steps: ["Consuma frutta e bevi whey in acqua."], batchNote: null, supplement: null
         },
         {
-          id: "saturday_lunch", slot: "lunch", name: "Quinoa, Fagioli e Cetriolo", emoji: "🥗", prepTime: "20 min",
+          id: "saturday_lunch", slot: "lunch", name: "Quinoa ai Fagioli Borlotti e Finocchi", emoji: "🥗", prepTime: "20 min",
           ingredients: [
             { name: "Quinoa", quantity: 60, unit: "g" }, { name: "Fagioli borlotti", quantity: 240, unit: "g" },
-            { name: "Cetriolo", quantity: 200, unit: "g" }, { name: "Olio EVO", quantity: 10, unit: "g" },
-            { name: "Limone", quantity: 0.5, unit: "pz" }
+            { name: "Finocchi", quantity: 200, unit: "g" }, { name: "Olio EVO", quantity: 10, unit: "g" },
+            { name: "Prezzemolo fresco", quantity: 1, unit: "q.b." }, { name: "Limone", quantity: 0.5, unit: "pz" }, { name: "Origano", quantity: 1, unit: "q.b." }, { name: "Sale / Sale grosso", quantity: 1, unit: "q.b." }, { name: "Pepe", quantity: 1, unit: "q.b." }
           ],
-          steps: [
-            "Sciacqua bene la quinoa prima di cuocerla.",
-            "Taglia il cetriolo a cubetti: è l'alleato numero uno per l'idratazione estiva.",
-            "In una ciotola unisci quinoa cotta, fagioli, cetrioli.",
-            "Condisci a freddo con olio, limone e menta fresca per un effetto drenante."
-          ],
-          batchNote: null, 
-          supplement: null
+          steps: ["Sciacqua quinoa in colino 1min;", "Cuoci in 120ml acqua salata fuoco basso coperta 12-15min → riposa 5min → sgrana con forchetta;", "Taglia finocchi a fettine sottili → salta in padella con 3cucchiai acqua+origano 8-10min fuoco medio senza olio;", "In ciotola: quinoa+fagioli+finocchi+prezzemolo abbondante;", "Dressing: olio+limone+sale+pepe → condisci e mescola"],
+          batchNote: null, supplement: null
         },
         {
           id: "saturday_snack2", slot: "snack2", name: "Merenda", emoji: "🥄", prepTime: "1 min",
@@ -319,32 +294,28 @@ const MEAL_PLAN = {
           steps: ["Mescola yogurt e marmellata."], batchNote: null, supplement: null
         },
         {
-          id: "saturday_dinner", slot: "dinner", name: "Uova in Purgatorio", emoji: "🍳", prepTime: "20 min",
+          id: "saturday_dinner", slot: "dinner", name: "Uova in Purgatorio con Zucchine e Pane", emoji: "🍳", prepTime: "20 min",
           ingredients: [
             { name: "Uova intere", quantity: 180, unit: "g" }, { name: "Pomodori pelati", quantity: 200, unit: "g" },
             { name: "Zucchine", quantity: 200, unit: "g" }, { name: "Pane bianco", quantity: 60, unit: "g" },
-            { name: "Olio EVO", quantity: 10, unit: "g" }
+            { name: "Olio EVO", quantity: 10, unit: "g" }, { name: "Aglio (fresco o polvere)", quantity: 1, unit: "q.b." }, { name: "Peperoncino", quantity: 1, unit: "q.b." }, { name: "Basilico fresco", quantity: 1, unit: "q.b." }, { name: "Sale / Sale grosso", quantity: 1, unit: "q.b." }, { name: "Pepe", quantity: 1, unit: "q.b." }
           ],
-          steps: [
-            "Cuoci i pelati in padella con aglio e basilico per 10 min.",
-            "Rompi le uova direttamente nel sugo, copri e cuoci finché il bianco è rappreso ma il tuorlo resta morbido.",
-            "Accompagna con zucchine saltate velocemente in padella e il pane per la 'scarpetta'."
-          ],
-          batchNote: null, 
-          supplement: null
+          steps: ["Scalda olio con aglio+peperoncino 1min fuoco basso;", "Aggiungi pelati schiacciati con mani+basilico abbondante → sobbolli 8-10min mescolando;", "Salta zucchine a rondelle in padella separata senza olio con sale 5min;", "Nel sugo: crea 3 incavi con cucchiaio → rompi 1 uovo in ciascuno;", "Copri con coperchio, fuoco basso: 3-4min tuorlo morbido, 5-6min più sodo;", "Servi direttamente nella padella con zucchine a lato e pane per la scarpetta"],
+          batchNote: null, supplement: null
         }
       ]
     },
-    batchCooking: { evening: "Domani sera ricordati di preparare il Frozen Porridge per lunedì." }
+    batchCooking: { evening: "Se vuoi, mescola in un barattolo le polveri ({avena*1.6} avena) per tutti i 4 pancake della settimana successiva." }
   },
   sunday: {
     dayName: "Domenica", dayKey: "sunday", defaultType: "rest",
     meals: {
       rest: [
         {
-          id: "sunday_breakfast", slot: "breakfast", name: "Yogurt Greco e Cereali", emoji: "🥣", prepTime: "2 min",
+          id: "sunday_breakfast", slot: "breakfast", name: "Yogurt Greco, Cereali e Marmellata", emoji: "🥣", prepTime: "2 min",
           ingredients: [{ name: "Yogurt greco 0%", quantity: 200, unit: "g" }, { name: "Cereali integrali / Fitness", quantity: 50, unit: "g" }, { name: "Marmellata", quantity: 10, unit: "g" }],
-          steps: ["Unisci yogurt, marmellata e cereali."], batchNote: null, supplement: "7g creatina dopo colazione"
+          steps: ["Versa yogurt in ciotola;", "Aggiungi marmellata, mescola per effetto swirl;", "Aggiungi cereali al momento di mangiare per mantenerli croccanti"],
+          batchNote: "DOMENICA SERA prepara Frozen Porridge per lunedì", supplement: "7g creatina dopo colazione"
         },
         {
           id: "sunday_snack1", slot: "snack1", name: "Spuntino Mattina", emoji: "🍎", prepTime: "2 min",
@@ -352,121 +323,34 @@ const MEAL_PLAN = {
           steps: ["Consuma frutta e bevi whey in acqua."], batchNote: null, supplement: null
         },
         {
-          id: "sunday_lunch", slot: "lunch", name: "Legumotti Frutti di Mare e Zucchine", emoji: "🦐", prepTime: "20 min",
+          id: "sunday_lunch", slot: "lunch", name: "Legumotti con Nasello e Gamberetti", emoji: "🦐", prepTime: "20 min",
           ingredients: [
             { name: "Legumotti Barilla", quantity: 60, unit: "g" }, { name: "Nasello", quantity: 125, unit: "g" },
-            { name: "Gamberetti", quantity: 150, unit: "g" }, { name: "Zucchine", quantity: 200, unit: "g" },
-            { name: "Olio EVO", quantity: 10, unit: "g" }
+            { name: "Gamberetti surgelati", quantity: 150, unit: "g" }, { name: "Zucchine", quantity: 200, unit: "g" },
+            { name: "Olio EVO", quantity: 10, unit: "g" }, { name: "Aglio (fresco o polvere)", quantity: 1, unit: "q.b." }, { name: "Prezzemolo fresco", quantity: 1, unit: "q.b." }, { name: "Limone", quantity: 0.5, unit: "pz" }, { name: "Sale / Sale grosso", quantity: 1, unit: "q.b." }
           ],
-          steps: [
-            "Salta nasello e gamberetti in padella con aglio, olio e limone.",
-            "Cuoci i legumotti e scolali nella padella del pesce.",
-            "Manteca con un mestolo di acqua di cottura e aggiungi zucchine a rondelle cotte a parte e prezzemolo fresco.",
-            "Mix di proteine nobili e legumi per un indice infiammatorio bassissimo."
-          ],
-          batchNote: null, 
-          supplement: null
+          steps: ["Cuoci Legumotti in acqua salata → conserva 1 mestolo acqua cottura prima di scolare;", "Taglia nasello a bocconi → cuoci in padella con olio+aglio 3-4min per lato;", "Aggiungi gamberetti, cuoci 2-3min finché rosati; sfuma con succo limone;", "In padella separata: cuoci zucchine a rondelle con 2cucchiai acqua+origano 5-6min;", "Salta Legumotti con pesce+gamberetti+zucchine+acqua cottura per mantecare;", "Prezzemolo abbondante, sale, pepe finale"],
+          batchNote: null, supplement: null
         },
         {
           id: "sunday_snack2", slot: "snack2", name: "Merenda", emoji: "🍯", prepTime: "1 min",
-          ingredients: [{ name: "Yogurt greco 0%", quantity: 150, unit: "g" }, { name: "Miele", quantity: 15, unit: "g" }],
+          ingredients: [{ name: "Yogurt greco 0%", quantity: 150, unit: "g" }, { name: "Miele / Sciroppo Acero", quantity: 15, unit: "g" }],
           steps: ["Mescola yogurt e miele."], batchNote: null, supplement: null
         },
         {
-          id: "sunday_dinner", slot: "dinner", name: "Insalata Polpo e Melone", emoji: "🐙", prepTime: "10 min",
+          id: "sunday_dinner", slot: "dinner", name: "Insalata di Polpo con Sedano, Melone, Avocado", emoji: "🐙", prepTime: "10 min",
           ingredients: [
-            { name: "Polpo già cotto", quantity: 250, unit: "g" }, { name: "Melone", quantity: 100, unit: "g" },
-            { name: "Avocado", quantity: 0.5, unit: "pz" }, { name: "Olio EVO", quantity: 5, unit: "g" },
-            { name: "Limone", quantity: 0.5, unit: "pz" }
+            { name: "Polpo già cotto", quantity: 250, unit: "g" }, { name: "Sedano", quantity: 1, unit: "pz" },
+            { name: "Melone", quantity: 100, unit: "g" }, { name: "Avocado", quantity: 0.5, unit: "pz" },
+            { name: "Olio EVO", quantity: 5, unit: "g" }, { name: "Limone", quantity: 0.5, unit: "pz" }, { name: "Basilico fresco", quantity: 1, unit: "q.b." }, { name: "Sale / Sale grosso", quantity: 1, unit: "q.b." }, { name: "Pepe", quantity: 1, unit: "q.b." }
           ],
-          steps: [
-            "Taglia polpo, melone e avocado a cubetti regolari.",
-            "Emulsiona olio, limone e pepe e condisci a freddo.",
-            "Lascia riposare 5 min: il melone apporta potassio prezioso contro il caldo estivo."
-          ],
-          batchNote: "Preparazione Frozen Porridge per domani. Scola ceci e lenticchie.", 
-          supplement: null
+          steps: ["Se polpo surgelato già cotto: scongela in frigo dalla mattina → taglia a pezzetti;", "Taglia sedano a fettine sottili, melone a cubetti, avocado a cubetti;", "In ciotola: polpo+sedano+melone+avocado+basilico spezzettato;", "Emulsiona olio+limone+pepe → condisci;", "Mescola delicatamente, assaggia sale; riposa 5min prima di servire"],
+          batchNote: "DOMENICA SERA prepara Frozen Porridge per lunedì e scola lattine legumi", supplement: null
         }
       ]
     },
-    batchCooking: { evening: "Preparazione Frozen Porridge per lunedì. Scola lattine legumi (ceci e lenticchie)." }
+    batchCooking: { evening: "Preparazione Frozen Porridge per lunedì. Scola lattine legumi. Prepara vinaigrette settimanale: in un barattolo sbatti {olio*1} Olio EVO, limone, senape q.b." }
   }
 };
 
-// Generatore dinamico per riposo/allenamento
-const weekDays = ['monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday', 'sunday'];
-weekDays.forEach(day => {
-  const plan = MEAL_PLAN[day];
-  if (plan.meals.training && !plan.meals.rest) {
-    plan.meals.rest = JSON.parse(JSON.stringify(plan.meals.training));
-    const snack1 = plan.meals.rest.find(m => m.slot === 'snack1');
-    if(snack1) snack1.ingredients = snack1.ingredients.filter(i => i.name !== 'Crackers');
-    const lunch = plan.meals.rest.find(m => m.slot === 'lunch');
-    if (lunch) {
-      lunch.ingredients.forEach(i => {
-        if (i.name.includes("Riso") || i.name.includes("Pasta") || i.name.includes("Farro") || i.name.includes("Quinoa") || i.name.includes("Legumotti")) {
-          if (i.quantity === 90) i.quantity = 70;
-          if (i.quantity === 80) i.quantity = 60;
-        }
-      });
-    }
-  } 
-  else if (plan.meals.rest && !plan.meals.training) {
-    plan.meals.training = JSON.parse(JSON.stringify(plan.meals.rest));
-    const snack1 = plan.meals.training.find(m => m.slot === 'snack1');
-    if(snack1 && !snack1.ingredients.find(i=>i.name==='Crackers')) {
-      snack1.ingredients.push({ name: "Crackers", quantity: 30, unit: "g" });
-    }
-    const lunch = plan.meals.training.find(m => m.slot === 'lunch');
-    if (lunch) {
-      lunch.ingredients.forEach(i => {
-        if (i.name.includes("Riso") || i.name.includes("Pasta") || i.name.includes("Farro")) {
-          if (i.quantity === 70) i.quantity = 90;
-        } else if (i.name.includes("Quinoa") || i.name.includes("Legumotti")) {
-          if (i.quantity === 60) i.quantity = 80;
-        }
-      });
-    }
-  }
-});
-
-// Shopping base categories per far girare l'app. (Ridotte per pulizia del parser globale)
-const SHOPPING_CATEGORIES = [
-  { id: "yogurt_greco", name: "Yogurt greco 0%", category: "🥚 Uova e Latticini", unit: "g" },
-  { id: "albumi", name: "Albumi", category: "🥚 Uova e Latticini", unit: "g" },
-  { id: "uova_intere", name: "Uova intere", category: "🥚 Uova e Latticini", unit: "g" },
-  { id: "fiocchi_latte", name: "Fiocchi di latte", category: "🥚 Uova e Latticini", unit: "g" },
-  { id: "manzo", name: "Manzo magro", category: "🥩 Carne", unit: "g" },
-  { id: "pollo", name: "Petto di pollo", category: "🥩 Carne", unit: "g" },
-  { id: "merluzzo", name: "Merluzzo", category: "🐟 Pesce", unit: "g" },
-  { id: "sgombro", name: "Sgombro al naturale", category: "🐟 Pesce", unit: "g" },
-  { id: "salmone", name: "Salmone fresco", category: "🐟 Pesce", unit: "g" },
-  { id: "polpo", name: "Polpo già cotto", category: "🐟 Pesce", unit: "g" },
-  { id: "nasello", name: "Nasello", category: "🐟 Pesce", unit: "g" },
-  { id: "gamberetti", name: "Gamberetti", category: "🐟 Pesce", unit: "g" },
-  { id: "avena", name: "Farina d'avena", category: "🍚 Carboidrati", unit: "g" },
-  { id: "riso", name: "Riso bianco", category: "🍚 Carboidrati", unit: "g" },
-  { id: "pasta", name: "Pasta bianca", category: "🍚 Carboidrati", unit: "g" },
-  { id: "patate", name: "Patate", category: "🍚 Carboidrati", unit: "g" },
-  { id: "gnocchi", name: "Gnocchi di patate", category: "🍚 Carboidrati", unit: "g" },
-  { id: "pane", name: "Pane bianco", category: "🍚 Carboidrati", unit: "g" },
-  { id: "farro", name: "Farro perlato", category: "🍚 Carboidrati", unit: "g" },
-  { id: "quinoa", name: "Quinoa", category: "🍚 Carboidrati", unit: "g" },
-  { id: "legumotti", name: "Legumotti Barilla", category: "🍚 Carboidrati", unit: "g" },
-  { id: "ceci", name: "Ceci in lattina", category: "🫘 Legumi", unit: "g" },
-  { id: "lenticchie", name: "Lenticchie in lattina", category: "🫘 Legumi", unit: "g" },
-  { id: "borlotti", name: "Fagioli borlotti", category: "🫘 Legumi", unit: "g" },
-  { id: "rucola", name: "Rucola fresca", category: "🥬 Verdura", unit: "g" },
-  { id: "insalata", name: "Insalata mista", category: "🥬 Verdura", unit: "g" },
-  { id: "pomodorini", name: "Pomodorini", category: "🥬 Verdura", unit: "g" },
-  { id: "melanzane", name: "Melanzane", category: "🥬 Verdura", unit: "g" },
-  { id: "peperoni", name: "Peperoni", category: "🥬 Verdura", unit: "g" },
-  { id: "zucchine", name: "Zucchine", category: "🥬 Verdura", unit: "g" },
-  { id: "cetriolo", name: "Cetriolo", category: "🥬 Verdura", unit: "g" },
-  { id: "melone", name: "Melone", category: "🍑 Frutta", unit: "g" },
-  { id: "avocado", name: "Avocado", category: "🍑 Frutta", unit: "pz" },
-  { id: "frutta_stagione", name: "Frutta fresca stagionale", category: "🍑 Frutta", unit: "g" },
-  { id: "whey", name: "Proteine Whey", category: "🥫 Dispensa", unit: "g" },
-  { id: "marmellata", name: "Marmellata", category: "🥫 Dispensa", unit: "g" },
-  { id: "miele", name: "Miele", category: "🥫 Dispensa", unit: "g" }
-];
+// Nessuna logica qui, tutta spostata in app.js per essere richiamata quando serve!
