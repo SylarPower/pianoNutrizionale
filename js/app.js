@@ -1,7 +1,7 @@
 const DAYS = ['sunday', 'monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday'];
 const MEAL_SLOTS = [
   { id: 'breakfast', label: 'Colazione' },
-  { id: 'snack1', label: 'Spuntino mattina' },
+  { id: 'snack1', label: 'Spunt. Mattina' },
   { id: 'lunch', label: 'Pranzo' },
   { id: 'snack2', label: 'Merenda' },
   { id: 'dinner', label: 'Cena' }
@@ -10,6 +10,7 @@ const MEAL_SLOTS = [
 let appState = {
   settings: null,
   weekPlan: null,
+  swappedMeals: null,
   shoppingListCloud: null,
   deviceSettings: null,
   customRecipes: {}
@@ -19,14 +20,25 @@ let currentModalMeal = null;
 let editMode = false;
 let shopSettingsVisible = false;
 
+function repairMissingDays() {
+  if (!MEAL_PLAN.thursday.meals.training) MEAL_PLAN.thursday.meals.training = MEAL_PLAN.thursday.meals.rest;
+  if (!MEAL_PLAN.saturday.meals.training) MEAL_PLAN.saturday.meals.training = MEAL_PLAN.saturday.meals.rest;
+  if (!MEAL_PLAN.sunday.meals.training) MEAL_PLAN.sunday.meals.training = MEAL_PLAN.sunday.meals.rest;
+  if (!MEAL_PLAN.monday.meals.rest) MEAL_PLAN.monday.meals.rest = MEAL_PLAN.monday.meals.training;
+  if (!MEAL_PLAN.tuesday.meals.rest) MEAL_PLAN.tuesday.meals.rest = MEAL_PLAN.tuesday.meals.training;
+  if (!MEAL_PLAN.wednesday.meals.rest) MEAL_PLAN.wednesday.meals.rest = MEAL_PLAN.wednesday.meals.training;
+}
+
 // ------------------------------------
 // INITIALIZATION
 // ------------------------------------
 async function initApp() {
   initFirebase();
+  repairMissingDays();
   
   appState.settings = await getGlobalSettings();
   appState.weekPlan = await getWeekPlan();
+  appState.swappedMeals = await getSwappedMeals();
   appState.shoppingListCloud = await getShoppingListCloud();
   appState.deviceSettings = getLocalDeviceSettings();
   
@@ -49,27 +61,44 @@ async function initApp() {
   
   if (appState.deviceSettings.darkMode) document.body.classList.add('dark-mode');
   
+  if (db) {
+    try {
+      const snap = await db.collection('recipes').get();
+      snap.forEach(doc => { appState.customRecipes[doc.id] = doc.data(); });
+    } catch(e) {}
+  }
+  
   setupRouter();
   setupModal();
   
+  if(!document.getElementById('swap-modal')) {
+    const swapHtml = `
+      <div id="swap-modal" class="modal hidden">
+        <div class="modal-content" style="max-height:80vh;">
+          <div class="modal-header">
+            <h2>Sostituisci Pasto</h2>
+            <button class="btn-icon" onclick="document.getElementById('swap-modal').classList.add('hidden')">&times;</button>
+          </div>
+          <p class="text-muted" style="margin-bottom:1rem;">Seleziona con quale pasto scambiarlo. Le quantità si adatteranno al giorno corrente.</p>
+          <div id="swap-options-list" style="overflow-y:auto; padding-bottom:1rem;"></div>
+        </div>
+      </div>
+    `;
+    document.body.insertAdjacentHTML('beforeend', swapHtml);
+  }
+
   window.addEventListener('midnight-refresh', () => {
-    if (window.location.hash === '#today') renderToday();
+    if (window.location.hash === '#chef') renderChef();
     scheduleDailyNotifications();
   });
   
   scheduleDailyNotifications();
+  renderGlobalHeader();
 }
 
-function scheduleDailyNotifications() {
-  if (!appState.settings || !appState.settings.notificationsEnabled) return;
-  const todayKey = getTodayKey();
-  const dayType = getDayType(todayKey);
-  const plan = MEAL_PLAN[todayKey];
-  const meals = plan.meals[dayType];
-  const batch = plan.batchCooking.evening;
-  scheduleNotifications(appState.settings, meals, batch);
-}
-
+// ------------------------------------
+// UTILS & DATA FETCHERS
+// ------------------------------------
 function getTodayKey() { return DAYS[new Date().getDay()]; }
 
 function getDayType(dayKey) {
@@ -77,19 +106,51 @@ function getDayType(dayKey) {
   return MEAL_PLAN[dayKey].defaultType;
 }
 
-function formatTimeRemaining(timeStr) {
-  if (!timeStr) return '';
-  const now = new Date();
-  const [hours, minutes] = timeStr.split(':').map(Number);
-  const target = new Date();
-  target.setHours(hours, minutes, 0, 0);
+function getDynamicMeal(dayKey, dayType, slotId) {
+  const defaultMeal = MEAL_PLAN[dayKey].meals[dayType].find(m => m.slot === slotId);
+  const swapKey = `${dayKey}_${slotId}`;
   
-  let diffMs = target - now;
-  if (diffMs < 0) return 'Passato';
-  const diffHrs = Math.floor(diffMs / 3600000);
-  const diffMins = Math.floor((diffMs % 3600000) / 60000);
-  if (diffHrs > 0) return `Tra ${diffHrs}h ${diffMins}m`;
-  return `Tra ${diffMins}m`;
+  if (appState.swappedMeals && appState.swappedMeals[swapKey]) {
+    const targetId = appState.swappedMeals[swapKey];
+    let foundMeal = null;
+    const weekDays = ['monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday', 'sunday'];
+    for (const d of weekDays) {
+      for (const t of ['training', 'rest']) {
+        if(MEAL_PLAN[d].meals[t]) {
+          const check = MEAL_PLAN[d].meals[t].find(m => m.id === targetId);
+          if (check) { foundMeal = check; break; }
+        }
+      }
+      if(foundMeal) break;
+    }
+    if(!foundMeal && appState.customRecipes[targetId]) {
+      foundMeal = appState.customRecipes[targetId];
+    }
+    if (foundMeal) {
+      let clone = JSON.parse(JSON.stringify(foundMeal));
+      clone.slot = slotId; 
+      return clone;
+    }
+  }
+  return defaultMeal;
+}
+
+function getDynamicMealsForDay(dayKey, dayType) {
+  const meals = [];
+  MEAL_SLOTS.forEach(slot => {
+    const m = getDynamicMeal(dayKey, dayType, slot.id);
+    if(m) meals.push(m);
+  });
+  return meals;
+}
+
+function scheduleDailyNotifications() {
+  if (!appState.settings || !appState.settings.notificationsEnabled) return;
+  const todayKey = getTodayKey();
+  const dayType = getDayType(todayKey);
+  const meals = getDynamicMealsForDay(todayKey, dayType);
+  const batch = MEAL_PLAN[todayKey].batchCooking.evening;
+  scheduleNotifications(appState.settings, meals, batch);
 }
 
 function formatQty(qty) {
@@ -99,12 +160,12 @@ function formatQty(qty) {
 
 function setupRouter() {
   window.addEventListener('hashchange', handleRoute);
-  if (!window.location.hash) window.location.hash = '#today';
+  if (!window.location.hash || window.location.hash === '#today' || window.location.hash === '#prep') window.location.hash = '#chef';
   else handleRoute();
 }
 
 function handleRoute() {
-  const hash = window.location.hash || '#today';
+  const hash = window.location.hash || '#chef';
   document.querySelectorAll('.view').forEach(el => el.classList.add('hidden'));
   document.querySelectorAll('.nav-item').forEach(el => el.classList.remove('active'));
   
@@ -114,163 +175,318 @@ function handleRoute() {
   if (document.getElementById(viewId)) document.getElementById(viewId).classList.remove('hidden');
   if (document.getElementById(navId)) document.getElementById(navId).classList.add('active');
   
-  if (hash === '#today') renderToday();
+  if (hash === '#chef') renderChef();
   else if (hash === '#week') renderWeek();
-  else if (hash === '#prep') renderPrep();
+  else if (hash === '#recipes') renderRecipes();
   else if (hash === '#shop') renderShop();
   else if (hash === '#settings') renderSettings();
 }
 
-// ------------------------------------
-// RENDER TODAY 
-// ------------------------------------
-let todaySettingsVisible = false;
-window.toggleTodaySettings = function() {
-  todaySettingsVisible = !todaySettingsVisible;
-  renderToday();
+function renderGlobalHeader() {
+  const s = appState.deviceSettings;
+  const singleType = s.singlePersonType || 'm';
+  let html = `
+    <div style="display:flex; align-items:center; gap:0.5rem;">
+      <select onchange="updateGlobalPersons(parseInt(this.value))">
+        <option value="1" ${s.persons === 1 ? 'selected' : ''}>👤 1 Persona</option>
+        <option value="2" ${s.persons === 2 ? 'selected' : ''}>👥 2 Persone</option>
+      </select>
+  `;
+  if (s.persons === 1) {
+    html += `
+      <select onchange="updateGlobalSingleType(this.value)">
+        <option value="m" ${singleType === 'm' ? 'selected' : ''}>👨 Uomo</option>
+        <option value="f" ${singleType === 'f' ? 'selected' : ''}>👩 Donna</option>
+      </select>
+    `;
+  } else {
+    html += `
+      <select onchange="updateGlobalTwoType(this.value)">
+        <option value="mf" ${s.twoPersonsType === 'mf' ? 'selected' : ''}>👨+👩 Uomo,Donna</option>
+        <option value="fm" ${s.twoPersonsType === 'fm' ? 'selected' : ''}>👩+👨 Donna,Uomo</option>
+        <option value="same" ${s.twoPersonsType === 'same' ? 'selected' : ''}>👬 Uguali</option>
+      </select>
+    `;
+  }
+  html += `</div>`;
+  if(!document.getElementById('global-header-container')) {
+    const el = document.createElement('div');
+    el.id = 'global-header-container';
+    el.className = 'global-header';
+    document.body.prepend(el);
+  }
+  document.getElementById('global-header-container').innerHTML = html;
 }
-window.toggleTodayAccordion = function(id) {
+
+function getMultiplier() {
+  const s = appState.deviceSettings;
+  const singleType = s.singlePersonType || 'm';
+  if (s.persons === 2) {
+    if (s.twoPersonsType === 'mf') return 1.75;
+    else if (s.twoPersonsType === 'fm') return 2.25;
+    else return 2;
+  } else {
+    if (singleType === 'f') return 0.75;
+    else return 1;
+  }
+}
+
+window.updateGlobalPersons = function(val) { appState.deviceSettings.persons = val; saveLocalDeviceSettings(appState.deviceSettings); renderGlobalHeader(); handleRoute(); }
+window.updateGlobalSingleType = function(val) { appState.deviceSettings.singlePersonType = val; saveLocalDeviceSettings(appState.deviceSettings); renderGlobalHeader(); handleRoute(); }
+window.updateGlobalTwoType = function(val) { appState.deviceSettings.twoPersonsType = val; saveLocalDeviceSettings(appState.deviceSettings); renderGlobalHeader(); handleRoute(); }
+
+// ------------------------------------
+// MODAL DI SCAMBIO PASTI (SWAP) - VISIBILE SOLO IN SETTIMANA
+// ------------------------------------
+window.openSwapModal = function(dayKey, slotId) {
+  const container = document.getElementById('swap-options-list');
+  container.innerHTML = '';
+  
+  let options = [];
+  const weekDays = ['monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday', 'sunday'];
+  
+  weekDays.forEach(d => {
+    ['training', 'rest'].forEach(t => {
+      if(MEAL_PLAN[d].meals[t]) {
+        const m = MEAL_PLAN[d].meals[t].find(x => x.slot === slotId);
+        if (m && !options.find(o => o.id === m.id)) {
+          options.push({ id: m.id, name: m.name, emoji: m.emoji });
+        }
+      }
+    });
+  });
+  Object.values(appState.customRecipes).forEach(m => {
+    if (m.slot === slotId && !options.find(o => o.id === m.id)) {
+      options.push({ id: m.id, name: m.name, emoji: m.emoji });
+    }
+  });
+
+  const defaultMeal = MEAL_PLAN[dayKey].meals[getDayType(dayKey)].find(m => m.slot === slotId);
+  const defaultMealId = defaultMeal ? defaultMeal.id : null;
+  
+  container.innerHTML += `
+    <div class="swap-item" onclick="confirmSwap('${dayKey}', '${slotId}', null)" style="border-left:4px solid var(--danger);">
+      <div><strong>Ripristina Originale</strong><br><span style="font-size:0.8rem; color:var(--text-muted);">Usa il pasto previsto dal piano base</span></div>
+    </div>
+  `;
+
+  options.forEach(opt => {
+    const isCurrentDef = (opt.id === defaultMealId);
+    container.innerHTML += `
+      <div class="swap-item" onclick="confirmSwap('${dayKey}', '${slotId}', '${opt.id}')">
+        <div><strong>${opt.emoji} ${opt.name}</strong> ${isCurrentDef ? '<span style="font-size:0.7rem; color:var(--primary);">(Default)</span>' : ''}</div>
+      </div>
+    `;
+  });
+  
+  document.getElementById('swap-modal').classList.remove('hidden');
+}
+
+window.confirmSwap = async function(dayKey, slotId, newMealId) {
+  if (!appState.swappedMeals) appState.swappedMeals = {};
+  const swapKey = `${dayKey}_${slotId}`;
+  
+  if (newMealId === null) delete appState.swappedMeals[swapKey];
+  else appState.swappedMeals[swapKey] = newMealId;
+  
+  await saveSwappedMeals(appState.swappedMeals);
+  document.getElementById('swap-modal').classList.add('hidden');
+  scheduleDailyNotifications();
+  handleRoute(); 
+}
+
+// ------------------------------------
+// RENDER CHEF MODE
+// ------------------------------------
+window.changeChefDay = function(val) {
+  appState.deviceSettings.prepSelectedDay = val;
+  saveLocalDeviceSettings(appState.deviceSettings);
+  renderChef();
+}
+window.toggleChefAccordion = function(id) {
   document.getElementById(id).classList.toggle('hidden');
 }
 
-async function renderToday() {
-  const container = document.getElementById('view-today');
+function formatBatchNote(text, multiplier) {
+  if (!text) return "";
+  return text.replace(/\{([a-zA-Z_]+)\*([\d.]+)\}/g, (match, ingId, mult) => {
+    return formatQty(parseFloat(mult) * multiplier * 100) + "g";
+  });
+}
+
+async function renderChef() {
+  const container = document.getElementById('view-chef');
   const todayKey = getTodayKey();
-  const plan = MEAL_PLAN[todayKey];
-  const dayType = getDayType(todayKey);
+  const selectedDay = appState.deviceSettings.prepSelectedDay || todayKey;
+  const weekDays = ['monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday', 'sunday'];
+  const nextDayKey = weekDays[(weekDays.indexOf(selectedDay) + 1) % 7];
+  const multiplier = getMultiplier();
+
+  const todayPlan = MEAL_PLAN[selectedDay];
+  const todayType = getDayType(selectedDay);
+  const nextPlan = MEAL_PLAN[nextDayKey];
+  const nextType = getDayType(nextDayKey);
   
-  const dateOptions = { weekday: 'long', month: 'long', day: 'numeric' };
-  const dateStr = new Date().toLocaleDateString('it-IT', dateOptions);
-  
-  const s = appState.deviceSettings || getLocalDeviceSettings();
-  const singleType = s.singlePersonType || 'm';
-  
-  let multiplier = 1;
-  if (s.persons === 2) {
-    if (s.twoPersonsType === 'mf') multiplier = 1.75;
-    else if (s.twoPersonsType === 'fm') multiplier = 2.25;
-    else multiplier = 2;
-  } else {
-    if (singleType === 'f') multiplier = 0.75;
-    else multiplier = 1;
-  }
-  
+  const dinnerMeals = getDynamicMealsForDay(selectedDay, todayType);
+  const dinnerMealBase = dinnerMeals.find(m => m.slot === 'dinner');
+  const dinner = appState.customRecipes[dinnerMealBase.id] || dinnerMealBase;
+
   let html = `
-    <div class="flex-between" style="margin-bottom:0.5rem;">
-      <h2 style="margin:0;">Giornata di oggi</h2>
-      <button class="btn btn-outline" style="padding:0.2rem 0.5rem; font-size:0.8rem;" onclick="toggleTodaySettings()">
-        ⚙️ Porzioni
-      </button>
+    <div class="flex-between" style="margin-bottom:1rem; margin-top:0.5rem;">
+      <h2 style="margin:0;">In Cucina Oggi</h2>
+      <select onchange="changeChefDay(this.value)" style="padding:0.3rem; border-radius:6px; border:1px solid rgba(0,0,0,0.1); background:var(--surface);">
+        <option value="monday" ${selectedDay === 'monday' ? 'selected' : ''}>Lunedì</option>
+        <option value="tuesday" ${selectedDay === 'tuesday' ? 'selected' : ''}>Martedì</option>
+        <option value="wednesday" ${selectedDay === 'wednesday' ? 'selected' : ''}>Mercoledì</option>
+        <option value="thursday" ${selectedDay === 'thursday' ? 'selected' : ''}>Giovedì</option>
+        <option value="friday" ${selectedDay === 'friday' ? 'selected' : ''}>Venerdì</option>
+        <option value="saturday" ${selectedDay === 'saturday' ? 'selected' : ''}>Sabato</option>
+        <option value="sunday" ${selectedDay === 'sunday' ? 'selected' : ''}>Domenica</option>
+      </select>
     </div>
-    <p class="text-muted" style="text-transform: capitalize; margin-bottom:0.5rem;">${dateStr}</p>
   `;
 
-  if (todaySettingsVisible) {
-    html += `
-      <div class="settings-section" style="padding:1rem; margin-bottom:1rem;">
-        <div style="display:flex; justify-content:space-between; align-items:center;">
-          <span style="font-weight:600;">Calcola porzioni per:</span>
-          <select onchange="updateShopPersons(parseInt(this.value)); setTimeout(renderToday, 50);" style="padding:0.3rem;">
-            <option value="1" ${s.persons === 1 ? 'selected' : ''}>1 persona</option>
-            <option value="2" ${s.persons === 2 ? 'selected' : ''}>2 persone</option>
-          </select>
-        </div>
-        <div class="${s.persons === 1 ? '' : 'hidden'}" style="margin-top:0.5rem; font-size:0.9rem;">
-          <label style="margin-right:1rem;"><input type="radio" name="todaySingleType" value="m" onchange="updateShopSingleType('m'); setTimeout(renderToday, 50);" ${singleType === 'm' ? 'checked' : ''}> Uomo (×1)</label>
-          <label style="margin-right:1rem;"><input type="radio" name="todaySingleType" value="f" onchange="updateShopSingleType('f'); setTimeout(renderToday, 50);" ${singleType === 'f' ? 'checked' : ''}> Donna (×0.75)</label>
-        </div>
-        <div class="${s.persons === 2 ? '' : 'hidden'}" style="margin-top:0.5rem; font-size:0.9rem;">
-          <label style="margin-right:1rem;"><input type="radio" name="todayTwoType" value="mf" onchange="updateShopTwoType('mf'); setTimeout(renderToday, 50);" ${s.twoPersonsType === 'mf' ? 'checked' : ''}> Uomo+Donna (×1.75)</label><br>
-          <label style="margin-right:1rem;"><input type="radio" name="todayTwoType" value="fm" onchange="updateShopTwoType('fm'); setTimeout(renderToday, 50);" ${s.twoPersonsType === 'fm' ? 'checked' : ''}> Donna+Uomo (×2.25)</label><br>
-          <label><input type="radio" name="todayTwoType" value="same" onchange="updateShopTwoType('same'); setTimeout(renderToday, 50);" ${s.twoPersonsType === 'same' ? 'checked' : ''}> Stesso sesso (×2)</label>
-        </div>
-      </div>
-    `;
-  }
+  // 1. I PASTI DI OGGI (Mattina, Pranzo, Spuntini) CHIUSI
+  html += `<h3 style="color:var(--primary); margin-top:1.5rem; margin-bottom:0.5rem;">☀️ I Pasti di Oggi</h3>`;
+  const todayMealsToPrep = getDynamicMealsForDay(selectedDay, todayType).filter(m => m.slot !== 'dinner');
   
-  html += `
-    <div class="pill-toggle" style="opacity:0.9; pointer-events:none;">
-      <button class="pill-btn ${dayType === 'training' ? 'active training' : ''}">🏋️ Allenamento</button>
-      <button class="pill-btn ${dayType === 'rest' ? 'active rest' : ''}">😴 Riposo</button>
-    </div>
-    <p class="text-muted" style="font-size:0.8rem; margin-top:-0.5rem; margin-bottom:1.5rem;">(Modificabile dalla vista Settimana)</p>
-    <div class="meal-timeline">
-  `;
-  
-  const meals = plan.meals[dayType];
-  const now = new Date();
-  let nextMealId = null;
-  if(appState.settings && appState.settings.notificationTimes) {
-    for (const meal of meals) {
-      const timeStr = appState.settings.notificationTimes[meal.slot];
-      if (timeStr) {
-        const [h, m] = timeStr.split(':').map(Number);
-        const d = new Date(); d.setHours(h, m, 0, 0);
-        if (d > now) { nextMealId = meal.id; break; }
-      }
-    }
-  }
-
-  for (const meal of meals) {
-    const customRecipe = await getCustomRecipe(meal.id);
-    const finalMeal = customRecipe || meal;
-    const timeStr = appState.settings ? appState.settings.notificationTimes[meal.slot] : '';
-    const isNext = meal.id === nextMealId;
-    const accId = `today-acc-${meal.id}`;
+  for (const tMealBase of todayMealsToPrep) {
+    const tMeal = appState.customRecipes[tMealBase.id] || tMealBase;
+    const uniqueAccId = `chef-acc-${tMeal.id}-today`;
+    const slotLabel = MEAL_SLOTS.find(s=>s.id===tMeal.slot).label;
     
     html += `
-      <div class="card ${dayType} ${isNext ? 'highlight' : ''}" style="padding:0; overflow:hidden;">
-        <div class="flex-between" style="padding:1rem; cursor:pointer;" onclick="toggleTodayAccordion('${accId}')">
-          <div style="display:flex; align-items:center; gap: 0.5rem;">
-            <span style="font-size: 1.5rem;">${finalMeal.emoji || meal.emoji}</span>
-            <div>
-              <div style="font-weight: 600;">${finalMeal.name}</div>
-              <div class="text-muted">${MEAL_SLOTS.find(s=>s.id===meal.slot)?.label} • ${timeStr || ''} ▼</div>
-            </div>
-          </div>
-          <div class="text-muted" style="text-align:right; font-size: 0.8rem;">
-            ${formatTimeRemaining(timeStr)}
-          </div>
+      <div class="settings-section" style="margin-bottom:0.5rem; padding:0.5rem 1rem;">
+        <div class="flex-between" style="cursor:pointer;" onclick="toggleChefAccordion('${uniqueAccId}')">
+          <span style="font-weight:600;">${slotLabel}</span>
+          <span style="color:var(--text-muted);">${tMeal.emoji} ${tMeal.name} ▼</span>
         </div>
-        
-        <div id="${accId}" class="hidden" style="padding:0 1rem 1rem 1rem; border-top:1px solid #eee; background-color:#fafafa;">
+        <div id="${uniqueAccId}" class="hidden" style="margin-top:1rem; border-top:1px solid rgba(0,0,0,0.05); padding-top:0.5rem;">
     `;
-
-    if(finalMeal.supplement) {
-      html += `<div style="margin-top:0.5rem; margin-bottom:1rem; padding:0.5rem; background:#fffdf7; border-left:4px solid var(--accent); font-size:0.85rem; border-radius:4px;">💡 <strong>Integrazione:</strong> ${finalMeal.supplement}</div>`;
-    }
-    if(finalMeal.prepNote || finalMeal.batchNote) {
-      html += `<div style="margin-top:0.5rem; margin-bottom:1rem; padding:0.5rem; background:#fffdf7; border-left:4px solid var(--accent); font-size:0.85rem; border-radius:4px;">⚠️ <strong>Nota:</strong> ${finalMeal.prepNote || finalMeal.batchNote}</div>`;
-    }
-
-    html += `<div style="display:flex; gap:1rem; flex-wrap:wrap; margin-top:0.5rem;">`;
     
+    if(tMeal.prepNote || tMeal.batchNote || tMeal.supplement) {
+      let msg = tMeal.supplement ? `💡 Integrazione: ${tMeal.supplement}` : `⚠️ Attenzione: ${formatBatchNote(tMeal.prepNote || tMeal.batchNote, multiplier)}`;
+      html += `
+        <div style="background-color:rgba(244, 162, 97, 0.1); border-left:4px solid var(--accent); padding:0.5rem; margin-bottom:1rem; border-radius:4px;">
+          <p style="font-size:0.85rem; color:var(--accent); font-weight:bold; margin:0;">${msg}</p>
+        </div>
+      `;
+    }
+
+    html += `<div style="display:flex; gap:1rem; flex-wrap:wrap;">`;
     html += `<div style="flex:1; min-width:140px;">`;
     html += `<h5 style="color:var(--text-muted); margin-bottom:0.5rem;">Ingredienti:</h5>`;
     html += `<ul style="list-style:none; padding:0; font-size:0.85rem;">`;
-    finalMeal.ingredients.forEach(ing => {
+    tMeal.ingredients.forEach(ing => {
       let fQty = ing.quantity;
       if (typeof fQty === 'number' && ing.unit !== 'pz' && ing.unit !== 'q.b.') fQty = formatQty(fQty * multiplier);
-      html += `<li class="step-item" style="padding:0.2rem 0; border-bottom:1px solid #eee;" onclick="this.classList.toggle('done')"><strong>${fQty} ${ing.unit==='q.b.'||ing.unit==='pz'?'':ing.unit}</strong> ${ing.name}</li>`;
+      html += `<li class="step-item" style="padding:0.2rem 0; border-bottom:1px solid rgba(0,0,0,0.05);" onclick="this.classList.toggle('done')"><strong>${fQty} ${ing.unit==='q.b.'||ing.unit==='pz'?'':ing.unit}</strong> ${ing.name}</li>`;
     });
     html += `</ul></div>`;
     
     html += `<div style="flex:1.5; min-width:200px;">`;
-    html += `<h5 style="color:var(--text-muted); margin-bottom:0.5rem;">Passaggi:</h5>`;
+    html += `<h5 style="color:var(--text-muted); margin-bottom:0.5rem;">Cosa fare:</h5>`;
     html += `<ul style="list-style:none; padding:0; font-size:0.85rem;">`;
-    finalMeal.steps.forEach((step, i) => {
-      html += `<li class="step-item" style="padding:0.3rem 0; border-bottom:1px solid #eee;" onclick="this.classList.toggle('done')"><strong>${i+1}.</strong> ${step}</li>`;
+    tMeal.steps.forEach((step, i) => {
+      html += `<li class="step-item" style="padding:0.3rem 0; border-bottom:1px solid rgba(0,0,0,0.05);" onclick="this.classList.toggle('done')"><strong>${i+1}.</strong> ${step}</li>`;
     });
-    html += `</ul></div>`;
-    html += `</div>`; 
-    
-    html += `<button class="btn btn-outline" style="width:100%; margin-top:1rem; font-size:0.8rem; padding:0.3rem;" onclick="openRecipeModal('${meal.id}', '${todayKey}', '${dayType}')">Modifica Ricetta Base</button>`;
+    html += `</ul></div></div>`;
+    html += `<div style="display:flex; gap:0.5rem; margin-top:1rem;">
+               <button class="btn btn-outline" style="flex:1; font-size:0.8rem; padding:0.3rem;" onclick="openRecipeModal('${tMeal.id}', '${selectedDay}', '${todayType}', '${tMeal.slot}')">Modifica Ricetta Base</button>
+             </div>`;
     html += `</div></div>`;
   }
+
+  // 2. CENA DI STASERA E BATCH COOKING (Aperta di Default)
+  html += `<h3 style="color:var(--accent); margin-top:2rem; margin-bottom:0.5rem;">🍳 La Cena di Stasera (${todayPlan.dayName})</h3>`;
+  html += `<div class="settings-section" style="border-left: 4px solid var(--accent); padding-bottom: 0.5rem;">`;
   
+  if (todayPlan.batchCooking.evening) {
+    html += `
+      <div style="background-color:rgba(244, 162, 97, 0.1); padding:0.75rem; border-radius:6px; margin-bottom:1rem;">
+        <p style="font-weight:bold; font-size:1.05rem; color:var(--accent); margin:0;">${formatBatchNote(todayPlan.batchCooking.evening, multiplier)}</p>
+      </div>
+    `;
+  }
+
+  // Niente tasto swap per lo Chef Mode
+  html += `<h4 style="margin-bottom:1rem;">${dinner.emoji} ${dinner.name}</h4>`;
+  html += `<div style="display:flex; gap:1rem; flex-wrap:wrap;">`;
+  
+  html += `<div style="flex:1; min-width:140px;">`;
+  html += `<h5 style="color:var(--text-muted); margin-bottom:0.5rem;">Ingredienti:</h5>`;
+  html += `<ul style="list-style:none; padding:0; font-size:0.85rem;">`;
+  dinner.ingredients.forEach(ing => {
+    let finalQty = ing.quantity;
+    if (typeof finalQty === 'number' && ing.unit !== 'pz' && ing.unit !== 'q.b.') finalQty = formatQty(finalQty * multiplier);
+    html += `<li style="padding:0.2rem 0; border-bottom:1px solid rgba(0,0,0,0.05);"><strong>${finalQty} ${ing.unit==='q.b.'||ing.unit==='pz'?'':ing.unit}</strong> ${ing.name}</li>`;
+  });
+  html += `</ul></div>`;
+  
+  html += `<div style="flex:1.5; min-width:200px;">`;
+  html += `<h5 style="color:var(--text-muted); margin-bottom:0.5rem;">Passaggi:</h5>`;
+  html += `<ul style="list-style:none; padding:0; font-size:0.85rem;">`;
+  dinner.steps.forEach((step, i) => {
+    html += `<li class="step-item" style="padding:0.3rem 0; border-bottom:1px solid rgba(0,0,0,0.05);" onclick="this.classList.toggle('done')"><strong>${i+1}.</strong> ${step}</li>`;
+  });
+  html += `</ul></div></div>`;
+  html += `<button class="btn btn-outline" style="width:100%; margin-top:1rem; font-size:0.8rem; padding:0.3rem;" onclick="openRecipeModal('${dinner.id}', '${selectedDay}', '${todayType}', '${dinner.slot}')">Modifica Ricetta Base</button>`;
   html += `</div>`;
-  if (plan.batchCooking.evening) {
-    html += `<div class="batch-banner"><strong>🍳 Stasera:</strong><br>${plan.batchCooking.evening}</div>`;
+
+  // 3. SCHISCETTE DI DOMANI (Accordion Chiuso)
+  html += `<h3 style="color:var(--rest); margin-top:2rem; margin-bottom:0.5rem;">🍱 Box per Domani (${nextPlan.dayName})</h3>`;
+  html += `<p class="text-muted" style="font-size:0.85rem; margin-bottom:1rem;">Apri i menu per preparare la borsa frigo di domani (esclusa la cena).</p>`;
+  
+  const tomorrowMeals = getDynamicMealsForDay(nextDayKey, nextType);
+  
+  for (const tMealBase of tomorrowMeals) {
+    const tMeal = appState.customRecipes[tMealBase.id] || tMealBase;
+    const uniqueAccId = `chef-acc-${tMeal.id}-tomorrow`;
+    const slotLabel = MEAL_SLOTS.find(s=>s.id===tMeal.slot).label;
+    
+    html += `
+      <div class="settings-section" style="margin-bottom:0.5rem; padding:0.5rem 1rem;">
+        <div class="flex-between" style="cursor:pointer;" onclick="toggleChefAccordion('${uniqueAccId}')">
+          <span style="font-weight:600;">${slotLabel}</span>
+          <span style="color:var(--text-muted);">${tMeal.emoji} ${tMeal.name} ▼</span>
+        </div>
+        <div id="${uniqueAccId}" class="hidden" style="margin-top:1rem; border-top:1px solid rgba(0,0,0,0.05); padding-top:0.5rem;">
+    `;
+    
+    if(tMeal.prepNote || tMeal.batchNote || tMeal.supplement) {
+      let msg = tMeal.supplement ? `💡 Integrazione: ${tMeal.supplement}` : `⚠️ Attenzione: ${formatBatchNote(tMeal.prepNote || tMeal.batchNote, multiplier)}`;
+      html += `
+        <div style="background-color:rgba(244, 162, 97, 0.1); border-left:4px solid var(--accent); padding:0.5rem; margin-bottom:1rem; border-radius:4px;">
+          <p style="font-size:0.85rem; color:var(--accent); font-weight:bold; margin:0;">${msg}</p>
+        </div>
+      `;
+    }
+
+    html += `<div style="display:flex; gap:1rem; flex-wrap:wrap;">`;
+    
+    html += `<div style="flex:1; min-width:140px;">`;
+    html += `<h5 style="color:var(--text-muted); margin-bottom:0.5rem;">Ingredienti:</h5>`;
+    html += `<ul style="list-style:none; padding:0; font-size:0.85rem;">`;
+    tMeal.ingredients.forEach(ing => {
+      let fQty = ing.quantity;
+      if (typeof fQty === 'number' && ing.unit !== 'pz' && ing.unit !== 'q.b.') fQty = formatQty(fQty * multiplier);
+      html += `<li class="step-item" style="padding:0.2rem 0; border-bottom:1px solid rgba(0,0,0,0.05);" onclick="this.classList.toggle('done')"><strong>${fQty} ${ing.unit==='q.b.'||ing.unit==='pz'?'':ing.unit}</strong> ${ing.name}</li>`;
+    });
+    html += `</ul></div>`;
+    
+    html += `<div style="flex:1.5; min-width:200px;">`;
+    html += `<h5 style="color:var(--text-muted); margin-bottom:0.5rem;">Cosa fare:</h5>`;
+    html += `<ul style="list-style:none; padding:0; font-size:0.85rem;">`;
+    tMeal.steps.forEach((step, i) => {
+      html += `<li class="step-item" style="padding:0.3rem 0; border-bottom:1px solid rgba(0,0,0,0.05);" onclick="this.classList.toggle('done')"><strong>${i+1}.</strong> ${step}</li>`;
+    });
+    html += `</ul></div></div>`;
+    
+    html += `<div style="display:flex; gap:0.5rem; margin-top:1rem;">
+               <button class="btn btn-outline" style="flex:1; font-size:0.8rem; padding:0.3rem;" onclick="openRecipeModal('${tMeal.id}', '${nextDayKey}', '${nextType}', '${tMeal.slot}')">Modifica Ricetta Base</button>
+             </div>`;
+    
+    html += `</div></div>`;
   }
   container.innerHTML = html;
 }
@@ -281,25 +497,35 @@ async function renderToday() {
 function renderWeek() {
   const container = document.getElementById('view-week');
   const todayKey = getTodayKey();
-  let html = `<h2>Piano Settimanale</h2><p class="text-muted" style="margin-bottom:1rem;">Qui puoi variare i giorni di allenamento. Le quantità si adatteranno istantaneamente.</p><div class="week-grid">`;
+  
+  let html = `<h2 style="margin-top:0.5rem;">Piano Settimanale</h2><p class="text-muted" style="margin-bottom:1rem;">Imposta i giorni di allenamento. Le quantità in tutto il sistema si adatteranno istantaneamente.</p><div class="week-grid">`;
   const weekDays = ['monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday', 'sunday'];
   
   weekDays.forEach(dayKey => {
     const plan = MEAL_PLAN[dayKey];
     const dayType = getDayType(dayKey);
-    const meals = plan.meals[dayType];
+    const meals = getDynamicMealsForDay(dayKey, dayType);
     const isToday = dayKey === todayKey;
     
     html += `
       <div class="day-column ${isToday ? 'current-day' : ''}">
-        <div class="flex-between"><h3>${plan.dayName}</h3></div>
+        <div class="flex-between">
+          <h3>${plan.dayName}</h3>
+          ${isToday ? '<span style="font-size:1.2rem;" title="Oggi">⭐</span>' : ''}
+        </div>
         <div class="pill-toggle" style="transform: scale(0.8); transform-origin: left; margin: 0.25rem 0;">
           <button class="pill-btn ${dayType === 'training' ? 'active training' : ''}" onclick="toggleDayType('${dayKey}', 'training')">🏋️</button>
           <button class="pill-btn ${dayType === 'rest' ? 'active rest' : ''}" onclick="toggleDayType('${dayKey}', 'rest')">😴</button>
         </div>
         <div>
     `;
-    meals.forEach(meal => { html += `<div class="day-meal-item" onclick="openRecipeModal('${meal.id}', '${dayKey}', '${dayType}')">${meal.emoji} ${meal.name}</div>`; });
+    meals.forEach(meal => { 
+      html += `
+        <div class="day-meal-item flex-between">
+          <div onclick="openRecipeModal('${meal.id}', '${dayKey}', '${dayType}', '${meal.slot}')" style="flex:1; cursor:pointer;">${meal.emoji} ${meal.name}</div>
+          <button class="btn-icon btn-swap" onclick="openSwapModal('${dayKey}', '${meal.slot}')">🔄</button>
+        </div>`; 
+    });
     html += `</div></div>`;
   });
   html += `</div>`;
@@ -311,160 +537,62 @@ window.toggleDayType = async function(dayKey, type) {
   appState.weekPlan[dayKey] = type;
   await saveWeekPlan(appState.weekPlan);
   scheduleDailyNotifications();
-  if (window.location.hash === '#today') setTimeout(renderToday, 50);
-  if (window.location.hash === '#week') setTimeout(renderWeek, 50);
-  if (window.location.hash === '#prep') setTimeout(renderPrep, 50);
-  if (window.location.hash === '#shop') setTimeout(renderShop, 50);
+  setTimeout(handleRoute, 50);
 };
 
 // ------------------------------------
-// RENDER PREP
+// RENDER RECIPES (Ricettario Globale)
 // ------------------------------------
-window.changePrepDay = function(val) {
-  appState.deviceSettings.prepSelectedDay = val;
-  saveLocalDeviceSettings(appState.deviceSettings);
-  renderPrep();
-}
-window.togglePrepAccordion = function(id) {
-  document.getElementById(id).classList.toggle('hidden');
+window.createNewRecipe = function() {
+  const tempId = 'custom_' + Date.now();
+  currentModalMeal = { 
+    id: tempId, dayKey: 'sunday', dayType: 'rest', 
+    data: { id: tempId, slot: 'lunch', name: "Nuova Ricetta", emoji: "🍲", prepTime: "10 min", ingredients: [], steps: [], batchNote: null, supplement: null },
+    isCustom: false 
+  };
+  editMode = true;
+  renderModalContent();
+  document.getElementById('recipe-modal').classList.remove('hidden');
 }
 
-async function renderPrep() {
-  const container = document.getElementById('view-prep');
-  const todayKey = getTodayKey();
-  const selectedDay = appState.deviceSettings.prepSelectedDay || todayKey;
+function renderRecipes() {
+  const container = document.getElementById('view-recipes');
+  let html = `<div class="flex-between" style="margin-top:0.5rem; margin-bottom:1rem;"><h2 style="margin:0;">Ricettario</h2><button class="btn btn-primary" style="padding:0.2rem 0.5rem; font-size:0.85rem;" onclick="createNewRecipe()">+ Nuova</button></div>`;
+  html += `<p class="text-muted" style="margin-bottom:1rem;">Sfoglia tutte le ricette. Pranzi, cene e spuntini sono intercambiabili tra loro dalla vista "Settimana".</p>`;
+  
+  let dictionary = { breakfast:[], snack1:[], lunch:[], snack2:[], dinner:[] };
   
   const weekDays = ['monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday', 'sunday'];
-  const nextDayKey = weekDays[(weekDays.indexOf(selectedDay) + 1) % 7];
-  
-  const s = appState.deviceSettings;
-  const singleType = s.singlePersonType || 'm';
-  
-  let multiplier = 1;
-  if (s.persons === 2) {
-    if (s.twoPersonsType === 'mf') multiplier = 1.75;
-    else if (s.twoPersonsType === 'fm') multiplier = 2.25;
-    else multiplier = 2;
-  } else {
-    if (singleType === 'f') multiplier = 0.75;
-    else multiplier = 1;
-  }
-
-  const todayPlan = MEAL_PLAN[selectedDay];
-  const todayType = getDayType(selectedDay);
-  const nextPlan = MEAL_PLAN[nextDayKey];
-  const nextType = getDayType(nextDayKey);
-  
-  const dinnerMealBase = todayPlan.meals[todayType].find(m => m.slot === 'dinner');
-  const dinner = await getCustomRecipe(dinnerMealBase.id) || dinnerMealBase;
-
-  let html = `
-    <div class="flex-between" style="margin-bottom:1rem;">
-      <h2 style="margin:0;">Chef Mode 👨‍🍳</h2>
-      <select onchange="changePrepDay(this.value)" style="padding:0.3rem; border-radius:6px; border:1px solid #ddd;">
-        <option value="monday" ${selectedDay === 'monday' ? 'selected' : ''}>Lunedì</option>
-        <option value="tuesday" ${selectedDay === 'tuesday' ? 'selected' : ''}>Martedì</option>
-        <option value="wednesday" ${selectedDay === 'wednesday' ? 'selected' : ''}>Mercoledì</option>
-        <option value="thursday" ${selectedDay === 'thursday' ? 'selected' : ''}>Giovedì</option>
-        <option value="friday" ${selectedDay === 'friday' ? 'selected' : ''}>Venerdì</option>
-        <option value="saturday" ${selectedDay === 'saturday' ? 'selected' : ''}>Sabato</option>
-        <option value="sunday" ${selectedDay === 'sunday' ? 'selected' : ''}>Domenica</option>
-      </select>
-    </div>
-    <div class="settings-section" style="padding:0.75rem; margin-bottom:1rem;">
-      <div style="display:flex; justify-content:space-between; align-items:center;">
-        <span style="font-weight:600; font-size:0.9rem;">Porzioni:</span>
-        <select style="padding:0.2rem; border-radius:4px;" onchange="updateShopPersons(parseInt(this.value)); setTimeout(renderPrep,50);">
-          <option value="1" ${s.persons === 1 ? 'selected' : ''}>1 persona</option>
-          <option value="2" ${s.persons === 2 ? 'selected' : ''}>2 persone</option>
-        </select>
-      </div>
-      <div class="${s.persons === 1 ? '' : 'hidden'}" style="margin-top:0.5rem; font-size:0.85rem;">
-        <label style="margin-right:1rem;"><input type="radio" name="prepSingleType" value="m" onchange="updateShopSingleType('m'); setTimeout(renderPrep,50);" ${singleType === 'm' ? 'checked' : ''}> Uomo (×1)</label>
-        <label style="margin-right:1rem;"><input type="radio" name="prepSingleType" value="f" onchange="updateShopSingleType('f'); setTimeout(renderPrep,50);" ${singleType === 'f' ? 'checked' : ''}> Donna (×0.75)</label>
-      </div>
-      <div class="${s.persons === 2 ? '' : 'hidden'}" style="margin-top:0.5rem; font-size:0.85rem;">
-        <label style="margin-right:1rem;"><input type="radio" name="prepTwoType" value="mf" onchange="updateShopTwoType('mf'); setTimeout(renderPrep,50);" ${s.twoPersonsType === 'mf' ? 'checked' : ''}> Uomo+Donna (×1.75)</label><br>
-        <label style="margin-right:1rem;"><input type="radio" name="prepTwoType" value="fm" onchange="updateShopTwoType('fm'); setTimeout(renderPrep,50);" ${s.twoPersonsType === 'fm' ? 'checked' : ''}> Donna+Uomo (×2.25)</label><br>
-        <label><input type="radio" name="prepTwoType" value="same" onchange="updateShopTwoType('same'); setTimeout(renderPrep,50);" ${s.twoPersonsType === 'same' ? 'checked' : ''}> Stesso sesso (×2)</label>
-      </div>
-    </div>
-  `;
-
-  html += `<h3 style="color:var(--accent); margin-top:1.5rem; margin-bottom:0.5rem;">1. Priorità (Batch Cooking)</h3>`;
-  html += `<div class="settings-section" style="border-left: 4px solid var(--accent);">`;
-  if (todayPlan.batchCooking.evening) {
-    html += `<p style="font-weight:bold; font-size:1.05rem;">${todayPlan.batchCooking.evening}</p>`;
-    html += `<p class="text-muted" style="font-size:0.8rem; margin-top:0.5rem;">💡 Le porzioni citate qui potrebbero essere per più giorni. Leggi bene per non sbagliare.</p>`;
-  } else {
-    html += `<p class="text-muted">Nessuna preparazione anticipata richiesta stasera.</p>`;
-  }
-  html += `</div>`;
-
-  html += `<h3 style="color:var(--primary); margin-top:1.5rem; margin-bottom:0.5rem;">2. La Cena (${todayPlan.dayName})</h3>`;
-  html += `<div class="settings-section" style="border-left: 4px solid var(--primary);">`;
-  html += `<h4 style="margin-bottom:1rem;">${dinner.emoji} ${dinner.name}</h4>`;
-  html += `<div style="display:flex; gap:1rem; flex-wrap:wrap;">`;
-  html += `<div style="flex:1; min-width:140px;">`;
-  html += `<h5 style="color:var(--text-muted); margin-bottom:0.5rem;">Ingredienti:</h5>`;
-  html += `<ul style="list-style:none; padding:0; font-size:0.85rem;">`;
-  dinner.ingredients.forEach(ing => {
-    let finalQty = ing.quantity;
-    if (typeof finalQty === 'number' && ing.unit !== 'pz' && ing.unit !== 'q.b.') finalQty = formatQty(finalQty * multiplier);
-    html += `<li style="padding:0.2rem 0; border-bottom:1px solid #eee;"><strong>${finalQty} ${ing.unit==='q.b.'||ing.unit==='pz'?'':ing.unit}</strong> ${ing.name}</li>`;
-  });
-  html += `</ul></div>`;
-  html += `<div style="flex:1.5; min-width:200px;">`;
-  html += `<h5 style="color:var(--text-muted); margin-bottom:0.5rem;">Passaggi:</h5>`;
-  html += `<ul style="list-style:none; padding:0; font-size:0.85rem;">`;
-  dinner.steps.forEach((step, i) => {
-    html += `<li class="step-item" style="padding:0.3rem 0; border-bottom:1px solid #eee;" onclick="this.classList.toggle('done')"><strong>${i+1}.</strong> ${step}</li>`;
-  });
-  html += `</ul></div></div></div>`;
-
-  html += `<h3 style="color:var(--rest); margin-top:1.5rem; margin-bottom:0.5rem;">3. Pasti per Domani (${nextPlan.dayName})</h3>`;
-  html += `<p class="text-muted" style="font-size:0.85rem; margin-bottom:1rem;">Apri i menu per assembrare i box.</p>`;
-  
-  const tomorrowMeals = nextPlan.meals[nextType];
-  for (const tMealBase of tomorrowMeals) {
-    const tMeal = await getCustomRecipe(tMealBase.id) || tMealBase;
-    const slotLabel = MEAL_SLOTS.find(s=>s.id===tMeal.slot).label;
-    const accId = `prep-acc-${tMeal.id}`;
-    
-    html += `
-      <div class="settings-section" style="margin-bottom:0.5rem; padding:0.5rem 1rem;">
-        <div class="flex-between" style="cursor:pointer;" onclick="togglePrepAccordion('${accId}')">
-          <span style="font-weight:600;">${slotLabel}</span>
-          <span style="color:var(--text-muted);">${tMeal.emoji} ${tMeal.name} ▼</span>
-        </div>
-        <div id="${accId}" class="hidden" style="margin-top:1rem; border-top:1px solid #eee; padding-top:0.5rem;">
-    `;
-    if(tMeal.prepNote || tMeal.batchNote) {
-      html += `
-        <div style="background-color:#fffdf7; border-left:4px solid var(--accent); padding:0.5rem; margin-bottom:1rem; border-radius:4px;">
-          <p style="font-size:0.85rem; color:var(--accent); font-weight:bold; margin:0;">⚠️ Attenzione: ${tMeal.prepNote || tMeal.batchNote}</p>
-        </div>
-      `;
+  for (const day of weekDays) {
+    for (const type of ['training', 'rest']) {
+      if(MEAL_PLAN[day].meals[type]) {
+        for (const m of MEAL_PLAN[day].meals[type]) {
+          const finalM = appState.customRecipes[m.id] || m;
+          if(!dictionary[m.slot].find(x => x.name === finalM.name)) {
+            dictionary[m.slot].push({ name: finalM.name, emoji: finalM.emoji, id: m.id, day: day, type: type, originalSlot: m.slot });
+          }
+        }
+      }
     }
-    html += `<div style="display:flex; gap:1rem; flex-wrap:wrap;">`;
-    html += `<div style="flex:1; min-width:140px;">`;
-    html += `<h5 style="color:var(--text-muted); margin-bottom:0.5rem;">Ingredienti:</h5>`;
-    html += `<ul style="list-style:none; padding:0; font-size:0.85rem;">`;
-    tMeal.ingredients.forEach(ing => {
-      let fQty = ing.quantity;
-      if (typeof fQty === 'number' && ing.unit !== 'pz' && ing.unit !== 'q.b.') fQty = formatQty(fQty * multiplier);
-      html += `<li class="step-item" style="padding:0.2rem 0; border-bottom:1px solid #f9f9f9;" onclick="this.classList.toggle('done')"><strong>${fQty} ${ing.unit==='q.b.'||ing.unit==='pz'?'':ing.unit}</strong> ${ing.name}</li>`;
-    });
-    html += `</ul></div>`;
-    
-    html += `<div style="flex:1.5; min-width:200px;">`;
-    html += `<h5 style="color:var(--text-muted); margin-bottom:0.5rem;">Cosa fare:</h5>`;
-    html += `<ul style="list-style:none; padding:0; font-size:0.85rem;">`;
-    tMeal.steps.forEach((step, i) => {
-      html += `<li class="step-item" style="padding:0.3rem 0; border-bottom:1px solid #eee;" onclick="this.classList.toggle('done')"><strong>${i+1}.</strong> ${step}</li>`;
-    });
-    html += `</ul></div></div></div></div>`;
   }
+
+  Object.values(appState.customRecipes).forEach(cust => {
+    if (cust.id && cust.id.startsWith('custom_') && !dictionary[cust.slot].find(x => x.name === cust.name)) {
+      dictionary[cust.slot].push({ name: cust.name, emoji: cust.emoji || "🍲", id: cust.id, day: 'sunday', type: 'rest', originalSlot: cust.slot });
+    }
+  });
+
+  MEAL_SLOTS.forEach(slot => {
+    if(dictionary[slot.id].length > 0) {
+      html += `<h3 style="margin-top:1.5rem; margin-bottom:0.5rem; color:var(--primary); border-bottom:2px solid var(--primary-light); padding-bottom:0.25rem;">${slot.label}</h3>`;
+      html += `<div class="settings-section" style="padding:0.5rem;">`;
+      dictionary[slot.id].forEach(item => {
+        html += `<div class="day-meal-item" onclick="openRecipeModal('${item.id}', '${item.day}', '${item.type}', '${item.originalSlot}')">${item.emoji} ${item.name}</div>`;
+      });
+      html += `</div>`;
+    }
+  });
+
   container.innerHTML = html;
 }
 
@@ -489,6 +617,7 @@ window.toggleShopAllWeek = async function(selectAll) {
 
 function renderShop() {
   const container = document.getElementById('view-shop');
+  
   let shopCloud = appState.shoppingListCloud;
   if (!shopCloud.selectedMeals) shopCloud.selectedMeals = { monday:[], tuesday:[], wednesday:[], thursday:[], friday:[], saturday:[], sunday:[] };
   if (!shopCloud.customDays) shopCloud.customDays = { monday:'training', tuesday:'training', wednesday:'training', thursday:'rest', friday:'training', saturday:'rest', sunday:'rest' };
@@ -498,46 +627,21 @@ function renderShop() {
   if (!hasSelection) shopSettingsVisible = true;
   
   const mode = shopCloud.mode || 'current';
-  const persons = appState.deviceSettings.persons || 2;
-  const twoType = appState.deviceSettings.twoPersonsType || 'mf';
-  const singleType = appState.deviceSettings.singlePersonType || 'm';
   const weekDays = ['monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday', 'sunday'];
   
-  let html = `
-    <div class="flex-between" style="margin-bottom:1rem; flex-wrap:wrap; gap:0.5rem;">
-      <h2 style="margin:0;">Lista Spesa</h2>
+  let html = `<h2 style="margin-top:0.5rem; margin-bottom:1rem;">Lista Spesa</h2>`;
+  
+  html += `
+    <div class="flex-between" style="margin-bottom:1rem;">
+      <h3 style="margin:0;">Impostazioni Giorni</h3>
       <button class="btn btn-outline" style="min-height:30px; padding:0.25rem 0.5rem; font-size:0.85rem;" onclick="toggleShopSettings()">
-        ${shopSettingsVisible ? 'Nascondi Impostazioni ▲' : 'Mostra Impostazioni ▼'}
+        ${shopSettingsVisible ? 'Nascondi ▲' : 'Modifica ▼'}
       </button>
     </div>
   `;
-  
   if (shopSettingsVisible) {
     html += `
-      <div class="settings-section" style="padding:1rem; margin-bottom:1rem;">
-        <div style="display:flex; justify-content:space-between; align-items:center;">
-          <span style="font-weight:600;">Calcola per:</span>
-          <select onchange="updateShopPersons(this.value)" style="padding:0.3rem;">
-            <option value="1" ${persons == 1 ? 'selected' : ''}>1 persona</option>
-            <option value="2" ${persons == 2 ? 'selected' : ''}>2 persone</option>
-          </select>
-        </div>
-        <div class="${persons == 1 ? '' : 'hidden'}" style="margin-top:0.5rem; font-size:0.9rem;">
-          <label style="margin-right:1rem;"><input type="radio" name="shopSingleType" value="m" onchange="updateShopSingleType('m')" ${singleType === 'm' ? 'checked' : ''}> Uomo (×1)</label><br>
-          <label style="margin-right:1rem;"><input type="radio" name="shopSingleType" value="f" onchange="updateShopSingleType('f')" ${singleType === 'f' ? 'checked' : ''}> Donna (×0.75)</label>
-        </div>
-        <div class="${persons == 2 ? '' : 'hidden'}" style="margin-top:0.5rem; font-size:0.9rem;">
-          <label style="margin-right:1rem;"><input type="radio" name="shopTwoType" value="mf" onchange="updateShopTwoType('mf')" ${twoType === 'mf' ? 'checked' : ''}> Uomo+Donna (×1.75)</label><br>
-          <label style="margin-right:1rem;"><input type="radio" name="shopTwoType" value="fm" onchange="updateShopTwoType('fm')" ${twoType === 'fm' ? 'checked' : ''}> Donna+Uomo (×2.25)</label><br>
-          <label><input type="radio" name="shopTwoType" value="same" onchange="updateShopTwoType('same')" ${twoType === 'same' ? 'checked' : ''}> Stesso sesso (×2)</label>
-        </div>
-        <p class="text-muted" style="margin-top:0.5rem; font-size:0.75rem;">Questa opzione viene salvata solo su questo dispositivo.</p>
-      </div>
-    `;
-
-    html += `
       <div class="settings-section" style="margin-bottom:1rem;">
-        <h3 style="margin-bottom:0.5rem;">Impostazioni Giorni</h3>
         <label style="display:block; margin-bottom:0.5rem;"><input type="radio" name="shopMode" value="current" ${mode==='current'?'checked':''} onchange="setShopMode('current')"> Usa piano settimana corrente</label>
         <label style="display:block;"><input type="radio" name="shopMode" value="custom" ${mode==='custom'?'checked':''} onchange="setShopMode('custom')"> Personalizza (Scegli tu i giorni)</label>
     `;
@@ -546,7 +650,7 @@ function renderShop() {
       weekDays.forEach(day => {
         const type = shopCloud.customDays[day];
         html += `
-          <div style="background:#f9f9f9; padding:0.5rem; border-radius:6px; font-size:0.85rem;">
+          <div style="background:rgba(0,0,0,0.03); padding:0.5rem; border-radius:6px; font-size:0.85rem;">
             <strong>${MEAL_PLAN[day].dayName.substring(0,3)}</strong>: 
             <select onchange="setCustomShopDayType('${day}', this.value)" style="margin-left:0.5rem; padding:0.1rem;">
               <option value="training" ${type==='training'?'selected':''}>🏋️</option>
@@ -558,49 +662,40 @@ function renderShop() {
       html += `</div>`;
     }
     html += `</div>`;
+  }
 
+  html += `
+    <div class="settings-section" style="margin-bottom:1.5rem;">
+      <h3>Seleziona cosa comprare</h3>
+      <div style="display:flex; gap:0.5rem; margin-bottom:1rem;">
+        <button class="btn btn-outline" style="flex:1; padding:0.25rem; font-size:0.8rem;" onclick="toggleShopAllWeek(true)">Seleziona Tutto</button>
+        <button class="btn btn-outline" style="flex:1; padding:0.25rem; font-size:0.8rem;" onclick="toggleShopAllWeek(false)">Deseleziona Tutto</button>
+      </div>
+  `;
+  weekDays.forEach(day => {
+    const selMeals = shopCloud.selectedMeals[day] || [];
+    const isWholeDay = selMeals.length === 5;
     html += `
-      <div class="settings-section" style="margin-bottom:1.5rem;">
-        <h3>Seleziona cosa comprare</h3>
-        <div style="display:flex; gap:0.5rem; margin-bottom:1rem;">
-          <button class="btn btn-outline" style="flex:1; padding:0.25rem; font-size:0.8rem;" onclick="toggleShopAllWeek(true)">Seleziona Tutto</button>
-          <button class="btn btn-outline" style="flex:1; padding:0.25rem; font-size:0.8rem;" onclick="toggleShopAllWeek(false)">Deseleziona Tutto</button>
+      <div style="margin-bottom: 0.5rem; border: 1px solid rgba(0,0,0,0.05); border-radius: 8px; padding: 0.5rem;">
+        <div class="flex-between">
+          <label style="font-weight:bold;"><input type="checkbox" onchange="toggleShopWholeDay('${day}', this.checked)" ${isWholeDay?'checked':''}> ${MEAL_PLAN[day].dayName}</label>
+          <button class="btn btn-icon" style="min-height:30px; font-size:0.8rem; background:rgba(0,0,0,0.03);" onclick="document.getElementById('shop-det-${day}').classList.toggle('hidden')">▼</button>
         </div>
+        <div id="shop-det-${day}" class="hidden" style="margin-top:0.5rem; padding-left: 1.5rem; display:flex; flex-wrap:wrap; gap:0.5rem; font-size:0.85rem;">
     `;
-    weekDays.forEach(day => {
-      const selMeals = shopCloud.selectedMeals[day] || [];
-      const isWholeDay = selMeals.length === 5;
-      html += `
-        <div style="margin-bottom: 0.5rem; border: 1px solid #eee; border-radius: 8px; padding: 0.5rem;">
-          <div class="flex-between">
-            <label style="font-weight:bold;"><input type="checkbox" onchange="toggleShopWholeDay('${day}', this.checked)" ${isWholeDay?'checked':''}> ${MEAL_PLAN[day].dayName}</label>
-            <button class="btn btn-icon" style="min-height:30px; font-size:0.8rem; background:#eee;" onclick="document.getElementById('shop-det-${day}').classList.toggle('hidden')">Dettagli ▼</button>
-          </div>
-          <div id="shop-det-${day}" class="hidden" style="margin-top:0.5rem; padding-left: 1.5rem; display:flex; flex-wrap:wrap; gap:0.5rem; font-size:0.85rem;">
-      `;
-      MEAL_SLOTS.forEach(slot => {
-        const isChecked = selMeals.includes(slot.id);
-        html += `<label><input type="checkbox" onchange="toggleShopMeal('${day}', '${slot.id}', this.checked)" ${isChecked?'checked':''}> ${slot.label}</label>`;
-      });
-      html += `</div></div>`;
+    MEAL_SLOTS.forEach(slot => {
+      const isChecked = selMeals.includes(slot.id);
+      html += `<label><input type="checkbox" onchange="toggleShopMeal('${day}', '${slot.id}', this.checked)" ${isChecked?'checked':''}> ${slot.label}</label>`;
     });
-    html += `</div>`;
-  }
+    html += `</div></div>`;
+  });
+  html += `</div>`;
 
-  let multiplier = 1;
-  if (persons == 2) {
-    if (twoType === 'mf') multiplier = 1.75;
-    else if (twoType === 'fm') multiplier = 2.25;
-    else multiplier = 2;
-  } else {
-    if (singleType === 'f') multiplier = 0.75;
-    else multiplier = 1;
-  }
-  
+  let multiplier = getMultiplier();
   let categoriesMap = {};
   let totalItemsCount = 0;
 
-  // Usa l'array di tutti i possibli ingredienti
+  // L'array completo per categorizzazione
   const allIngredients = [
     { id: "yogurt_greco", name: "Yogurt greco 0%", category: "🥚 Uova e Latticini", unit: "g" },
     { id: "albumi", name: "Albumi", category: "🥚 Uova e Latticini", unit: "g" },
@@ -645,37 +740,41 @@ function renderShop() {
     { id: "crackers", name: "Crackers", category: "🍚 Carboidrati", unit: "g" }
   ];
 
-  // Aggrega dinamico pescando direttamente dalle ricette!
   let aggList = {};
 
   weekDays.forEach(day => {
     const type = (mode === 'custom') ? shopCloud.customDays[day] : getDayType(day);
     const mealsForDay = shopCloud.selectedMeals[day] || [];
-    const planMeals = MEAL_PLAN[day].meals[type];
+    const planMeals = getDynamicMealsForDay(day, type);
     
     mealsForDay.forEach(slot => {
       const meal = planMeals.find(m => m.slot === slot);
       if(meal) {
         meal.ingredients.forEach(ing => {
-          // Trova categoria da allIngredients o assegna default
           let catBase = allIngredients.find(a => ing.name.includes(a.name) || a.name.includes(ing.name));
           let catName = catBase ? catBase.category : "🌿 Spezie e Aromi";
           let u = ing.unit;
           let q = ing.quantity;
-          
           let hashId = ing.name.toLowerCase().replace(/[^a-z0-9]/g, '');
           
           if (!aggList[hashId]) {
-            aggList[hashId] = { id: hashId, name: ing.name, category: catName, unit: u, qty: 0, days: [] };
+            aggList[hashId] = { id: hashId, name: ing.name, category: catName, unit: u, qty: 0, mealsTags: [] };
           }
           if (typeof q === 'number') aggList[hashId].qty += q;
-          if (!aggList[hashId].days.includes(MEAL_PLAN[day].dayName.substring(0,3))) {
-            aggList[hashId].days.push(MEAL_PLAN[day].dayName.substring(0,3));
+          
+          let slotLabelForTag = MEAL_SLOTS.find(s=>s.id===slot).label;
+          let tag = `${MEAL_PLAN[day].dayName.substring(0,3)} (${slotLabelForTag})`;
+          if (!aggList[hashId].mealsTags.includes(tag)) {
+            aggList[hashId].mealsTags.push(tag);
           }
         });
       }
     });
   });
+
+  const s = appState.deviceSettings;
+  const persons = s.persons || 2;
+  const twoType = s.twoPersonsType || 'mf';
 
   Object.values(aggList).forEach(item => {
     if (item.qty > 0 || item.unit === 'q.b.' || item.unit === 'pz') {
@@ -683,7 +782,7 @@ function renderShop() {
       finalQty = formatQty(finalQty);
       
       let splitText = "";
-      if (persons == 2 && item.unit !== 'pz' && item.unit !== 'q.b.') {
+      if (persons === 2 && item.unit !== 'pz' && item.unit !== 'q.b.') {
           let user1, user2;
           if (twoType === 'mf') { user1 = formatQty(item.qty * 1); user2 = formatQty(item.qty * 0.75); splitText = `(Uomo: ${user1}${item.unit}, Donna: ${user2}${item.unit})`; }
           else if (twoType === 'fm') { user1 = formatQty(item.qty * 1); user2 = formatQty(item.qty * 1.25); splitText = `(Donna: ${user1}${item.unit}, Uomo: ${user2}${item.unit})`; }
@@ -695,7 +794,7 @@ function renderShop() {
       if (!categoriesMap[item.category]) categoriesMap[item.category] = [];
       categoriesMap[item.category].push({
         id: item.id, name: item.name, qty: finalQty, unit: item.unit,
-        days: item.days.join(', '), checked: (shopCloud.checkedItems || []).includes(item.id),
+        days: item.mealsTags.join(' • '), checked: (shopCloud.checkedItems || []).includes(item.id),
         splitText: splitText
       });
       totalItemsCount++;
@@ -715,7 +814,7 @@ function renderShop() {
             <input type="checkbox" ${item.checked ? 'checked' : ''} style="pointer-events:none;">
             <div class="shop-item-details">
               <div>${item.name}</div>
-              <div class="shop-item-tags">${item.days}</div>
+              <div class="shop-item-tags" style="color:var(--primary); font-weight:500;">${item.days}</div>
               ${item.splitText ? `<div class="text-muted" style="font-size:0.7rem; margin-top:2px;">${item.splitText}</div>` : ''}
             </div>
             <div class="shop-item-qty">
@@ -729,7 +828,7 @@ function renderShop() {
     }
   });
   
-  if (totalItemsCount === 0) html += `<p class="text-muted" style="text-align:center; padding:2rem 0;">Nessun pasto selezionato.</p>`;
+  if (totalItemsCount === 0) html += `<p class="text-muted" style="text-align:center; padding:2rem 0;">Nessun pasto selezionato per la spesa.</p>`;
   html += `
     <div style="display:flex; flex-direction:column; gap:0.5rem; margin-top:2rem;">
       <button class="btn btn-primary" style="width:100%; background-color:#25D366; color:white; border:none;" onclick="shareShopWhatsApp()">Invia su WhatsApp</button>
@@ -780,22 +879,6 @@ window.toggleShopMeal = async function(day, slot, isChecked) {
   await saveShoppingListCloud(appState.shoppingListCloud); renderShop();
 }
 
-window.updateShopPersons = function(val) { 
-  appState.deviceSettings.persons = parseInt(val); 
-  saveLocalDeviceSettings(appState.deviceSettings); 
-  if(window.location.hash === '#shop') setTimeout(renderShop, 50); 
-}
-window.updateShopTwoType = function(val) { 
-  appState.deviceSettings.twoPersonsType = val; 
-  saveLocalDeviceSettings(appState.deviceSettings); 
-  if(window.location.hash === '#shop') setTimeout(renderShop, 50); 
-}
-window.updateShopSingleType = function(val) { 
-  appState.deviceSettings.singlePersonType = val; 
-  saveLocalDeviceSettings(appState.deviceSettings); 
-  if(window.location.hash === '#shop') setTimeout(renderShop, 50); 
-}
-
 window.toggleShopItem = async function(id, event) {
   if (event.target.tagName.toLowerCase() === 'input' && event.target.type === 'text') return;
   let list = appState.shoppingListCloud.checkedItems || [];
@@ -822,7 +905,7 @@ window.resetShopList = async function() {
 // ------------------------------------
 // RENDER SETTINGS & GUIDE
 // ------------------------------------
-function renderGuide() {}
+function renderGuide() {} // Mantenuto stub anti-crash per il routing
 
 function renderSettings() {
   const container = document.getElementById('view-settings');
@@ -830,7 +913,7 @@ function renderSettings() {
   const deviceS = appState.deviceSettings;
   
   let html = `
-    <h2>Impostazioni e Guida</h2>
+    <h2 style="margin-top:0.5rem;">Impostazioni e Guida</h2>
     
     <div class="settings-section">
       <h3>Aspetto (Solo questo dispositivo)</h3>
@@ -859,7 +942,7 @@ function renderSettings() {
     <h3 style="margin-top:2rem; margin-bottom:1rem;">Manuale Dieta</h3>
     
     <div class="settings-section" style="margin-bottom:1rem;">
-      <h3 style="color:var(--primary); margin-bottom:0.5rem; border-bottom:1px solid #eee; padding-bottom:0.5rem;" onclick="this.nextElementSibling.classList.toggle('hidden')" style="cursor:pointer;">
+      <h3 style="color:var(--primary); margin-bottom:0.5rem; border-bottom:1px solid rgba(0,0,0,0.05); padding-bottom:0.5rem;" onclick="this.nextElementSibling.classList.toggle('hidden')" style="cursor:pointer;">
         Struttura Dieta ▼
       </h3>
       <div class="hidden" style="line-height:1.6; padding-top:0.5rem;">
@@ -872,7 +955,7 @@ function renderSettings() {
     </div>
 
     <div class="settings-section" style="margin-bottom:1rem;">
-      <h3 style="color:var(--primary); margin-bottom:0.5rem; border-bottom:1px solid #eee; padding-bottom:0.5rem;" onclick="this.nextElementSibling.classList.toggle('hidden')" style="cursor:pointer;">
+      <h3 style="color:var(--primary); margin-bottom:0.5rem; border-bottom:1px solid rgba(0,0,0,0.05); padding-bottom:0.5rem;" onclick="this.nextElementSibling.classList.toggle('hidden')" style="cursor:pointer;">
         1° Giorno (Allenamento) ▼
       </h3>
       <div class="hidden" style="line-height:1.6; padding-top:0.5rem; font-size:0.9rem;">
@@ -916,7 +999,7 @@ function renderSettings() {
     </div>
 
     <div class="settings-section" style="margin-bottom:1rem;">
-      <h3 style="color:var(--rest); margin-bottom:0.5rem; border-bottom:1px solid #eee; padding-bottom:0.5rem;" onclick="this.nextElementSibling.classList.toggle('hidden')" style="cursor:pointer;">
+      <h3 style="color:var(--rest); margin-bottom:0.5rem; border-bottom:1px solid rgba(0,0,0,0.05); padding-bottom:0.5rem;" onclick="this.nextElementSibling.classList.toggle('hidden')" style="cursor:pointer;">
         2° Giorno (Riposo) ▼
       </h3>
       <div class="hidden" style="line-height:1.6; padding-top:0.5rem; font-size:0.9rem;">
@@ -958,7 +1041,7 @@ function renderSettings() {
     </div>
       
     <div class="settings-section" style="margin-bottom:1rem;">
-      <h3 style="color:var(--primary); margin-bottom:0.5rem; border-bottom:1px solid #eee; padding-bottom:0.5rem;" onclick="this.nextElementSibling.classList.toggle('hidden')" style="cursor:pointer;">
+      <h3 style="color:var(--primary); margin-bottom:0.5rem; border-bottom:1px solid rgba(0,0,0,0.05); padding-bottom:0.5rem;" onclick="this.nextElementSibling.classList.toggle('hidden')" style="cursor:pointer;">
         Integrazione Syform ▼
       </h3>
       <div class="hidden" style="line-height:1.6; padding-top:0.5rem;">
@@ -971,58 +1054,58 @@ function renderSettings() {
     </div>
       
     <div class="settings-section" style="margin-bottom:1rem;">
-      <h3 style="color:var(--primary); margin-bottom:0.5rem; border-bottom:1px solid #eee; padding-bottom:0.5rem;" onclick="this.nextElementSibling.classList.toggle('hidden')" style="cursor:pointer;">
+      <h3 style="color:var(--primary); margin-bottom:0.5rem; border-bottom:1px solid rgba(0,0,0,0.05); padding-bottom:0.5rem;" onclick="this.nextElementSibling.classList.toggle('hidden')" style="cursor:pointer;">
         Alternative Alimentari ▼
       </h3>
       <div class="hidden" style="line-height:1.6; padding-top:0.5rem;">
         <div style="overflow-x:auto;">
           <table style="width:100%; border-collapse: collapse; margin-top:0.5rem; font-size:0.95rem;">
-            <tr style="background:#eee;"><td colspan="2" style="padding:0.5rem; font-weight:bold;">Carboidrati (Rif: Pasta/Riso 70g)</td></tr>
-            <tr style="border-bottom:1px solid #ddd;"><td style="padding:0.5rem;">Gnocchi di patate</td><td style="text-align:right; padding:0.5rem;">190 g</td></tr>
-            <tr style="border-bottom:1px solid #ddd;"><td style="padding:0.5rem;">Farro, Orzo</td><td style="text-align:right; padding:0.5rem;">70 g</td></tr>
-            <tr style="border-bottom:1px solid #ddd;"><td style="padding:0.5rem;">Quinoa, Grano Saraceno, Amaranto</td><td style="text-align:right; padding:0.5rem;">60 g</td></tr>
-            <tr style="border-bottom:1px solid #ddd;"><td style="padding:0.5rem;">Pane</td><td style="text-align:right; padding:0.5rem;">90 g</td></tr>
-            <tr style="border-bottom:1px solid #ddd;"><td style="padding:0.5rem;">Piadina</td><td style="text-align:right; padding:0.5rem;">80 g</td></tr>
-            <tr style="border-bottom:1px solid #ddd;"><td style="padding:0.5rem;">Crackers, Grissini, Crostini</td><td style="text-align:right; padding:0.5rem;">60 g</td></tr>
-            <tr style="border-bottom:1px solid #ddd;"><td style="padding:0.5rem;">Polenta, cotta</td><td style="text-align:right; padding:0.5rem;">340 g</td></tr>
-            <tr style="border-bottom:1px solid #ddd;"><td style="padding:0.5rem;">Patate</td><td style="text-align:right; padding:0.5rem;">350 g</td></tr>
+            <tr style="background:rgba(0,0,0,0.03);"><td colspan="2" style="padding:0.5rem; font-weight:bold;">Carboidrati (Rif: Pasta/Riso 70g)</td></tr>
+            <tr style="border-bottom:1px solid rgba(0,0,0,0.05);"><td style="padding:0.5rem;">Gnocchi di patate</td><td style="text-align:right; padding:0.5rem;">190 g</td></tr>
+            <tr style="border-bottom:1px solid rgba(0,0,0,0.05);"><td style="padding:0.5rem;">Farro, Orzo</td><td style="text-align:right; padding:0.5rem;">70 g</td></tr>
+            <tr style="border-bottom:1px solid rgba(0,0,0,0.05);"><td style="padding:0.5rem;">Quinoa, Grano Saraceno, Amaranto</td><td style="text-align:right; padding:0.5rem;">60 g</td></tr>
+            <tr style="border-bottom:1px solid rgba(0,0,0,0.05);"><td style="padding:0.5rem;">Pane</td><td style="text-align:right; padding:0.5rem;">90 g</td></tr>
+            <tr style="border-bottom:1px solid rgba(0,0,0,0.05);"><td style="padding:0.5rem;">Piadina</td><td style="text-align:right; padding:0.5rem;">80 g</td></tr>
+            <tr style="border-bottom:1px solid rgba(0,0,0,0.05);"><td style="padding:0.5rem;">Crackers, Grissini, Crostini</td><td style="text-align:right; padding:0.5rem;">60 g</td></tr>
+            <tr style="border-bottom:1px solid rgba(0,0,0,0.05);"><td style="padding:0.5rem;">Polenta, cotta</td><td style="text-align:right; padding:0.5rem;">340 g</td></tr>
+            <tr style="border-bottom:1px solid rgba(0,0,0,0.05);"><td style="padding:0.5rem;">Patate</td><td style="text-align:right; padding:0.5rem;">350 g</td></tr>
             
-            <tr style="background:#eee;"><td colspan="2" style="padding:0.5rem; font-weight:bold;">Proteine (Rif: Pollame 200g)</td></tr>
-            <tr style="border-bottom:1px solid #ddd;"><td style="padding:0.5rem;">Manzo (tagli magri)</td><td style="text-align:right; padding:0.5rem;">150 g</td></tr>
-            <tr style="border-bottom:1px solid #ddd;"><td style="padding:0.5rem;">Maiale (tagli magri) / Affettati sgrassati</td><td style="text-align:right; padding:0.5rem;">100 g</td></tr>
-            <tr style="border-bottom:1px solid #ddd;"><td style="padding:0.5rem;">Crostacei, Molluschi</td><td style="text-align:right; padding:0.5rem;">300 g</td></tr>
-            <tr style="border-bottom:1px solid #ddd;"><td style="padding:0.5rem;">Merluzzo / Nasello / Sogliola</td><td style="text-align:right; padding:0.5rem;">250 g</td></tr>
-            <tr style="border-bottom:1px solid #ddd;"><td style="padding:0.5rem;">Pesce in scatola al naturale</td><td style="text-align:right; padding:0.5rem;">150 g</td></tr>
-            <tr style="border-bottom:1px solid #ddd;"><td style="padding:0.5rem;">Pesce in scatola sott'olio / Salmone / Sgombro</td><td style="text-align:right; padding:0.5rem;">100 g</td></tr>
-            <tr style="border-bottom:1px solid #ddd;"><td style="padding:0.5rem;">Fiocchi di latte / Uova intere</td><td style="text-align:right; padding:0.5rem;">180 g</td></tr>
-            <tr style="border-bottom:1px solid #ddd;"><td style="padding:0.5rem;">Montasio / Grana</td><td style="text-align:right; padding:0.5rem;">50 g</td></tr>
-            <tr style="border-bottom:1px solid #ddd;"><td style="padding:0.5rem;">Legumi in scatola o bolliti</td><td style="text-align:right; padding:0.5rem;">240 g</td></tr>
-            <tr style="border-bottom:1px solid #ddd;"><td style="padding:0.5rem;">Legumotti - Barilla</td><td style="text-align:right; padding:0.5rem;">80 g</td></tr>
+            <tr style="background:rgba(0,0,0,0.03);"><td colspan="2" style="padding:0.5rem; font-weight:bold;">Proteine (Rif: Pollame 200g)</td></tr>
+            <tr style="border-bottom:1px solid rgba(0,0,0,0.05);"><td style="padding:0.5rem;">Manzo (tagli magri)</td><td style="text-align:right; padding:0.5rem;">150 g</td></tr>
+            <tr style="border-bottom:1px solid rgba(0,0,0,0.05);"><td style="padding:0.5rem;">Maiale (tagli magri) / Affettati sgrassati</td><td style="text-align:right; padding:0.5rem;">100 g</td></tr>
+            <tr style="border-bottom:1px solid rgba(0,0,0,0.05);"><td style="padding:0.5rem;">Crostacei, Molluschi</td><td style="text-align:right; padding:0.5rem;">300 g</td></tr>
+            <tr style="border-bottom:1px solid rgba(0,0,0,0.05);"><td style="padding:0.5rem;">Merluzzo / Nasello / Sogliola</td><td style="text-align:right; padding:0.5rem;">250 g</td></tr>
+            <tr style="border-bottom:1px solid rgba(0,0,0,0.05);"><td style="padding:0.5rem;">Pesce in scatola al naturale</td><td style="text-align:right; padding:0.5rem;">150 g</td></tr>
+            <tr style="border-bottom:1px solid rgba(0,0,0,0.05);"><td style="padding:0.5rem;">Pesce in scatola sott'olio / Salmone / Sgombro</td><td style="text-align:right; padding:0.5rem;">100 g</td></tr>
+            <tr style="border-bottom:1px solid rgba(0,0,0,0.05);"><td style="padding:0.5rem;">Fiocchi di latte / Uova intere</td><td style="text-align:right; padding:0.5rem;">180 g</td></tr>
+            <tr style="border-bottom:1px solid rgba(0,0,0,0.05);"><td style="padding:0.5rem;">Montasio / Grana</td><td style="text-align:right; padding:0.5rem;">50 g</td></tr>
+            <tr style="border-bottom:1px solid rgba(0,0,0,0.05);"><td style="padding:0.5rem;">Legumi in scatola o bolliti</td><td style="text-align:right; padding:0.5rem;">240 g</td></tr>
+            <tr style="border-bottom:1px solid rgba(0,0,0,0.05);"><td style="padding:0.5rem;">Legumotti - Barilla</td><td style="text-align:right; padding:0.5rem;">80 g</td></tr>
           </table>
         </div>
       </div>
     </div>
 
     <div class="settings-section" style="margin-bottom:1rem;">
-      <h3 style="color:var(--primary); margin-bottom:0.5rem; border-bottom:1px solid #eee; padding-bottom:0.5rem;" onclick="this.nextElementSibling.classList.toggle('hidden')" style="cursor:pointer;">
+      <h3 style="color:var(--primary); margin-bottom:0.5rem; border-bottom:1px solid rgba(0,0,0,0.05); padding-bottom:0.5rem;" onclick="this.nextElementSibling.classList.toggle('hidden')" style="cursor:pointer;">
         Frequenze (Proteine) ▼
       </h3>
       <div class="hidden" style="line-height:1.6; padding-top:0.5rem;">
         <div style="overflow-x:auto;">
           <table style="width:100%; border-collapse: collapse; margin-top:0.5rem; font-size:0.95rem;">
-            <tr style="border-bottom:1px solid #ddd;"><td style="padding:0.5rem; font-weight:600;">Pollame</td><td style="text-align:right; padding:0.5rem;">1-2 volte a settimana</td></tr>
-            <tr style="border-bottom:1px solid #ddd;"><td style="padding:0.5rem; font-weight:600;">Manzo, maiale, affettati</td><td style="text-align:right; padding:0.5rem;">Max 1 volta a settimana</td></tr>
-            <tr style="border-bottom:1px solid #ddd;"><td style="padding:0.5rem; font-weight:600;">Pesce ricco di omega-3</td><td style="text-align:right; padding:0.5rem;">Almeno 2-3 volte a settimana</td></tr>
-            <tr style="border-bottom:1px solid #ddd;"><td style="padding:0.5rem; font-weight:600;">Altro pesce e prodotti ittici</td><td style="text-align:right; padding:0.5rem;">1-2 volte a settimana</td></tr>
-            <tr style="border-bottom:1px solid #ddd;"><td style="padding:0.5rem; font-weight:600;">Latticini e Uova (a pranzo/cena)</td><td style="text-align:right; padding:0.5rem;">1-2 volte a settimana</td></tr>
-            <tr style="border-bottom:1px solid #ddd;"><td style="padding:0.5rem; font-weight:600;">Legumi e derivati</td><td style="text-align:right; padding:0.5rem;">Almeno 3-4 volte a settimana</td></tr>
+            <tr style="border-bottom:1px solid rgba(0,0,0,0.05);"><td style="padding:0.5rem; font-weight:600;">Pollame</td><td style="text-align:right; padding:0.5rem;">1-2 volte a settimana</td></tr>
+            <tr style="border-bottom:1px solid rgba(0,0,0,0.05);"><td style="padding:0.5rem; font-weight:600;">Manzo, maiale, affettati</td><td style="text-align:right; padding:0.5rem;">Max 1 volta a settimana</td></tr>
+            <tr style="border-bottom:1px solid rgba(0,0,0,0.05);"><td style="padding:0.5rem; font-weight:600;">Pesce ricco di omega-3</td><td style="text-align:right; padding:0.5rem;">Almeno 2-3 volte a settimana</td></tr>
+            <tr style="border-bottom:1px solid rgba(0,0,0,0.05);"><td style="padding:0.5rem; font-weight:600;">Altro pesce e prodotti ittici</td><td style="text-align:right; padding:0.5rem;">1-2 volte a settimana</td></tr>
+            <tr style="border-bottom:1px solid rgba(0,0,0,0.05);"><td style="padding:0.5rem; font-weight:600;">Latticini e Uova (a pranzo/cena)</td><td style="text-align:right; padding:0.5rem;">1-2 volte a settimana</td></tr>
+            <tr style="border-bottom:1px solid rgba(0,0,0,0.05);"><td style="padding:0.5rem; font-weight:600;">Legumi e derivati</td><td style="text-align:right; padding:0.5rem;">Almeno 3-4 volte a settimana</td></tr>
           </table>
         </div>
       </div>
     </div>
 
     <div class="settings-section" style="margin-bottom:1rem;">
-      <h3 style="color:var(--primary); margin-bottom:0.5rem; border-bottom:1px solid #eee; padding-bottom:0.5rem;" onclick="this.nextElementSibling.classList.toggle('hidden')" style="cursor:pointer;">
+      <h3 style="color:var(--primary); margin-bottom:0.5rem; border-bottom:1px solid rgba(0,0,0,0.05); padding-bottom:0.5rem;" onclick="this.nextElementSibling.classList.toggle('hidden')" style="cursor:pointer;">
         Altre info e FAQ ▼
       </h3>
       <div class="hidden" style="line-height:1.6; padding-top:0.5rem;">
@@ -1080,12 +1163,9 @@ function setupModal() {
   document.getElementById('modal-revert-btn').addEventListener('click', revertRecipe);
 }
 
-window.openRecipeModal = async function(mealId, dayKey, dayType) {
-  const customRecipe = await getCustomRecipe(mealId);
-  const baseMeal = MEAL_PLAN[dayKey].meals[dayType].find(m => m.id === mealId);
-  const meal = customRecipe || JSON.parse(JSON.stringify(baseMeal));
-  
-  currentModalMeal = { id: mealId, dayKey, dayType, data: meal, isCustom: !!customRecipe };
+window.openRecipeModal = async function(mealId, dayKey, dayType, originalSlot) {
+  const meal = getDynamicMeal(dayKey, dayType, originalSlot);
+  currentModalMeal = { id: meal.id, dayKey, dayType, data: meal, isCustom: !!appState.customRecipes[meal.id] };
   editMode = false;
   renderModalContent();
   document.getElementById('recipe-modal').classList.remove('hidden');
@@ -1100,16 +1180,22 @@ function renderModalContent() {
   const meal = currentModalMeal.data;
   const timeStr = appState.settings.notificationTimes[meal.slot];
   
-  document.getElementById('modal-title').innerHTML = `${meal.emoji || ''} ${meal.name}`;
+  if (editMode) {
+    document.getElementById('modal-title').innerHTML = `<input type="text" id="edit-meal-name" value="${meal.name}" style="width:100%; font-size:1.2rem; font-weight:bold; padding:0.2rem;">`;
+  } else {
+    document.getElementById('modal-title').innerHTML = `${meal.emoji || ''} ${meal.name}`;
+  }
+  
   document.getElementById('modal-time').innerHTML = `${MEAL_SLOTS.find(s=>s.id===meal.slot)?.label} • ${timeStr || ''} • Prep: ${meal.prepTime || '-'}`;
 
   const ingUl = document.getElementById('modal-ingredients-list');
   ingUl.innerHTML = '';
+  const multiplier = getMultiplier();
   
   if (editMode) {
     meal.ingredients.forEach((ing, i) => {
       ingUl.innerHTML += `
-        <li style="display:flex; gap:0.5rem;">
+        <li style="display:flex; gap:0.5rem; margin-bottom:0.25rem;">
           <input type="text" value="${ing.name}" id="edit-ing-name-${i}" style="flex:2;">
           <input type="number" value="${ing.quantity}" id="edit-ing-qty-${i}" style="flex:1; width:60px;">
           <input type="text" value="${ing.unit}" id="edit-ing-unit-${i}" style="flex:1; width:60px;">
@@ -1117,16 +1203,18 @@ function renderModalContent() {
         </li>
       `;
     });
-    ingUl.innerHTML += `<li><button class="btn btn-outline" style="width:100%;" onclick="addIngredient()">+ Aggiungi ingrediente base</button></li>`;
+    ingUl.innerHTML += `<li><button class="btn btn-outline" style="width:100%; margin-top:0.5rem;" onclick="addIngredient()">+ Aggiungi ingrediente base</button></li>`;
   } else {
     meal.ingredients.forEach(ing => {
+      let finalQty = ing.quantity;
+      if (typeof finalQty === 'number' && ing.unit !== 'pz' && ing.unit !== 'q.b.') finalQty = formatQty(finalQty * multiplier);
       ingUl.innerHTML += `
-        <li style="display:flex; flex-direction:column; padding:0.5rem 0; border-bottom:1px solid #eee;">
-          <div class="flex-between"><span>${ing.name}</span><strong>${ing.quantity} ${ing.unit === 'q.b.' || ing.unit === 'pz' ? '' : ing.unit}</strong></div>
+        <li style="display:flex; flex-direction:column; padding:0.5rem 0; border-bottom:1px solid rgba(0,0,0,0.05);">
+          <div class="flex-between"><span>${ing.name}</span><strong>${finalQty} ${ing.unit === 'q.b.' || ing.unit === 'pz' ? '' : ing.unit}</strong></div>
         </li>
       `;
     });
-    ingUl.innerHTML += `<li class="text-muted" style="font-size:0.75rem; text-align:center; padding:1rem 0;">Questi sono i valori base della ricetta per 1 Uomo. I moltiplicatori si applicano nelle viste Oggi, Spesa e Prep.</li>`;
+    ingUl.innerHTML += `<li class="text-muted" style="font-size:0.75rem; text-align:center; padding:1rem 0;">(Mostrato con i moltiplicatori attivi: ${multiplier}x)</li>`;
   }
 
   const prepUl = document.getElementById('modal-prep-list');
@@ -1134,27 +1222,44 @@ function renderModalContent() {
   if (editMode) {
     meal.steps.forEach((step, i) => {
       prepUl.innerHTML += `
-        <li style="display:flex; gap:0.5rem; align-items:flex-start;">
+        <li style="display:flex; gap:0.5rem; align-items:flex-start; margin-bottom:0.25rem;">
           <textarea id="edit-step-${i}" style="flex:1; min-height:60px; width:100%; padding:0.5rem;">${step}</textarea>
           <div style="display:flex; flex-direction:column; gap:0.25rem;">
-            <button class="btn btn-icon" style="background:#eee; min-height:30px; font-size:1rem;" onclick="moveStep(${i}, -1)">↑</button>
-            <button class="btn btn-icon" style="background:#eee; min-height:30px; font-size:1rem;" onclick="moveStep(${i}, 1)">↓</button>
+            <button class="btn btn-icon" style="background:rgba(0,0,0,0.05); min-height:30px; font-size:1rem;" onclick="moveStep(${i}, -1)">↑</button>
+            <button class="btn btn-icon" style="background:rgba(0,0,0,0.05); min-height:30px; font-size:1rem;" onclick="moveStep(${i}, 1)">↓</button>
             <button class="btn btn-icon btn-danger" style="min-height:30px; font-size:1rem;" onclick="removeStep(${i})">&times;</button>
           </div>
         </li>
       `;
     });
-    prepUl.innerHTML += `<li><button class="btn btn-outline" style="width:100%;" onclick="addStep()">+ Aggiungi passaggio</button></li>`;
+    prepUl.innerHTML += `<li><button class="btn btn-outline" style="width:100%; margin-top:0.5rem;" onclick="addStep()">+ Aggiungi passaggio</button></li>`;
   } else {
     meal.steps.forEach((step, i) => {
-      prepUl.innerHTML += `<li class="step-item" onclick="this.classList.toggle('done')"><strong>${i+1}.</strong> ${step}</li>`;
+      prepUl.innerHTML += `<li class="step-item" style="padding:0.5rem 0; border-bottom:1px solid rgba(0,0,0,0.05);" onclick="this.classList.toggle('done')"><strong>${i+1}.</strong> ${step}</li>`;
     });
   }
   
   const batchEl = document.getElementById('modal-batch-text');
-  if (meal.batchNote) batchEl.innerHTML = `<strong>💡 Nota:</strong><br>${meal.batchNote}`;
-  else if (MEAL_PLAN[currentModalMeal.dayKey].batchCooking.evening) batchEl.innerHTML = `<strong>🍳 Preparazione anticipata:</strong><br>${MEAL_PLAN[currentModalMeal.dayKey].batchCooking.evening}`;
-  else batchEl.innerHTML = "Nessuna preparazione anticipata per questo pasto.";
+  if (editMode) {
+    batchEl.innerHTML = `
+      <label style="font-size:0.85rem; font-weight:bold;">Sostituisci il pasto associato:</label>
+      <select id="edit-meal-slot" style="width:100%; margin-bottom:1rem; padding:0.3rem;">
+        <option value="breakfast" ${meal.slot === 'breakfast' ? 'selected' : ''}>Colazione</option>
+        <option value="snack1" ${meal.slot === 'snack1' ? 'selected' : ''}>Spuntino Mattina</option>
+        <option value="lunch" ${meal.slot === 'lunch' ? 'selected' : ''}>Pranzo</option>
+        <option value="snack2" ${meal.slot === 'snack2' ? 'selected' : ''}>Merenda</option>
+        <option value="dinner" ${meal.slot === 'dinner' ? 'selected' : ''}>Cena</option>
+      </select>
+      <label style="font-size:0.85rem; font-weight:bold;">Note di preparazione (Batch):</label>
+      <textarea id="edit-prep-note" style="width:100%; min-height:60px; margin-top:0.5rem; margin-bottom:1rem;">${meal.prepNote || meal.batchNote || ''}</textarea>
+      <label style="font-size:0.85rem; font-weight:bold;">Note Integrazione:</label>
+      <textarea id="edit-supp-note" style="width:100%; min-height:40px; margin-top:0.5rem;">${meal.supplement || ''}</textarea>
+    `;
+  } else {
+    if (meal.batchNote || meal.prepNote) batchEl.innerHTML = `<strong>💡 Nota:</strong><br>${formatBatchNote(meal.batchNote || meal.prepNote, multiplier)}`;
+    else if (currentModalMeal.dayKey !== 'sunday' && MEAL_PLAN[currentModalMeal.dayKey] && MEAL_PLAN[currentModalMeal.dayKey].batchCooking.evening) batchEl.innerHTML = `<strong>🍳 Preparazione anticipata:</strong><br>${formatBatchNote(MEAL_PLAN[currentModalMeal.dayKey].batchCooking.evening, multiplier)}`;
+    else batchEl.innerHTML = "Nessuna preparazione anticipata per questo pasto.";
+  }
   
   const editBtn = document.getElementById('modal-edit-btn');
   const saveBtn = document.getElementById('modal-save-btn');
@@ -1171,6 +1276,12 @@ function renderModalContent() {
 function toggleEditMode() { editMode = !editMode; renderModalContent(); }
 function saveCurrentEditState() {
   const meal = currentModalMeal.data;
+  const nameInput = document.getElementById('edit-meal-name');
+  if (nameInput) meal.name = nameInput.value;
+  
+  const slotInput = document.getElementById('edit-meal-slot');
+  if (slotInput) meal.slot = slotInput.value;
+  
   meal.ingredients.forEach((ing, i) => {
     const nameEl = document.getElementById(`edit-ing-name-${i}`);
     const qtyEl = document.getElementById(`edit-ing-qty-${i}`);
@@ -1183,7 +1294,12 @@ function saveCurrentEditState() {
     const stepEl = document.getElementById(`edit-step-${i}`);
     if (stepEl) meal.steps[i] = stepEl.value;
   });
+  const prepEl = document.getElementById('edit-prep-note');
+  if (prepEl) meal.prepNote = prepEl.value;
+  const suppEl = document.getElementById('edit-supp-note');
+  if (suppEl) meal.supplement = suppEl.value;
 }
+
 window.addIngredient = function() { saveCurrentEditState(); currentModalMeal.data.ingredients.push({ name: "", quantity: 0, unit: "g" }); renderModalContent(); }
 window.removeIngredient = function(index) { saveCurrentEditState(); currentModalMeal.data.ingredients.splice(index, 1); renderModalContent(); }
 window.addStep = function() { saveCurrentEditState(); currentModalMeal.data.steps.push(""); renderModalContent(); }
@@ -1201,24 +1317,30 @@ window.moveStep = function(index, dir) {
 async function saveRecipeEdit() {
   saveCurrentEditState();
   await saveCustomRecipe(currentModalMeal.id, currentModalMeal.data);
+  appState.customRecipes[currentModalMeal.id] = currentModalMeal.data;
   currentModalMeal.isCustom = true;
   editMode = false;
   renderModalContent();
-  if (window.location.hash === '#today') renderToday();
-  if (window.location.hash === '#week') renderWeek();
-  if (window.location.hash === '#prep') renderPrep();
+  setTimeout(handleRoute, 50);
 }
 
 async function revertRecipe() {
   if (confirm("Vuoi ripristinare la ricetta originale? Le tue modifiche andranno perse.")) {
     await deleteCustomRecipe(currentModalMeal.id);
-    const baseMeal = MEAL_PLAN[currentModalMeal.dayKey].meals[currentModalMeal.dayType].find(m => m.id === currentModalMeal.id);
-    currentModalMeal.data = JSON.parse(JSON.stringify(baseMeal));
-    currentModalMeal.isCustom = false;
-    renderModalContent();
-    if (window.location.hash === '#today') renderToday();
-    if (window.location.hash === '#week') renderWeek();
-    if (window.location.hash === '#prep') renderPrep();
+    delete appState.customRecipes[currentModalMeal.id];
+    let baseMeal = null;
+    if (MEAL_PLAN[currentModalMeal.dayKey] && MEAL_PLAN[currentModalMeal.dayKey].meals[currentModalMeal.dayType]) {
+      baseMeal = MEAL_PLAN[currentModalMeal.dayKey].meals[currentModalMeal.dayType].find(m => m.id === currentModalMeal.id);
+    }
+    
+    if (baseMeal) {
+      currentModalMeal.data = JSON.parse(JSON.stringify(baseMeal));
+      currentModalMeal.isCustom = false;
+      renderModalContent();
+    } else {
+      closeRecipeModal();
+    }
+    setTimeout(handleRoute, 50);
   }
 }
 
