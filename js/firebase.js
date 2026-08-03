@@ -31,6 +31,7 @@ const mockStore = {
     notificationsEnabled: false
   },
   weekPlans: {},
+  swappedMeals: {},
   recipes: {},
   shoppingListCloud: { 
     mode: 'current',
@@ -42,11 +43,7 @@ const mockStore = {
 };
 
 function getLocalDeviceSettings() {
-  const defaults = { 
-    persons: 2, 
-    twoPersonsType: 'mf', 
-    singlePersonType: 'm'
-  };
+  const defaults = { persons: 2, twoPersonsType: 'mf', singlePersonType: 'm' };
   const stored = localStorage.getItem('pn_device_settings');
   return stored ? { ...defaults, ...JSON.parse(stored) } : defaults;
 }
@@ -83,6 +80,19 @@ async function saveWeekPlan(plan) {
   const weekId = getISOWeekString();
   if (!db) { mockStore.weekPlans[weekId] = plan; return; }
   await db.collection('weekPlans').doc(weekId).set(plan, { merge: true });
+}
+
+async function getSwappedMeals() {
+  const weekId = getISOWeekString();
+  if (!db) return mockStore.swappedMeals[weekId] || {};
+  const doc = await db.collection('swappedMeals').doc(weekId).get();
+  return doc.exists ? doc.data() : {};
+}
+
+async function saveSwappedMeals(swaps) {
+  const weekId = getISOWeekString();
+  if (!db) { mockStore.swappedMeals[weekId] = swaps; return; }
+  await db.collection('swappedMeals').doc(weekId).set(swaps, { merge: true });
 }
 
 async function getShoppingListCloud() {
