@@ -55,39 +55,10 @@ const mockStore = {
   },
   weekPlans: {},
   recipes: {},
-  shoppingList: { selectedDays: [], persons: 2, twoPersonsType: 'mf', checkedItems: [] }
+  shoppingList: { selectedDays: [], persons: 2, twoPersonsType: 'mf', checkedItems: [] },
+  swappedMeals: {},
+  shoppingListCloud: null
 };
-
-async function getGlobalSettings() {
-  let local = localStorage.getItem('pn_device_settings');
-  let localSettings = local ? JSON.parse(local) : {};
-  if (!db) return { ...mockStore.settings, ...localSettings };
-  const doc = await db.collection('settings').doc('global').get();
-  let cloudSettings = doc.exists ? doc.data() : {};
-  return { ...mockStore.settings, ...cloudSettings, ...localSettings };
-}
-
-async function saveGlobalSettings(settings) {
-  // Device specific
-  const deviceKeys = ['persons', 'twoPersonsType', 'darkMode', 'lastLoginDate', 'prepSelectedDay'];
-  let localSettings = JSON.parse(localStorage.getItem('pn_device_settings') || '{}');
-  let cloudSettings = {};
-  
-  for (let key in settings) {
-    if (deviceKeys.includes(key)) localSettings[key] = settings[key];
-    else cloudSettings[key] = settings[key];
-  }
-  
-  localStorage.setItem('pn_device_settings', JSON.stringify(localSettings));
-  
-  if (!db) {
-    mockStore.settings = { ...mockStore.settings, ...settings };
-    return;
-  }
-  if (Object.keys(cloudSettings).length > 0) {
-    await db.collection('settings').doc('global').set(cloudSettings, { merge: true });
-  }
-}
 
 function getISOWeekString() {
   const d = new Date();
@@ -98,11 +69,94 @@ function getISOWeekString() {
   return `${d.getFullYear()}-W${weekNo.toString().padStart(2, '0')}`;
 }
 
+function getISODateString() {
+  return new Date().toISOString().split('T')[0];
+}
+
+// --- Device Settings (local only) ---
+function getLocalDeviceSettings() {
+  const defaults = {
+    persons: 2,
+    twoPersonsType: 'mf',
+    singlePersonType: 'm',
+    darkMode: false,
+    prepSelectedDay: null,
+    lastLoginDate: null
+  };
+  try {
+    const raw = localStorage.getItem('pn_device_settings');
+    if (!raw) return { ...defaults };
+    const parsed = JSON.parse(raw);
+    return { ...defaults, ...parsed };
+  } catch (e) {
+    return { ...defaults };
+  }
+}
+
+function saveLocalDeviceSettings(settings) {
+  try {
+    const current = getLocalDeviceSettings();
+    const merged = { ...current, ...settings };
+    localStorage.setItem('pn_device_settings', JSON.stringify(merged));
+  } catch (e) {
+    console.warn("saveLocalDeviceSettings error", e);
+  }
+}
+
+// --- Global Settings (cloud + device merge) ---
+async function getGlobalSettings() {
+  let deviceSettings = getLocalDeviceSettings();
+  if (!db) return { ...mockStore.settings, ...deviceSettings };
+  try {
+    const doc = await db.collection('settings').doc('global').get();
+    let cloudSettings = doc.exists ? doc.data() : {};
+    return { ...mockStore.settings, ...cloudSettings, ...deviceSettings };
+  } catch(e) {
+    console.warn("getGlobalSettings fallback", e);
+    return { ...mockStore.settings, ...deviceSettings };
+  }
+}
+
+async function saveGlobalSettings(settings) {
+  // Device specific keys stay local
+  const deviceKeys = ['persons', 'twoPersonsType', 'singlePersonType', 'darkMode', 'lastLoginDate', 'prepSelectedDay'];
+  let localSettings = {};
+  try {
+    localSettings = JSON.parse(localStorage.getItem('pn_device_settings') || '{}');
+  } catch(e) {}
+  let cloudSettings = {};
+  
+  for (let key in settings) {
+    if (deviceKeys.includes(key)) localSettings[key] = settings[key];
+    else cloudSettings[key] = settings[key];
+  }
+  
+  try {
+    localStorage.setItem('pn_device_settings', JSON.stringify(localSettings));
+  } catch(e) {}
+  
+  if (!db) {
+    mockStore.settings = { ...mockStore.settings, ...settings };
+    return;
+  }
+  if (Object.keys(cloudSettings).length > 0) {
+    try {
+      await db.collection('settings').doc('global').set(cloudSettings, { merge: true });
+    } catch(e) {
+      console.warn("saveGlobalSettings cloud error", e);
+    }
+  }
+}
+
 async function getWeekPlan() {
   const weekId = getISOWeekString();
   if (!db) return mockStore.weekPlans[weekId] || {};
-  const doc = await db.collection('weekPlans').doc(weekId).get();
-  return doc.exists ? doc.data() : {};
+  try {
+    const doc = await db.collection('weekPlans').doc(weekId).get();
+    return doc.exists ? doc.data() : {};
+  } catch(e) {
+    return mockStore.weekPlans[weekId] || {};
+  }
 }
 
 async function saveWeekPlan(plan) {
@@ -111,27 +165,110 @@ async function saveWeekPlan(plan) {
     mockStore.weekPlans[weekId] = plan;
     return;
   }
-  await db.collection('weekPlans').doc(weekId).set(plan, { merge: true });
+  try {
+    await db.collection('weekPlans').doc(weekId).set(plan, { merge: true });
+  } catch(e) {
+    console.warn("saveWeekPlan error", e);
+    mockStore.weekPlans[weekId] = plan;
+  }
 }
 
+// --- Swapped Meals ---
+async function getSwappedMeals() {
+  const weekId = getISOWeekString();
+  if (!db) return mockStore.swappedMeals[weekId] || {};
+  try {
+    const doc = await db.collection('swappedMeals').doc(weekId).get();
+    return doc.exists ? doc.data() : {};
+  } catch(e) {
+    console.warn("getSwappedMeals fallback", e);
+    return mockStore.swappedMeals[weekId] || {};
+  }
+}
+
+async function saveSwappedMeals(map) {
+  const weekId = getISOWeekString();
+  if (!db) {
+    mockStore.swappedMeals[weekId] = { ...(map || {}) };
+    return;
+  }
+  try {
+    await db.collection('swappedMeals').doc(weekId).set(map || {}, { merge: false });
+  } catch(e) {
+    console.warn("saveSwappedMeals error", e);
+    mockStore.swappedMeals[weekId] = { ...(map || {}) };
+  }
+}
+
+// --- Shopping List Cloud (new structure) ---
+function getDefaultShoppingListCloud() {
+  return {
+    selectedMeals: { monday:[], tuesday:[], wednesday:[], thursday:[], friday:[], saturday:[], sunday:[] },
+    customDays: { monday:'training', tuesday:'training', wednesday:'training', thursday:'rest', friday:'training', saturday:'rest', sunday:'rest' },
+    mode: 'current',
+    checkedItems: [],
+    customQtys: {}
+  };
+}
+
+async function getShoppingListCloud() {
+  const def = getDefaultShoppingListCloud();
+  if (!db) {
+    if (mockStore.shoppingListCloud) {
+      return { ...def, ...mockStore.shoppingListCloud, selectedMeals: { ...def.selectedMeals, ...(mockStore.shoppingListCloud.selectedMeals||{}) }, customDays: { ...def.customDays, ...(mockStore.shoppingListCloud.customDays||{}) } };
+    }
+    return def;
+  }
+  try {
+    const doc = await db.collection('shoppingList').doc('current').get();
+    if (!doc.exists) return def;
+    const data = doc.data();
+    // Merge with defaults to handle old docs
+    return {
+      ...def,
+      ...data,
+      selectedMeals: { ...def.selectedMeals, ...(data.selectedMeals||{}) },
+      customDays: { ...def.customDays, ...(data.customDays||{}) },
+      checkedItems: data.checkedItems || [],
+      customQtys: data.customQtys || {}
+    };
+  } catch(e) {
+    console.warn("getShoppingListCloud fallback", e);
+    return mockStore.shoppingListCloud || def;
+  }
+}
+
+async function saveShoppingListCloud(listData) {
+  if (!db) {
+    mockStore.shoppingListCloud = { ...(listData||{}) };
+    return;
+  }
+  try {
+    await db.collection('shoppingList').doc('current').set(listData, { merge: true });
+  } catch(e) {
+    console.warn("saveShoppingListCloud error", e);
+    mockStore.shoppingListCloud = { ...(listData||{}) };
+  }
+}
+
+// --- Legacy shopping list (kept for compatibility) ---
 async function getShoppingList() {
-  if (!db) return mockStore.shoppingList;
-  const doc = await db.collection('shoppingList').doc('current').get();
-  return doc.exists ? doc.data() : mockStore.shoppingList;
+  // alias to new
+  return getShoppingListCloud();
 }
 
 async function saveShoppingList(listData) {
-  if (!db) {
-    mockStore.shoppingList = { ...mockStore.shoppingList, ...listData };
-    return;
-  }
-  await db.collection('shoppingList').doc('current').set(listData, { merge: true });
+  return saveShoppingListCloud(listData);
 }
 
 async function getCustomRecipe(mealId) {
   if (!db) return mockStore.recipes[mealId];
-  const doc = await db.collection('recipes').doc(mealId).get();
-  return doc.exists ? doc.data() : null;
+  try {
+    const doc = await db.collection('recipes').doc(mealId).get();
+    return doc.exists ? doc.data() : null;
+  } catch(e) {
+    return mockStore.recipes[mealId];
+  }
 }
 
 async function saveCustomRecipe(mealId, recipeData) {
@@ -139,7 +276,11 @@ async function saveCustomRecipe(mealId, recipeData) {
     mockStore.recipes[mealId] = recipeData;
     return;
   }
-  await db.collection('recipes').doc(mealId).set(recipeData);
+  try {
+    await db.collection('recipes').doc(mealId).set(recipeData);
+  } catch(e) {
+    mockStore.recipes[mealId] = recipeData;
+  }
 }
 
 async function deleteCustomRecipe(mealId) {
@@ -147,5 +288,9 @@ async function deleteCustomRecipe(mealId) {
     delete mockStore.recipes[mealId];
     return;
   }
-  await db.collection('recipes').doc(mealId).delete();
+  try {
+    await db.collection('recipes').doc(mealId).delete();
+  } catch(e) {
+    delete mockStore.recipes[mealId];
+  }
 }

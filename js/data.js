@@ -7,7 +7,7 @@ const MEAL_PLAN = {
           id: "monday_breakfast", slot: "breakfast", name: "Frozen Porridge \"Sacher\"", emoji: "🥣", prepTime: "5 min", prepNote: "Preparare domenica sera",
           ingredients: [
             { name: "Farina d'avena", quantity: 40, unit: "g" }, { name: "Yogurt greco 0%", quantity: 100, unit: "g" },
-            { name: "Cacao amaro", quantity: 1, unit: "cucchiaio" }, { name: "Marmellata albicocche", quantity: 15, unit: "g" },
+            { name: "Cacao amaro", quantity: 1, unit: "cucchiaio" }, { name: "Marmellata", quantity: 15, unit: "g" },
             { name: "Cioccolato fondente", quantity: 10, unit: "g" }, { name: "Sale", quantity: 1, unit: "pizzico" }
           ],
           steps: ["Mescola yogurt + cacao + sale", "Aggiungi avena", "Marmellata sopra senza mescolare", "Cioccolato sciolto a filo", "Chiudi e frigo. Mattino: tira fuori 5 min prima, mescola e consuma."],
@@ -15,7 +15,7 @@ const MEAL_PLAN = {
         },
         {
           id: "monday_snack1", slot: "snack1", name: "Spuntino Mattina", emoji: "🍎", prepTime: "2 min",
-          ingredients: [{ name: "Frutta fresca stagionale", quantity: 250, unit: "g" }, { name: "Crackers", quantity: 30, unit: "g" }, { name: "Proteine whey Syform", quantity: 30, unit: "g" }],
+          ingredients: [{ name: "Frutta fresca stagionale", quantity: 250, unit: "g" }, { name: "Crackers", quantity: 30, unit: "g" }, { name: "Proteine Whey", quantity: 30, unit: "g" }],
           steps: ["Consuma la frutta e i crackers.", "Sciogli le whey in acqua e bevi."], batchNote: null, supplement: null
         },
         {
@@ -31,7 +31,7 @@ const MEAL_PLAN = {
         },
         {
           id: "monday_snack2", slot: "snack2", name: "Merenda", emoji: "🥄", prepTime: "1 min",
-          ingredients: [{ name: "Yogurt greco 0%", quantity: 150, unit: "g" }, { name: "Marmellata qualsiasi gusto", quantity: 20, unit: "g" }],
+          ingredients: [{ name: "Yogurt greco 0%", quantity: 150, unit: "g" }, { name: "Marmellata", quantity: 20, unit: "g" }],
           steps: ["Mescola yogurt e marmellata."], batchNote: null, supplement: null
         },
         {
@@ -55,13 +55,13 @@ const MEAL_PLAN = {
       training: [
         {
           id: "tuesday_breakfast", slot: "breakfast", name: "Pancake Proteici agli Albumi", emoji: "🥞", prepTime: "10 min",
-          ingredients: [{ name: "Albumi", quantity: 120, unit: "g" }, { name: "Yogurt greco 0%", quantity: 40, unit: "g" }, { name: "Farina d'avena", quantity: 40, unit: "g" }, { name: "Vanillina", quantity: 1, unit: "g" }, { name: "Marmellata frutti di bosco", quantity: 30, unit: "g" }],
+          ingredients: [{ name: "Albumi", quantity: 120, unit: "g" }, { name: "Yogurt greco 0%", quantity: 40, unit: "g" }, { name: "Farina d'avena", quantity: 40, unit: "g" }, { name: "Vanillina", quantity: 1, unit: "g" }, { name: "Marmellata", quantity: 30, unit: "g" }],
           steps: ["Batter già pronto → scalda padella antiaderente fuoco medio-basso senza olio;", "Versa formando 3-4 dischetti 8cm;", "Cuoci 2-3min per lato finché bollicine in superficie poi gira;", "Servi con marmellata sopra"],
           batchNote: null, supplement: "7g creatina dopo colazione"
         },
         {
           id: "tuesday_snack1", slot: "snack1", name: "Spuntino Mattina", emoji: "🍎", prepTime: "2 min",
-          ingredients: [{ name: "Frutta fresca stagionale", quantity: 250, unit: "g" }, { name: "Crackers", quantity: 30, unit: "g" }, { name: "Proteine whey Syform", quantity: 30, unit: "g" }],
+          ingredients: [{ name: "Frutta fresca stagionale", quantity: 250, unit: "g" }, { name: "Crackers", quantity: 30, unit: "g" }, { name: "Proteine Whey", quantity: 30, unit: "g" }],
           steps: ["Consuma la frutta e i crackers.", "Sciogli le whey in acqua e bevi."], batchNote: null, supplement: null
         },
         {
@@ -105,13 +105,13 @@ const MEAL_PLAN = {
         },
         {
           id: "wednesday_snack1", slot: "snack1", name: "Spuntino Mattina", emoji: "🍎", prepTime: "2 min",
-          ingredients: [{ name: "Frutta fresca stagionale", quantity: 250, unit: "g" }, { name: "Crackers", quantity: 30, unit: "g" }, { name: "Proteine whey Syform", quantity: 30, unit: "g" }],
+          ingredients: [{ name: "Frutta fresca stagionale", quantity: 250, unit: "g" }, { name: "Crackers", quantity: 30, unit: "g" }, { name: "Proteine Whey", quantity: 30, unit: "g" }],
           steps: ["Consuma frutta, crackers e bevi whey in acqua."], batchNote: null, supplement: null
         },
         {
           id: "wednesday_lunch", slot: "lunch", name: "Pasta al Limone con Pollo e Zucchine", emoji: "🍝", prepTime: "15 min",
           ingredients: [
-            { name: "Pasta bianca", quantity: 90, unit: "g" }, { name: "Petto di pollo già cotto", quantity: 200, unit: "g" },
+            { name: "Pasta bianca", quantity: 90, unit: "g" }, { name: "Petto di pollo", quantity: 200, unit: "g" },
             { name: "Zucchine", quantity: 200, unit: "g" }, { name: "Olio EVO", quantity: 10, unit: "g" },
             { name: "Limone", quantity: 1, unit: "pz" }, { name: "Prezzemolo fresco", quantity: 1, unit: "q.b." }, { name: "Aglio (fresco o polvere)", quantity: 1, unit: "q.b." }, { name: "Sale / Sale grosso", quantity: 1, unit: "q.b." }, { name: "Pepe", quantity: 1, unit: "q.b." }
           ],
@@ -126,7 +126,7 @@ const MEAL_PLAN = {
         {
           id: "wednesday_dinner", slot: "dinner", name: "Frittata ai Peperoni, Basilico e Spinaci con Pane", emoji: "🍳", prepTime: "15 min",
           ingredients: [
-            { name: "Uova intere", quantity: 180, unit: "g" }, { name: "Peperoni saltati dal frigo ieri", quantity: 200, unit: "g" },
+            { name: "Uova intere", quantity: 3, unit: "pz" }, { name: "Peperoni", quantity: 200, unit: "g" },
             { name: "Spinacini freschi", quantity: 100, unit: "g" }, { name: "Pane bianco", quantity: 60, unit: "g" },
             { name: "Olio EVO", quantity: 10, unit: "g" }, { name: "Aglio (fresco o polvere)", quantity: 1, unit: "q.b." }, { name: "Basilico fresco", quantity: 1, unit: "q.b." }, { name: "Sale / Sale grosso", quantity: 1, unit: "q.b." }, { name: "Pepe", quantity: 1, unit: "q.b." }
           ],
@@ -187,7 +187,7 @@ const MEAL_PLAN = {
       training: [
         {
           id: "friday_breakfast_t", slot: "breakfast", name: "Pancake Avena con Miele", emoji: "🥞", prepTime: "10 min",
-          ingredients: [{ name: "Farina d'avena", quantity: 40, unit: "g" }, { name: "Uova intere", quantity: 60, unit: "g" }, { name: "Yogurt greco 0%", quantity: 100, unit: "g" }, { name: "Miele / Sciroppo Acero", quantity: 10, unit: "g" }, { name: "Cannella", quantity: 1, unit: "q.b." }, { name: "Sale / Sale grosso", quantity: 1, unit: "q.b." }],
+          ingredients: [{ name: "Farina d'avena", quantity: 40, unit: "g" }, { name: "Uova intere", quantity: 1, unit: "pz" }, { name: "Yogurt greco 0%", quantity: 100, unit: "g" }, { name: "Miele / Sciroppo Acero", quantity: 10, unit: "g" }, { name: "Cannella", quantity: 1, unit: "q.b." }, { name: "Sale / Sale grosso", quantity: 1, unit: "q.b." }],
           steps: ["Sbatti uovo con yogurt fino a composto omogeneo;", "Aggiungi avena+cannella+sale+lievito, mescola eliminando grumi;", "Scalda padella antiaderente fuoco medio-basso senza olio;", "Versa a cucchiaiate formando 3-4 dischetti 8-10cm;", "Cuoci 2-3min per lato (gira quando compaiono bollicine);", "Servi con miele caldo sopra"],
           batchNote: null, supplement: "7g creatina dopo colazione"
         },
@@ -225,7 +225,7 @@ const MEAL_PLAN = {
       rest: [
         {
           id: "friday_breakfast_r", slot: "breakfast", name: "Pancake Avena con Miele", emoji: "🥞", prepTime: "10 min",
-          ingredients: [{ name: "Farina d'avena", quantity: 40, unit: "g" }, { name: "Uova intere", quantity: 60, unit: "g" }, { name: "Yogurt greco 0%", quantity: 100, unit: "g" }, { name: "Miele / Sciroppo Acero", quantity: 10, unit: "g" }, { name: "Cannella", quantity: 1, unit: "q.b." }, { name: "Sale / Sale grosso", quantity: 1, unit: "q.b." }],
+          ingredients: [{ name: "Farina d'avena", quantity: 40, unit: "g" }, { name: "Uova intere", quantity: 1, unit: "pz" }, { name: "Yogurt greco 0%", quantity: 100, unit: "g" }, { name: "Miele / Sciroppo Acero", quantity: 10, unit: "g" }, { name: "Cannella", quantity: 1, unit: "q.b." }, { name: "Sale / Sale grosso", quantity: 1, unit: "q.b." }],
           steps: ["Sbatti uovo con yogurt fino a composto omogeneo;", "Aggiungi avena+cannella+sale+lievito, mescola eliminando grumi;", "Scalda padella antiaderente fuoco medio-basso senza olio;", "Versa a cucchiaiate formando 3-4 dischetti 8-10cm;", "Cuoci 2-3min per lato (gira quando compaiono bollicine);", "Servi con miele caldo sopra"],
           batchNote: null, supplement: "7g creatina dopo colazione"
         },
@@ -296,7 +296,7 @@ const MEAL_PLAN = {
         {
           id: "saturday_dinner", slot: "dinner", name: "Uova in Purgatorio con Zucchine e Pane", emoji: "🍳", prepTime: "20 min",
           ingredients: [
-            { name: "Uova intere", quantity: 180, unit: "g" }, { name: "Pomodori pelati", quantity: 200, unit: "g" },
+            { name: "Uova intere", quantity: 3, unit: "pz" }, { name: "Pomodori pelati", quantity: 200, unit: "g" },
             { name: "Zucchine", quantity: 200, unit: "g" }, { name: "Pane bianco", quantity: 60, unit: "g" },
             { name: "Olio EVO", quantity: 10, unit: "g" }, { name: "Aglio (fresco o polvere)", quantity: 1, unit: "q.b." }, { name: "Peperoncino", quantity: 1, unit: "q.b." }, { name: "Basilico fresco", quantity: 1, unit: "q.b." }, { name: "Sale / Sale grosso", quantity: 1, unit: "q.b." }, { name: "Pepe", quantity: 1, unit: "q.b." }
           ],
