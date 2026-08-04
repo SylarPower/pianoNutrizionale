@@ -455,20 +455,20 @@ window.openSwapModal = function(dayKey, slotId) {
     ['training', 'rest'].forEach(t => {
       if(MEAL_PLAN[d].meals[t]) {
         const m = MEAL_PLAN[d].meals[t].find(x => x.slot === slotId);
-        if (m && !options.find(o => o.id === m.id)) {
+        if (m && !options.find(o => o.name === m.name)) {
           options.push({ id: m.id, name: m.name, emoji: m.emoji });
         }
       }
     });
   });
   Object.values(appState.customRecipes).forEach(m => {
-    if (m.slot === slotId && !options.find(o => o.id === m.id)) {
+    if (m.slot === slotId && !options.find(o => o.name === m.name)) {
       options.push({ id: m.id, name: m.name, emoji: m.emoji });
     }
   });
 
   const defaultMeal = getDynamicMeal(dayKey, getDayType(dayKey), slotId);
-  const defaultMealId = defaultMeal ? defaultMeal.id : null;
+  const defaultMealName = defaultMeal ? defaultMeal.name : null;
   
   container.innerHTML += `
     <div class="swap-item" onclick="confirmSwap('${dayKey}', '${slotId}', null)" style="border-left:4px solid var(--danger);">
@@ -477,7 +477,7 @@ window.openSwapModal = function(dayKey, slotId) {
   `;
 
   options.forEach(opt => {
-    const isCurrentDef = (opt.id === defaultMealId);
+    const isCurrentDef = (opt.name === defaultMealName);
     container.innerHTML += `
       <div class="swap-item" onclick="confirmSwap('${dayKey}', '${slotId}', '${opt.id}')">
         <div><strong>${opt.emoji} ${opt.name}</strong> ${isCurrentDef ? '<span style="font-size:0.7rem; color:var(--primary);">(Default)</span>' : ''}</div>
@@ -1153,9 +1153,9 @@ function renderSettings() {
           <li><em>Alt 4:</em> Latte parz. scremato 250g, Cereali 50g</li>
         </ul>
         
-        <h4 style="color:var(--accent);">SPUNTINO</h4>
+        <h4 style="color:var(--accent);">SPUNTINO MATTINA <span style="font-weight:normal;">(Giorno Allenamento)</span></h4>
         <ul style="padding-left:1rem; margin-bottom:1rem;">
-          <li><strong>Base:</strong> Frutta fresca <strong>250g</strong>, Crackers <strong>30g</strong>, Proteine Whey <strong>30g</strong></li>
+          <li>Frutta fresca <strong>250g</strong>, Crackers <strong>30g</strong>, Proteine <strong>30g</strong></li>
         </ul>
 
         <h4 style="color:var(--accent);">PRANZO</h4>
@@ -1166,12 +1166,10 @@ function renderSettings() {
           <li>Olio EVO <strong>10g</strong></li>
         </ul>
 
-        <h4 style="color:var(--accent);">MERENDA</h4>
+        <h4 style="color:var(--accent);">MERENDA <span style="font-weight:normal;">(Indifferente: Allenamento o Riposo)</span></h4>
         <ul style="padding-left:1rem; margin-bottom:1rem;">
-          <li><strong>Base:</strong> Yogurt greco 0% <strong>150g</strong>, Miele <strong>15g</strong> (o Marmellata 20g)</li>
-          <li><em>Alt 1 Meller:</em> Crackers <strong>30g</strong></li>
-          <li><em>Alt 2 Meller:</em> Frutta secca (noci/mandorle) <strong>20g</strong></li>
-          <li><em>Alt 3 Meller:</em> Frutta fresca <strong>150g</strong> + Yogurt greco 0% <strong>100g</strong></li>
+          <li><strong>Opzione 1:</strong> Yogurt greco 0% bianco <strong>150g</strong>, Miele/Sciroppo d'acero <strong>15g</strong> (oppure Marmellata 20g)</li>
+          <li><strong>Opzione 2:</strong> Crackers <strong>30g</strong> (oppure Frutta secca olosa 20g)</li>
         </ul>
 
         <h4 style="color:var(--accent);">CENA</h4>
@@ -1196,9 +1194,9 @@ function renderSettings() {
           <li><em>Alt:</em> Vedi alternative allenamento.</li>
         </ul>
         
-        <h4 style="color:var(--rest);">SPUNTINO</h4>
+        <h4 style="color:var(--rest);">SPUNTINO MATTINA <span style="font-weight:normal;">(Giorno Riposo)</span></h4>
         <ul style="padding-left:1rem; margin-bottom:1rem;">
-          <li><strong>Base:</strong> Frutta fresca <strong>250g</strong>, Proteine Whey <strong>30g</strong></li>
+          <li>Frutta fresca <strong>250g</strong>, Proteine <strong>30g</strong></li>
         </ul>
 
         <h4 style="color:var(--rest);">PRANZO</h4>
@@ -1209,12 +1207,10 @@ function renderSettings() {
           <li>Olio EVO <strong>10g</strong></li>
         </ul>
 
-        <h4 style="color:var(--rest);">MERENDA</h4>
+        <h4 style="color:var(--rest);">MERENDA <span style="font-weight:normal;">(Indifferente: Allenamento o Riposo)</span></h4>
         <ul style="padding-left:1rem; margin-bottom:1rem;">
-          <li><strong>Base:</strong> Yogurt greco 0% <strong>150g</strong>, Miele <strong>15g</strong> (o Marmellata 20g)</li>
-          <li><em>Alt 1 Meller:</em> Crackers <strong>30g</strong></li>
-          <li><em>Alt 2 Meller:</em> Frutta secca (noci/mandorle) <strong>20g</strong></li>
-          <li><em>Alt 3 Meller:</em> Frutta fresca <strong>150g</strong> + Yogurt greco 0% <strong>100g</strong></li>
+          <li><strong>Opzione 1:</strong> Yogurt greco 0% bianco <strong>150g</strong>, Miele/Sciroppo d'acero <strong>15g</strong> (oppure Marmellata 20g)</li>
+          <li><strong>Opzione 2:</strong> Crackers <strong>30g</strong> (oppure Frutta secca olosa 20g)</li>
         </ul>
 
         <h4 style="color:var(--rest);">CENA</h4>

@@ -14,7 +14,7 @@ const MEAL_PLAN = {
           batchNote: "Prepara domenica sera; apri e scola lattine ceci + lenticchie, tieni in frigo", supplement: "7g creatina in acqua dopo colazione"
         },
         {
-          id: "monday_snack1", slot: "snack1", name: "Spuntino Mattina", emoji: "🍎", prepTime: "2 min",
+          id: "monday_snack1", slot: "snack1", name: "Spuntino Frutta, Crackers e Proteine", emoji: "🍎", prepTime: "2 min",
           ingredients: [{ name: "Frutta fresca stagionale", quantity: 250, unit: "g" }, { name: "Crackers", quantity: 30, unit: "g" }, { name: "Proteine Whey", quantity: 30, unit: "g" }],
           steps: ["Consuma la frutta e i crackers.", "Sciogli le whey in acqua e bevi."], batchNote: null, supplement: null
         },
@@ -30,7 +30,7 @@ const MEAL_PLAN = {
           batchNote: "Apri anche lattina lenticchie → scola e tieni in frigo per giovedì pranzo", supplement: null
         },
         {
-          id: "monday_snack2", slot: "snack2", name: "Merenda", emoji: "🥄", prepTime: "1 min",
+          id: "monday_snack2", slot: "snack2", name: "Merenda Yogurt Greco e Marmellata", emoji: "🥄", prepTime: "1 min",
           ingredients: [{ name: "Yogurt greco 0%", quantity: 150, unit: "g" }, { name: "Marmellata", quantity: 20, unit: "g" }],
           steps: ["Mescola yogurt e marmellata."], batchNote: null, supplement: null
         },
@@ -60,7 +60,7 @@ const MEAL_PLAN = {
           batchNote: null, supplement: "7g creatina dopo colazione"
         },
         {
-          id: "tuesday_snack1", slot: "snack1", name: "Spuntino Mattina", emoji: "🍎", prepTime: "2 min",
+          id: "tuesday_snack1", slot: "snack1", name: "Spuntino Frutta, Crackers e Proteine", emoji: "🍎", prepTime: "2 min",
           ingredients: [{ name: "Frutta fresca stagionale", quantity: 250, unit: "g" }, { name: "Crackers", quantity: 30, unit: "g" }, { name: "Proteine Whey", quantity: 30, unit: "g" }],
           steps: ["Consuma la frutta e i crackers.", "Sciogli le whey in acqua e bevi."], batchNote: null, supplement: null
         },
@@ -75,7 +75,7 @@ const MEAL_PLAN = {
           batchNote: null, supplement: null
         },
         {
-          id: "tuesday_snack2", slot: "snack2", name: "Merenda", emoji: "🍘", prepTime: "1 min",
+          id: "tuesday_snack2", slot: "snack2", name: "Merenda Crackers", emoji: "🍘", prepTime: "1 min",
           ingredients: [{ name: "Crackers", quantity: 30, unit: "g" }],
           steps: ["Consuma i crackers."], batchNote: null, supplement: null
         },
@@ -104,7 +104,7 @@ const MEAL_PLAN = {
           batchNote: null, supplement: "7g creatina dopo colazione"
         },
         {
-          id: "wednesday_snack1", slot: "snack1", name: "Spuntino Mattina", emoji: "🍎", prepTime: "2 min",
+          id: "wednesday_snack1", slot: "snack1", name: "Spuntino Frutta, Crackers e Proteine", emoji: "🍎", prepTime: "2 min",
           ingredients: [{ name: "Frutta fresca stagionale", quantity: 250, unit: "g" }, { name: "Crackers", quantity: 30, unit: "g" }, { name: "Proteine Whey", quantity: 30, unit: "g" }],
           steps: ["Consuma frutta, crackers e bevi whey in acqua."], batchNote: null, supplement: null
         },
@@ -119,7 +119,7 @@ const MEAL_PLAN = {
           batchNote: "USO AVANZI: Usa pollo cotto martedì sera.", supplement: null
         },
         {
-          id: "wednesday_snack2", slot: "snack2", name: "Merenda", emoji: "🍯", prepTime: "1 min",
+          id: "wednesday_snack2", slot: "snack2", name: "Merenda Yogurt Greco e Miele", emoji: "🍯", prepTime: "1 min",
           ingredients: [{ name: "Yogurt greco 0%", quantity: 150, unit: "g" }, { name: "Miele / Sciroppo Acero", quantity: 15, unit: "g" }],
           steps: ["Mescola yogurt e miele."], batchNote: null, supplement: null
         },
@@ -148,7 +148,7 @@ const MEAL_PLAN = {
           batchNote: null, supplement: "7g creatina dopo colazione"
         },
         {
-          id: "thursday_snack1", slot: "snack1", name: "Spuntino Mattina", emoji: "🍎", prepTime: "2 min",
+          id: "thursday_snack1", slot: "snack1", name: "Spuntino Frutta e Proteine", emoji: "🍎", prepTime: "2 min",
           ingredients: [{ name: "Frutta fresca stagionale", quantity: 250, unit: "g" }, { name: "Proteine Whey", quantity: 30, unit: "g" }],
           steps: ["Consuma la frutta e le proteine in acqua. Niente crackers in giorno di riposo."], batchNote: null, supplement: null
         },
@@ -163,7 +163,7 @@ const MEAL_PLAN = {
           batchNote: null, supplement: null
         },
         {
-          id: "thursday_snack2", slot: "snack2", name: "Merenda", emoji: "🍘", prepTime: "1 min",
+          id: "thursday_snack2", slot: "snack2", name: "Merenda Crackers", emoji: "🍘", prepTime: "1 min",
           ingredients: [{ name: "Crackers", quantity: 30, unit: "g" }],
           steps: ["Consuma i crackers."], batchNote: null, supplement: null
         },
@@ -192,7 +192,7 @@ const MEAL_PLAN = {
           batchNote: null, supplement: "7g creatina dopo colazione"
         },
         {
-          id: "friday_snack1_t", slot: "snack1", name: "Spuntino Mattina", emoji: "🍎", prepTime: "2 min",
+          id: "friday_snack1_t", slot: "snack1", name: "Spuntino Frutta, Crackers e Proteine", emoji: "🍎", prepTime: "2 min",
           ingredients: [{ name: "Frutta fresca stagionale", quantity: 250, unit: "g" }, { name: "Crackers", quantity: 30, unit: "g" }, { name: "Proteine Whey", quantity: 30, unit: "g" }],
           steps: ["Consuma frutta, crackers e bevi whey in acqua."], batchNote: null, supplement: null
         },
@@ -207,7 +207,7 @@ const MEAL_PLAN = {
           batchNote: null, supplement: null
         },
         {
-          id: "friday_snack2_t", slot: "snack2", name: "Merenda", emoji: "🍘", prepTime: "1 min",
+          id: "friday_snack2_t", slot: "snack2", name: "Merenda Crackers", emoji: "🍘", prepTime: "1 min",
           ingredients: [{ name: "Crackers", quantity: 30, unit: "g" }],
           steps: ["Consuma i crackers."], batchNote: null, supplement: null
         },
@@ -230,7 +230,7 @@ const MEAL_PLAN = {
           batchNote: null, supplement: "7g creatina dopo colazione"
         },
         {
-          id: "friday_snack1_r", slot: "snack1", name: "Spuntino Mattina", emoji: "🍎", prepTime: "2 min",
+          id: "friday_snack1_r", slot: "snack1", name: "Spuntino Frutta e Proteine", emoji: "🍎", prepTime: "2 min",
           ingredients: [{ name: "Frutta fresca stagionale", quantity: 250, unit: "g" }, { name: "Proteine Whey", quantity: 30, unit: "g" }],
           steps: ["Consuma frutta e whey. Niente crackers (giorno di riposo)."], batchNote: null, supplement: null
         },
@@ -245,7 +245,7 @@ const MEAL_PLAN = {
           batchNote: null, supplement: null
         },
         {
-          id: "friday_snack2_r", slot: "snack2", name: "Merenda", emoji: "🍘", prepTime: "1 min",
+          id: "friday_snack2_r", slot: "snack2", name: "Merenda Crackers", emoji: "🍘", prepTime: "1 min",
           ingredients: [{ name: "Crackers", quantity: 30, unit: "g" }],
           steps: ["Consuma i crackers."], batchNote: null, supplement: null
         },
@@ -274,7 +274,7 @@ const MEAL_PLAN = {
           batchNote: null, supplement: "7g creatina dopo colazione"
         },
         {
-          id: "saturday_snack1", slot: "snack1", name: "Spuntino Mattina", emoji: "🍎", prepTime: "2 min",
+          id: "saturday_snack1", slot: "snack1", name: "Spuntino Frutta e Proteine", emoji: "🍎", prepTime: "2 min",
           ingredients: [{ name: "Frutta fresca stagionale", quantity: 250, unit: "g" }, { name: "Proteine Whey", quantity: 30, unit: "g" }],
           steps: ["Consuma frutta e bevi whey in acqua."], batchNote: null, supplement: null
         },
@@ -289,7 +289,7 @@ const MEAL_PLAN = {
           batchNote: null, supplement: null
         },
         {
-          id: "saturday_snack2", slot: "snack2", name: "Merenda", emoji: "🥄", prepTime: "1 min",
+          id: "saturday_snack2", slot: "snack2", name: "Merenda Yogurt Greco e Marmellata", emoji: "🥄", prepTime: "1 min",
           ingredients: [{ name: "Yogurt greco 0%", quantity: 150, unit: "g" }, { name: "Marmellata", quantity: 20, unit: "g" }],
           steps: ["Mescola yogurt e marmellata."], batchNote: null, supplement: null
         },
@@ -318,7 +318,7 @@ const MEAL_PLAN = {
           batchNote: "DOMENICA SERA prepara Frozen Porridge per lunedì", supplement: "7g creatina dopo colazione"
         },
         {
-          id: "sunday_snack1", slot: "snack1", name: "Spuntino Mattina", emoji: "🍎", prepTime: "2 min",
+          id: "sunday_snack1", slot: "snack1", name: "Spuntino Frutta e Proteine", emoji: "🍎", prepTime: "2 min",
           ingredients: [{ name: "Frutta fresca stagionale", quantity: 250, unit: "g" }, { name: "Proteine Whey", quantity: 30, unit: "g" }],
           steps: ["Consuma frutta e bevi whey in acqua."], batchNote: null, supplement: null
         },
@@ -333,7 +333,7 @@ const MEAL_PLAN = {
           batchNote: null, supplement: null
         },
         {
-          id: "sunday_snack2", slot: "snack2", name: "Merenda", emoji: "🍯", prepTime: "1 min",
+          id: "sunday_snack2", slot: "snack2", name: "Merenda Yogurt Greco e Miele", emoji: "🍯", prepTime: "1 min",
           ingredients: [{ name: "Yogurt greco 0%", quantity: 150, unit: "g" }, { name: "Miele / Sciroppo Acero", quantity: 15, unit: "g" }],
           steps: ["Mescola yogurt e miele."], batchNote: null, supplement: null
         },
