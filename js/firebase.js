@@ -11,15 +11,24 @@ let db;
 
 function initFirebase() {
   if (firebaseConfig.apiKey === "REPLACE_API_KEY") {
-    console.warn("Firebase non configurato. Offline mode.");
+    console.warn("Firebase not configured. Running in offline/mock mode.");
     return false;
   }
+  
   try {
     firebase.initializeApp(firebaseConfig);
     db = firebase.firestore();
-    // Utilizziamo il nuovo standard per sopprimere l'errore IndexedDB
-    firebase.firestore().settings({ cacheSizeBytes: firebase.firestore.CACHE_SIZE_UNLIMITED });
-    db.enablePersistence().catch((err) => console.warn("Offline persistence not enabled:", err.code));
+    
+    // Enable offline persistence caching correctly for v9 compat
+    try {
+      db.settings({
+        cacheSizeBytes: firebase.firestore.CACHE_SIZE_UNLIMITED,
+        merge: true 
+      });
+    } catch(err) {
+      console.warn("Firestore settings error", err);
+    }
+      
     return true;
   } catch (e) {
     console.error("Firebase init error", e);
@@ -27,48 +36,66 @@ function initFirebase() {
   }
 }
 
+// ------------------------------------
+// MOCK FALLBACKS FOR OFFLINE DEVELOPMENT
+// ------------------------------------
 const mockStore = {
   settings: {
-    notificationTimes: { breakfast: "08:30", snack1: "10:00", lunch: "13:30", snack2: "16:00", dinner: "20:00" },
+    trainingDays: ['monday', 'tuesday', 'wednesday', 'friday'],
+    notificationTimes: {
+      breakfast: "08:30",
+      snack1: "10:00",
+      lunch: "13:30",
+      snack2: "16:00",
+      dinner: "20:00"
+    },
+    persons: 2,
+    twoPersonsType: 'mf',
     notificationsEnabled: false
   },
   weekPlans: {},
-  swappedMeals: {},
   recipes: {},
-  shoppingListCloud: { 
-    mode: 'current',
-    customDays: { monday: 'training', tuesday: 'training', wednesday: 'training', thursday: 'rest', friday: 'training', saturday: 'rest', sunday: 'rest' },
-    selectedMeals: { monday: [], tuesday: [], wednesday: [], thursday: [], friday: [], saturday: [], sunday: [] },
-    checkedItems: [],
-    customQtys: {}
-  }
+  shoppingList: { selectedDays: [], persons: 2, twoPersonsType: 'mf', checkedItems: [] }
 };
 
-function getLocalDeviceSettings() {
-  const defaults = { persons: 2, twoPersonsType: 'mf', singlePersonType: 'm', prepSelectedDay: null, lastLoginDate: null };
-  const stored = localStorage.getItem('pn_device_settings');
-  return stored ? { ...defaults, ...JSON.parse(stored) } : defaults;
-}
-
-function saveLocalDeviceSettings(settings) {
-  localStorage.setItem('pn_device_settings', JSON.stringify(settings));
-}
-
 async function getGlobalSettings() {
-  if (!db) return mockStore.settings;
+  let local = localStorage.getItem('pn_device_settings');
+  let localSettings = local ? JSON.parse(local) : {};
+  if (!db) return { ...mockStore.settings, ...localSettings };
   const doc = await db.collection('settings').doc('global').get();
-  return doc.exists ? { ...mockStore.settings, ...doc.data() } : mockStore.settings;
+  let cloudSettings = doc.exists ? doc.data() : {};
+  return { ...mockStore.settings, ...cloudSettings, ...localSettings };
 }
 
 async function saveGlobalSettings(settings) {
-  if (!db) { mockStore.settings = { ...mockStore.settings, ...settings }; return; }
-  await db.collection('settings').doc('global').set(settings, { merge: true });
+  // Device specific
+  const deviceKeys = ['persons', 'twoPersonsType', 'darkMode', 'lastLoginDate', 'prepSelectedDay'];
+  let localSettings = JSON.parse(localStorage.getItem('pn_device_settings') || '{}');
+  let cloudSettings = {};
+  
+  for (let key in settings) {
+    if (deviceKeys.includes(key)) localSettings[key] = settings[key];
+    else cloudSettings[key] = settings[key];
+  }
+  
+  localStorage.setItem('pn_device_settings', JSON.stringify(localSettings));
+  
+  if (!db) {
+    mockStore.settings = { ...mockStore.settings, ...settings };
+    return;
+  }
+  if (Object.keys(cloudSettings).length > 0) {
+    await db.collection('settings').doc('global').set(cloudSettings, { merge: true });
+  }
 }
 
 function getISOWeekString() {
-  const d = new Date(); d.setHours(0, 0, 0, 0); d.setDate(d.getDate() + 4 - (d.getDay() || 7));
+  const d = new Date();
+  d.setHours(0, 0, 0, 0);
+  d.setDate(d.getDate() + 4 - (d.getDay() || 7));
   const yearStart = new Date(d.getFullYear(), 0, 1);
-  return `${d.getFullYear()}-W${Math.ceil((((d - yearStart) / 86400000) + 1) / 7).toString().padStart(2, '0')}`;
+  const weekNo = Math.ceil((((d - yearStart) / 86400000) + 1) / 7);
+  return `${d.getFullYear()}-W${weekNo.toString().padStart(2, '0')}`;
 }
 
 async function getWeekPlan() {
@@ -80,32 +107,25 @@ async function getWeekPlan() {
 
 async function saveWeekPlan(plan) {
   const weekId = getISOWeekString();
-  if (!db) { mockStore.weekPlans[weekId] = plan; return; }
+  if (!db) {
+    mockStore.weekPlans[weekId] = plan;
+    return;
+  }
   await db.collection('weekPlans').doc(weekId).set(plan, { merge: true });
 }
 
-async function getSwappedMeals() {
-  const weekId = getISOWeekString();
-  if (!db) return mockStore.swappedMeals[weekId] || {};
-  const doc = await db.collection('swappedMeals').doc(weekId).get();
-  return doc.exists ? doc.data() : {};
+async function getShoppingList() {
+  if (!db) return mockStore.shoppingList;
+  const doc = await db.collection('shoppingList').doc('current').get();
+  return doc.exists ? doc.data() : mockStore.shoppingList;
 }
 
-async function saveSwappedMeals(swaps) {
-  const weekId = getISOWeekString();
-  if (!db) { mockStore.swappedMeals[weekId] = swaps; return; }
-  await db.collection('swappedMeals').doc(weekId).set(swaps, { merge: true });
-}
-
-async function getShoppingListCloud() {
-  if (!db) return mockStore.shoppingListCloud;
-  const doc = await db.collection('shoppingList').doc('shared').get();
-  return doc.exists ? doc.data() : mockStore.shoppingListCloud;
-}
-
-async function saveShoppingListCloud(listData) {
-  if (!db) { mockStore.shoppingListCloud = { ...mockStore.shoppingListCloud, ...listData }; return; }
-  await db.collection('shoppingList').doc('shared').set(listData, { merge: true });
+async function saveShoppingList(listData) {
+  if (!db) {
+    mockStore.shoppingList = { ...mockStore.shoppingList, ...listData };
+    return;
+  }
+  await db.collection('shoppingList').doc('current').set(listData, { merge: true });
 }
 
 async function getCustomRecipe(mealId) {
@@ -115,11 +135,17 @@ async function getCustomRecipe(mealId) {
 }
 
 async function saveCustomRecipe(mealId, recipeData) {
-  if (!db) { mockStore.recipes[mealId] = recipeData; return; }
+  if (!db) {
+    mockStore.recipes[mealId] = recipeData;
+    return;
+  }
   await db.collection('recipes').doc(mealId).set(recipeData);
 }
 
 async function deleteCustomRecipe(mealId) {
-  if (!db) { delete mockStore.recipes[mealId]; return; }
+  if (!db) {
+    delete mockStore.recipes[mealId];
+    return;
+  }
   await db.collection('recipes').doc(mealId).delete();
 }
