@@ -68,7 +68,7 @@ function getCategoryForIngredient(rawName) {
   }
 
   // Verdura - explicit list including required ones
-  if (check("insalata mista") || check("pomodori pelati") || check("pomodorini") || check("melanzane") || check("peperoni") || check("zucchine") || check("finocchi") || check("spinacini") || check("sedano") || check("rucola") || check("cetriolo")) return "🥬 Verdura";
+  if (check("insalata mista") || check("pomodori pelati") || check("pomodorini") || check("melanzane") || check("peperoni") || check("zucchine") || check("spinacini") || check("sedano") || check("rucola") || check("cetriolo")) return "🥬 Verdura";
 
   // Frutta
   if (check("frutta fresca") || check("melone") || check("avocado")) return "🍑 Frutta";
