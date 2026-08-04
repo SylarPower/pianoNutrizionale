@@ -21,8 +21,8 @@ const MEAL_PLAN = {
         {
           id: "monday_lunch", slot: "lunch", name: "Riso e Ceci alla Curcuma con Spinaci", emoji: "🍛", prepTime: "20 min",
           ingredients: [
-            { name: "Riso bianco", quantity: 90, unit: "g" }, { name: "Ceci bolliti scolati", quantity: 240, unit: "g" },
-            { name: "Spinacini freschi", quantity: 200, unit: "g" }, { name: "Olio EVO", quantity: 10, unit: "g" },
+            { name: "Riso bianco", quantity: 90, unit: "g" }, { name: "Ceci", quantity: 240, unit: "g" },
+            { name: "Spinacini", quantity: 200, unit: "g" }, { name: "Olio EVO", quantity: 10, unit: "g" },
             { name: "Aglio (fresco o polvere)", quantity: 1, unit: "q.b." }, { name: "Curcuma in polvere", quantity: 1, unit: "q.b." },
             { name: "Pepe", quantity: 1, unit: "q.b." }, { name: "Sale / Sale grosso", quantity: 1, unit: "q.b." }, { name: "Limone", quantity: 0.5, unit: "pz" }
           ],
@@ -67,11 +67,11 @@ const MEAL_PLAN = {
         {
           id: "tuesday_lunch", slot: "lunch", name: "Gnocchi al Merluzzo, Pomodorini e Melanzane", emoji: "🍝", prepTime: "20 min",
           ingredients: [
-            { name: "Gnocchi di patate", quantity: 250, unit: "g" }, { name: "Merluzzo surgelato", quantity: 250, unit: "g" },
+            { name: "Gnocchi di patate", quantity: 250, unit: "g" }, { name: "Merluzzo", quantity: 250, unit: "g" },
             { name: "Pomodorini ciliegino", quantity: 200, unit: "g" }, { name: "Melanzane", quantity: 150, unit: "g" },
             { name: "Olio EVO", quantity: 10, unit: "g" }, { name: "Aglio (fresco o polvere)", quantity: 1, unit: "q.b." }, { name: "Origano", quantity: 1, unit: "q.b." }, { name: "Sale / Sale grosso", quantity: 1, unit: "q.b." }, { name: "Pepe", quantity: 1, unit: "q.b." }, { name: "Basilico fresco", quantity: 1, unit: "q.b." }
           ],
-          steps: ["Taglia melanzana a cubetti, cuoci in padella senza olio con 3cucchiai acqua+origano 8-10min coperta;", "Stessa padella: scalda olio+aglio 1min;", "Aggiungi pomodorini interi fuoco vivo 3-4min finché scoppiano, schiaccia;", "Aggiungi merluzzo surgelato a bocconi, sala, pepa, cuoci 4-5min;", "Unisci melanzane 2min;", "Cuoci gnocchi in acqua salata finché vengono a galla (1-2min);", "Scola e salta nel sugo 1min;", "Servi con basilico fresco"],
+          steps: ["Taglia melanzana a cubetti, cuoci in padella senza olio con 3cucchiai acqua+origano 8-10min coperta;", "Stessa padella: scalda olio+aglio 1min;", "Aggiungi pomodorini interi fuoco vivo 3-4min finché scoppiano, schiaccia;", "Aggiungi merluzzo a bocconi, sala, pepa, cuoci 4-5min;", "Unisci melanzane 2min;", "Cuoci gnocchi in acqua salata finché vengono a galla (1-2min);", "Scola e salta nel sugo 1min;", "Servi con basilico fresco"],
           batchNote: null, supplement: null
         },
         {
@@ -99,7 +99,7 @@ const MEAL_PLAN = {
       training: [
         {
           id: "wednesday_breakfast", slot: "breakfast", name: "Yogurt Greco, Cereali e Marmellata", emoji: "🥣", prepTime: "2 min",
-          ingredients: [{ name: "Yogurt greco 0%", quantity: 200, unit: "g" }, { name: "Cereali integrali / Fitness", quantity: 50, unit: "g" }, { name: "Marmellata", quantity: 10, unit: "g" }],
+          ingredients: [{ name: "Yogurt greco 0%", quantity: 200, unit: "g" }, { name: "Cereali", quantity: 50, unit: "g" }, { name: "Marmellata", quantity: 10, unit: "g" }],
           steps: ["Versa yogurt in ciotola;", "Aggiungi marmellata, mescola per effetto swirl;", "Aggiungi cereali al momento di mangiare per mantenerli croccanti"],
           batchNote: null, supplement: "7g creatina dopo colazione"
         },
@@ -127,7 +127,7 @@ const MEAL_PLAN = {
           id: "wednesday_dinner", slot: "dinner", name: "Frittata ai Peperoni, Basilico e Spinaci con Pane", emoji: "🍳", prepTime: "15 min",
           ingredients: [
             { name: "Uova intere", quantity: 3, unit: "pz" }, { name: "Peperoni", quantity: 200, unit: "g" },
-            { name: "Spinacini freschi", quantity: 100, unit: "g" }, { name: "Pane bianco", quantity: 60, unit: "g" },
+            { name: "Spinacini", quantity: 100, unit: "g" }, { name: "Pane bianco", quantity: 60, unit: "g" },
             { name: "Olio EVO", quantity: 10, unit: "g" }, { name: "Aglio (fresco o polvere)", quantity: 1, unit: "q.b." }, { name: "Basilico fresco", quantity: 1, unit: "q.b." }, { name: "Sale / Sale grosso", quantity: 1, unit: "q.b." }, { name: "Pepe", quantity: 1, unit: "q.b." }
           ],
           steps: ["Scalda metà olio → aggiungi peperoni avanzati 2min;", "Aggiungi spinacini, appassisci 1min;", "Sbatti uova con sale+pepe+basilico spezzettato;", "Olio rimasto in padella, versa uova sulle verdure, distribuisci;", "Copri con coperchio, fuoco basso 8-10min finché superficie rappresa; non girare;", "Servi con pane"],
@@ -143,7 +143,7 @@ const MEAL_PLAN = {
       rest: [
         {
           id: "thursday_breakfast", slot: "breakfast", name: "Latte e Cereali", emoji: "🥛", prepTime: "2 min",
-          ingredients: [{ name: "Latte parz. scremato", quantity: 250, unit: "g" }, { name: "Cereali integrali / Fitness", quantity: 50, unit: "g" }],
+          ingredients: [{ name: "Latte parz. scremato", quantity: 250, unit: "g" }, { name: "Cereali", quantity: 50, unit: "g" }],
           steps: ["Scalda latte a piacere (o freddo d'estate);", "Versa i cereali al momento di mangiare"],
           batchNote: null, supplement: "7g creatina dopo colazione"
         },
@@ -155,9 +155,9 @@ const MEAL_PLAN = {
         {
           id: "thursday_lunch", slot: "lunch", name: "Insalata Drenante Farro, Lenticchie", emoji: "🥗", prepTime: "35 min",
           ingredients: [
-            { name: "Farro perlato", quantity: 70, unit: "g" }, { name: "Lenticchie in lattina", quantity: 240, unit: "g" },
+            { name: "Farro perlato", quantity: 70, unit: "g" }, { name: "Lenticchie", quantity: 240, unit: "g" },
             { name: "Avocado", quantity: 0.5, unit: "pz" }, { name: "Pomodorini", quantity: 150, unit: "g" },
-            { name: "Olio EVO", quantity: 10, unit: "g" }, { name: "Limone", quantity: 0.5, unit: "pz" }, { name: "Prezzemolo fresco", quantity: 1, unit: "q.b." }, { name: "Cumino in polvere", quantity: 1, unit: "q.b." }, { name: "Zenzero fresco", quantity: 1, unit: "q.b." }, { name: "Sale / Sale grosso", quantity: 1, unit: "q.b." }, { name: "Pepe", quantity: 1, unit: "q.b." }
+            { name: "Olio EVO", quantity: 10, unit: "g" }, { name: "Limone", quantity: 0.5, unit: "pz" }, { name: "Prezzemolo fresco", quantity: 1, unit: "q.b." }, { name: "Cumino", quantity: 1, unit: "q.b." }, { name: "Zenzero fresco", quantity: 1, unit: "q.b." }, { name: "Sale / Sale grosso", quantity: 1, unit: "q.b." }, { name: "Pepe", quantity: 1, unit: "q.b." }
           ],
           steps: ["Cuoci farro in acqua salata 25-30min → scola e raffredda sotto acqua fredda;", "Taglia avocado a cubetti + pomodorini a metà;", "In ciotola: farro+lenticchie+avocado+pomodorini+prezzemolo;", "Dressing: olio+succo limone+cumino+zenzero grattugiato (1cm)+pepe → emulsiona;", "Condisci, mescola delicatamente, aggiusta sale; servire tiepido o freddo"],
           batchNote: null, supplement: null
@@ -214,7 +214,7 @@ const MEAL_PLAN = {
         {
           id: "friday_dinner_t", slot: "dinner", name: "Salmone in Padella con Spinaci e Patate", emoji: "🍣", prepTime: "30 min",
           ingredients: [
-            { name: "Salmone fresco", quantity: 100, unit: "g" }, { name: "Spinacini freschi", quantity: 200, unit: "g" },
+            { name: "Salmone fresco", quantity: 100, unit: "g" }, { name: "Spinacini", quantity: 200, unit: "g" },
             { name: "Patate", quantity: 230, unit: "g" }, { name: "Olio EVO", quantity: 10, unit: "g" },
             { name: "Aglio (fresco o polvere)", quantity: 1, unit: "q.b." }, { name: "Limone", quantity: 0.5, unit: "pz" }, { name: "Prezzemolo fresco", quantity: 1, unit: "q.b." }, { name: "Sale / Sale grosso", quantity: 1, unit: "q.b." }, { name: "Pepe", quantity: 1, unit: "q.b." }
           ],
@@ -252,7 +252,7 @@ const MEAL_PLAN = {
         {
           id: "friday_dinner_r", slot: "dinner", name: "Salmone in Padella con Spinaci e Patate", emoji: "🍣", prepTime: "30 min",
           ingredients: [
-            { name: "Salmone fresco", quantity: 100, unit: "g" }, { name: "Spinacini freschi", quantity: 200, unit: "g" },
+            { name: "Salmone fresco", quantity: 100, unit: "g" }, { name: "Spinacini", quantity: 200, unit: "g" },
             { name: "Patate", quantity: 230, unit: "g" }, { name: "Olio EVO", quantity: 10, unit: "g" },
             { name: "Aglio (fresco o polvere)", quantity: 1, unit: "q.b." }, { name: "Limone", quantity: 0.5, unit: "pz" }, { name: "Prezzemolo fresco", quantity: 1, unit: "q.b." }, { name: "Sale / Sale grosso", quantity: 1, unit: "q.b." }, { name: "Pepe", quantity: 1, unit: "q.b." }
           ],
@@ -313,7 +313,7 @@ const MEAL_PLAN = {
       rest: [
         {
           id: "sunday_breakfast", slot: "breakfast", name: "Yogurt Greco, Cereali e Marmellata", emoji: "🥣", prepTime: "2 min",
-          ingredients: [{ name: "Yogurt greco 0%", quantity: 200, unit: "g" }, { name: "Cereali integrali / Fitness", quantity: 50, unit: "g" }, { name: "Marmellata", quantity: 10, unit: "g" }],
+          ingredients: [{ name: "Yogurt greco 0%", quantity: 200, unit: "g" }, { name: "Cereali", quantity: 50, unit: "g" }, { name: "Marmellata", quantity: 10, unit: "g" }],
           steps: ["Versa yogurt in ciotola;", "Aggiungi marmellata, mescola per effetto swirl;", "Aggiungi cereali al momento di mangiare per mantenerli croccanti"],
           batchNote: "DOMENICA SERA prepara Frozen Porridge per lunedì", supplement: "7g creatina dopo colazione"
         },
@@ -326,7 +326,7 @@ const MEAL_PLAN = {
           id: "sunday_lunch", slot: "lunch", name: "Legumotti con Nasello e Gamberetti", emoji: "🦐", prepTime: "20 min",
           ingredients: [
             { name: "Legumotti Barilla", quantity: 60, unit: "g" }, { name: "Nasello", quantity: 125, unit: "g" },
-            { name: "Gamberetti surgelati", quantity: 150, unit: "g" }, { name: "Zucchine", quantity: 200, unit: "g" },
+            { name: "Gamberetti", quantity: 150, unit: "g" }, { name: "Zucchine", quantity: 200, unit: "g" },
             { name: "Olio EVO", quantity: 10, unit: "g" }, { name: "Aglio (fresco o polvere)", quantity: 1, unit: "q.b." }, { name: "Prezzemolo fresco", quantity: 1, unit: "q.b." }, { name: "Limone", quantity: 0.5, unit: "pz" }, { name: "Sale / Sale grosso", quantity: 1, unit: "q.b." }
           ],
           steps: ["Cuoci Legumotti in acqua salata → conserva 1 mestolo acqua cottura prima di scolare;", "Taglia nasello a bocconi → cuoci in padella con olio+aglio 3-4min per lato;", "Aggiungi gamberetti, cuoci 2-3min finché rosati; sfuma con succo limone;", "In padella separata: cuoci zucchine a rondelle con 2cucchiai acqua+origano 5-6min;", "Salta Legumotti con pesce+gamberetti+zucchine+acqua cottura per mantecare;", "Prezzemolo abbondante, sale, pepe finale"],
