@@ -17,6 +17,8 @@ function initFirebase() {
   try {
     firebase.initializeApp(firebaseConfig);
     db = firebase.firestore();
+    // Utilizziamo il nuovo standard per sopprimere l'errore IndexedDB
+    firebase.firestore().settings({ cacheSizeBytes: firebase.firestore.CACHE_SIZE_UNLIMITED });
     db.enablePersistence().catch((err) => console.warn("Offline persistence not enabled:", err.code));
     return true;
   } catch (e) {
@@ -43,7 +45,7 @@ const mockStore = {
 };
 
 function getLocalDeviceSettings() {
-  const defaults = { persons: 2, twoPersonsType: 'mf', singlePersonType: 'm' };
+  const defaults = { persons: 2, twoPersonsType: 'mf', singlePersonType: 'm', prepSelectedDay: null, lastLoginDate: null };
   const stored = localStorage.getItem('pn_device_settings');
   return stored ? { ...defaults, ...JSON.parse(stored) } : defaults;
 }
