@@ -1128,14 +1128,15 @@ function renderSettings() {
     
     <div class="settings-section" style="margin-bottom:1rem;">
       <h3 style="color:var(--primary); margin-bottom:0.5rem; border-bottom:1px solid rgba(0,0,0,0.05); padding-bottom:0.5rem;" onclick="this.nextElementSibling.classList.toggle('hidden')" style="cursor:pointer;">
-        Struttura Dieta ▼
+        Struttura Dieta (Metodo Dott. Meller) ▼
       </h3>
       <div class="hidden" style="line-height:1.6; padding-top:0.5rem;">
         <ul style="padding-left:1.2rem; margin-top:0.5rem; margin-bottom:1rem;">
-          <li style="margin-bottom:0.5rem;"><strong>1° giorno: allenamento.</strong> Bilanciata, ricca di carboidrati. Crackers nello spuntino mattutino. Quote carboidrati e proteine aumentate a pranzo.</li>
-          <li style="margin-bottom:0.5rem;"><strong>2° giorno: riposo.</strong> Pasti bilanciati. Quota carboidrati e proteine leggermente ridotta. Niente crackers.</li>
+          <li style="margin-bottom:0.5rem;"><strong>1° giorno: allenamento.</strong> Dieta bilanciata e periodizzata, ricca di carboidrati puliti intorno all'allenamento. Crackers nello spuntino mattutino. Quote carboidrati e proteine aumentate a pranzo.</li>
+          <li style="margin-bottom:0.5rem;"><strong>2° giorno: riposo.</strong> Pasti bilanciati. Quota carboidrati e proteine leggermente ridotta. Niente crackers nello spuntino.</li>
+          <li style="margin-bottom:0.5rem;"><strong>Periodizzazione glucidica:</strong> Preferire fonti di carboidrati non integrali (riso bianco, pasta, pane bianco, gnocchi) nei pasti pre/post workout e nei giorni di carico per un rapido ripristino del glicogeno. Gestione flessibile negli altri contesti.</li>
         </ul>
-        <p class="text-muted"><em>NB: preferisci fonti di carboidrati non integrali prima e dopo un allenamento e nel carico. Libera negli altri momenti.</em></p>
+        <p class="text-muted"><em>NB: le opzioni e alternative strutturate da Meller sono perfettamente intercambiabili tra loro all'interno dello stesso slot di pasto.</em></p>
       </div>
     </div>
 
@@ -1153,9 +1154,12 @@ function renderSettings() {
           <li><em>Alt 4:</em> Latte parz. scremato 250g, Cereali 50g</li>
         </ul>
         
-        <h4 style="color:var(--accent);">SPUNTINO</h4>
+        <h4 style="color:var(--accent);">SPUNTINO MATTINA</h4>
         <ul style="padding-left:1rem; margin-bottom:1rem;">
-          <li><strong>Base:</strong> Frutta fresca <strong>250g</strong>, Crackers <strong>30g</strong>, Proteine Whey <strong>30g</strong></li>
+          <li><strong>Base Meller:</strong> Frutta fresca <strong>250g</strong>, Crackers <strong>30g</strong>, Proteine Whey <strong>30g</strong></li>
+          <li><em>Alt 1 Meller:</em> Frutta fresca <strong>250g</strong> + Gallette di riso/mais <strong>25g</strong> + Proteine Whey <strong>30g</strong></li>
+          <li><em>Alt 2 Meller:</em> Frutta fresca <strong>200g</strong> + Pane bianco <strong>50g</strong> + Proteine Whey <strong>30g</strong></li>
+          <li><em>Alt 3 Meller:</em> Frutta fresca <strong>200g</strong> + Yogurt greco 0% <strong>150g</strong> + Cereali <strong>30g</strong> (senza whey)</li>
         </ul>
 
         <h4 style="color:var(--accent);">PRANZO</h4>
@@ -1166,12 +1170,12 @@ function renderSettings() {
           <li>Olio EVO <strong>10g</strong></li>
         </ul>
 
-        <h4 style="color:var(--accent);">MERENDA</h4>
+        <h4 style="color:var(--accent);">MERENDA POMERIDIANA</h4>
         <ul style="padding-left:1rem; margin-bottom:1rem;">
-          <li><strong>Base:</strong> Yogurt greco 0% <strong>150g</strong>, Miele <strong>15g</strong> (o Marmellata 20g)</li>
-          <li><em>Alt 1 Meller:</em> Crackers <strong>30g</strong></li>
-          <li><em>Alt 2 Meller:</em> Frutta secca (noci/mandorle) <strong>20g</strong></li>
-          <li><em>Alt 3 Meller:</em> Frutta fresca <strong>150g</strong> + Yogurt greco 0% <strong>100g</strong></li>
+          <li><strong>Base Meller:</strong> Yogurt greco 0% <strong>150g</strong>, Miele <strong>15g</strong> (o Marmellata 20g)</li>
+          <li><em>Alt 1 Meller:</em> Crackers <strong>30g</strong> + Yogurt greco 0% <strong>100g</strong> (o Affettato magro 50g)</li>
+          <li><em>Alt 2 Meller:</em> Frutta secca (noci/mandorle) <strong>20g</strong> + Yogurt greco 0% <strong>150g</strong> + Miele <strong>10g</strong></li>
+          <li><em>Alt 3 Meller:</em> Frutta fresca <strong>150g</strong> + Yogurt greco 0% <strong>100g</strong> + Miele <strong>10g</strong></li>
         </ul>
 
         <h4 style="color:var(--accent);">CENA</h4>
@@ -1196,9 +1200,12 @@ function renderSettings() {
           <li><em>Alt:</em> Vedi alternative allenamento.</li>
         </ul>
         
-        <h4 style="color:var(--rest);">SPUNTINO</h4>
+        <h4 style="color:var(--rest);">SPUNTINO MATTINA</h4>
         <ul style="padding-left:1rem; margin-bottom:1rem;">
-          <li><strong>Base:</strong> Frutta fresca <strong>250g</strong>, Proteine Whey <strong>30g</strong></li>
+          <li><strong>Base Meller:</strong> Frutta fresca <strong>250g</strong>, Proteine Whey <strong>30g</strong> (Senza crackers)</li>
+          <li><em>Alt 1 Meller:</em> Frutta fresca <strong>200g</strong> + Yogurt greco 0% <strong>200g</strong> (senza whey)</li>
+          <li><em>Alt 2 Meller:</em> Frutta fresca <strong>250g</strong> + Frutta secca (noci/mandorle) <strong>20g</strong> + Proteine Whey <strong>30g</strong></li>
+          <li><em>Alt 3 Meller:</em> Frutta fresca <strong>200g</strong> + Kefir / Latte parz. scremato <strong>250g</strong> + Proteine Whey <strong>20g</strong></li>
         </ul>
 
         <h4 style="color:var(--rest);">PRANZO</h4>
@@ -1209,12 +1216,12 @@ function renderSettings() {
           <li>Olio EVO <strong>10g</strong></li>
         </ul>
 
-        <h4 style="color:var(--rest);">MERENDA</h4>
+        <h4 style="color:var(--rest);">MERENDA POMERIDIANA</h4>
         <ul style="padding-left:1rem; margin-bottom:1rem;">
-          <li><strong>Base:</strong> Yogurt greco 0% <strong>150g</strong>, Miele <strong>15g</strong> (o Marmellata 20g)</li>
-          <li><em>Alt 1 Meller:</em> Crackers <strong>30g</strong></li>
-          <li><em>Alt 2 Meller:</em> Frutta secca (noci/mandorle) <strong>20g</strong></li>
-          <li><em>Alt 3 Meller:</em> Frutta fresca <strong>150g</strong> + Yogurt greco 0% <strong>100g</strong></li>
+          <li><strong>Base Meller:</strong> Yogurt greco 0% <strong>150g</strong>, Miele <strong>15g</strong> (o Marmellata 20g)</li>
+          <li><em>Alt 1 Meller:</em> Crackers <strong>30g</strong> + Yogurt greco 0% <strong>100g</strong> (o Affettato magro 50g)</li>
+          <li><em>Alt 2 Meller:</em> Frutta secca (noci/mandorle) <strong>20g</strong> + Yogurt greco 0% <strong>150g</strong> + Miele <strong>10g</strong></li>
+          <li><em>Alt 3 Meller:</em> Frutta fresca <strong>150g</strong> + Yogurt greco 0% <strong>100g</strong> + Miele <strong>10g</strong></li>
         </ul>
 
         <h4 style="color:var(--rest);">CENA</h4>
