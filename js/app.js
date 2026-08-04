@@ -76,7 +76,7 @@ function getCategoryForIngredient(rawName) {
   if (check("limone")) return "🍑 Frutta";
 
   // Dispensa
-  if (check("proteine whey") || check("marmellata") || check("miele") || check("sciroppo") || check("olio evo") || check("latte parz") || check("cioccolato fondente") || check("cacao amaro") || check("vanillina") || check("cannella")) return "🥫 Dispensa";
+  if (check("proteine whey") || check("marmellata") || check("miele") || check("sciroppo") || check("olio evo") || check("latte parz") || check("cioccolato fondente") || check("cacao amaro") || check("vanillina") || check("cannella")) || check("cereali")) return "🥫 Dispensa";
 
   // Spezie e Aromi - explicit for pepe etc.
   if (check("pepe") && !check("peperoni") && !check("peperoncino")) return "🌿 Spezie e Aromi";
@@ -899,7 +899,7 @@ function renderShop() {
     html += `
       <div style="margin-bottom: 0.5rem; border: 1px solid rgba(0,0,0,0.05); border-radius: 8px; padding: 0.5rem;">
         <div class="flex-between">
-          <label style="font-weight:bold;"><input type="checkbox" onchange="toggleShopWholeDay('${day}', this.checked)" ${isWholeDay?'checked':''}> ${MEAL_PLAN[day].dayName}</label>
+          <label style="font-weight:bold;"><input type="checkbox" id="shop-day-${day}" onchange="toggleShopWholeDay('${day}', this.checked)" ${isWholeDay?'checked':''}> ${MEAL_PLAN[day].dayName}</label>
           <button class="btn btn-icon" style="min-height:30px; font-size:0.8rem; background:rgba(0,0,0,0.03);" onclick="document.getElementById('shop-det-${day}').classList.toggle('hidden')">▼</button>
         </div>
         <div id="shop-det-${day}" class="hidden" style="margin-top:0.5rem; padding-left: 1.5rem; display:flex; flex-wrap:wrap; gap:0.5rem; font-size:0.85rem;">
@@ -1024,6 +1024,14 @@ function renderShop() {
     </div>
   `;
   container.innerHTML = html;
+  // Checkbox "giorno" in stato indeterminato (—) se selezionati solo alcuni pasti
+weekDays.forEach(day => {
+  const cb = document.getElementById('shop-day-' + day);
+  if (cb) {
+    const arr = shopCloud.selectedMeals[day] || [];
+    cb.indeterminate = arr.length > 0 && arr.length < 5;
+  }
+});
 }
 
 window.shareShopWhatsApp = function() {
