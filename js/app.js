@@ -87,17 +87,47 @@ function getCategoryForIngredient(rawName) {
   return "🌿 Spezie e Aromi";
 }
 
-const CARB_FOR_SCALING = ["riso bianco", "pasta bianca", "farro perlato", "quinoa", "gnocchi di patate", "gnocchi", "patate", "legumotti barilla", "legumotti", "pane bianco", "cereali integrali"];
+const CARB_REST_MAP = {
+  "riso bianco": 70,
+  "pasta bianca": 70,
+  "farro perlato": 70,
+  "quinoa": 60,
+  "gnocchi di patate": 190,
+  "gnocchi": 190,
+  "patate": 350,
+  "pane bianco": 90,
+  "legumotti barilla": 60,
+  "legumotti": 60
+};
+const CARB_TRAINING_MAP = {
+  "riso bianco": 90,
+  "pasta bianca": 90,
+  "farro perlato": 90,
+  "quinoa": 80,
+  "gnocchi di patate": 250,
+  "gnocchi": 250,
+  "patate": 450,
+  "pane bianco": 120,
+  "legumotti barilla": 80,
+  "legumotti": 80
+};
 
 function isCarbForScaling(ingName) {
   const low = ingName.toLowerCase();
-  return CARB_FOR_SCALING.some(c => low.includes(c));
+  return Object.keys(CARB_REST_MAP).some(c => low.includes(c));
+}
+function getCarbExactQty(ingName, type) {
+  const low = ingName.toLowerCase();
+  const map = type === 'rest' ? CARB_REST_MAP : CARB_TRAINING_MAP;
+  for (const key of Object.keys(map)) {
+    if (low.includes(key)) return map[key];
+  }
+  return null;
 }
 
 function adjustMealForType(meal, originalType, requestedType) {
   if (!meal) return meal;
   if (originalType === requestedType) return meal;
-  // deep clone already done before calling in most paths, but ensure clone
   let clone = JSON.parse(JSON.stringify(meal));
   if (requestedType === 'rest' && originalType === 'training') {
     if (clone.slot === 'snack1') {
@@ -106,7 +136,8 @@ function adjustMealForType(meal, originalType, requestedType) {
     if (clone.slot === 'lunch') {
       clone.ingredients = clone.ingredients.map(ing => {
         if (isCarbForScaling(ing.name) && typeof ing.quantity === 'number') {
-          ing.quantity = ing.quantity * (70/90);
+          const exact = getCarbExactQty(ing.name, 'rest');
+          ing.quantity = exact !== null ? exact : ing.quantity * (70/90);
         }
         return ing;
       });
@@ -122,7 +153,8 @@ function adjustMealForType(meal, originalType, requestedType) {
     if (clone.slot === 'lunch') {
       clone.ingredients = clone.ingredients.map(ing => {
         if (isCarbForScaling(ing.name) && typeof ing.quantity === 'number') {
-          ing.quantity = ing.quantity * (90/70);
+          const exact = getCarbExactQty(ing.name, 'training');
+          ing.quantity = exact !== null ? exact : ing.quantity * (90/70);
         }
         return ing;
       });
@@ -392,6 +424,19 @@ function getMultiplier() {
   }
 }
 
+function getPerPersonSplit(baseQty, unit) {
+  const s = appState.deviceSettings;
+  const persons = s.persons || 2;
+  const twoType = s.twoPersonsType || 'mf';
+  if (persons !== 2) return "";
+  if (unit === 'q.b.') return "";
+  let u1, u2, label1, label2;
+  if (twoType === 'mf') { u1 = baseQty*1; u2 = baseQty*0.75; label1="Uomo"; label2="Donna"; }
+  else if (twoType === 'fm') { u1 = baseQty*1; u2 = baseQty*1.25; label1="Donna"; label2="Uomo"; }
+  else { u1 = baseQty*1; return `(Ciascuno: ${formatQty(u1)}${unit})`; }
+  return `(${label1}: ${formatQty(u1)}${unit}, ${label2}: ${formatQty(u2)}${unit})`;
+}
+
 window.updateGlobalPersons = function(val) { appState.deviceSettings.persons = val; saveLocalDeviceSettings(appState.deviceSettings); renderGlobalHeader(); handleRoute(); }
 window.updateGlobalSingleType = function(val) { appState.deviceSettings.singlePersonType = val; saveLocalDeviceSettings(appState.deviceSettings); renderGlobalHeader(); handleRoute(); }
 window.updateGlobalTwoType = function(val) { appState.deviceSettings.twoPersonsType = val; saveLocalDeviceSettings(appState.deviceSettings); renderGlobalHeader(); handleRoute(); }
@@ -539,9 +584,14 @@ async function renderChef() {
     html += `<h5 style="color:var(--text-muted); margin-bottom:0.5rem;">Ingredienti:</h5>`;
     html += `<ul style="list-style:none; padding:0; font-size:0.85rem;">`;
     tMeal.ingredients.forEach(ing => {
-      let fQty = ing.quantity;
+      let baseQty = ing.quantity;
+      let fQty = baseQty;
       if (typeof fQty === 'number' && ing.unit !== 'q.b.') fQty = formatQty(fQty * multiplier);
-      html += `<li class="step-item" style="padding:0.2rem 0; border-bottom:1px solid rgba(0,0,0,0.05);" onclick="this.classList.toggle('done')"><strong>${fQty} ${ing.unit==='q.b.'||ing.unit==='pz'?'':ing.unit}</strong> ${ing.name}</li>`;
+      let split = "";
+      if (typeof baseQty === 'number' && ing.unit !== 'q.b.') {
+        split = getPerPersonSplit(baseQty, ing.unit);
+      }
+      html += `<li class="step-item" style="padding:0.2rem 0; border-bottom:1px solid rgba(0,0,0,0.05);" onclick="this.classList.toggle('done')"><strong>${fQty} ${ing.unit==='q.b.'||ing.unit==='pz'?'':ing.unit}</strong> ${ing.name} ${split ? `<span style="font-size:0.75rem; color:var(--text-muted);">${split}</span>` : ''}</li>`;
     });
     html += `</ul></div>`;
     
@@ -578,9 +628,14 @@ async function renderChef() {
   html += `<h5 style="color:var(--text-muted); margin-bottom:0.5rem;">Ingredienti:</h5>`;
   html += `<ul style="list-style:none; padding:0; font-size:0.85rem;">`;
   dinner.ingredients.forEach(ing => {
-    let finalQty = ing.quantity;
-    if (typeof finalQty === 'number' && ing.unit !== 'q.b.') finalQty = formatQty(finalQty * multiplier);
-    html += `<li style="padding:0.2rem 0; border-bottom:1px solid rgba(0,0,0,0.05);"><strong>${finalQty} ${ing.unit==='q.b.'||ing.unit==='pz'?'':ing.unit}</strong> ${ing.name}</li>`;
+    let baseQty = ing.quantity;
+    let fQty = baseQty;
+    if (typeof fQty === 'number' && ing.unit !== 'q.b.') fQty = formatQty(fQty * multiplier);
+    let split = "";
+    if (typeof baseQty === 'number' && ing.unit !== 'q.b.') {
+      split = getPerPersonSplit(baseQty, ing.unit);
+    }
+    html += `<li class="step-item" style="padding:0.2rem 0; border-bottom:1px solid rgba(0,0,0,0.05);" onclick="this.classList.toggle('done')"><strong>${fQty} ${ing.unit==='q.b.'||ing.unit==='pz'?'':ing.unit}</strong> ${ing.name} ${split ? `<span style="font-size:0.75rem; color:var(--text-muted);">${split}</span>` : ''}</li>`;
   });
   html += `</ul></div>`;
   
@@ -629,9 +684,14 @@ async function renderChef() {
     html += `<h5 style="color:var(--text-muted); margin-bottom:0.5rem;">Ingredienti:</h5>`;
     html += `<ul style="list-style:none; padding:0; font-size:0.85rem;">`;
     tMeal.ingredients.forEach(ing => {
-      let fQty = ing.quantity;
+      let baseQty = ing.quantity;
+      let fQty = baseQty;
       if (typeof fQty === 'number' && ing.unit !== 'q.b.') fQty = formatQty(fQty * multiplier);
-      html += `<li class="step-item" style="padding:0.2rem 0; border-bottom:1px solid rgba(0,0,0,0.05);" onclick="this.classList.toggle('done')"><strong>${fQty} ${ing.unit==='q.b.'||ing.unit==='pz'?'':ing.unit}</strong> ${ing.name}</li>`;
+      let split = "";
+      if (typeof baseQty === 'number' && ing.unit !== 'q.b.') {
+        split = getPerPersonSplit(baseQty, ing.unit);
+      }
+      html += `<li class="step-item" style="padding:0.2rem 0; border-bottom:1px solid rgba(0,0,0,0.05);" onclick="this.classList.toggle('done')"><strong>${fQty} ${ing.unit==='q.b.'||ing.unit==='pz'?'':ing.unit}</strong> ${ing.name} ${split ? `<span style="font-size:0.75rem; color:var(--text-muted);">${split}</span>` : ''}</li>`;
     });
     html += `</ul></div>`;
     
@@ -1330,15 +1390,17 @@ function renderModalContent() {
     });
     ingUl.innerHTML += `<li><button class="btn btn-outline" style="width:100%; margin-top:0.5rem;" onclick="addIngredient()">+ Aggiungi ingrediente base</button></li>`;
   } else {
-    meal.ingredients.forEach(ing => {
-      let finalQty = ing.quantity;
-      if (typeof finalQty === 'number' && ing.unit !== 'q.b.') finalQty = formatQty(finalQty * multiplier);
-      ingUl.innerHTML += `
-        <li style="display:flex; flex-direction:column; padding:0.5rem 0; border-bottom:1px solid rgba(0,0,0,0.05);">
-          <div class="flex-between"><span>${ing.name}</span><strong>${finalQty} ${ing.unit === 'q.b.' || ing.unit === 'pz' ? '' : ing.unit}</strong></div>
-        </li>
-      `;
-    });
+  meal.ingredients.forEach(ing => {
+    let baseQty = ing.quantity;
+    let finalQty = baseQty;
+    if (typeof finalQty === 'number' && ing.unit !== 'q.b.') finalQty = formatQty(finalQty * multiplier);
+    let split = (typeof baseQty === 'number' && ing.unit !== 'q.b.') ? getPerPersonSplit(baseQty, ing.unit) : "";
+    ingUl.innerHTML += `
+      <li style="display:flex; flex-direction:column; padding:0.5rem 0; border-bottom:1px solid rgba(0,0,0,0.05);">
+        <div class="flex-between"><span>${ing.name} ${split ? `<span style="font-size:0.7rem; color:var(--text-muted);">${split}</span>` : ''}</span><strong>${finalQty} ${ing.unit === 'q.b.' || ing.unit === 'pz' ? '' : ing.unit}</strong></div>
+      </li>
+    `;
+  });
     ingUl.innerHTML += `<li class="text-muted" style="font-size:0.75rem; text-align:center; padding:1rem 0;">(Mostrato con i moltiplicatori attivi: ${multiplier}x)</li>`;
   }
 
