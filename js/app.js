@@ -17,17 +17,160 @@ let appState = {
 };
 
 let currentModalMeal = null;
+
+// --- Helpers for ingredient normalization and categories ---
+function normalizeIngredientName(name) {
+  if (!name) return name;
+  const low = name.toLowerCase();
+  if (low.includes("petto di pollo")) return "Petto di pollo";
+  if (low.includes("peperoni")) return "Peperoni";
+  if (low.includes("marmellata")) return "Marmellata";
+  if (low.includes("whey")) return "Proteine Whey";
+  // Additional normalizations for shopping list merging
+  if (low.includes("ceci bolliti")) return "Ceci bolliti scolati";
+  if (low.includes("pomodorini ciliegino")) return "Pomodorini";
+  if (low.includes("pomodorini")) return "Pomodorini";
+  if (low.includes("yogurt greco")) return "Yogurt greco 0%";
+  if (low.includes("farina d'avena")) return "Farina d'avena";
+  if (low.includes("miele") || low.includes("sciroppo acero") || low.includes("sciroppo d'acero") || low.includes("acero")) return "Miele / Sciroppo Acero";
+  if (low.includes("olio evo")) return "Olio EVO";
+  return name;
+}
+
+function getCategoryForIngredient(rawName) {
+  if (!rawName) return "🌿 Spezie e Aromi";
+  const low = rawName.toLowerCase();
+  const norm = normalizeIngredientName(rawName).toLowerCase();
+  // Use normalized for matching where possible
+  const check = (substr) => low.includes(substr) || norm.includes(substr);
+
+  // Carne
+  if (check("manzo") || check("petto di pollo") || check("pollo") && !check("pollo già")) {
+    // careful pollo already covered, but keep
+    if (check("petto di pollo") || check("manzo")) return "🥩 Carne";
+  }
+  if (check("petto di pollo")) return "🥩 Carne";
+  if (check("manzo magro")) return "🥩 Carne";
+
+  // Pesce
+  if (check("merluzzo") || check("sgombro") || check("salmone") || check("polpo") || check("nasello") || check("gamberetti")) return "🐟 Pesce";
+
+  // Uova e Latticini
+  if (check("yogurt greco") || check("albumi") || check("uova intere") || check("fiocchi di latte") || check("fiocchi di latte")) return "🥚 Uova e Latticini";
+
+  // Legumi
+  if (check("ceci") || check("lenticchie") || check("fagioli borlotti") || check("fagioli") || check("legumotti")) return "🫘 Legumi";
+
+  // Carboidrati
+  if (check("farina d'avena") || check("riso bianco") || check("riso") && !check("riso e") || check("pasta bianca") || check("patate") || check("gnocchi") || check("pane bianco") || check("farro") || check("quinoa") || check("cereali integrali") || check("crackers")) {
+    // avoid overlapping with verdura, but keep priority
+    if (check("crackers") || check("pane bianco") || check("patate") || check("avena") || check("riso bianco") || check("pasta") || check("farro") || check("quinoa") || check("gnocchi") || check("legumotti")) return "🍚 Carboidrati";
+  }
+
+  // Verdura - explicit list including required ones
+  if (check("insalata mista") || check("pomodori pelati") || check("pomodorini") || check("melanzane") || check("peperoni") || check("zucchine") || check("finocchi") || check("spinacini") || check("sedano") || check("rucola") || check("cetriolo")) return "🥬 Verdura";
+
+  // Frutta
+  if (check("frutta fresca") || check("melone") || check("avocado")) return "🍑 Frutta";
+  // Limone and others go to dispensa or spezie? Keep limone as frutta? Original had limone as pz but not categorized; we map to frutta for simplicity but actually could be dispensa. Keep as 🍑 Frutta for limone, else spezie fallback.
+  if (check("limone")) return "🍑 Frutta";
+
+  // Dispensa
+  if (check("proteine whey") || check("marmellata") || check("miele") || check("sciroppo") || check("olio evo") || check("latte parz") || check("cioccolato fondente") || check("cacao amaro") || check("vanillina") || check("cannella")) return "🥫 Dispensa";
+
+  // Spezie e Aromi - explicit for pepe etc.
+  if (check("pepe") && !check("peperoni") && !check("peperoncino")) return "🌿 Spezie e Aromi";
+  if (check("sale") || check("aglio") || check("origano") || check("basilico") || check("prezzemolo") || check("rosmarino") || check("paprika") || check("curcuma") || check("cumino") || check("peperoncino") || check("erba cipollina") || check("zenzero")) return "🌿 Spezie e Aromi";
+
+  // Fallback based on normalized categories map
+  // Default to spezie
+  return "🌿 Spezie e Aromi";
+}
+
+const CARB_FOR_SCALING = ["riso bianco", "pasta bianca", "farro perlato", "quinoa", "gnocchi di patate", "gnocchi", "patate", "legumotti barilla", "legumotti", "pane bianco", "cereali integrali"];
+
+function isCarbForScaling(ingName) {
+  const low = ingName.toLowerCase();
+  return CARB_FOR_SCALING.some(c => low.includes(c));
+}
+
+function adjustMealForType(meal, originalType, requestedType) {
+  if (!meal) return meal;
+  if (originalType === requestedType) return meal;
+  // deep clone already done before calling in most paths, but ensure clone
+  let clone = JSON.parse(JSON.stringify(meal));
+  if (requestedType === 'rest' && originalType === 'training') {
+    if (clone.slot === 'snack1') {
+      clone.ingredients = clone.ingredients.filter(ing => !ing.name.toLowerCase().includes('crackers'));
+    }
+    if (clone.slot === 'lunch') {
+      clone.ingredients = clone.ingredients.map(ing => {
+        if (isCarbForScaling(ing.name) && typeof ing.quantity === 'number') {
+          ing.quantity = ing.quantity * (70/90);
+        }
+        return ing;
+      });
+    }
+  } else if (requestedType === 'training' && originalType === 'rest') {
+    if (clone.slot === 'snack1') {
+      const hasCrackers = clone.ingredients.some(ing => ing.name.toLowerCase().includes('crackers'));
+      const hasFrutta = clone.ingredients.some(ing => ing.name.toLowerCase().includes('frutta'));
+      if (!hasCrackers && hasFrutta) {
+        clone.ingredients.push({ name: "Crackers", quantity: 30, unit: "g" });
+      }
+    }
+    if (clone.slot === 'lunch') {
+      clone.ingredients = clone.ingredients.map(ing => {
+        if (isCarbForScaling(ing.name) && typeof ing.quantity === 'number') {
+          ing.quantity = ing.quantity * (90/70);
+        }
+        return ing;
+      });
+    }
+  }
+  return clone;
+}
+
+function getISODateStringLocal() {
+  // YYYY-MM-DD in local timezone
+  const d = new Date();
+  const tzOffset = d.getTimezoneOffset() * 60000;
+  const local = new Date(d.getTime() - tzOffset);
+  return local.toISOString().split('T')[0];
+}
+
+function getMealFromPlan(dayKey, type, slotId) {
+  if (!MEAL_PLAN[dayKey] || !MEAL_PLAN[dayKey].meals[type]) return null;
+  return MEAL_PLAN[dayKey].meals[type].find(m => m.slot === slotId) || null;
+}
+
+function findMealById(mealId) {
+  const weekDays = ['monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday', 'sunday'];
+  for (const d of weekDays) {
+    for (const t of ['training', 'rest']) {
+      if (MEAL_PLAN[d].meals[t]) {
+        const m = MEAL_PLAN[d].meals[t].find(x => x.id === mealId);
+        if (m) return { meal: m, type: t, dayKey: d };
+      }
+    }
+  }
+  if (appState.customRecipes && appState.customRecipes[mealId]) {
+    // custom recipes don't have a fixed type, assume training to avoid scaling down, but we treat as its own
+    return { meal: appState.customRecipes[mealId], type: 'training', dayKey: 'custom' };
+  }
+  return null;
+}
+
+
 let editMode = false;
 let shopSettingsVisible = false;
 
 function repairMissingDays() {
-  if (!MEAL_PLAN.thursday.meals.training) MEAL_PLAN.thursday.meals.training = MEAL_PLAN.thursday.meals.rest;
-  if (!MEAL_PLAN.saturday.meals.training) MEAL_PLAN.saturday.meals.training = MEAL_PLAN.saturday.meals.rest;
-  if (!MEAL_PLAN.sunday.meals.training) MEAL_PLAN.sunday.meals.training = MEAL_PLAN.sunday.meals.rest;
-  if (!MEAL_PLAN.monday.meals.rest) MEAL_PLAN.monday.meals.rest = MEAL_PLAN.monday.meals.training;
-  if (!MEAL_PLAN.tuesday.meals.rest) MEAL_PLAN.tuesday.meals.rest = MEAL_PLAN.tuesday.meals.training;
-  if (!MEAL_PLAN.wednesday.meals.rest) MEAL_PLAN.wednesday.meals.rest = MEAL_PLAN.wednesday.meals.training;
+  // Lascia i tipi mancanti come null per permettere la trasformazione dinamica
+  // (es. lunedì solo training, giovedì solo rest). getDynamicMeal farà fallback e adatterà cracker e carboidrati.
+  // Nessun clone necessario per evitare pasti identici tra training/rest.
 }
+
 
 // ------------------------------------
 // INITIALIZATION
@@ -41,6 +184,21 @@ async function initApp() {
   appState.swappedMeals = await getSwappedMeals();
   appState.shoppingListCloud = await getShoppingListCloud();
   appState.deviceSettings = getLocalDeviceSettings();
+  
+  // Fix: if date changed since last login, reset Oggi view to current day
+  try {
+    const todayISO = (typeof getISODateString === 'function' ? getISODateString() : getISODateStringLocal());
+    const lastLogin = appState.deviceSettings.lastLoginDate;
+    const todayKey = getTodayKey();
+    if (lastLogin !== todayISO) {
+      appState.deviceSettings.prepSelectedDay = todayKey;
+      appState.deviceSettings.lastLoginDate = todayISO;
+      saveLocalDeviceSettings(appState.deviceSettings);
+    }
+  } catch(e) {
+    console.warn("lastLogin check failed", e);
+  }
+
   
   const isMobile = /Android|webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i.test(navigator.userAgent);
   if (!isMobile && ("Notification" in window)) {
@@ -107,32 +265,35 @@ function getDayType(dayKey) {
 }
 
 function getDynamicMeal(dayKey, dayType, slotId) {
-  const defaultMeal = MEAL_PLAN[dayKey].meals[dayType].find(m => m.slot === slotId);
   const swapKey = `${dayKey}_${slotId}`;
   
   if (appState.swappedMeals && appState.swappedMeals[swapKey]) {
     const targetId = appState.swappedMeals[swapKey];
-    let foundMeal = null;
-    const weekDays = ['monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday', 'sunday'];
-    for (const d of weekDays) {
-      for (const t of ['training', 'rest']) {
-        if(MEAL_PLAN[d].meals[t]) {
-          const check = MEAL_PLAN[d].meals[t].find(m => m.id === targetId);
-          if (check) { foundMeal = check; break; }
-        }
+    const found = findMealById(targetId);
+    if (found && found.meal) {
+      let clone = JSON.parse(JSON.stringify(found.meal));
+      clone.slot = slotId;
+      // Adjust quantities if swapped meal original type differs from requested day type
+      if (found.type && found.type !== dayType) {
+        clone = adjustMealForType(clone, found.type, dayType);
       }
-      if(foundMeal) break;
-    }
-    if(!foundMeal && appState.customRecipes[targetId]) {
-      foundMeal = appState.customRecipes[targetId];
-    }
-    if (foundMeal) {
-      let clone = JSON.parse(JSON.stringify(foundMeal));
-      clone.slot = slotId; 
       return clone;
     }
   }
-  return defaultMeal;
+
+  // Try to get meal for requested dayType
+  let direct = getMealFromPlan(dayKey, dayType, slotId);
+  if (direct) {
+    return JSON.parse(JSON.stringify(direct));
+  }
+  // Fallback to other type and adjust
+  const otherType = dayType === 'training' ? 'rest' : 'training';
+  let fallback = getMealFromPlan(dayKey, otherType, slotId);
+  if (fallback) {
+    let clone = JSON.parse(JSON.stringify(fallback));
+    return adjustMealForType(clone, otherType, dayType);
+  }
+  return null;
 }
 
 function getDynamicMealsForDay(dayKey, dayType) {
@@ -261,7 +422,7 @@ window.openSwapModal = function(dayKey, slotId) {
     }
   });
 
-  const defaultMeal = MEAL_PLAN[dayKey].meals[getDayType(dayKey)].find(m => m.slot === slotId);
+  const defaultMeal = getDynamicMeal(dayKey, getDayType(dayKey), slotId);
   const defaultMealId = defaultMeal ? defaultMeal.id : null;
   
   container.innerHTML += `
@@ -379,7 +540,7 @@ async function renderChef() {
     html += `<ul style="list-style:none; padding:0; font-size:0.85rem;">`;
     tMeal.ingredients.forEach(ing => {
       let fQty = ing.quantity;
-      if (typeof fQty === 'number' && ing.unit !== 'pz' && ing.unit !== 'q.b.') fQty = formatQty(fQty * multiplier);
+      if (typeof fQty === 'number' && ing.unit !== 'q.b.') fQty = formatQty(fQty * multiplier);
       html += `<li class="step-item" style="padding:0.2rem 0; border-bottom:1px solid rgba(0,0,0,0.05);" onclick="this.classList.toggle('done')"><strong>${fQty} ${ing.unit==='q.b.'||ing.unit==='pz'?'':ing.unit}</strong> ${ing.name}</li>`;
     });
     html += `</ul></div>`;
@@ -418,7 +579,7 @@ async function renderChef() {
   html += `<ul style="list-style:none; padding:0; font-size:0.85rem;">`;
   dinner.ingredients.forEach(ing => {
     let finalQty = ing.quantity;
-    if (typeof finalQty === 'number' && ing.unit !== 'pz' && ing.unit !== 'q.b.') finalQty = formatQty(finalQty * multiplier);
+    if (typeof finalQty === 'number' && ing.unit !== 'q.b.') finalQty = formatQty(finalQty * multiplier);
     html += `<li style="padding:0.2rem 0; border-bottom:1px solid rgba(0,0,0,0.05);"><strong>${finalQty} ${ing.unit==='q.b.'||ing.unit==='pz'?'':ing.unit}</strong> ${ing.name}</li>`;
   });
   html += `</ul></div>`;
@@ -469,7 +630,7 @@ async function renderChef() {
     html += `<ul style="list-style:none; padding:0; font-size:0.85rem;">`;
     tMeal.ingredients.forEach(ing => {
       let fQty = ing.quantity;
-      if (typeof fQty === 'number' && ing.unit !== 'pz' && ing.unit !== 'q.b.') fQty = formatQty(fQty * multiplier);
+      if (typeof fQty === 'number' && ing.unit !== 'q.b.') fQty = formatQty(fQty * multiplier);
       html += `<li class="step-item" style="padding:0.2rem 0; border-bottom:1px solid rgba(0,0,0,0.05);" onclick="this.classList.toggle('done')"><strong>${fQty} ${ing.unit==='q.b.'||ing.unit==='pz'?'':ing.unit}</strong> ${ing.name}</li>`;
     });
     html += `</ul></div>`;
@@ -695,52 +856,12 @@ function renderShop() {
   let categoriesMap = {};
   let totalItemsCount = 0;
 
-  // L'array completo per categorizzazione
-  const allIngredients = [
-    { id: "yogurt_greco", name: "Yogurt greco 0%", category: "🥚 Uova e Latticini", unit: "g" },
-    { id: "albumi", name: "Albumi", category: "🥚 Uova e Latticini", unit: "g" },
-    { id: "uova_intere", name: "Uova intere", category: "🥚 Uova e Latticini", unit: "g" },
-    { id: "fiocchi_latte", name: "Fiocchi di latte", category: "🥚 Uova e Latticini", unit: "g" },
-    { id: "manzo", name: "Manzo magro", category: "🥩 Carne", unit: "g" },
-    { id: "pollo", name: "Petto di pollo", category: "🥩 Carne", unit: "g" },
-    { id: "merluzzo", name: "Merluzzo", category: "🐟 Pesce", unit: "g" },
-    { id: "sgombro", name: "Sgombro al naturale", category: "🐟 Pesce", unit: "g" },
-    { id: "salmone", name: "Salmone fresco", category: "🐟 Pesce", unit: "g" },
-    { id: "polpo", name: "Polpo già cotto", category: "🐟 Pesce", unit: "g" },
-    { id: "nasello", name: "Nasello", category: "🐟 Pesce", unit: "g" },
-    { id: "gamberetti", name: "Gamberetti", category: "🐟 Pesce", unit: "g" },
-    { id: "avena", name: "Farina d'avena", category: "🍚 Carboidrati", unit: "g" },
-    { id: "riso", name: "Riso bianco", category: "🍚 Carboidrati", unit: "g" },
-    { id: "pasta", name: "Pasta bianca", category: "🍚 Carboidrati", unit: "g" },
-    { id: "patate", name: "Patate", category: "🍚 Carboidrati", unit: "g" },
-    { id: "gnocchi", name: "Gnocchi di patate", category: "🍚 Carboidrati", unit: "g" },
-    { id: "pane", name: "Pane bianco", category: "🍚 Carboidrati", unit: "g" },
-    { id: "farro", name: "Farro perlato", category: "🍚 Carboidrati", unit: "g" },
-    { id: "quinoa", name: "Quinoa", category: "🍚 Carboidrati", unit: "g" },
-    { id: "legumotti", name: "Legumotti Barilla", category: "🍚 Carboidrati", unit: "g" },
-    { id: "ceci", name: "Ceci in lattina", category: "🫘 Legumi", unit: "g" },
-    { id: "lenticchie", name: "Lenticchie in lattina", category: "🫘 Legumi", unit: "g" },
-    { id: "borlotti", name: "Fagioli borlotti", category: "🫘 Legumi", unit: "g" },
-    { id: "rucola", name: "Rucola fresca", category: "🥬 Verdura", unit: "g" },
-    { id: "insalata", name: "Insalata mista", category: "🥬 Verdura", unit: "g" },
-    { id: "pomodorini", name: "Pomodorini", category: "🥬 Verdura", unit: "g" },
-    { id: "melanzane", name: "Melanzane", category: "🥬 Verdura", unit: "g" },
-    { id: "peperoni", name: "Peperoni", category: "🥬 Verdura", unit: "g" },
-    { id: "zucchine", name: "Zucchine", category: "🥬 Verdura", unit: "g" },
-    { id: "cetriolo", name: "Cetriolo", category: "🥬 Verdura", unit: "g" },
-    { id: "melone", name: "Melone", category: "🍑 Frutta", unit: "g" },
-    { id: "avocado", name: "Avocado", category: "🍑 Frutta", unit: "pz" },
-    { id: "frutta_stagione", name: "Frutta fresca stagionale", category: "🍑 Frutta", unit: "g" },
-    { id: "whey", name: "Proteine Whey", category: "🥫 Dispensa", unit: "g" },
-    { id: "marmellata", name: "Marmellata", category: "🥫 Dispensa", unit: "g" },
-    { id: "miele", name: "Miele", category: "🥫 Dispensa", unit: "g" },
-    { id: "olio", name: "Olio EVO", category: "🥫 Dispensa", unit: "g" },
-    { id: "latte", name: "Latte parz. scremato", category: "🥫 Dispensa", unit: "g" },
-    { id: "cereali", name: "Cereali integrali / Fitness", category: "🍚 Carboidrati", unit: "g" },
-    { id: "crackers", name: "Crackers", category: "🍚 Carboidrati", unit: "g" }
-  ];
+    // --- Nuova logica categorie e merging ---
+  // Mappa per categorie non più basata su substring ambiguo
+  // Usa getCategoryForIngredient e normalizeIngredientName
 
   let aggList = {};
+
 
   weekDays.forEach(day => {
     const type = (mode === 'custom') ? shopCloud.customDays[day] : getDayType(day);
@@ -751,15 +872,19 @@ function renderShop() {
       const meal = planMeals.find(m => m.slot === slot);
       if(meal) {
         meal.ingredients.forEach(ing => {
-          let catBase = allIngredients.find(a => ing.name.includes(a.name) || a.name.includes(ing.name));
-          let catName = catBase ? catBase.category : "🌿 Spezie e Aromi";
+          let canonicalName = normalizeIngredientName(ing.name);
+          let catName = getCategoryForIngredient(ing.name);
           let u = ing.unit;
           let q = ing.quantity;
-          let hashId = ing.name.toLowerCase().replace(/[^a-z0-9]/g, '');
+          // Hash basato su nome canonicalizzato per mergiare varianti
+          let hashId = canonicalName.toLowerCase().replace(/[^a-z0-9]/g, '');
+          // Fallback per unità diverse con stesso nome: includi unità nel hash se diversa (es. g vs pz) ma per uova ora è pz
+          // Per evitare collisioni tra g e pz diversi, usa solo nome canonical ma conserva unità prevalente
           
           if (!aggList[hashId]) {
-            aggList[hashId] = { id: hashId, name: ing.name, category: catName, unit: u, qty: 0, mealsTags: [] };
+            aggList[hashId] = { id: hashId, name: canonicalName, category: catName, unit: u, qty: 0, mealsTags: [] };
           }
+          // Se unità differisce ma nome stesso, mantieni quella del primo incontro (es. g) - per uova è pz ormai
           if (typeof q === 'number') aggList[hashId].qty += q;
           
           let slotLabelForTag = MEAL_SLOTS.find(s=>s.id===slot).label;
@@ -778,7 +903,7 @@ function renderShop() {
 
   Object.values(aggList).forEach(item => {
     if (item.qty > 0 || item.unit === 'q.b.' || item.unit === 'pz') {
-      let finalQty = item.unit === 'pz' || item.unit === 'q.b.' ? 1 : item.qty * multiplier;
+      let finalQty = item.unit === 'q.b.' ? item.qty : item.qty * multiplier;
       finalQty = formatQty(finalQty);
       
       let splitText = "";
@@ -1207,7 +1332,7 @@ function renderModalContent() {
   } else {
     meal.ingredients.forEach(ing => {
       let finalQty = ing.quantity;
-      if (typeof finalQty === 'number' && ing.unit !== 'pz' && ing.unit !== 'q.b.') finalQty = formatQty(finalQty * multiplier);
+      if (typeof finalQty === 'number' && ing.unit !== 'q.b.') finalQty = formatQty(finalQty * multiplier);
       ingUl.innerHTML += `
         <li style="display:flex; flex-direction:column; padding:0.5rem 0; border-bottom:1px solid rgba(0,0,0,0.05);">
           <div class="flex-between"><span>${ing.name}</span><strong>${finalQty} ${ing.unit === 'q.b.' || ing.unit === 'pz' ? '' : ing.unit}</strong></div>
