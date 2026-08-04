@@ -62,7 +62,7 @@ function getCategoryForIngredient(rawName) {
   if (check("ceci") || check("lenticchie") || check("fagioli borlotti") || check("fagioli") || check("legumotti")) return "🫘 Legumi";
 
   // Carboidrati
-  if (check("farina d'avena") || check("riso bianco") || check("riso") && !check("riso e") || check("pasta bianca") || check("patate") || check("gnocchi") || check("pane bianco") || check("farro") || check("quinoa") || check("cereali integrali") || check("crackers")) {
+  if (check("farina d'avena") || check("riso bianco") || check("riso") && !check("riso e") || check("pasta bianca") || check("patate") || check("gnocchi") || check("pane bianco") || check("farro") || check("quinoa") || check("cereali") || check("crackers")) {
     // avoid overlapping with verdura, but keep priority
     if (check("crackers") || check("pane bianco") || check("patate") || check("avena") || check("riso bianco") || check("pasta") || check("farro") || check("quinoa") || check("gnocchi") || check("legumotti")) return "🍚 Carboidrati";
   }
