@@ -1155,7 +1155,7 @@ function renderSettings() {
         
         <h4 style="color:var(--accent);">SPUNTINO</h4>
         <ul style="padding-left:1rem; margin-bottom:1rem;">
-          <li>Frutta fresca <strong>250g</strong>, Crackers <strong>30g</strong>, Proteine Whey <strong>30g</strong></li>
+          <li><strong>Base:</strong> Frutta fresca <strong>250g</strong>, Crackers <strong>30g</strong>, Proteine Whey <strong>30g</strong></li>
         </ul>
 
         <h4 style="color:var(--accent);">PRANZO</h4>
@@ -1168,8 +1168,10 @@ function renderSettings() {
 
         <h4 style="color:var(--accent);">MERENDA</h4>
         <ul style="padding-left:1rem; margin-bottom:1rem;">
-          <li>Yogurt greco 0% <strong>150g</strong>, Miele <strong>15g</strong></li>
-          <li><em>Alt:</em> Crackers 30g o Frutta secca 20g</li>
+          <li><strong>Base:</strong> Yogurt greco 0% <strong>150g</strong>, Miele <strong>15g</strong> (o Marmellata 20g)</li>
+          <li><em>Alt 1 Meller:</em> Crackers <strong>30g</strong></li>
+          <li><em>Alt 2 Meller:</em> Frutta secca (noci/mandorle) <strong>20g</strong></li>
+          <li><em>Alt 3 Meller:</em> Frutta fresca <strong>150g</strong> + Yogurt greco 0% <strong>100g</strong></li>
         </ul>
 
         <h4 style="color:var(--accent);">CENA</h4>
@@ -1196,8 +1198,7 @@ function renderSettings() {
         
         <h4 style="color:var(--rest);">SPUNTINO</h4>
         <ul style="padding-left:1rem; margin-bottom:1rem;">
-          <li>Frutta fresca <strong>250g</strong>, Proteine Whey <strong>30g</strong></li>
-          <li style="color:var(--danger);"><em>Niente Crackers!</em></li>
+          <li><strong>Base:</strong> Frutta fresca <strong>250g</strong>, Proteine Whey <strong>30g</strong></li>
         </ul>
 
         <h4 style="color:var(--rest);">PRANZO</h4>
@@ -1210,8 +1211,10 @@ function renderSettings() {
 
         <h4 style="color:var(--rest);">MERENDA</h4>
         <ul style="padding-left:1rem; margin-bottom:1rem;">
-          <li>Yogurt greco 0% <strong>150g</strong>, Miele <strong>15g</strong></li>
-          <li><em>Alt:</em> Crackers 30g o Frutta secca 20g</li>
+          <li><strong>Base:</strong> Yogurt greco 0% <strong>150g</strong>, Miele <strong>15g</strong> (o Marmellata 20g)</li>
+          <li><em>Alt 1 Meller:</em> Crackers <strong>30g</strong></li>
+          <li><em>Alt 2 Meller:</em> Frutta secca (noci/mandorle) <strong>20g</strong></li>
+          <li><em>Alt 3 Meller:</em> Frutta fresca <strong>150g</strong> + Yogurt greco 0% <strong>100g</strong></li>
         </ul>
 
         <h4 style="color:var(--rest);">CENA</h4>
