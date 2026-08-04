@@ -279,13 +279,13 @@ const MEAL_PLAN = {
           steps: ["Consuma frutta e bevi whey in acqua."], batchNote: null, supplement: null
         },
         {
-          id: "saturday_lunch", slot: "lunch", name: "Quinoa ai Fagioli Borlotti e Cetrioli", emoji: "🥗", prepTime: "20 min",
+          id: "saturday_lunch", slot: "lunch", name: "Quinoa ai Fagioli Borlotti e Cetriolo", emoji: "🥗", prepTime: "20 min",
           ingredients: [
             { name: "Quinoa", quantity: 60, unit: "g" }, { name: "Fagioli borlotti", quantity: 240, unit: "g" },
-            { name: "Cetrioli", quantity: 200, unit: "g" }, { name: "Olio EVO", quantity: 10, unit: "g" },
+            { name: "Cetriolo", quantity: 200, unit: "g" }, { name: "Olio EVO", quantity: 10, unit: "g" },
             { name: "Prezzemolo fresco", quantity: 1, unit: "q.b." }, { name: "Limone", quantity: 0.5, unit: "pz" }, { name: "Origano", quantity: 1, unit: "q.b." }, { name: "Sale / Sale grosso", quantity: 1, unit: "q.b." }, { name: "Pepe", quantity: 1, unit: "q.b." }
           ],
-          steps: ["Sciacqua quinoa in colino 1min;", "Cuoci in 120ml acqua salata fuoco basso coperta 12-15min → riposa 5min → sgrana con forchetta;", "Taglia cetrioli a fettine sottili → salta in padella con 3cucchiai acqua+origano 8-10min fuoco medio senza olio;", "In ciotola: quinoa+fagioli+cetrioli+prezzemolo abbondante;", "Dressing: olio+limone+sale+pepe → condisci e mescola"],
+          steps: ["Sciacqua quinoa in colino 1min;", "Cuoci in 120ml acqua salata fuoco basso coperta 12-15min → riposa 5min → sgrana con forchetta;", "Taglia cetriolo a fettine sottili → salta in padella con 3cucchiai acqua+origano 8-10min fuoco medio senza olio;", "In ciotola: quinoa+fagioli+cetriolo+prezzemolo abbondante;", "Dressing: olio+limone+sale+pepe → condisci e mescola"],
           batchNote: null, supplement: null
         },
         {
@@ -340,7 +340,7 @@ const MEAL_PLAN = {
         {
           id: "sunday_dinner", slot: "dinner", name: "Insalata di Polpo con Sedano, Melone, Avocado", emoji: "🐙", prepTime: "10 min",
           ingredients: [
-            { name: "Polpo già cotto", quantity: 250, unit: "g" }, { name: "Sedano", quantity: 1, unit: "pz" },
+            { name: "Polpo", quantity: 250, unit: "g" }, { name: "Sedano", quantity: 1, unit: "pz" },
             { name: "Melone", quantity: 100, unit: "g" }, { name: "Avocado", quantity: 0.5, unit: "pz" },
             { name: "Olio EVO", quantity: 5, unit: "g" }, { name: "Limone", quantity: 0.5, unit: "pz" }, { name: "Basilico fresco", quantity: 1, unit: "q.b." }, { name: "Sale / Sale grosso", quantity: 1, unit: "q.b." }, { name: "Pepe", quantity: 1, unit: "q.b." }
           ],
