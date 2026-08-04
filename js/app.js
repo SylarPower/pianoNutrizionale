@@ -76,7 +76,7 @@ function getCategoryForIngredient(rawName) {
   if (check("limone")) return "🍑 Frutta";
 
   // Dispensa
-  if (check("proteine whey") || check("marmellata") || check("miele") || check("sciroppo") || check("olio evo") || check("latte parz") || check("cioccolato fondente") || check("cacao amaro") || check("vanillina") || check("cannella")) || check("cereali")) return "🥫 Dispensa";
+  if (check("proteine whey") || check("marmellata") || check("miele") || check("sciroppo") || check("olio evo") || check("latte parz") || check("cioccolato fondente") || check("cacao amaro") || check("vanillina") || check("cannella") || check("cereali")) return "🥫 Dispensa";
 
   // Spezie e Aromi - explicit for pepe etc.
   if (check("pepe") && !check("peperoni") && !check("peperoncino")) return "🌿 Spezie e Aromi";
