@@ -51,7 +51,8 @@ const mockStore = {
     },
     persons: 2,
     twoPersonsType: 'mf',
-    notificationsEnabled: false
+    notificationsEnabled: false,
+    womanFactor: 0.75
   },
   weekPlans: {},
   recipes: {},
@@ -81,8 +82,7 @@ function getLocalDeviceSettings() {
     singlePersonType: 'm',
     darkMode: false,
     prepSelectedDay: null,
-    lastLoginDate: null,
-    womanFactor: 0.75
+    lastLoginDate: null
   };
   try {
     const raw = localStorage.getItem('pn_device_settings');
@@ -107,14 +107,41 @@ function saveLocalDeviceSettings(settings) {
 // --- Global Settings (cloud + device merge) ---
 async function getGlobalSettings() {
   let deviceSettings = getLocalDeviceSettings();
-  if (!db) return { ...mockStore.settings, ...deviceSettings };
+
+  // womanFactor è un'impostazione GLOBALE (condivisa su tutti i dispositivi):
+  // se esiste una vecchia copia locale (versioni precedenti dell'app), migrala.
+  const localWoman = deviceSettings.womanFactor;
+  if ('womanFactor' in deviceSettings) {
+    delete deviceSettings.womanFactor;
+    try {
+      const raw = JSON.parse(localStorage.getItem('pn_device_settings') || '{}');
+      if ('womanFactor' in raw) {
+        delete raw.womanFactor;
+        localStorage.setItem('pn_device_settings', JSON.stringify(raw));
+      }
+    } catch(e) {}
+  }
+
+  if (!db) {
+    // Offline: mantieni l'eventuale valore migrato nello store di sessione
+    if (localWoman !== undefined) mockStore.settings.womanFactor = localWoman;
+    return { ...mockStore.settings, ...deviceSettings };
+  }
   try {
     const doc = await db.collection('settings').doc('global').get();
     let cloudSettings = doc.exists ? doc.data() : {};
+    // Migrazione una tantum: il valore locale diventa globale se il cloud non ce l'ha
+    if (localWoman !== undefined && cloudSettings.womanFactor === undefined) {
+      cloudSettings.womanFactor = localWoman;
+      try { await db.collection('settings').doc('global').set({ womanFactor: localWoman }, { merge: true }); }
+      catch(e) { console.warn("womanFactor migration error", e); }
+    }
     return { ...mockStore.settings, ...cloudSettings, ...deviceSettings };
   } catch(e) {
     console.warn("getGlobalSettings fallback", e);
-    return { ...mockStore.settings, ...deviceSettings };
+    const merged = { ...mockStore.settings, ...deviceSettings };
+    if (localWoman !== undefined) merged.womanFactor = localWoman;
+    return merged;
   }
 }
 

@@ -412,10 +412,12 @@ function renderGlobalHeader() {
   document.getElementById('global-header-container').innerHTML = html;
 }
 
-// Fattore grammature della donna rispetto all'uomo (default 0.75, modificabile nelle Impostazioni)
+// Fattore grammature della donna rispetto all'uomo (default 0.75).
+// Impostazione GLOBALE: salvata su Firebase e condivisa da tutti i dispositivi.
 function getWomanFactor() {
-  const s = appState.deviceSettings || {};
-  const w = parseFloat(s.womanFactor);
+  let w = NaN;
+  if (appState.settings) w = parseFloat(appState.settings.womanFactor);
+  if (isNaN(w) && appState.deviceSettings) w = parseFloat(appState.deviceSettings.womanFactor);
   return (!isNaN(w) && w > 0 && w <= 3) ? w : 0.75;
 }
 
@@ -1169,7 +1171,7 @@ function renderSettings() {
     </div>
 
     <div class="settings-section">
-      <h3>Porzioni (Solo questo dispositivo)</h3>
+      <h3>Porzioni (Sincronizzate su tutti i dispositivi)</h3>
       <div class="settings-row">
         <label>Grammature donna rispetto all'uomo</label>
         <div style="display:flex; align-items:center; gap:0.25rem;">
@@ -1177,7 +1179,7 @@ function renderSettings() {
           <span>%</span>
         </div>
       </div>
-      <p class="text-muted" style="font-size:0.8rem; margin-top:0.5rem;">Default 75%. Es: con 80%, 2 persone (👨+👩) → moltiplicatore 1.8x, 1 persona (👩) → 0.8x. Si applica subito a pasti, ricette e lista spesa.</p>
+      <p class="text-muted" style="font-size:0.8rem; margin-top:0.5rem;">Default 75%. Es: con 80%, 2 persone (👨+👩) → moltiplicatore 1.8x, 1 persona (👩) → 0.8x. Vale per tutti coloro che accedono al sito.</p>
     </div>
     
     <div class="settings-section">
@@ -1394,12 +1396,15 @@ window.toggleDarkMode = function(isDark) {
   else document.body.classList.remove('dark-mode');
 }
 
-window.updateWomanFactor = function(val) {
+window.updateWomanFactor = async function(val) {
   let pct = parseFloat(val);
   if (isNaN(pct)) pct = 75;
   pct = Math.min(Math.max(pct, 10), 150);
-  appState.deviceSettings.womanFactor = pct / 100;
-  saveLocalDeviceSettings(appState.deviceSettings);
+  const factor = pct / 100;
+  if (!appState.settings) appState.settings = {};
+  appState.settings.womanFactor = factor;
+  if (appState.deviceSettings) delete appState.deviceSettings.womanFactor; // non più un'impostazione locale
+  await saveGlobalSettings({ womanFactor: factor }); // sincronizzata su tutti i dispositivi
   handleRoute(); // ri-renderizza la vista corrente con le nuove grammature
 }
 

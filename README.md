@@ -8,7 +8,7 @@ Costruita interamente in **Vanilla JavaScript, HTML5 e CSS3**, senza alcun frame
 - **📱 Interfaccia Mobile-First**: Design pulito, navigazione a schede in stile app (Oggi, Settimana, Spesa, Impostazioni) e supporto **PWA** (Installabile nella Home del telefono).
 - **📅 Gestione Giornaliera**: Visualizzazione dinamica dei pasti divisi tra giorni di **Allenamento 🏋️** e **Riposo 😴**, con orari, badge e countdown per il pasto successivo.
 - **🍳 Ricette Dettagliate e Modificabili**: Ogni pasto ha la sua scheda con ingredienti, passaggi di preparazione e avvisi per il **Batch Cooking**. Le ricette possono essere modificate e ripristinate all'originale.
-- **🛒 Lista della Spesa Intelligente**: Generatore automatico della lista della spesa calcolata in base ai giorni selezionati. Scala in automatico le grammature in base al numero di persone (es: moltiplicatore x1.75 per uomo+donna).
+- **🛒 Lista della Spesa Intelligente**: Generatore automatico della lista della spesa calcolata in base ai giorni selezionati. Scala in automatico le grammature in base al numero di persone (es: moltiplicatore x1.75 per uomo+donna; la % della donna è configurabile dalle Impostazioni ed è sincronizzata su tutti i dispositivi). Esportabile su WhatsApp o copiabile in formato testuale raggruppato per categoria.
 - **🔔 Notifiche Push**: Notifiche programmate per ricordarti i pasti e le eventuali preparazioni serali (Batch Cooking).
 - **☁️ Firebase Ready**: Predisposta per la sincronizzazione cloud in tempo reale con Firebase Firestore, ma perfettamente funzionante anche in modalità "Offline" tramite mock in locale.
 
