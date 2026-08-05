@@ -412,15 +412,23 @@ function renderGlobalHeader() {
   document.getElementById('global-header-container').innerHTML = html;
 }
 
+// Fattore grammature della donna rispetto all'uomo (default 0.75, modificabile nelle Impostazioni)
+function getWomanFactor() {
+  const s = appState.deviceSettings || {};
+  const w = parseFloat(s.womanFactor);
+  return (!isNaN(w) && w > 0 && w <= 3) ? w : 0.75;
+}
+
 function getMultiplier() {
   const s = appState.deviceSettings;
   const singleType = s.singlePersonType || 'm';
+  const w = getWomanFactor();
   if (s.persons === 2) {
-    if (s.twoPersonsType === 'mf') return 1.75;
+    if (s.twoPersonsType === 'mf') return 1 + w;
     else if (s.twoPersonsType === 'fm') return 2.25;
     else return 2;
   } else {
-    if (singleType === 'f') return 0.75;
+    if (singleType === 'f') return w;
     else return 1;
   }
 }
@@ -432,7 +440,7 @@ function getPerPersonSplit(baseQty, unit) {
   if (persons !== 2) return "";
   if (unit === 'q.b.') return "";
   let u1, u2, label1, label2;
-  if (twoType === 'mf') { u1 = baseQty*1; u2 = baseQty*0.75; label1="Uomo"; label2="Donna"; }
+  if (twoType === 'mf') { u1 = baseQty*1; u2 = baseQty*getWomanFactor(); label1="Uomo"; label2="Donna"; }
   else if (twoType === 'fm') { u1 = baseQty*1; u2 = baseQty*1.25; label1="Donna"; label2="Uomo"; }
   else { u1 = baseQty*1; return `(Ciascuno: ${formatQty(u1)}${unit})`; }
   return `(${label1}: ${formatQty(u1)}${unit}, ${label2}: ${formatQty(u2)}${unit})`;
@@ -971,7 +979,7 @@ function renderShop() {
       let splitText = "";
       if (persons === 2 && item.unit !== 'pz' && item.unit !== 'q.b.') {
           let user1, user2;
-          if (twoType === 'mf') { user1 = formatQty(item.qty * 1); user2 = formatQty(item.qty * 0.75); splitText = `(Uomo: ${user1}${item.unit}, Donna: ${user2}${item.unit})`; }
+          if (twoType === 'mf') { user1 = formatQty(item.qty * 1); user2 = formatQty(item.qty * getWomanFactor()); splitText = `(Uomo: ${user1}${item.unit}, Donna: ${user2}${item.unit})`; }
           else if (twoType === 'fm') { user1 = formatQty(item.qty * 1); user2 = formatQty(item.qty * 1.25); splitText = `(Donna: ${user1}${item.unit}, Uomo: ${user2}${item.unit})`; }
           else { user1 = formatQty(item.qty * 1); splitText = `(Ciascuno: ${user1}${item.unit})`; }
       }
@@ -1054,22 +1062,23 @@ window.shareShopWhatsApp = function() {
   }
 }
 
-// Copia la lista della spesa in formato testuale: "Alimento - peso + unità" (una riga per alimento)
+// Copia la lista della spesa in formato testuale, raggruppata per categoria:
+// "----- 🥩 Carne" seguita dalle righe "Alimento - peso + unità"
 window.copyShopList = async function() {
-  let lines = [];
+  let blocks = [];
   SHOP_CATEGORY_ORDER.forEach(cat => {
     const items = (window.currentCategoriesMap && window.currentCategoriesMap[cat]) || [];
-    items.forEach(item => {
-      if (item.unit === 'q.b.') lines.push(`${item.name} - q.b.`);
-      else lines.push(`${item.name} - ${item.qty}${item.unit}`);
-    });
+    if (items.length > 0) {
+      const lines = items.map(item => item.unit === 'q.b.' ? `${item.name} - q.b.` : `${item.name} - ${item.qty}${item.unit}`);
+      blocks.push(`----- ${cat}\n` + lines.join('\n'));
+    }
   });
 
-  if (lines.length === 0) {
+  if (blocks.length === 0) {
     showToast("La lista è vuota");
     return;
   }
-  const text = lines.join('\n');
+  const text = blocks.join('\n\n');
 
   let ok = false;
   try {
@@ -1157,6 +1166,18 @@ function renderSettings() {
         <label>Tema Scuro (AMOLED)</label>
         <input type="checkbox" ${deviceS.darkMode ? 'checked' : ''} onchange="toggleDarkMode(this.checked)">
       </div>
+    </div>
+
+    <div class="settings-section">
+      <h3>Porzioni (Solo questo dispositivo)</h3>
+      <div class="settings-row">
+        <label>Grammature donna rispetto all'uomo</label>
+        <div style="display:flex; align-items:center; gap:0.25rem;">
+          <input type="number" min="10" max="150" step="1" value="${Math.round(getWomanFactor()*100)}" style="width:70px; text-align:right; padding:0.3rem;" onchange="updateWomanFactor(this.value)">
+          <span>%</span>
+        </div>
+      </div>
+      <p class="text-muted" style="font-size:0.8rem; margin-top:0.5rem;">Default 75%. Es: con 80%, 2 persone (👨+👩) → moltiplicatore 1.8x, 1 persona (👩) → 0.8x. Si applica subito a pasti, ricette e lista spesa.</p>
     </div>
     
     <div class="settings-section">
@@ -1371,6 +1392,15 @@ window.toggleDarkMode = function(isDark) {
   saveLocalDeviceSettings(appState.deviceSettings);
   if (isDark) document.body.classList.add('dark-mode');
   else document.body.classList.remove('dark-mode');
+}
+
+window.updateWomanFactor = function(val) {
+  let pct = parseFloat(val);
+  if (isNaN(pct)) pct = 75;
+  pct = Math.min(Math.max(pct, 10), 150);
+  appState.deviceSettings.womanFactor = pct / 100;
+  saveLocalDeviceSettings(appState.deviceSettings);
+  handleRoute(); // ri-renderizza la vista corrente con le nuove grammature
 }
 
 // ------------------------------------

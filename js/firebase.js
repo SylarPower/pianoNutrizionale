@@ -81,7 +81,8 @@ function getLocalDeviceSettings() {
     singlePersonType: 'm',
     darkMode: false,
     prepSelectedDay: null,
-    lastLoginDate: null
+    lastLoginDate: null,
+    womanFactor: 0.75
   };
   try {
     const raw = localStorage.getItem('pn_device_settings');
