@@ -924,6 +924,20 @@ function renderShop() {
       });
       html += `</div></div>`;
     });
+
+    // Alimenti esclusi dalla lista: tap su Riattiva per reinserirli
+    const excludedEntries = shopCloud.excludedItems || [];
+    if (excludedEntries.length > 0) {
+      html += `<h4 style="margin:1rem 0 0.5rem; padding-top:1rem; border-top:1px solid rgba(0,0,0,0.08);">Alimenti esclusi (${excludedEntries.length})</h4>`;
+      excludedEntries.forEach(ex => {
+        html += `
+          <div class="flex-between" style="padding:0.25rem 0; font-size:0.9rem;">
+            <span>🚫 ${ex.name}</span>
+            <button class="btn btn-outline" style="min-height:28px; padding:0.1rem 0.5rem; font-size:0.8rem;" onclick="includeShopItem('${ex.id}')">Riattiva</button>
+          </div>`;
+      });
+    }
+
     html += `</div>`;
   }
 
@@ -1007,6 +1021,18 @@ function renderShop() {
     delete categoriesMap["🌿 Spezie e Aromi"];
   }
 
+    // Escludi gli alimenti nascosti manualmente (riattivabili da Impostazioni Giorni)
+  const excludedIds = (shopCloud.excludedItems || []).map(e => e.id);
+  if (excludedIds.length > 0) {
+    SHOP_CATEGORY_ORDER.forEach(cat => {
+      if (!categoriesMap[cat]) return;
+      const before = categoriesMap[cat].length;
+      categoriesMap[cat] = categoriesMap[cat].filter(item => !excludedIds.includes(item.id));
+      totalItemsCount -= (before - categoriesMap[cat].length);
+      if (categoriesMap[cat].length === 0) delete categoriesMap[cat];
+    });
+  }
+
   window.currentCategoriesMap = categoriesMap;
   
   SHOP_CATEGORY_ORDER.forEach(cat => {
@@ -1024,6 +1050,7 @@ function renderShop() {
               <input type="text" inputmode="decimal" class="editable-qty" value="${item.qty}" onchange="updateShopItemQty('${item.id}', this.value)">
               ${item.unit === 'q.b.' || item.unit === 'pz' ? '' : `<span style="font-size:0.8rem; margin-left:2px;">${item.unit}</span>`}
             </div>
+            <button class="btn-icon" style="min-width:32px; min-height:32px; margin-left:0.25rem; color:var(--text-muted); background:transparent;" title="Nascondi dalla lista" onclick="excludeShopItem('${item.id}')">✕</button>
           </div>
         `;
       });
@@ -1154,6 +1181,27 @@ window.updateShopItemQty = async function(id, val) {
   if (!appState.shoppingListCloud.customQtys) appState.shoppingListCloud.customQtys = {};
   appState.shoppingListCloud.customQtys[id] = val;
   await saveShoppingListCloud(appState.shoppingListCloud); renderShop();
+}
+window.excludeShopItem = async function(id) {
+  // Recupera il nome leggibile dalla mappa corrente (evita problemi di apici nelle stringhe)
+  let name = id;
+  Object.values(window.currentCategoriesMap || {}).forEach(items => {
+    const found = items.find(i => i.id === id);
+    if (found) name = found.name;
+  });
+  if (!confirm(`Nascondere "${name}" dalla lista spesa?\n(Potrai riattivarlo da Impostazioni Giorni → Alimenti esclusi)`)) return;
+  if (!appState.shoppingListCloud.excludedItems) appState.shoppingListCloud.excludedItems = [];
+  if (!appState.shoppingListCloud.excludedItems.find(e => e.id === id)) {
+    appState.shoppingListCloud.excludedItems.push({ id: id, name: name });
+  }
+  await saveShoppingListCloud(appState.shoppingListCloud);
+  renderShop();
+}
+
+window.includeShopItem = async function(id) {
+  appState.shoppingListCloud.excludedItems = (appState.shoppingListCloud.excludedItems || []).filter(e => e.id !== id);
+  await saveShoppingListCloud(appState.shoppingListCloud);
+  renderShop();
 }
 window.resetShopList = async function() {
   if (confirm("Azzerare le selezioni?")) {
