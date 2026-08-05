@@ -1080,7 +1080,7 @@ window.copyShopList = async function() {
     showToast("La lista è vuota");
     return;
   }
-  const text = blocks.join('\n\n');
+  const text = blocks.join('\n');
 
   let ok = false;
   try {
