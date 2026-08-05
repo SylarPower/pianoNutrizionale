@@ -894,35 +894,38 @@ function renderShop() {
       });
       html += `</div>`;
     }
-    html += `</div>`;
-  }
 
-  html += `
-    <div class="settings-section" style="margin-bottom:1.5rem;">
-      <h3>Seleziona cosa comprare</h3>
+    // Opzione: includi/escludi spezie e aromi dalla lista
+    html += `
+      <label style="display:block; margin-top:1rem; padding-top:1rem; border-top:1px solid rgba(0,0,0,0.08); font-weight:600;">
+        <input type="checkbox" ${shopCloud.includeSpices === false ? '' : 'checked'} onchange="toggleShopSpices(this.checked)"> Includi spezie e aromi 🌿
+      </label>
+
+      <h4 style="margin:1rem 0 0.5rem;">Seleziona cosa comprare</h4>
       <div style="display:flex; gap:0.5rem; margin-bottom:1rem;">
         <button class="btn btn-outline" style="flex:1; padding:0.25rem; font-size:0.8rem;" onclick="toggleShopAllWeek(true)">Seleziona Tutto</button>
         <button class="btn btn-outline" style="flex:1; padding:0.25rem; font-size:0.8rem;" onclick="toggleShopAllWeek(false)">Deseleziona Tutto</button>
       </div>
-  `;
-  weekDays.forEach(day => {
-    const selMeals = shopCloud.selectedMeals[day] || [];
-    const isWholeDay = selMeals.length === 5;
-    html += `
-      <div style="margin-bottom: 0.5rem; border: 1px solid rgba(0,0,0,0.05); border-radius: 8px; padding: 0.5rem;">
-        <div class="flex-between">
-          <label style="font-weight:bold;"><input type="checkbox" id="shop-day-${day}" onchange="toggleShopWholeDay('${day}', this.checked)" ${isWholeDay?'checked':''}> ${MEAL_PLAN[day].dayName}</label>
-          <button class="btn btn-icon" style="min-height:30px; font-size:0.8rem; background:rgba(0,0,0,0.03);" onclick="document.getElementById('shop-det-${day}').classList.toggle('hidden')">▼</button>
-        </div>
-        <div id="shop-det-${day}" class="hidden" style="margin-top:0.5rem; padding-left: 1.5rem; display:flex; flex-wrap:wrap; gap:0.5rem; font-size:0.85rem;">
     `;
-    MEAL_SLOTS.forEach(slot => {
-      const isChecked = selMeals.includes(slot.id);
-      html += `<label><input type="checkbox" onchange="toggleShopMeal('${day}', '${slot.id}', this.checked)" ${isChecked?'checked':''}> ${slot.label}</label>`;
+    weekDays.forEach(day => {
+      const selMeals = shopCloud.selectedMeals[day] || [];
+      const isWholeDay = selMeals.length === 5;
+      html += `
+        <div style="margin-bottom: 0.5rem; border: 1px solid rgba(0,0,0,0.05); border-radius: 8px; padding: 0.5rem;">
+          <div class="flex-between">
+            <label style="font-weight:bold;"><input type="checkbox" id="shop-day-${day}" onchange="toggleShopWholeDay('${day}', this.checked)" ${isWholeDay?'checked':''}> ${MEAL_PLAN[day].dayName}</label>
+            <button class="btn btn-icon" style="min-height:30px; font-size:0.8rem; background:rgba(0,0,0,0.03);" onclick="document.getElementById('shop-det-${day}').classList.toggle('hidden')">▼</button>
+          </div>
+          <div id="shop-det-${day}" class="hidden" style="margin-top:0.5rem; padding-left: 1.5rem; display:flex; flex-wrap:wrap; gap:0.5rem; font-size:0.85rem;">
+      `;
+      MEAL_SLOTS.forEach(slot => {
+        const isChecked = selMeals.includes(slot.id);
+        html += `<label><input type="checkbox" onchange="toggleShopMeal('${day}', '${slot.id}', this.checked)" ${isChecked?'checked':''}> ${slot.label}</label>`;
+      });
+      html += `</div></div>`;
     });
-    html += `</div></div>`;
-  });
-  html += `</div>`;
+    html += `</div>`;
+  }
 
   let multiplier = getMultiplier();
   let categoriesMap = {};
@@ -998,8 +1001,14 @@ function renderShop() {
     }
   });
 
-  window.currentCategoriesMap = categoriesMap;
+  // Escludi la categoria Spezie e Aromi se l'opzione è disattivata nelle Impostazioni Giorni
+  if (shopCloud.includeSpices === false && categoriesMap["🌿 Spezie e Aromi"]) {
+    totalItemsCount -= categoriesMap["🌿 Spezie e Aromi"].length;
+    delete categoriesMap["🌿 Spezie e Aromi"];
+  }
 
+  window.currentCategoriesMap = categoriesMap;
+  
   SHOP_CATEGORY_ORDER.forEach(cat => {
     if (categoriesMap[cat] && categoriesMap[cat].length > 0) {
       html += `<div class="shop-category"><div class="shop-category-title">${cat}</div>`;
@@ -1125,6 +1134,11 @@ function showToast(msg) {
 
 window.setShopMode = async function(mode) { appState.shoppingListCloud.mode = mode; await saveShoppingListCloud(appState.shoppingListCloud); renderShop(); }
 window.setCustomShopDayType = async function(day, type) { appState.shoppingListCloud.customDays[day] = type; await saveShoppingListCloud(appState.shoppingListCloud); renderShop(); }
+window.toggleShopSpices = async function(include) {
+  appState.shoppingListCloud.includeSpices = include;
+  await saveShoppingListCloud(appState.shoppingListCloud);
+  renderShop();
+}
 window.toggleShopWholeDay = async function(day, isChecked) {
   if (isChecked) appState.shoppingListCloud.selectedMeals[day] = ['breakfast', 'snack1', 'lunch', 'snack2', 'dinner'];
   else appState.shoppingListCloud.selectedMeals[day] = [];
