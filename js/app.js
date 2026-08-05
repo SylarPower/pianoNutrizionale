@@ -1,4 +1,5 @@
 const DAYS = ['sunday', 'monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday'];
+const SHOP_CATEGORY_ORDER = ["🥩 Carne", "🐟 Pesce", "🥚 Uova e Latticini", "🫘 Legumi", "🍚 Carboidrati", "🥬 Verdura", "🍑 Frutta", "🥫 Dispensa", "🌿 Spezie e Aromi"];
 const MEAL_SLOTS = [
   { id: 'breakfast', label: 'Colazione' },
   { id: 'snack1', label: 'Spunt. Mattina' },
@@ -411,15 +412,25 @@ function renderGlobalHeader() {
   document.getElementById('global-header-container').innerHTML = html;
 }
 
+// Fattore grammature della donna rispetto all'uomo (default 0.75).
+// Impostazione GLOBALE: salvata su Firebase e condivisa da tutti i dispositivi.
+function getWomanFactor() {
+  let w = NaN;
+  if (appState.settings) w = parseFloat(appState.settings.womanFactor);
+  if (isNaN(w) && appState.deviceSettings) w = parseFloat(appState.deviceSettings.womanFactor);
+  return (!isNaN(w) && w > 0 && w <= 3) ? w : 0.75;
+}
+
 function getMultiplier() {
   const s = appState.deviceSettings;
   const singleType = s.singlePersonType || 'm';
+  const w = getWomanFactor();
   if (s.persons === 2) {
-    if (s.twoPersonsType === 'mf') return 1.75;
+    if (s.twoPersonsType === 'mf') return 1 + w;
     else if (s.twoPersonsType === 'fm') return 2.25;
     else return 2;
   } else {
-    if (singleType === 'f') return 0.75;
+    if (singleType === 'f') return w;
     else return 1;
   }
 }
@@ -431,7 +442,7 @@ function getPerPersonSplit(baseQty, unit) {
   if (persons !== 2) return "";
   if (unit === 'q.b.') return "";
   let u1, u2, label1, label2;
-  if (twoType === 'mf') { u1 = baseQty*1; u2 = baseQty*0.75; label1="Uomo"; label2="Donna"; }
+  if (twoType === 'mf') { u1 = baseQty*1; u2 = baseQty*getWomanFactor(); label1="Uomo"; label2="Donna"; }
   else if (twoType === 'fm') { u1 = baseQty*1; u2 = baseQty*1.25; label1="Donna"; label2="Uomo"; }
   else { u1 = baseQty*1; return `(Ciascuno: ${formatQty(u1)}${unit})`; }
   return `(${label1}: ${formatQty(u1)}${unit}, ${label2}: ${formatQty(u2)}${unit})`;
@@ -740,12 +751,13 @@ function renderWeek() {
         </div>
         <div>
     `;
-    meals.forEach(meal => { 
+    meals.forEach(meal => {
+      const shownMeal = appState.customRecipes[meal.id] || meal;
       html += `
         <div class="day-meal-item flex-between">
-          <div onclick="openRecipeModal('${meal.id}', '${dayKey}', '${dayType}', '${meal.slot}')" style="flex:1; cursor:pointer;">${meal.emoji} ${meal.name}</div>
+          <div onclick="openRecipeModal('${meal.id}', '${dayKey}', '${dayType}', '${meal.slot}')" style="flex:1; cursor:pointer;">${shownMeal.emoji} ${shownMeal.name}</div>
           <button class="btn-icon btn-swap" onclick="openSwapModal('${dayKey}', '${meal.slot}')">🔄</button>
-        </div>`; 
+        </div>`;
     });
     html += `</div></div>`;
   });
@@ -969,7 +981,7 @@ function renderShop() {
       let splitText = "";
       if (persons === 2 && item.unit !== 'pz' && item.unit !== 'q.b.') {
           let user1, user2;
-          if (twoType === 'mf') { user1 = formatQty(item.qty * 1); user2 = formatQty(item.qty * 0.75); splitText = `(Uomo: ${user1}${item.unit}, Donna: ${user2}${item.unit})`; }
+          if (twoType === 'mf') { user1 = formatQty(item.qty * 1); user2 = formatQty(item.qty * getWomanFactor()); splitText = `(Uomo: ${user1}${item.unit}, Donna: ${user2}${item.unit})`; }
           else if (twoType === 'fm') { user1 = formatQty(item.qty * 1); user2 = formatQty(item.qty * 1.25); splitText = `(Donna: ${user1}${item.unit}, Uomo: ${user2}${item.unit})`; }
           else { user1 = formatQty(item.qty * 1); splitText = `(Ciascuno: ${user1}${item.unit})`; }
       }
@@ -979,31 +991,28 @@ function renderShop() {
       if (!categoriesMap[item.category]) categoriesMap[item.category] = [];
       categoriesMap[item.category].push({
         id: item.id, name: item.name, qty: finalQty, unit: item.unit,
-        days: item.mealsTags.join(' • '), checked: (shopCloud.checkedItems || []).includes(item.id),
+        days: item.mealsTags.join(' • '),
         splitText: splitText
       });
       totalItemsCount++;
     }
   });
 
-  const orderedCategories = ["🥩 Carne", "🐟 Pesce", "🥚 Uova e Latticini", "🫘 Legumi", "🍚 Carboidrati", "🥬 Verdura", "🍑 Frutta", "🥫 Dispensa", "🌿 Spezie e Aromi"];
-  window.currentCategoriesMap = categoriesMap; 
-  
-  orderedCategories.forEach(cat => {
+  window.currentCategoriesMap = categoriesMap;
+
+  SHOP_CATEGORY_ORDER.forEach(cat => {
     if (categoriesMap[cat] && categoriesMap[cat].length > 0) {
       html += `<div class="shop-category"><div class="shop-category-title">${cat}</div>`;
-      categoriesMap[cat].sort((a,b) => (a.checked === b.checked) ? 0 : a.checked ? 1 : -1);
       categoriesMap[cat].forEach(item => {
         html += `
-          <div class="shop-item ${item.checked ? 'checked' : ''}" onclick="toggleShopItem('${item.id}', event)">
-            <input type="checkbox" ${item.checked ? 'checked' : ''} style="pointer-events:none;">
+          <div class="shop-item">
             <div class="shop-item-details">
               <div>${item.name}</div>
               <div class="shop-item-tags" style="color:var(--primary); font-weight:500;">${item.days}</div>
               ${item.splitText ? `<div class="text-muted" style="font-size:0.7rem; margin-top:2px;">${item.splitText}</div>` : ''}
             </div>
             <div class="shop-item-qty">
-              <input type="text" inputmode="decimal" class="editable-qty" value="${item.qty}" onclick="event.stopPropagation()" onchange="updateShopItemQty('${item.id}', this.value)">
+              <input type="text" inputmode="decimal" class="editable-qty" value="${item.qty}" onchange="updateShopItemQty('${item.id}', this.value)">
               ${item.unit === 'q.b.' || item.unit === 'pz' ? '' : `<span style="font-size:0.8rem; margin-left:2px;">${item.unit}</span>`}
             </div>
           </div>
@@ -1012,15 +1021,15 @@ function renderShop() {
       html += `</div>`;
     }
   });
-  
+
   if (totalItemsCount === 0) html += `<p class="text-muted" style="text-align:center; padding:2rem 0;">Nessun pasto selezionato per la spesa.</p>`;
   html += `
     <div style="display:flex; flex-direction:column; gap:0.5rem; margin-top:2rem;">
-      <button class="btn btn-primary" style="width:100%; background-color:#25D366; color:white; border:none;" onclick="shareShopWhatsApp()">Invia su WhatsApp</button>
       <div style="display:flex; gap:0.5rem;">
-        <button class="btn btn-outline" style="flex:1;" onclick="resetShopChecks()">Reset spunte</button>
-        <button class="btn btn-danger" style="flex:1;" onclick="resetShopList()">Svuota lista</button>
+        <button class="btn btn-outline" style="flex:1;" onclick="copyShopList()">📋 Copia lista</button>
+        <button class="btn btn-primary" style="flex:1.5; background-color:#25D366; color:white; border:none;" onclick="shareShopWhatsApp()">Invia su WhatsApp</button>
       </div>
+      <button class="btn btn-danger" style="width:100%;" onclick="resetShopList()">Svuota lista</button>
     </div>
   `;
   container.innerHTML = html;
@@ -1036,18 +1045,14 @@ weekDays.forEach(day => {
 
 window.shareShopWhatsApp = function() {
   let text = "🛒 *Lista della Spesa*\n\n";
-  const orderedCategories = ["🥩 Carne", "🐟 Pesce", "🥚 Uova e Latticini", "🫘 Legumi", "🍚 Carboidrati", "🥬 Verdura", "🍑 Frutta", "🥫 Dispensa", "🌿 Spezie e Aromi"];
-  
-  orderedCategories.forEach(cat => {
+
+  SHOP_CATEGORY_ORDER.forEach(cat => {
     if (window.currentCategoriesMap[cat] && window.currentCategoriesMap[cat].length > 0) {
-      const uncheckedItems = window.currentCategoriesMap[cat].filter(i => !i.checked);
-      if (uncheckedItems.length > 0) {
-        text += `*${cat}*\n`;
-        uncheckedItems.forEach(item => {
-          text += `- ${item.name}: ${item.qty}${item.unit === 'q.b.' || item.unit === 'pz' ? '' : item.unit}\n`;
-        });
-        text += `\n`;
-      }
+      text += `*${cat}*\n`;
+      window.currentCategoriesMap[cat].forEach(item => {
+        text += `- ${item.name}: ${item.qty}${item.unit === 'q.b.' || item.unit === 'pz' ? '' : item.unit}\n`;
+      });
+      text += `\n`;
     }
   });
 
@@ -1057,6 +1062,65 @@ window.shareShopWhatsApp = function() {
     const url = `https://api.whatsapp.com/send?text=${encodeURIComponent(text)}`;
     window.open(url, '_blank');
   }
+}
+
+// Copia la lista della spesa in formato testuale, raggruppata per categoria:
+// "----- 🥩 Carne" seguita dalle righe "Alimento - peso + unità"
+window.copyShopList = async function() {
+  let blocks = [];
+  SHOP_CATEGORY_ORDER.forEach(cat => {
+    const items = (window.currentCategoriesMap && window.currentCategoriesMap[cat]) || [];
+    if (items.length > 0) {
+      const lines = items.map(item => item.unit === 'q.b.' ? `${item.name} - q.b.` : `${item.name} - ${item.qty}${item.unit}`);
+      blocks.push(`----- ${cat}\n` + lines.join('\n'));
+    }
+  });
+
+  if (blocks.length === 0) {
+    showToast("La lista è vuota");
+    return;
+  }
+  const text = blocks.join('\n\n');
+
+  let ok = false;
+  try {
+    if (navigator.clipboard && navigator.clipboard.writeText) {
+      await navigator.clipboard.writeText(text);
+      ok = true;
+    }
+  } catch(e) {}
+  if (!ok) {
+    try {
+      const ta = document.createElement('textarea');
+      ta.value = text;
+      ta.setAttribute('readonly', '');
+      ta.style.position = 'fixed';
+      ta.style.opacity = '0';
+      document.body.appendChild(ta);
+      ta.focus();
+      ta.select();
+      ta.setSelectionRange(0, ta.value.length);
+      ok = document.execCommand('copy');
+      document.body.removeChild(ta);
+    } catch(e) { ok = false; }
+  }
+  showToast(ok ? "Lista copiata negli appunti ✅" : "Impossibile copiare la lista ⚠️");
+}
+
+// Piccolo toast di feedback in basso
+let toastTimeout = null;
+function showToast(msg) {
+  let el = document.getElementById('app-toast');
+  if (!el) {
+    el = document.createElement('div');
+    el.id = 'app-toast';
+    el.className = 'app-toast hidden';
+    document.body.appendChild(el);
+  }
+  el.textContent = msg;
+  el.classList.remove('hidden');
+  clearTimeout(toastTimeout);
+  toastTimeout = setTimeout(() => { el.classList.add('hidden'); }, 2200);
 }
 
 window.setShopMode = async function(mode) { appState.shoppingListCloud.mode = mode; await saveShoppingListCloud(appState.shoppingListCloud); renderShop(); }
@@ -1072,25 +1136,15 @@ window.toggleShopMeal = async function(day, slot, isChecked) {
   await saveShoppingListCloud(appState.shoppingListCloud); renderShop();
 }
 
-window.toggleShopItem = async function(id, event) {
-  if (event.target.tagName.toLowerCase() === 'input' && event.target.type === 'text') return;
-  let list = appState.shoppingListCloud.checkedItems || [];
-  if (list.includes(id)) list = list.filter(i => i !== id); else list.push(id);
-  appState.shoppingListCloud.checkedItems = list;
-  await saveShoppingListCloud(appState.shoppingListCloud); renderShop();
-}
 window.updateShopItemQty = async function(id, val) {
   if (!appState.shoppingListCloud.customQtys) appState.shoppingListCloud.customQtys = {};
   appState.shoppingListCloud.customQtys[id] = val;
   await saveShoppingListCloud(appState.shoppingListCloud); renderShop();
 }
-window.resetShopChecks = async function() {
-  if (confirm("Rimuovere le spunte?")) { appState.shoppingListCloud.checkedItems = []; await saveShoppingListCloud(appState.shoppingListCloud); renderShop(); }
-}
 window.resetShopList = async function() {
   if (confirm("Azzerare le selezioni?")) {
     appState.shoppingListCloud.selectedMeals = { monday:[], tuesday:[], wednesday:[], thursday:[], friday:[], saturday:[], sunday:[] };
-    appState.shoppingListCloud.checkedItems = []; appState.shoppingListCloud.customQtys = {}; shopSettingsVisible = true;
+    appState.shoppingListCloud.customQtys = {}; shopSettingsVisible = true;
     await saveShoppingListCloud(appState.shoppingListCloud); renderShop();
   }
 }
@@ -1114,6 +1168,18 @@ function renderSettings() {
         <label>Tema Scuro (AMOLED)</label>
         <input type="checkbox" ${deviceS.darkMode ? 'checked' : ''} onchange="toggleDarkMode(this.checked)">
       </div>
+    </div>
+
+    <div class="settings-section">
+      <h3>Porzioni (Sincronizzate su tutti i dispositivi)</h3>
+      <div class="settings-row">
+        <label>Grammature donna rispetto all'uomo</label>
+        <div style="display:flex; align-items:center; gap:0.25rem;">
+          <input type="number" min="10" max="150" step="1" value="${Math.round(getWomanFactor()*100)}" style="width:70px; text-align:right; padding:0.3rem;" onchange="updateWomanFactor(this.value)">
+          <span>%</span>
+        </div>
+      </div>
+      <p class="text-muted" style="font-size:0.8rem; margin-top:0.5rem;">Default 75%. Es: con 80%, 2 persone (👨+👩) → moltiplicatore 1.8x, 1 persona (👩) → 0.8x. Vale per tutti coloro che accedono al sito.</p>
     </div>
     
     <div class="settings-section">
@@ -1330,6 +1396,18 @@ window.toggleDarkMode = function(isDark) {
   else document.body.classList.remove('dark-mode');
 }
 
+window.updateWomanFactor = async function(val) {
+  let pct = parseFloat(val);
+  if (isNaN(pct)) pct = 75;
+  pct = Math.min(Math.max(pct, 10), 150);
+  const factor = pct / 100;
+  if (!appState.settings) appState.settings = {};
+  appState.settings.womanFactor = factor;
+  if (appState.deviceSettings) delete appState.deviceSettings.womanFactor; // non più un'impostazione locale
+  await saveGlobalSettings({ womanFactor: factor }); // sincronizzata su tutti i dispositivi
+  handleRoute(); // ri-renderizza la vista corrente con le nuove grammature
+}
+
 // ------------------------------------
 // RECIPE MODAL
 // ------------------------------------
@@ -1356,8 +1434,44 @@ function setupModal() {
 }
 
 window.openRecipeModal = async function(mealId, dayKey, dayType, originalSlot) {
-  const meal = getDynamicMeal(dayKey, dayType, originalSlot);
-  currentModalMeal = { id: meal.id, dayKey, dayType, data: meal, isCustom: !!appState.customRecipes[meal.id] };
+  // Risolvi la ricetta per ID: lo slot/giorno non sono affidabili perché
+  // eventuali scambi pasto (swap) farebbero aprire una ricetta diversa da quella cliccata.
+  let meal = null;
+
+  // 1. Ricette modificate o create dall'utente (incluse le custom_): aprile per ID.
+  if (appState.customRecipes && appState.customRecipes[mealId]) {
+    meal = JSON.parse(JSON.stringify(appState.customRecipes[mealId]));
+  }
+
+  // 2. Cerca l'ID nel piano base: prima nel giorno/tipo richiesto,
+  //    poi nell'altro tipo dello stesso giorno (adattando le quantità).
+  if (!meal && MEAL_PLAN[dayKey]) {
+    const direct = (MEAL_PLAN[dayKey].meals[dayType] || []).find(m => m.id === mealId);
+    if (direct) {
+      meal = JSON.parse(JSON.stringify(direct));
+    } else {
+      const otherType = dayType === 'training' ? 'rest' : 'training';
+      const fb = (MEAL_PLAN[dayKey].meals[otherType] || []).find(m => m.id === mealId);
+      if (fb) meal = adjustMealForType(JSON.parse(JSON.stringify(fb)), otherType, dayType);
+    }
+  }
+
+  // 3. Altrimenti cerca l'ID in tutto il piano (es. pasto scambiato definito in un altro giorno).
+  if (!meal) {
+    const found = findMealById(mealId);
+    if (found && found.meal) {
+      meal = JSON.parse(JSON.stringify(found.meal));
+      if (found.type && found.dayKey !== 'custom' && found.type !== dayType) {
+        meal = adjustMealForType(meal, found.type, dayType);
+      }
+    }
+  }
+
+  // 4. Fallback difensivo al vecchio comportamento (basato sullo slot).
+  if (!meal) meal = getDynamicMeal(dayKey, dayType, originalSlot);
+  if (!meal) return;
+
+  currentModalMeal = { id: meal.id, dayKey, dayType, data: meal, isCustom: !!(appState.customRecipes && appState.customRecipes[meal.id]) };
   editMode = false;
   renderModalContent();
   document.getElementById('recipe-modal').classList.remove('hidden');
