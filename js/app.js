@@ -1,4 +1,5 @@
 const DAYS = ['sunday', 'monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday'];
+const SHOP_CATEGORY_ORDER = ["🥩 Carne", "🐟 Pesce", "🥚 Uova e Latticini", "🫘 Legumi", "🍚 Carboidrati", "🥬 Verdura", "🍑 Frutta", "🥫 Dispensa", "🌿 Spezie e Aromi"];
 const MEAL_SLOTS = [
   { id: 'breakfast', label: 'Colazione' },
   { id: 'snack1', label: 'Spunt. Mattina' },
@@ -740,12 +741,13 @@ function renderWeek() {
         </div>
         <div>
     `;
-    meals.forEach(meal => { 
+    meals.forEach(meal => {
+      const shownMeal = appState.customRecipes[meal.id] || meal;
       html += `
         <div class="day-meal-item flex-between">
-          <div onclick="openRecipeModal('${meal.id}', '${dayKey}', '${dayType}', '${meal.slot}')" style="flex:1; cursor:pointer;">${meal.emoji} ${meal.name}</div>
+          <div onclick="openRecipeModal('${meal.id}', '${dayKey}', '${dayType}', '${meal.slot}')" style="flex:1; cursor:pointer;">${shownMeal.emoji} ${shownMeal.name}</div>
           <button class="btn-icon btn-swap" onclick="openSwapModal('${dayKey}', '${meal.slot}')">🔄</button>
-        </div>`; 
+        </div>`;
     });
     html += `</div></div>`;
   });
@@ -979,31 +981,28 @@ function renderShop() {
       if (!categoriesMap[item.category]) categoriesMap[item.category] = [];
       categoriesMap[item.category].push({
         id: item.id, name: item.name, qty: finalQty, unit: item.unit,
-        days: item.mealsTags.join(' • '), checked: (shopCloud.checkedItems || []).includes(item.id),
+        days: item.mealsTags.join(' • '),
         splitText: splitText
       });
       totalItemsCount++;
     }
   });
 
-  const orderedCategories = ["🥩 Carne", "🐟 Pesce", "🥚 Uova e Latticini", "🫘 Legumi", "🍚 Carboidrati", "🥬 Verdura", "🍑 Frutta", "🥫 Dispensa", "🌿 Spezie e Aromi"];
-  window.currentCategoriesMap = categoriesMap; 
-  
-  orderedCategories.forEach(cat => {
+  window.currentCategoriesMap = categoriesMap;
+
+  SHOP_CATEGORY_ORDER.forEach(cat => {
     if (categoriesMap[cat] && categoriesMap[cat].length > 0) {
       html += `<div class="shop-category"><div class="shop-category-title">${cat}</div>`;
-      categoriesMap[cat].sort((a,b) => (a.checked === b.checked) ? 0 : a.checked ? 1 : -1);
       categoriesMap[cat].forEach(item => {
         html += `
-          <div class="shop-item ${item.checked ? 'checked' : ''}" onclick="toggleShopItem('${item.id}', event)">
-            <input type="checkbox" ${item.checked ? 'checked' : ''} style="pointer-events:none;">
+          <div class="shop-item">
             <div class="shop-item-details">
               <div>${item.name}</div>
               <div class="shop-item-tags" style="color:var(--primary); font-weight:500;">${item.days}</div>
               ${item.splitText ? `<div class="text-muted" style="font-size:0.7rem; margin-top:2px;">${item.splitText}</div>` : ''}
             </div>
             <div class="shop-item-qty">
-              <input type="text" inputmode="decimal" class="editable-qty" value="${item.qty}" onclick="event.stopPropagation()" onchange="updateShopItemQty('${item.id}', this.value)">
+              <input type="text" inputmode="decimal" class="editable-qty" value="${item.qty}" onchange="updateShopItemQty('${item.id}', this.value)">
               ${item.unit === 'q.b.' || item.unit === 'pz' ? '' : `<span style="font-size:0.8rem; margin-left:2px;">${item.unit}</span>`}
             </div>
           </div>
@@ -1012,15 +1011,15 @@ function renderShop() {
       html += `</div>`;
     }
   });
-  
+
   if (totalItemsCount === 0) html += `<p class="text-muted" style="text-align:center; padding:2rem 0;">Nessun pasto selezionato per la spesa.</p>`;
   html += `
     <div style="display:flex; flex-direction:column; gap:0.5rem; margin-top:2rem;">
-      <button class="btn btn-primary" style="width:100%; background-color:#25D366; color:white; border:none;" onclick="shareShopWhatsApp()">Invia su WhatsApp</button>
       <div style="display:flex; gap:0.5rem;">
-        <button class="btn btn-outline" style="flex:1;" onclick="resetShopChecks()">Reset spunte</button>
-        <button class="btn btn-danger" style="flex:1;" onclick="resetShopList()">Svuota lista</button>
+        <button class="btn btn-outline" style="flex:1;" onclick="copyShopList()">📋 Copia lista</button>
+        <button class="btn btn-primary" style="flex:1.5; background-color:#25D366; color:white; border:none;" onclick="shareShopWhatsApp()">Invia su WhatsApp</button>
       </div>
+      <button class="btn btn-danger" style="width:100%;" onclick="resetShopList()">Svuota lista</button>
     </div>
   `;
   container.innerHTML = html;
@@ -1036,18 +1035,14 @@ weekDays.forEach(day => {
 
 window.shareShopWhatsApp = function() {
   let text = "🛒 *Lista della Spesa*\n\n";
-  const orderedCategories = ["🥩 Carne", "🐟 Pesce", "🥚 Uova e Latticini", "🫘 Legumi", "🍚 Carboidrati", "🥬 Verdura", "🍑 Frutta", "🥫 Dispensa", "🌿 Spezie e Aromi"];
-  
-  orderedCategories.forEach(cat => {
+
+  SHOP_CATEGORY_ORDER.forEach(cat => {
     if (window.currentCategoriesMap[cat] && window.currentCategoriesMap[cat].length > 0) {
-      const uncheckedItems = window.currentCategoriesMap[cat].filter(i => !i.checked);
-      if (uncheckedItems.length > 0) {
-        text += `*${cat}*\n`;
-        uncheckedItems.forEach(item => {
-          text += `- ${item.name}: ${item.qty}${item.unit === 'q.b.' || item.unit === 'pz' ? '' : item.unit}\n`;
-        });
-        text += `\n`;
-      }
+      text += `*${cat}*\n`;
+      window.currentCategoriesMap[cat].forEach(item => {
+        text += `- ${item.name}: ${item.qty}${item.unit === 'q.b.' || item.unit === 'pz' ? '' : item.unit}\n`;
+      });
+      text += `\n`;
     }
   });
 
@@ -1057,6 +1052,64 @@ window.shareShopWhatsApp = function() {
     const url = `https://api.whatsapp.com/send?text=${encodeURIComponent(text)}`;
     window.open(url, '_blank');
   }
+}
+
+// Copia la lista della spesa in formato testuale: "Alimento - peso + unità" (una riga per alimento)
+window.copyShopList = async function() {
+  let lines = [];
+  SHOP_CATEGORY_ORDER.forEach(cat => {
+    const items = (window.currentCategoriesMap && window.currentCategoriesMap[cat]) || [];
+    items.forEach(item => {
+      if (item.unit === 'q.b.') lines.push(`${item.name} - q.b.`);
+      else lines.push(`${item.name} - ${item.qty}${item.unit}`);
+    });
+  });
+
+  if (lines.length === 0) {
+    showToast("La lista è vuota");
+    return;
+  }
+  const text = lines.join('\n');
+
+  let ok = false;
+  try {
+    if (navigator.clipboard && navigator.clipboard.writeText) {
+      await navigator.clipboard.writeText(text);
+      ok = true;
+    }
+  } catch(e) {}
+  if (!ok) {
+    try {
+      const ta = document.createElement('textarea');
+      ta.value = text;
+      ta.setAttribute('readonly', '');
+      ta.style.position = 'fixed';
+      ta.style.opacity = '0';
+      document.body.appendChild(ta);
+      ta.focus();
+      ta.select();
+      ta.setSelectionRange(0, ta.value.length);
+      ok = document.execCommand('copy');
+      document.body.removeChild(ta);
+    } catch(e) { ok = false; }
+  }
+  showToast(ok ? "Lista copiata negli appunti ✅" : "Impossibile copiare la lista ⚠️");
+}
+
+// Piccolo toast di feedback in basso
+let toastTimeout = null;
+function showToast(msg) {
+  let el = document.getElementById('app-toast');
+  if (!el) {
+    el = document.createElement('div');
+    el.id = 'app-toast';
+    el.className = 'app-toast hidden';
+    document.body.appendChild(el);
+  }
+  el.textContent = msg;
+  el.classList.remove('hidden');
+  clearTimeout(toastTimeout);
+  toastTimeout = setTimeout(() => { el.classList.add('hidden'); }, 2200);
 }
 
 window.setShopMode = async function(mode) { appState.shoppingListCloud.mode = mode; await saveShoppingListCloud(appState.shoppingListCloud); renderShop(); }
@@ -1072,25 +1125,15 @@ window.toggleShopMeal = async function(day, slot, isChecked) {
   await saveShoppingListCloud(appState.shoppingListCloud); renderShop();
 }
 
-window.toggleShopItem = async function(id, event) {
-  if (event.target.tagName.toLowerCase() === 'input' && event.target.type === 'text') return;
-  let list = appState.shoppingListCloud.checkedItems || [];
-  if (list.includes(id)) list = list.filter(i => i !== id); else list.push(id);
-  appState.shoppingListCloud.checkedItems = list;
-  await saveShoppingListCloud(appState.shoppingListCloud); renderShop();
-}
 window.updateShopItemQty = async function(id, val) {
   if (!appState.shoppingListCloud.customQtys) appState.shoppingListCloud.customQtys = {};
   appState.shoppingListCloud.customQtys[id] = val;
   await saveShoppingListCloud(appState.shoppingListCloud); renderShop();
 }
-window.resetShopChecks = async function() {
-  if (confirm("Rimuovere le spunte?")) { appState.shoppingListCloud.checkedItems = []; await saveShoppingListCloud(appState.shoppingListCloud); renderShop(); }
-}
 window.resetShopList = async function() {
   if (confirm("Azzerare le selezioni?")) {
     appState.shoppingListCloud.selectedMeals = { monday:[], tuesday:[], wednesday:[], thursday:[], friday:[], saturday:[], sunday:[] };
-    appState.shoppingListCloud.checkedItems = []; appState.shoppingListCloud.customQtys = {}; shopSettingsVisible = true;
+    appState.shoppingListCloud.customQtys = {}; shopSettingsVisible = true;
     await saveShoppingListCloud(appState.shoppingListCloud); renderShop();
   }
 }
@@ -1356,8 +1399,44 @@ function setupModal() {
 }
 
 window.openRecipeModal = async function(mealId, dayKey, dayType, originalSlot) {
-  const meal = getDynamicMeal(dayKey, dayType, originalSlot);
-  currentModalMeal = { id: meal.id, dayKey, dayType, data: meal, isCustom: !!appState.customRecipes[meal.id] };
+  // Risolvi la ricetta per ID: lo slot/giorno non sono affidabili perché
+  // eventuali scambi pasto (swap) farebbero aprire una ricetta diversa da quella cliccata.
+  let meal = null;
+
+  // 1. Ricette modificate o create dall'utente (incluse le custom_): aprile per ID.
+  if (appState.customRecipes && appState.customRecipes[mealId]) {
+    meal = JSON.parse(JSON.stringify(appState.customRecipes[mealId]));
+  }
+
+  // 2. Cerca l'ID nel piano base: prima nel giorno/tipo richiesto,
+  //    poi nell'altro tipo dello stesso giorno (adattando le quantità).
+  if (!meal && MEAL_PLAN[dayKey]) {
+    const direct = (MEAL_PLAN[dayKey].meals[dayType] || []).find(m => m.id === mealId);
+    if (direct) {
+      meal = JSON.parse(JSON.stringify(direct));
+    } else {
+      const otherType = dayType === 'training' ? 'rest' : 'training';
+      const fb = (MEAL_PLAN[dayKey].meals[otherType] || []).find(m => m.id === mealId);
+      if (fb) meal = adjustMealForType(JSON.parse(JSON.stringify(fb)), otherType, dayType);
+    }
+  }
+
+  // 3. Altrimenti cerca l'ID in tutto il piano (es. pasto scambiato definito in un altro giorno).
+  if (!meal) {
+    const found = findMealById(mealId);
+    if (found && found.meal) {
+      meal = JSON.parse(JSON.stringify(found.meal));
+      if (found.type && found.dayKey !== 'custom' && found.type !== dayType) {
+        meal = adjustMealForType(meal, found.type, dayType);
+      }
+    }
+  }
+
+  // 4. Fallback difensivo al vecchio comportamento (basato sullo slot).
+  if (!meal) meal = getDynamicMeal(dayKey, dayType, originalSlot);
+  if (!meal) return;
+
+  currentModalMeal = { id: meal.id, dayKey, dayType, data: meal, isCustom: !!(appState.customRecipes && appState.customRecipes[meal.id]) };
   editMode = false;
   renderModalContent();
   document.getElementById('recipe-modal').classList.remove('hidden');

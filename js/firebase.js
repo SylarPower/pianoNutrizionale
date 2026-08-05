@@ -206,7 +206,6 @@ function getDefaultShoppingListCloud() {
     selectedMeals: { monday:[], tuesday:[], wednesday:[], thursday:[], friday:[], saturday:[], sunday:[] },
     customDays: { monday:'training', tuesday:'training', wednesday:'training', thursday:'rest', friday:'training', saturday:'rest', sunday:'rest' },
     mode: 'current',
-    checkedItems: [],
     customQtys: {}
   };
 }
@@ -229,7 +228,6 @@ async function getShoppingListCloud() {
       ...data,
       selectedMeals: { ...def.selectedMeals, ...(data.selectedMeals||{}) },
       customDays: { ...def.customDays, ...(data.customDays||{}) },
-      checkedItems: data.checkedItems || [],
       customQtys: data.customQtys || {}
     };
   } catch(e) {
