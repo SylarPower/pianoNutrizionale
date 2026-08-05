@@ -45,46 +45,35 @@ function getCategoryForIngredient(rawName) {
   // Use normalized for matching where possible
   const check = (substr) => low.includes(substr) || norm.includes(substr);
 
-  // Carne
-  if (check("manzo") || check("petto di pollo") || check("pollo") && !check("pollo già")) {
-    // careful pollo already covered, but keep
-    if (check("petto di pollo") || check("manzo")) return "🥩 Carne";
-  }
-  if (check("petto di pollo")) return "🥩 Carne";
-  if (check("manzo magro")) return "🥩 Carne";
+  // 🥩 Carne ("pollo" copre anche "petto di pollo"; "manzo" copre "manzo magro")
+  if (check("pollo") || check("manzo")) return "🥩 Carne";
 
-  // Pesce
+  // 🐟 Pesce
   if (check("merluzzo") || check("sgombro") || check("salmone") || check("polpo") || check("nasello") || check("gamberetti")) return "🐟 Pesce";
 
-  // Uova e Latticini
-  if (check("yogurt greco") || check("albumi") || check("uova intere") || check("fiocchi di latte") || check("fiocchi di latte")) return "🥚 Uova e Latticini";
+  // 🥚 Uova e Latticini
+  if (check("uova") || check("albumi") || check("yogurt") || check("latte")) return "🥚 Uova e Latticini";
 
-  // Legumi
-  if (check("ceci") || check("lenticchie") || check("fagioli borlotti") || check("fagioli") || check("legumotti")) return "🫘 Legumi";
+  // 🫘 Legumi ("fagioli" copre anche "fagioli borlotti")
+  if (check("ceci") || check("lenticchie") || check("fagioli") || check("legumotti")) return "🫘 Legumi";
 
-  // Carboidrati
-  if (check("farina d'avena") || check("riso bianco") || check("riso") && !check("riso e") || check("pasta bianca") || check("patate") || check("gnocchi") || check("pane bianco") || check("farro") || check("quinoa") || check("cereali") || check("crackers")) {
-    // avoid overlapping with verdura, but keep priority
-    if (check("crackers") || check("pane bianco") || check("patate") || check("avena") || check("riso bianco") || check("pasta") || check("farro") || check("quinoa") || check("gnocchi") || check("legumotti")) return "🍚 Carboidrati";
-  }
+  // 🍚 Carboidrati ("avena" copre "farina d'avena"; "riso" copre "riso bianco"; "gnocchi" copre "gnocchi di patate")
+  if (check("riso") || check("pasta") || check("gnocchi") || check("patate") || check("pane") || check("farro") || check("quinoa") || check("avena") || check("crackers") || check("cereali")) return "🍚 Carboidrati";
 
-  // Verdura - explicit list including required ones
-  if (check("insalata mista") || check("pomodori pelati") || check("pomodorini") || check("melanzane") || check("peperoni") || check("zucchine") || check("spinacini") || check("sedano") || check("rucola") || check("cetriolo")) return "🥬 Verdura";
+  // 🥬 Verdura
+  if (check("insalata") || check("pomodori pelati") || check("pomodorini") || check("melanzane") || check("peperoni") || check("zucchine") || check("spinacini") || check("sedano") || check("rucola") || check("cetriolo")) return "🥬 Verdura";
 
-  // Frutta
-  if (check("frutta fresca") || check("melone") || check("avocado")) return "🍑 Frutta";
-  // Limone and others go to dispensa or spezie? Keep limone as frutta? Original had limone as pz but not categorized; we map to frutta for simplicity but actually could be dispensa. Keep as 🍑 Frutta for limone, else spezie fallback.
-  if (check("limone")) return "🍑 Frutta";
+  // 🍑 Frutta
+  if (check("frutta fresca") || check("melone") || check("avocado") || check("limone")) return "🍑 Frutta";
 
-  // Dispensa
-  if (check("proteine whey") || check("marmellata") || check("miele") || check("sciroppo") || check("olio evo") || check("latte parz") || check("cioccolato fondente") || check("cacao amaro") || check("vanillina") || check("cannella") || check("cereali")) return "🥫 Dispensa";
+  // 🥫 Dispensa
+  if (check("proteine") || check("marmellata") || check("miele") || check("sciroppo") || check("olio evo") || check("cioccolato fondente") || check("cacao amaro")) return "🥫 Dispensa";
 
-  // Spezie e Aromi - explicit for pepe etc.
+  // 🌿 Spezie e Aromi (la riga col "pepe" resta separata per i suoi !check)
   if (check("pepe") && !check("peperoni") && !check("peperoncino")) return "🌿 Spezie e Aromi";
-  if (check("sale") || check("aglio") || check("origano") || check("basilico") || check("prezzemolo") || check("rosmarino") || check("paprika") || check("curcuma") || check("cumino") || check("peperoncino") || check("erba cipollina") || check("zenzero")) return "🌿 Spezie e Aromi";
+  if (check("sale") || check("aglio") || check("origano") || check("basilico") || check("prezzemolo") || check("rosmarino") || check("paprika") || check("curcuma") || check("cumino") || check("peperoncino") || check("erba cipollina") || check("zenzero") || check("cannella") || check("vanillina")) return "🌿 Spezie e Aromi";
 
-  // Fallback based on normalized categories map
-  // Default to spezie
+  // Fallback
   return "🌿 Spezie e Aromi";
 }
 
