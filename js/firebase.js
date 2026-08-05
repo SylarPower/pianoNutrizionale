@@ -235,6 +235,7 @@ function getDefaultShoppingListCloud() {
     customDays: { monday:'training', tuesday:'training', wednesday:'training', thursday:'rest', friday:'training', saturday:'rest', sunday:'rest' },
     mode: 'current',
     includeSpices: true,
+    excludedItems: [],
     customQtys: {}
   };
 }
@@ -257,7 +258,8 @@ async function getShoppingListCloud() {
       ...data,
       selectedMeals: { ...def.selectedMeals, ...(data.selectedMeals||{}) },
       customDays: { ...def.customDays, ...(data.customDays||{}) },
-      customQtys: data.customQtys || {}
+      customQtys: data.customQtys || {},
+      excludedItems: data.excludedItems || []
     };
   } catch(e) {
     console.warn("getShoppingListCloud fallback", e);
