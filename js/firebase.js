@@ -234,6 +234,7 @@ function getDefaultShoppingListCloud() {
     selectedMeals: { monday:[], tuesday:[], wednesday:[], thursday:[], friday:[], saturday:[], sunday:[] },
     customDays: { monday:'training', tuesday:'training', wednesday:'training', thursday:'rest', friday:'training', saturday:'rest', sunday:'rest' },
     mode: 'current',
+    includeSpices: true,
     customQtys: {}
   };
 }
