@@ -194,13 +194,11 @@ async function getRecipeCatalog() {
 
     // Migrazione una tantum dalla precedente struttura a un documento unico.
     // Dopo la migrazione, gli avvii successivi costano una sola lettura catalogo.
-    const legacySnapshot = await userRoot().collection("recipes").get();
-    const legacyRecipes = [];
-    legacySnapshot.forEach(doc => legacyRecipes.push({ ...doc.data(), id: doc.id }));
-    if (legacyRecipes.length) {
-      await saveRecipeCatalog(legacyRecipes, { migratedFromLegacy: true });
-      return legacyRecipes;
-    }
+    await saveRecipeCatalog([], {
+      initializedEmpty: true
+    });
+    
+    return [];
     await saveRecipeCatalog([], { initializedEmpty: true });
     return [];
   } catch (error) {
