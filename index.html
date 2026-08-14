@@ -4,14 +4,39 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
   <title>Piano Nutrizionale</title>
+  <meta name="description" content="Piano nutrizionale personale con ricette e lista della spesa sincronizzate.">
+  <meta name="theme-color" content="#245a43">
   <link rel="manifest" href="manifest.json">
   <link rel="icon" type="image/svg+xml" href="icons/icon-192.svg">
   <link rel="stylesheet" href="css/style.css">
-  <meta name="theme-color" content="#2D6A4F">
 </head>
-<body>
-  
-  <div id="app-container">
+<body class="auth-locked">
+  <main id="login-screen" class="login-screen">
+    <section class="login-card" aria-labelledby="login-title">
+      <div class="login-mark">🥗</div>
+      <p class="eyebrow">AREA PERSONALE</p>
+      <h1 id="login-title">Il tuo piano,<br>sempre con te.</h1>
+      <p class="login-subtitle">Accedi con lo username assegnato. Non è richiesto alcun indirizzo email.</p>
+      <form id="login-form" novalidate>
+        <label for="login-username">Username</label>
+        <div class="login-input-wrap"><span>👤</span><input id="login-username" name="username" type="text" inputmode="text" autocomplete="username" autocapitalize="none" spellcheck="false" minlength="3" maxlength="32" placeholder="es. mario" required></div>
+        <label for="login-password">Password</label>
+        <div class="login-input-wrap"><span>🔒</span><input id="login-password" name="password" type="password" autocomplete="current-password" placeholder="La tua password" required></div>
+        <p id="login-error" class="login-error" role="alert"></p>
+        <button id="login-submit" class="btn btn-primary login-submit" type="submit">Accedi</button>
+      </form>
+      <p class="login-help">Le credenziali vengono create dall'amministratore del piano.</p>
+    </section>
+    <div class="login-decoration decoration-one"></div>
+    <div class="login-decoration decoration-two"></div>
+  </main>
+
+  <div id="loading-overlay" class="loading-overlay">
+    <div class="loading-spinner"></div>
+    <p id="loading-message">Caricamento…</p>
+  </div>
+
+  <div id="app-container" class="hidden">
     <div id="view-chef" class="view hidden"></div>
     <div id="view-recipes" class="view hidden"></div>
     <div id="view-week" class="view hidden"></div>
@@ -19,77 +44,57 @@
     <div id="view-settings" class="view hidden"></div>
   </div>
 
-  <div id="recipe-modal" class="modal hidden">
+  <div id="recipe-modal" class="modal hidden" role="dialog" aria-modal="true" aria-labelledby="modal-title">
     <div class="modal-content">
       <div class="modal-header">
         <h2 id="modal-title"></h2>
-        <button id="modal-close" class="btn-icon">&times;</button>
+        <button id="modal-close" class="btn-icon" aria-label="Chiudi">&times;</button>
       </div>
-      <p id="modal-time" class="text-muted"></p>
-      
-      <div class="tabs">
-        <button class="tab-btn active" data-target="tab-ingredients">Ingredienti</button>
-        <button class="tab-btn" data-target="tab-prep">Preparazione</button>
-        <button class="tab-btn" data-target="tab-batch">Batch Cooking</button>
+      <div id="modal-time" class="text-muted"></div>
+
+      <div class="tabs" role="tablist">
+        <button class="tab-btn active" data-target="tab-ingredients" role="tab">Ingredienti</button>
+        <button class="tab-btn" data-target="tab-prep" role="tab">Preparazione</button>
+        <button class="tab-btn" data-target="tab-batch" role="tab">Batch cooking</button>
       </div>
-      
-      <div id="tab-ingredients" class="tab-content active">
-        <ul id="modal-ingredients-list"></ul>
+
+      <div id="tab-ingredients" class="tab-content">
+        <ul id="modal-ingredients-list" class="modal-ingredient-list"></ul>
       </div>
-      
       <div id="tab-prep" class="tab-content hidden">
-        <ul id="modal-prep-list"></ul>
+        <ul id="modal-prep-list" class="modal-prep-list"></ul>
       </div>
-      
       <div id="tab-batch" class="tab-content hidden">
-        <p id="modal-batch-text"></p>
+        <div id="modal-batch-text"></div>
       </div>
-      
+
       <div class="modal-footer">
-        <button id="modal-edit-btn" class="btn btn-primary">Modifica ricetta base</button>
+        <button id="modal-export-btn" class="btn btn-outline">Esporta JSON</button>
+        <button id="modal-share-btn" class="btn btn-outline">Invia</button>
+        <button id="modal-edit-btn" class="btn btn-outline">Modifica su Firebase</button>
         <button id="modal-revert-btn" class="btn btn-outline hidden">Ripristina originale</button>
-        <button id="modal-save-btn" class="btn btn-primary hidden">Salva nel Ricettario</button>
+        <button id="modal-save-btn" class="btn btn-primary hidden">Salva su Firebase</button>
       </div>
     </div>
   </div>
 
-  <nav class="bottom-nav">
-    <a href="#chef" class="nav-item active" id="nav-chef">
-      <span class="nav-icon">👨‍🍳</span>
-      <span class="nav-label">Oggi</span>
-    </a>
-    <a href="#week" class="nav-item" id="nav-week">
-      <span class="nav-icon">📅</span>
-      <span class="nav-label">Settimana</span>
-    </a>
-    <a href="#recipes" class="nav-item" id="nav-recipes">
-      <span class="nav-icon">🍲</span>
-      <span class="nav-label">Ricettario</span>
-    </a>
-    <a href="#shop" class="nav-item" id="nav-shop">
-      <span class="nav-icon">🛒</span>
-      <span class="nav-label">Spesa</span>
-    </a>
-    <a href="#settings" class="nav-item" id="nav-settings">
-      <span class="nav-icon">⚙️</span>
-      <span class="nav-label">Impostazioni</span>
-    </a>
+  <nav class="bottom-nav hidden" aria-label="Navigazione principale">
+    <a href="#chef" class="nav-item active" id="nav-chef"><span class="nav-icon">👨‍🍳</span><span class="nav-label">Oggi</span></a>
+    <a href="#week" class="nav-item" id="nav-week"><span class="nav-icon">📅</span><span class="nav-label">Settimana</span></a>
+    <a href="#recipes" class="nav-item" id="nav-recipes"><span class="nav-icon">🍲</span><span class="nav-label">Ricettario</span></a>
+    <a href="#shop" class="nav-item" id="nav-shop"><span class="nav-icon">🛒</span><span class="nav-label">Spesa</span></a>
+    <a href="#settings" class="nav-item" id="nav-settings"><span class="nav-icon">⚙️</span><span class="nav-label">Impostazioni</span></a>
   </nav>
 
-  <!-- Firebase Scripts -->
   <script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-app-compat.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-auth-compat.js"></script>
   <script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-firestore-compat.js"></script>
-  
-  <!-- App Scripts -->
   <script src="js/data.js"></script>
   <script src="js/firebase.js"></script>
-  <script src="js/notifications.js"></script>
   <script src="js/app.js"></script>
-  
+
   <script>
-    if ('serviceWorker' in navigator) {
-      navigator.serviceWorker.register('sw.js');
-    }
+    if ('serviceWorker' in navigator) navigator.serviceWorker.register('sw.js');
   </script>
 </body>
 </html>
