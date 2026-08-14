@@ -158,14 +158,21 @@ function setRecipes(recipes) {
 function getActiveBatchRule(dayKey) {
   const rule = appState.plan?.batchRules?.[dayKey];
   const current = appState.plan?.days?.[dayKey];
+
   if (!rule || !current) return null;
+
   const next = appState.plan?.days?.[rule.nextDay];
+
   if (!next) return null;
-  const isExactCombination = current.type === rule.currentType &&
+
+  // Il batch dipende esclusivamente dalla combinazione:
+  // cena corrente + pranzo del giorno successivo.
+  // Il tipo A/R modifica solo i dosaggi e non disattiva il batch.
+  const hasRequiredRecipes =
     current.dinner === rule.dinner &&
-    next.type === rule.nextType &&
     next.lunch === rule.nextLunch;
-  return isExactCombination ? rule : null;
+
+  return hasRequiredRecipes ? rule : null;
 }
 
 function showToast(message, isError = false) {
