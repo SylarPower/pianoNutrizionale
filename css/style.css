@@ -637,28 +637,119 @@ input[type="checkbox"], input[type="radio"] { accent-color: var(--primary); widt
 .incoming-share-actions .btn { min-height: 38px; padding: 6px 10px; font-size: .76rem; }
 
 /* Tema scuro */
-body.dark-mode {
-  --bg: #0b0f0d;
-  --surface: #141a17;
-  --surface-alt: #1c2420;
-  --text: #ecf2ee;
-  --text-muted: #98a69f;
-  --line: #29332e;
-  --primary: #6eb58d;
-  --primary-strong: #83c6a1;
-  --primary-soft: #1b3327;
-  --accent-soft: #35271d;
-  --rest-soft: #1d2d36;
-  --danger-soft: #321d20;
-  --shadow: 0 10px 30px rgba(0,0,0,.24);
+html.dark-mode {
+  color-scheme: dark;
+
+  --bg: #000000;
+  --surface: #000000;
+  --surface-alt: #080808;
+
+  --text: #FFFFFF;
+  --text-muted: #A3A3A3;
+
+  --line: #202020;
+
+  --primary: #6EE7A5;
+  --primary-strong: #8AF0BA;
+  --primary-soft: #071B11;
+
+  --accent-soft: #211207;
+  --rest-soft: #07131B;
+  --danger-soft: #200709;
+
+  --shadow: none;
+
+  background: #000000;
 }
-body.dark-mode .global-header { background: rgba(15,39,29,.98); }
-body.dark-mode .bottom-nav, body.dark-mode .shop-actions { background: rgba(20,26,23,.96); }
-body.dark-mode .loading-overlay { background: rgba(11,15,13,.92); }
-body.dark-mode .batch-card { border-color: #5b402d; background: linear-gradient(145deg, #241c16, #302218); }
-body.dark-mode .batch-title > span, body.dark-mode .batch-next, body.dark-mode .batch-modal p { background: rgba(255,255,255,.06); }
-body.dark-mode .batch-next, body.dark-mode .batch-title small { color: #e6a976; }
-body.dark-mode .login-card { --text: #17231d; --text-muted: #68746d; --surface: #fff; --line: #dde3dd; --primary: #245a43; --primary-soft: #e8f2ec; color: var(--text); }
+
+body.dark-mode {
+  background: #000000;
+}
+
+body.dark-mode #app-container,
+body.dark-mode .view {
+  background: #000000;
+}
+
+body.dark-mode .global-header {
+  background: #000000;
+  border-bottom-color: #202020;
+  box-shadow: none;
+}
+
+body.dark-mode .bottom-nav,
+body.dark-mode .shop-actions {
+  background: #000000;
+  border-color: #202020;
+  box-shadow: none;
+}
+
+body.dark-mode .card,
+body.dark-mode .settings-section,
+body.dark-mode .day-column,
+body.dark-mode .plan-check,
+body.dark-mode .recipe-library-card,
+body.dark-mode .shop-item,
+body.dark-mode .modal-content,
+body.dark-mode .incoming-share-card,
+body.dark-mode .transfer-choice {
+  background: #000000;
+  border-color: #202020;
+  box-shadow: none;
+}
+
+body.dark-mode .surface-alt,
+body.dark-mode .frequency-item,
+body.dark-mode .day-type-control,
+body.dark-mode .swap-code,
+body.dark-mode .transfer-summary,
+body.dark-mode input,
+body.dark-mode select,
+body.dark-mode textarea {
+  background: #080808;
+  color: #FFFFFF;
+  border-color: #282828;
+}
+
+body.dark-mode .loading-overlay {
+  background: rgba(0, 0, 0, 0.97);
+}
+
+body.dark-mode .batch-card {
+  background: #000000;
+  border-color: #3A2515;
+  box-shadow: none;
+}
+
+body.dark-mode .batch-title > span,
+body.dark-mode .batch-next,
+body.dark-mode .batch-modal p {
+  background: #080808;
+}
+
+body.dark-mode .batch-next,
+body.dark-mode .batch-title small {
+  color: #E6A976;
+}
+
+body.dark-mode .modal {
+  background: rgba(0, 0, 0, 0.88);
+}
+
+body.dark-mode .login-card {
+  --surface: #000000;
+  --surface-alt: #080808;
+  --text: #FFFFFF;
+  --text-muted: #A3A3A3;
+  --line: #202020;
+  --primary: #6EE7A5;
+  --primary-soft: #071B11;
+
+  background: #000000;
+  color: #FFFFFF;
+  border-color: #202020;
+  box-shadow: none;
+}
 
 /* Responsive */
 @media (min-width: 980px) {
