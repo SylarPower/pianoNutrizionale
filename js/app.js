@@ -1270,6 +1270,12 @@ function renderModalContent() {
   const dayType = currentModal.dayType;
   const batchRule = modalBatchRule();
   const batchTab = document.querySelector('.tab-btn[data-target="tab-batch"]');
+  const tabs = document.querySelector('.tabs');
+  // La consultazione è intenzionalmente una schermata unica: ingredienti e preparazione
+  // restano contemporaneamente visibili, come nella sezione DA CUCINARE.
+  tabs?.classList.toggle("hidden", !editMode);
+  document.getElementById("tab-ingredients")?.classList.remove("hidden");
+  document.getElementById("tab-prep")?.classList.toggle("hidden", editMode);
   batchTab.classList.toggle("hidden", !batchRule && !editMode);
   if (!editMode && document.querySelector('.tab-btn[data-target="tab-batch"]').classList.contains("active") && !batchRule) setModalTab("tab-ingredients");
 

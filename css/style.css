@@ -50,6 +50,7 @@ h2 { font-size: 1.25rem; letter-spacing: -0.02em; }
 h3 { font-size: 1rem; }
 .hidden { display: none !important; }
 .text-muted { color: var(--text-muted); }
+.recipe-section-heading { margin: 18px 0 10px; color: var(--primary); font-size: .9rem; text-transform: uppercase; letter-spacing: .06em; }
 .full-width { width: 100%; }
 .flex-between { display: flex; align-items: center; justify-content: space-between; gap: 1rem; }
 
