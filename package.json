@@ -1,0 +1,1 @@
+{"name":"piano-nutrizionale","private":true,"scripts":{"test":"node --test test/*.test.js","syntax":"node --check js/domain.js && node --check js/data.js && node --check js/firebase.js && node --check js/app.js"},"engines":{"node":">=18"}}

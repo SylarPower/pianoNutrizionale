@@ -111,39 +111,9 @@ function getProfileLabel() {
 }
 
 function normalizeRecipeSchema(recipe) {
-  const normalized = clone(recipe);
-
-  normalized.ingredients = (normalized.ingredients || []).map(ingredient => {
-    const portions = ingredient.portions || {};
-
-    return {
-      ...ingredient,
-      portions: {
-        ipoTraining:
-          portions.ipoTraining ??
-          portions.ipo ??
-          "—",
-
-        ipoRest:
-          portions.ipoRest ??
-          portions.ipo ??
-          "—",
-
-        manTraining:
-          portions.manTraining ??
-          portions.training ??
-          "—",
-
-        manRest:
-          portions.manRest ??
-          portions.rest ??
-          portions.training ??
-          "—"
-      }
-    };
-  });
-
-  return normalized;
+  return window.PianoDomain
+    ? PianoDomain.migrateRecipe(recipe)
+    : clone(recipe);
 }
 
 function setRecipes(recipes) {

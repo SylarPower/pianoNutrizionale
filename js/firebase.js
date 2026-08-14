@@ -1,3 +1,5 @@
+const APP_CHECK_SITE_KEY = "REPLACE_WITH_RECAPTCHA_V3_SITE_KEY";
+
 const firebaseConfig = {
   apiKey: "AIzaSyCuV3KSAWMWRWJR-LhX_FCSJQLlXaJws7M",
   authDomain: "piano-nutrizionale.firebaseapp.com",
@@ -17,6 +19,11 @@ function initFirebase() {
     if (!firebase.apps.length) firebase.initializeApp(firebaseConfig);
     db = firebase.firestore();
     auth = firebase.auth();
+    if (window.firebase?.appCheck && APP_CHECK_SITE_KEY.startsWith("REPLACE_")) {
+      console.warn("Firebase App Check non configurato: inserire APP_CHECK_SITE_KEY in js/firebase.js.");
+    } else if (window.firebase?.appCheck) {
+      firebase.appCheck().activate(APP_CHECK_SITE_KEY, true);
+    }
     auth.setPersistence(firebase.auth.Auth.Persistence.LOCAL).catch(error => {
       console.warn("Persistenza autenticazione non disponibile", error);
     });

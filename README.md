@@ -342,3 +342,19 @@ Apri l'indirizzo online e controlla, nell'ordine:
 12. alternative di Meller nelle Impostazioni.
 
 Se la condivisione restituisce “utente non trovato”, fai accedere il destinatario almeno una volta all'ultima versione e riprova.
+
+## Schema 4 e servizi evoluti
+
+Il catalogo usa `schemaVersion: 4`. Ogni ingrediente ha `ingredientId`; gli alias comuni vengono normalizzati senza cambiare nome o dosaggio. La migrazione è idempotente e mantiene leggibili le porzioni legacy (`ipo`, `training`, `rest`). Le regole batch legacy vengono convertite in `batchTemplates`, con task e conservazione espliciti: i valori migrati sono prudenti (1 giorno, oppure 0 per il fresco) e devono essere validati da un professionista della sicurezza alimentare.
+
+Le funzioni pure in `js/domain.js` gestiscono migrazione, aggregazione della spesa, batch circolare domenica→lunedì e copia/scambio pasti. Il catalogo resta un singolo documento; la UI rifiuta cataloghi oltre 900 KB per restare sotto il limite Firestore di 1 MiB.
+
+### Backup e App Check
+
+Le operazioni distruttive devono usare il documento privato `users/{uid}/backups/previous` (una sola copia, ripristinabile una volta) quando viene completata la relativa UI. App Check è predisposto con `APP_CHECK_SITE_KEY` in `js/firebase.js`: sostituire il placeholder con una site key reCAPTCHA v3 pubblica. In Firebase Console: **App Check → Apps → Web → reCAPTCHA v3**, registrare il dominio GitHub Pages e copiare la site key. In locale usare il provider debug solo impostando il token tramite gli strumenti Firebase; non committare token. Verificare prima in modalità monitoraggio, poi attivare Enforcement per Firestore e Authentication dopo aver validato produzione/offline.
+
+Il service worker v4 usa shell versionata, fallback offline per la navigazione, cache degli asset same-origin e non intercetta richieste Firebase. Il banner consente di applicare gli aggiornamenti senza loop. Per GitHub Pages tutti i riferimenti sono relativi (`./`).
+
+### Test
+
+Eseguire `npm test`, `npm run syntax` e `git diff --check`. I test coprono migrazioni, alias, aggregazione, batch circolare/parziale, profilo A/R e copia/scambio. Le ricette e il seed restano esterni al repository.
