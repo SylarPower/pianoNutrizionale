@@ -1,0 +1,47 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    function signedIn() {
+      return request.auth != null;
+    }
+
+    // Directory minima username → uid, necessaria per cercare il destinatario.
+    // L'email tecnica del token impedisce di registrare lo username di un altro account.
+    match /usernames/{username} {
+      allow read: if signedIn();
+      allow create, update: if signedIn()
+        && request.resource.data.uid == request.auth.uid
+        && request.resource.data.username == username
+        && request.auth.token.email == username + '@utenti.pianonutrizionale.app';
+      allow delete: if false;
+    }
+
+    // Richieste di condivisione. Il mittente crea; solo il destinatario decide.
+    match /recipeShares/{shareId} {
+      allow create: if signedIn()
+        && request.resource.data.senderUid == request.auth.uid
+        && request.resource.data.recipientUid != request.auth.uid
+        && request.resource.data.status == 'pending'
+        && request.resource.data.recipeCount > 0;
+      allow read: if signedIn()
+        && (resource.data.senderUid == request.auth.uid
+          || resource.data.recipientUid == request.auth.uid);
+      allow update: if signedIn()
+        && resource.data.recipientUid == request.auth.uid
+        && resource.data.status == 'pending'
+        && request.resource.data.status in ['accepted', 'rejected']
+        && request.resource.data.diff(resource.data).affectedKeys()
+          .hasOnly(['status', 'respondedAt']);
+      allow delete: if signedIn() && resource.data.recipientUid == request.auth.uid;
+    }
+
+    // Ogni account può leggere e modificare esclusivamente la propria area privata.
+    match /users/{userId}/{document=**} {
+      allow read, write: if signedIn() && request.auth.uid == userId;
+    }
+
+    match /{document=**} {
+      allow read, write: if false;
+    }
+  }
+}

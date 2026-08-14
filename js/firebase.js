@@ -7,319 +7,371 @@ const firebaseConfig = {
   appId: "1:117247692441:web:909efc3d3e6206fb95f208"
 };
 
-let db;
+const INTERNAL_USERNAME_DOMAIN = "utenti.pianonutrizionale.app";
+let db = null;
+let auth = null;
+let currentUser = null;
 
 function initFirebase() {
-  if (firebaseConfig.apiKey === "REPLACE_API_KEY") {
-    console.warn("Firebase not configured. Running in offline/mock mode.");
-    return false;
-  }
-  
   try {
-    firebase.initializeApp(firebaseConfig);
+    if (!firebase.apps.length) firebase.initializeApp(firebaseConfig);
     db = firebase.firestore();
-    
-    // Enable offline persistence caching correctly for v9 compat
-    try {
-      db.settings({
-        cacheSizeBytes: firebase.firestore.CACHE_SIZE_UNLIMITED,
-        merge: true 
-      });
-    } catch(err) {
-      console.warn("Firestore settings error", err);
-    }
-      
+    auth = firebase.auth();
+    auth.setPersistence(firebase.auth.Auth.Persistence.LOCAL).catch(error => {
+      console.warn("Persistenza autenticazione non disponibile", error);
+    });
+    db.enablePersistence({ synchronizeTabs: true }).catch(error => {
+      if (error.code !== "failed-precondition" && error.code !== "unimplemented") {
+        console.warn("Cache offline Firestore non disponibile", error);
+      }
+    });
     return true;
-  } catch (e) {
-    console.error("Firebase init error", e);
+  } catch (error) {
+    console.error("Errore inizializzazione Firebase", error);
     return false;
   }
 }
 
-// ------------------------------------
-// MOCK FALLBACKS FOR OFFLINE DEVELOPMENT
-// ------------------------------------
-const mockStore = {
-  settings: {
-    trainingDays: ['monday', 'tuesday', 'wednesday', 'friday'],
-    notificationTimes: {
-      breakfast: "08:30",
-      snack1: "10:00",
-      lunch: "13:30",
-      snack2: "16:00",
-      dinner: "20:00"
-    },
-    persons: 2,
-    twoPersonsType: 'mf',
-    notificationsEnabled: false,
-    womanFactor: 0.75
-  },
-  weekPlans: {},
-  recipes: {},
-  shoppingList: { selectedDays: [], persons: 2, twoPersonsType: 'mf', checkedItems: [] },
-  swappedMeals: {},
-  shoppingListCloud: null
-};
-
-function getISOWeekString() {
-  const d = new Date();
-  d.setHours(0, 0, 0, 0);
-  d.setDate(d.getDate() + 4 - (d.getDay() || 7));
-  const yearStart = new Date(d.getFullYear(), 0, 1);
-  const weekNo = Math.ceil((((d - yearStart) / 86400000) + 1) / 7);
-  return `${d.getFullYear()}-W${weekNo.toString().padStart(2, '0')}`;
+function normalizeUsername(username) {
+  return String(username || "").trim().toLowerCase();
 }
 
-function getISODateString() {
-  return new Date().toISOString().split('T')[0];
+function isValidUsername(username) {
+  return /^[a-z0-9._-]{3,32}$/.test(normalizeUsername(username));
 }
 
-// --- Device Settings (local only) ---
-function getLocalDeviceSettings() {
-  const defaults = {
-    persons: 2,
-    twoPersonsType: 'mf',
-    singlePersonType: 'm',
-    darkMode: false,
-    prepSelectedDay: null,
-    lastLoginDate: null
-  };
-  try {
-    const raw = localStorage.getItem('pn_device_settings');
-    if (!raw) return { ...defaults };
-    const parsed = JSON.parse(raw);
-    return { ...defaults, ...parsed };
-  } catch (e) {
-    return { ...defaults };
+function usernameToInternalEmail(username) {
+  return `${normalizeUsername(username)}@${INTERNAL_USERNAME_DOMAIN}`;
+}
+
+function usernameFromUser(user) {
+  if (!user?.email) return "";
+  return user.email.split("@")[0];
+}
+
+async function signInWithUsername(username, password) {
+  const normalized = normalizeUsername(username);
+  if (!isValidUsername(normalized)) {
+    const error = new Error("Lo username deve contenere 3-32 caratteri: lettere minuscole, numeri, punto, trattino o underscore.");
+    error.code = "auth/invalid-username";
+    throw error;
   }
+  if (!password) {
+    const error = new Error("Inserisci la password.");
+    error.code = "auth/missing-password";
+    throw error;
+  }
+  return auth.signInWithEmailAndPassword(usernameToInternalEmail(normalized), password);
+}
+
+async function signOutUser() {
+  if (auth) await auth.signOut();
+}
+
+function observeAuthState(callback) {
+  return auth.onAuthStateChanged(user => {
+    currentUser = user || null;
+    callback(currentUser);
+  });
+}
+
+function requireUser() {
+  if (!currentUser) throw new Error("Autenticazione richiesta");
+  return currentUser;
+}
+
+function userRoot() {
+  return db.collection("users").doc(requireUser().uid);
+}
+
+function recipeCatalogRef() {
+  return userRoot().collection("content").doc("recipeCatalog");
+}
+
+function weeklyPlanRef() {
+  return userRoot().collection("config").doc("weeklyPlan");
+}
+
+function shoppingListRef() {
+  return userRoot().collection("config").doc("shoppingList");
+}
+
+function localKey(name) {
+  return `pn_${currentUser ? currentUser.uid : "anonymous"}_${name}`;
+}
+
+function cloneData(value) {
+  return value === undefined ? undefined : JSON.parse(JSON.stringify(value));
+}
+
+function readLocalJson(name, fallback) {
+  try {
+    const value = localStorage.getItem(localKey(name));
+    return value ? JSON.parse(value) : cloneData(fallback);
+  } catch (_) {
+    return cloneData(fallback);
+  }
+}
+
+function writeLocalJson(name, value) {
+  try { localStorage.setItem(localKey(name), JSON.stringify(value)); } catch (_) {}
+}
+
+function getDefaultDeviceSettings() {
+  return {
+    portionProfile: "man",
+    darkMode: false,
+    chefSelectedDay: null,
+    lastOpenDate: null
+  };
+}
+
+function getDefaultShoppingList() {
+  const allSlots = ["breakfast", "snack1", "lunch", "snack2", "dinner"];
+  return {
+    selectedMeals: {
+      monday: [...allSlots], tuesday: [...allSlots], wednesday: [...allSlots],
+      thursday: [...allSlots], friday: [...allSlots], saturday: [...allSlots], sunday: [...allSlots]
+    },
+    includePantry: true,
+    excludedItems: [],
+    customQuantities: {}
+  };
+}
+
+function getLocalDeviceSettings() {
+  return { ...getDefaultDeviceSettings(), ...readLocalJson("device", {}) };
 }
 
 function saveLocalDeviceSettings(settings) {
-  try {
-    const current = getLocalDeviceSettings();
-    const merged = { ...current, ...settings };
-    localStorage.setItem('pn_device_settings', JSON.stringify(merged));
-  } catch (e) {
-    console.warn("saveLocalDeviceSettings error", e);
-  }
+  writeLocalJson("device", { ...getLocalDeviceSettings(), ...settings });
 }
 
-// --- Global Settings (cloud + device merge) ---
-async function getGlobalSettings() {
-  let deviceSettings = getLocalDeviceSettings();
-
-  // womanFactor è un'impostazione GLOBALE (condivisa su tutti i dispositivi):
-  // se esiste una vecchia copia locale (versioni precedenti dell'app), migrala.
-  const localWoman = deviceSettings.womanFactor;
-  if ('womanFactor' in deviceSettings) {
-    delete deviceSettings.womanFactor;
-    try {
-      const raw = JSON.parse(localStorage.getItem('pn_device_settings') || '{}');
-      if ('womanFactor' in raw) {
-        delete raw.womanFactor;
-        localStorage.setItem('pn_device_settings', JSON.stringify(raw));
-      }
-    } catch(e) {}
-  }
-
-  if (!db) {
-    // Offline: mantieni l'eventuale valore migrato nello store di sessione
-    if (localWoman !== undefined) mockStore.settings.womanFactor = localWoman;
-    return { ...mockStore.settings, ...deviceSettings };
-  }
-  try {
-    const doc = await db.collection('settings').doc('global').get();
-    let cloudSettings = doc.exists ? doc.data() : {};
-    // Migrazione una tantum: il valore locale diventa globale se il cloud non ce l'ha
-    if (localWoman !== undefined && cloudSettings.womanFactor === undefined) {
-      cloudSettings.womanFactor = localWoman;
-      try { await db.collection('settings').doc('global').set({ womanFactor: localWoman }, { merge: true }); }
-      catch(e) { console.warn("womanFactor migration error", e); }
+function validateRecipeCatalog(recipes) {
+  if (!Array.isArray(recipes)) throw new Error("Il catalogo ricette non è valido");
+  const ids = new Set();
+  recipes.forEach(recipe => {
+    if (!recipe?.id || !recipe?.name || !Array.isArray(recipe.ingredients) || !Array.isArray(recipe.steps)) {
+      throw new Error(`Ricetta non valida: ${recipe?.id || "ID mancante"}`);
     }
-    return { ...mockStore.settings, ...cloudSettings, ...deviceSettings };
-  } catch(e) {
-    console.warn("getGlobalSettings fallback", e);
-    const merged = { ...mockStore.settings, ...deviceSettings };
-    if (localWoman !== undefined) merged.womanFactor = localWoman;
-    return merged;
-  }
-}
-
-async function saveGlobalSettings(settings) {
-  // Device specific keys stay local
-  const deviceKeys = ['persons', 'twoPersonsType', 'singlePersonType', 'darkMode', 'lastLoginDate', 'prepSelectedDay'];
-  let localSettings = {};
-  try {
-    localSettings = JSON.parse(localStorage.getItem('pn_device_settings') || '{}');
-  } catch(e) {}
-  let cloudSettings = {};
-  
-  for (let key in settings) {
-    if (deviceKeys.includes(key)) localSettings[key] = settings[key];
-    else cloudSettings[key] = settings[key];
-  }
-  
-  try {
-    localStorage.setItem('pn_device_settings', JSON.stringify(localSettings));
-  } catch(e) {}
-  
-  if (!db) {
-    mockStore.settings = { ...mockStore.settings, ...settings };
-    return;
-  }
-  if (Object.keys(cloudSettings).length > 0) {
-    try {
-      await db.collection('settings').doc('global').set(cloudSettings, { merge: true });
-    } catch(e) {
-      console.warn("saveGlobalSettings cloud error", e);
+    if (!["breakfast", "snack1", "lunch", "snack2", "dinner"].includes(recipe.slot)) {
+      throw new Error(`Tipo pasto non valido per ${recipe.id}`);
     }
-  }
+    if (ids.has(recipe.id)) throw new Error(`ID ricetta duplicato: ${recipe.id}`);
+    ids.add(recipe.id);
+  });
+  const encodedSize = new TextEncoder().encode(JSON.stringify(recipes)).length;
+  if (encodedSize > 900000) throw new Error("Il catalogo supera la dimensione sicura per un documento Firestore");
+  return ids;
 }
 
-async function getWeekPlan() {
-  const weekId = getISOWeekString();
-  if (!db) return mockStore.weekPlans[weekId] || {};
+function validateImportedDataset(dataset) {
+  if (!dataset || typeof dataset !== "object") throw new Error("File JSON non valido");
+  const ids = validateRecipeCatalog(dataset.recipes);
+  if (!dataset.recipes.length) throw new Error("Il file non contiene ricette");
+  if (!dataset.plan?.days) throw new Error("Il piano settimanale manca dal file");
+  const expectedDays = ["monday", "tuesday", "wednesday", "thursday", "friday", "saturday", "sunday"];
+  const slots = ["breakfast", "snack1", "lunch", "snack2", "dinner"];
+  expectedDays.forEach(day => {
+    const planDay = dataset.plan.days[day];
+    if (!planDay || !["training", "rest"].includes(planDay.type)) throw new Error(`Giorno non valido: ${day}`);
+    slots.forEach(slot => {
+      if (!ids.has(planDay[slot])) throw new Error(`Ricetta ${planDay[slot] || "mancante"} non trovata per ${day}/${slot}`);
+    });
+  });
+  return true;
+}
+
+async function getRecipeCatalog() {
   try {
-    const doc = await db.collection('weekPlans').doc(weekId).get();
-    return doc.exists ? doc.data() : {};
-  } catch(e) {
-    return mockStore.weekPlans[weekId] || {};
+    const snapshot = await recipeCatalogRef().get();
+    if (snapshot.exists) {
+      const data = snapshot.data();
+      const recipes = Array.isArray(data.recipes) ? data.recipes : [];
+      writeLocalJson("recipe_catalog", recipes);
+      return recipes;
+    }
+
+    // Migrazione una tantum dalla precedente struttura a un documento unico.
+    // Dopo la migrazione, gli avvii successivi costano una sola lettura catalogo.
+    const legacySnapshot = await userRoot().collection("recipes").get();
+    const legacyRecipes = [];
+    legacySnapshot.forEach(doc => legacyRecipes.push({ ...doc.data(), id: doc.id }));
+    if (legacyRecipes.length) {
+      await saveRecipeCatalog(legacyRecipes, { migratedFromLegacy: true });
+      return legacyRecipes;
+    }
+    await saveRecipeCatalog([], { initializedEmpty: true });
+    return [];
+  } catch (error) {
+    const cached = readLocalJson("recipe_catalog", []);
+    if (cached.length) return cached;
+    throw error;
   }
 }
 
-async function saveWeekPlan(plan) {
-  const weekId = getISOWeekString();
-  if (!db) {
-    mockStore.weekPlans[weekId] = plan;
-    return;
-  }
+async function saveRecipeCatalog(recipes, metadata = {}) {
+  validateRecipeCatalog(recipes);
+  const clean = cloneData(recipes);
+  writeLocalJson("recipe_catalog", clean);
+  await recipeCatalogRef().set({
+    schemaVersion: CATALOG_SCHEMA_VERSION,
+    recipes: clean,
+    recipeCount: clean.length,
+    ...metadata,
+    updatedAt: firebase.firestore.FieldValue.serverTimestamp()
+  });
+}
+
+async function getWeeklyPlan() {
   try {
-    await db.collection('weekPlans').doc(weekId).set(plan, { merge: true });
-  } catch(e) {
-    console.warn("saveWeekPlan error", e);
-    mockStore.weekPlans[weekId] = plan;
+    const snapshot = await weeklyPlanRef().get();
+    if (!snapshot.exists) return readLocalJson("weekly_plan", createEmptyWeeklyPlan());
+    const plan = snapshot.data();
+    writeLocalJson("weekly_plan", plan);
+    return plan;
+  } catch (error) {
+    const cached = readLocalJson("weekly_plan", null);
+    if (cached) return cached;
+    if (currentUser) return createEmptyWeeklyPlan();
+    throw error;
   }
 }
 
-// --- Swapped Meals ---
-async function getSwappedMeals() {
-  const weekId = getISOWeekString();
-  if (!db) return mockStore.swappedMeals[weekId] || {};
-  try {
-    const doc = await db.collection('swappedMeals').doc(weekId).get();
-    return doc.exists ? doc.data() : {};
-  } catch(e) {
-    console.warn("getSwappedMeals fallback", e);
-    return mockStore.swappedMeals[weekId] || {};
-  }
-}
-
-async function saveSwappedMeals(map) {
-  const weekId = getISOWeekString();
-  if (!db) {
-    mockStore.swappedMeals[weekId] = { ...(map || {}) };
-    return;
-  }
-  try {
-    await db.collection('swappedMeals').doc(weekId).set(map || {}, { merge: false });
-  } catch(e) {
-    console.warn("saveSwappedMeals error", e);
-    mockStore.swappedMeals[weekId] = { ...(map || {}) };
-  }
-}
-
-// --- Shopping List Cloud (new structure) ---
-function getDefaultShoppingListCloud() {
-  return {
-    selectedMeals: { monday:[], tuesday:[], wednesday:[], thursday:[], friday:[], saturday:[], sunday:[] },
-    customDays: { monday:'training', tuesday:'training', wednesday:'training', thursday:'rest', friday:'training', saturday:'rest', sunday:'rest' },
-    mode: 'current',
-    includeSpices: true,
-    excludedItems: [],
-    customQtys: {}
-  };
+async function saveWeeklyPlan(plan) {
+  const clean = cloneData(plan);
+  writeLocalJson("weekly_plan", clean);
+  await weeklyPlanRef().set(clean);
 }
 
 async function getShoppingListCloud() {
-  const def = getDefaultShoppingListCloud();
-  if (!db) {
-    if (mockStore.shoppingListCloud) {
-      return { ...def, ...mockStore.shoppingListCloud, selectedMeals: { ...def.selectedMeals, ...(mockStore.shoppingListCloud.selectedMeals||{}) }, customDays: { ...def.customDays, ...(mockStore.shoppingListCloud.customDays||{}) } };
-    }
-    return def;
-  }
+  const defaults = getDefaultShoppingList();
   try {
-    const doc = await db.collection('shoppingList').doc('current').get();
-    if (!doc.exists) return def;
-    const data = doc.data();
-    // Merge with defaults to handle old docs
-    return {
-      ...def,
+    const snapshot = await shoppingListRef().get();
+    const data = snapshot.exists ? snapshot.data() : {};
+    const value = {
+      ...defaults,
       ...data,
-      selectedMeals: { ...def.selectedMeals, ...(data.selectedMeals||{}) },
-      customDays: { ...def.customDays, ...(data.customDays||{}) },
-      customQtys: data.customQtys || {},
-      excludedItems: data.excludedItems || []
+      selectedMeals: { ...defaults.selectedMeals, ...(data.selectedMeals || {}) },
+      excludedItems: data.excludedItems || [],
+      customQuantities: data.customQuantities || {}
     };
-  } catch(e) {
-    console.warn("getShoppingListCloud fallback", e);
-    return mockStore.shoppingListCloud || def;
+    writeLocalJson("shopping", value);
+    return value;
+  } catch (error) {
+    const cached = readLocalJson("shopping", defaults);
+    return { ...defaults, ...cached, selectedMeals: { ...defaults.selectedMeals, ...(cached.selectedMeals || {}) } };
   }
 }
 
-async function saveShoppingListCloud(listData) {
-  if (!db) {
-    mockStore.shoppingListCloud = { ...(listData||{}) };
-    return;
-  }
+async function saveShoppingListCloud(value) {
+  const clean = cloneData(value);
+  writeLocalJson("shopping", clean);
+  await shoppingListRef().set(clean);
+}
+
+async function importUserDataset(dataset) {
+  validateImportedDataset(dataset);
+  const recipes = cloneData(dataset.recipes);
+  const plan = cloneData(dataset.plan);
+  const shopping = getDefaultShoppingList();
+  const batch = db.batch();
+  batch.set(recipeCatalogRef(), {
+    schemaVersion: Number(dataset.schemaVersion || CATALOG_SCHEMA_VERSION),
+    recipes,
+    recipeCount: recipes.length,
+    importedAt: firebase.firestore.FieldValue.serverTimestamp(),
+    updatedAt: firebase.firestore.FieldValue.serverTimestamp()
+  });
+  batch.set(weeklyPlanRef(), plan);
+  batch.set(shoppingListRef(), shopping);
+  await batch.commit();
+  writeLocalJson("recipe_catalog", recipes);
+  writeLocalJson("weekly_plan", plan);
+  writeLocalJson("shopping", shopping);
+  return { recipes, plan, shopping };
+}
+
+function usernameDirectoryRef(username) {
+  return db.collection("usernames").doc(normalizeUsername(username));
+}
+
+async function ensureUsernameDirectory() {
+  const user = requireUser();
+  const username = usernameFromUser(user);
+  const marker = `pn_username_directory_${user.uid}`;
   try {
-    await db.collection('shoppingList').doc('current').set(listData, { merge: true });
-  } catch(e) {
-    console.warn("saveShoppingListCloud error", e);
-    mockStore.shoppingListCloud = { ...(listData||{}) };
-  }
+    if (localStorage.getItem(marker) === "1") return;
+  } catch (_) {}
+  await usernameDirectoryRef(username).set({ uid: user.uid, username });
+  try { localStorage.setItem(marker, "1"); } catch (_) {}
 }
 
-// --- Legacy shopping list (kept for compatibility) ---
-async function getShoppingList() {
-  // alias to new
-  return getShoppingListCloud();
+async function findUserByUsername(username) {
+  const normalized = normalizeUsername(username);
+  if (!isValidUsername(normalized)) throw new Error("Username destinatario non valido");
+  const snapshot = await usernameDirectoryRef(normalized).get();
+  if (!snapshot.exists) throw new Error("Utente non trovato. Deve aver aperto almeno una volta l'ultima versione dell'app.");
+  return snapshot.data();
 }
 
-async function saveShoppingList(listData) {
-  return saveShoppingListCloud(listData);
+async function sendRecipeShare(recipientUsername, recipes) {
+  requireUser();
+  validateRecipeCatalog(recipes);
+  if (!recipes.length) throw new Error("Non ci sono ricette da inviare");
+  await ensureUsernameDirectory();
+  const recipient = await findUserByUsername(recipientUsername);
+  if (recipient.uid === currentUser.uid) throw new Error("Non puoi inviare ricette al tuo stesso account");
+  const senderUsername = usernameFromUser(currentUser);
+  const shareRef = db.collection("recipeShares").doc();
+  await shareRef.set({
+    senderUid: currentUser.uid,
+    senderUsername,
+    recipientUid: recipient.uid,
+    recipientUsername: recipient.username,
+    status: "pending",
+    recipeCount: recipes.length,
+    recipes: cloneData(recipes),
+    createdAt: firebase.firestore.FieldValue.serverTimestamp()
+  });
+  return shareRef.id;
 }
 
-async function getCustomRecipe(mealId) {
-  if (!db) return mockStore.recipes[mealId];
-  try {
-    const doc = await db.collection('recipes').doc(mealId).get();
-    return doc.exists ? doc.data() : null;
-  } catch(e) {
-    return mockStore.recipes[mealId];
-  }
+async function getPendingRecipeShares() {
+  const user = requireUser();
+  await ensureUsernameDirectory();
+  const snapshot = await db.collection("recipeShares")
+    .where("recipientUid", "==", user.uid)
+    .get();
+  const shares = [];
+  snapshot.forEach(doc => {
+    const data = doc.data();
+    if (data.status === "pending") shares.push({ id: doc.id, ...data });
+  });
+  shares.sort((a, b) => {
+    const left = a.createdAt?.toMillis?.() || 0;
+    const right = b.createdAt?.toMillis?.() || 0;
+    return right - left;
+  });
+  return shares;
 }
 
-async function saveCustomRecipe(mealId, recipeData) {
-  if (!db) {
-    mockStore.recipes[mealId] = recipeData;
-    return;
-  }
-  try {
-    await db.collection('recipes').doc(mealId).set(recipeData);
-  } catch(e) {
-    mockStore.recipes[mealId] = recipeData;
-  }
+async function rejectRecipeShare(shareId) {
+  await db.collection("recipeShares").doc(shareId).delete();
 }
 
-async function deleteCustomRecipe(mealId) {
-  if (!db) {
-    delete mockStore.recipes[mealId];
-    return;
-  }
-  try {
-    await db.collection('recipes').doc(mealId).delete();
-  } catch(e) {
-    delete mockStore.recipes[mealId];
-  }
+async function acceptRecipeShare(shareId, recipes, plan = null) {
+  validateRecipeCatalog(recipes);
+  const batch = db.batch();
+  batch.set(recipeCatalogRef(), {
+    schemaVersion: CATALOG_SCHEMA_VERSION,
+    recipes: cloneData(recipes),
+    recipeCount: recipes.length,
+    updatedAt: firebase.firestore.FieldValue.serverTimestamp()
+  });
+  if (plan) batch.set(weeklyPlanRef(), cloneData(plan));
+  batch.delete(db.collection("recipeShares").doc(shareId));
+  await batch.commit();
+  writeLocalJson("recipe_catalog", recipes);
+  if (plan) writeLocalJson("weekly_plan", plan);
 }
