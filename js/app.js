@@ -940,6 +940,22 @@ function exportCurrentRecipe() {
   showToast("Ricetta esportata");
 }
 
+async function decodeImportedPayload(data) {
+  if (data?.format !== "piano-nutrizionale-gzip-base64") return data;
+  if (data.encoding !== "gzip+base64" || typeof data.data !== "string") {
+    throw new Error("Formato JSON compresso non valido");
+  }
+  if (!("DecompressionStream" in window)) {
+    throw new Error("Questo browser non supporta il JSON compresso. Usa Chrome, Edge, Firefox o Safari aggiornato.");
+  }
+  const binary = atob(data.data);
+  const bytes = new Uint8Array(binary.length);
+  for (let index = 0; index < binary.length; index += 1) bytes[index] = binary.charCodeAt(index);
+  const stream = new Blob([bytes]).stream().pipeThrough(new DecompressionStream("gzip"));
+  const decoded = await new Response(stream).text();
+  return JSON.parse(decoded);
+}
+
 function recipesFromImportedJson(data) {
   if (Array.isArray(data)) return { recipes: data, plan: null };
   if (Array.isArray(data?.recipes)) return { recipes: data.recipes, plan: data.plan || null };
@@ -950,7 +966,7 @@ function recipesFromImportedJson(data) {
 window.prepareRecipeImport = async function(file) {
   if (!file) return;
   try {
-    const parsed = JSON.parse(await file.text());
+    const parsed = await decodeImportedPayload(JSON.parse(await file.text()));
     const imported = recipesFromImportedJson(parsed);
     validateRecipeCatalog(imported.recipes);
     if (!imported.recipes.length) throw new Error("Il file non contiene ricette");

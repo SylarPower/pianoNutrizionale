@@ -237,9 +237,11 @@ L'esportazione non usa chiamate Firestore aggiuntive.
 ### Importare successivamente
 
 1. Apri **Ricettario → Importa**.
-2. Seleziona un file esportato in precedenza.
+2. Seleziona un file esportato in precedenza oppure il seed JSON compatto in formato `piano-nutrizionale-gzip-base64`.
 3. Scegli **Aggiungi** oppure **Sostituisci tutte**.
 4. In modalità Aggiungi, eventuali ID duplicati vengono rinominati, così le ricette esistenti non vengono sovrascritte.
+
+Il seed compatto contiene lo stesso dataset completo, compresso in Base64 dentro un normale file JSON. La decompressione avviene esclusivamente nel browser prima della validazione e dell'importazione.
 
 ### Inviare tutte le ricette a un altro utente
 
