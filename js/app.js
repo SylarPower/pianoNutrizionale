@@ -110,9 +110,49 @@ function getProfileLabel() {
   return "Uomo · dosi A/R";
 }
 
+function normalizeRecipeSchema(recipe) {
+  const normalized = clone(recipe);
+
+  normalized.ingredients = (normalized.ingredients || []).map(ingredient => {
+    const portions = ingredient.portions || {};
+
+    return {
+      ...ingredient,
+      portions: {
+        ipoTraining:
+          portions.ipoTraining ??
+          portions.ipo ??
+          "—",
+
+        ipoRest:
+          portions.ipoRest ??
+          portions.ipo ??
+          "—",
+
+        manTraining:
+          portions.manTraining ??
+          portions.training ??
+          "—",
+
+        manRest:
+          portions.manRest ??
+          portions.rest ??
+          portions.training ??
+          "—"
+      }
+    };
+  });
+
+  return normalized;
+}
+
 function setRecipes(recipes) {
-  appState.recipes = recipes;
-  appState.recipesById = Object.fromEntries(recipes.map(recipe => [recipe.id, recipe]));
+  const normalizedRecipes = recipes.map(normalizeRecipeSchema);
+
+  appState.recipes = normalizedRecipes;
+  appState.recipesById = Object.fromEntries(
+    normalizedRecipes.map(recipe => [recipe.id, recipe])
+  );
 }
 
 function getActiveBatchRule(dayKey) {
@@ -152,6 +192,20 @@ function setLoading(message = "Caricamento…") {
 
 function clearLoading() {
   document.getElementById("loading-overlay")?.classList.add("hidden");
+}
+
+function applyTheme(isDark) {
+  document.documentElement.classList.toggle("dark-mode", isDark);
+  document.body.classList.toggle("dark-mode", isDark);
+
+  const themeMeta = document.querySelector('meta[name="theme-color"]');
+
+  if (themeMeta) {
+    themeMeta.setAttribute(
+      "content",
+      isDark ? "#000000" : "#245A43"
+    );
+  }
 }
 
 function showLogin() {
@@ -227,7 +281,7 @@ async function loadUserData(user) {
       saveLocalDeviceSettings(appState.deviceSettings);
     }
 
-    document.body.classList.toggle("dark-mode", !!appState.deviceSettings.darkMode);
+    applyTheme(!!appState.deviceSettings.darkMode);
     showApp();
     renderGlobalHeader();
 
@@ -883,7 +937,7 @@ function renderSettings() {
 window.toggleDarkMode = function(checked) {
   appState.deviceSettings.darkMode = checked;
   saveLocalDeviceSettings(appState.deviceSettings);
-  document.body.classList.toggle("dark-mode", checked);
+  applyTheme(checked);
 };
 
 window.logoutCurrentUser = async function() {
@@ -896,19 +950,25 @@ let pendingShareRecipeIds = [];
 let incomingRecipeShares = [];
 
 function cleanRecipeForTransfer(recipe) {
-  const clean = clone(recipe);
+  const clean = normalizeRecipeSchema(recipe);
   delete clean._original;
   return clean;
 }
 
-function buildRecipeExport(recipes) {
-  return {
+function buildRecipeExport(recipes, includePlan = false) {
+  const payload = {
     format: "piano-nutrizionale-recipes",
     schemaVersion: CATALOG_SCHEMA_VERSION,
     exportedAt: new Date().toISOString(),
     exportedBy: usernameFromUser(appState.user),
     recipes: recipes.map(cleanRecipeForTransfer)
   };
+
+  if (includePlan && appState.plan) {
+    payload.plan = clone(appState.plan);
+  }
+
+  return payload;
 }
 
 function downloadJsonFile(filename, data) {
@@ -929,14 +989,14 @@ window.exportAllRecipes = function() {
     return;
   }
   const date = new Date().toISOString().slice(0, 10);
-  downloadJsonFile(`ricette-${usernameFromUser(appState.user)}-${date}.json`, buildRecipeExport(appState.recipes));
+  downloadJsonFile(`ricette-${usernameFromUser(appState.user)}-${date}.json`, buildRecipeExport(appState.recipes, true));
   showToast(`${appState.recipes.length} ricette esportate`);
 };
 
 function exportCurrentRecipe() {
   if (!currentModal?.recipe) return;
   const safeName = currentModal.recipe.name.toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "").replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "");
-  downloadJsonFile(`${currentModal.recipe.id}-${safeName || "ricetta"}.json`, buildRecipeExport([currentModal.recipe]));
+  downloadJsonFile(`${currentModal.recipe.id}-${safeName || "ricetta"}.json`, buildRecipeExport([currentModal.recipe], false));
   showToast("Ricetta esportata");
 }
 
