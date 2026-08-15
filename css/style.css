@@ -490,13 +490,13 @@ input[type="checkbox"], input[type="radio"] { accent-color: var(--primary); widt
   animation: modal-in .2s ease;
 }
 @keyframes modal-in { from { opacity: 0; transform: translateY(12px) scale(.98); } }
-.modal-header { display: flex; align-items: flex-start; justify-content: space-between; gap: 15px; }
+.modal-header { display: flex; align-items: flex-start; justify-content: space-between; gap: 15px; flex-shrink: 0; }
 .modal-header h2 { max-width: 610px; font-size: 1.35rem; }
-#modal-time { margin-top: 5px; font-size: .8rem; }
-.tabs { display: flex; margin: 18px 0 12px; border-bottom: 1px solid var(--line); }
+#modal-time { margin-top: 5px; font-size: .8rem; flex-shrink: 0; }
+.tabs { display: flex; margin: 18px 0 12px; border-bottom: 1px solid var(--line); flex-shrink: 0; }
 .tab-btn { flex: 1; min-height: 43px; padding: 8px; border: 0; border-bottom: 2px solid transparent; background: transparent; color: var(--text-muted); font-weight: 750; cursor: pointer; }
 .tab-btn.active { border-bottom-color: var(--primary); color: var(--primary); }
-.tab-content { min-height: 200px; }
+.tab-content { min-height: 0; flex-shrink: 0; }
 .modal-ingredient-list, .modal-prep-list { list-style: none; }
 .modal-ingredient-list > li:not(.edit-ingredient) { display: flex; align-items: flex-start; justify-content: space-between; gap: 16px; flex-wrap: wrap; padding: 10px 2px; border-bottom: 1px solid var(--line); }
 .modal-ingredient-list > li span { flex: 1; min-width: 0; }
@@ -507,7 +507,7 @@ input[type="checkbox"], input[type="radio"] { accent-color: var(--primary); widt
 .recipe-notes { margin-top: 12px; padding: 14px !important; border: 0 !important; border-radius: 11px; background: var(--surface-alt); }
 .recipe-notes ul { margin: 7px 0 0 18px; }
 .recipe-notes li { margin: 5px 0; font-size: .85rem; }
-.modal-footer { display: flex; gap: 9px; margin-top: 20px; padding-top: 15px; border-top: 1px solid var(--line); }
+.modal-footer { display: flex; gap: 9px; margin-top: 20px; padding-top: 15px; border-top: 1px solid var(--line); flex-shrink: 0; }
 .modal-footer .btn { flex: 1; }
 .batch-modal { padding: 16px; border-radius: 13px; background: var(--accent-soft); }
 .batch-modal ol { margin: 14px 0 14px 20px; }
