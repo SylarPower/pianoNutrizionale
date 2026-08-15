@@ -6,6 +6,7 @@ const firebaseConfig = {
   messagingSenderId: "117247692441",
   appId: "1:117247692441:web:909efc3d3e6206fb95f208"
 };
+const APP_CHECK_SITE_KEY = "6LcFSYctAAAAACJOnCgeWhJFQWWXIwCus-5mtC1N";
 
 const INTERNAL_USERNAME_DOMAIN = "utenti.pianonutrizionale.app";
 let db = null;
@@ -14,9 +15,22 @@ let currentUser = null;
 
 function initFirebase() {
   try {
-    if (!firebase.apps.length) firebase.initializeApp(firebaseConfig);
-    db = firebase.firestore();
-    auth = firebase.auth();
+if (!firebase.apps.length) firebase.initializeApp(firebaseConfig);
+
+if (
+  typeof firebase.appCheck === "function" &&
+  APP_CHECK_SITE_KEY &&
+  !APP_CHECK_SITE_KEY.startsWith("REPLACE_")
+) {
+  firebase.appCheck().activate(APP_CHECK_SITE_KEY, true);
+} else {
+  console.warn(
+    "Firebase App Check non configurato: inserire APP_CHECK_SITE_KEY in js/firebase.js."
+  );
+}
+
+db = firebase.firestore();
+auth = firebase.auth();
     auth.setPersistence(firebase.auth.Auth.Persistence.LOCAL).catch(error => {
       console.warn("Persistenza autenticazione non disponibile", error);
     });
