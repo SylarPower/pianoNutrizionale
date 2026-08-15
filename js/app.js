@@ -1546,12 +1546,12 @@ window.applyShareAccept = async function() {
         if (!planSaved) nextPlan = appState.plan;
       }
     }
-    await acceptRecipeShare(shareId, nextRecipes, planSaved ? nextPlan : null);
-    setRecipes(nextRecipes);
-    if (nextPlan) appState.plan = nextPlan;
     const nulledRefs = window.PianoDomain
       ? PianoDomain.diffPlans(appState.plan, nextPlan).filter(change => change.to === null).length
       : 0;
+    await acceptRecipeShare(shareId, nextRecipes, planSaved ? nextPlan : null);
+    setRecipes(nextRecipes);
+    if (nextPlan) appState.plan = nextPlan;
     incomingRecipeShares = incomingRecipeShares.filter(item => item.id !== shareId);
     closeShareConflictModal();
     renderIncomingShares();
