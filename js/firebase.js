@@ -12,6 +12,8 @@ const INTERNAL_USERNAME_DOMAIN = "utenti.pianonutrizionale.app";
 let db = null;
 let auth = null;
 let currentUser = null;
+// Metadati dell'ultimo catalogo letto (es. etichette canoniche degli ingredienti).
+let catalogMeta = {};
 
 function initFirebase() {
   try {
@@ -110,6 +112,10 @@ function shoppingListRef() {
   return userRoot().collection("config").doc("shoppingList");
 }
 
+function backupsRef() {
+  return userRoot().collection("backups").doc("previous");
+}
+
 function localKey(name) {
   return `pn_${currentUser ? currentUser.uid : "anonymous"}_${name}`;
 }
@@ -183,7 +189,7 @@ function validateImportedDataset(dataset) {
   if (!dataset || typeof dataset !== "object") throw new Error("File JSON non valido");
   const ids = validateRecipeCatalog(dataset.recipes);
   if (!dataset.recipes.length) throw new Error("Il file non contiene ricette");
-  if (!dataset.plan?.days) throw new Error("Il piano settimanale manca dal file");
+  if (!dataset.plan?.days) return true;
   const expectedDays = ["monday", "tuesday", "wednesday", "thursday", "friday", "saturday", "sunday"];
   const slots = ["breakfast", "snack1", "lunch", "snack2", "dinner"];
   expectedDays.forEach(day => {
@@ -201,25 +207,65 @@ async function getRecipeCatalog() {
     const snapshot = await recipeCatalogRef().get();
     if (snapshot.exists) {
       const data = snapshot.data();
-      const recipes = Array.isArray(data.recipes) ? data.recipes : [];
-      writeLocalJson("recipe_catalog", recipes);
+      let recipes = Array.isArray(data.recipes) ? data.recipes : [];
+      catalogMeta = data;
+
+      // Migrazione una tantum allo schema 4: avviene solo quando la versione
+      // precedente viene rilevata, poi il documento resta a schema 4.
+      const needsMigration = Number(data.schemaVersion || 1) < CATALOG_SCHEMA_VERSION;
+      if (needsMigration && typeof PianoDomain !== "undefined") {
+        const migrated = PianoDomain.migrateCatalog({ ...data, recipes });
+        recipes = migrated.recipes;
+        catalogMeta = migrated;
+        writeLocalJson("recipe_catalog", recipes);
+        await saveRecipeCatalog(recipes, {
+          migratedFrom: Number(data.schemaVersion || 1),
+          migratedAt: firebase.firestore.FieldValue.serverTimestamp()
+        });
+      } else {
+        writeLocalJson("recipe_catalog", recipes);
+      }
       return recipes;
     }
 
-    // Migrazione una tantum dalla precedente struttura a un documento unico.
-    // Dopo la migrazione, gli avvii successivi costano una sola lettura catalogo.
+    // Migrazione una tantum dalla vecchia sottocollezione recipes, se presente.
+    // Dopo la migrazione gli avvii costano una sola lettura catalogo.
+    const legacySnapshot = await userRoot().collection("recipes").limit(100).get();
+    const legacyRecipes = [];
+    legacySnapshot.forEach(doc => {
+      const data = doc.data();
+      if (data?.id && data?.name) legacyRecipes.push(data);
+    });
+    if (legacyRecipes.length) {
+      const migrated = typeof PianoDomain !== "undefined"
+        ? PianoDomain.migrateCatalog({ recipes: legacyRecipes })
+        : { recipes: legacyRecipes };
+      writeLocalJson("recipe_catalog", migrated.recipes);
+      await saveRecipeCatalog(migrated.recipes, {
+        migratedFrom: "legacy-subcollection",
+        migratedAt: firebase.firestore.FieldValue.serverTimestamp()
+      });
+      return migrated.recipes;
+    }
+
+    // Primo avvio: catalogo vuoto in un documento unico (una sola lettura
+    // per gli avvii successivi).
     await saveRecipeCatalog([], {
       initializedEmpty: true
     });
-    
-    return [];
-    await saveRecipeCatalog([], { initializedEmpty: true });
+
     return [];
   } catch (error) {
     const cached = readLocalJson("recipe_catalog", []);
     if (cached.length) return cached;
     throw error;
   }
+}
+
+function getCanonicalIngredientLabels() {
+  if (typeof PianoDomain === "undefined") return {};
+  const embedded = catalogMeta?.canonicalIngredients;
+  return { ...PianoDomain.CANONICAL_INGREDIENTS, ...(embedded || {}) };
 }
 
 async function saveRecipeCatalog(recipes, metadata = {}) {
@@ -240,6 +286,18 @@ async function getWeeklyPlan() {
     const snapshot = await weeklyPlanRef().get();
     if (!snapshot.exists) return readLocalJson("weekly_plan", createEmptyWeeklyPlan());
     const plan = snapshot.data();
+
+    // Migrazione una tantum del piano: schema 4 + batchTemplates strutturati
+    // derivati dalle vecchie batchRules. Salvata una sola volta.
+    const hasLegacyRules = plan.batchRules && Object.keys(plan.batchRules).length > 0;
+    const needsMigration = Number(plan.schemaVersion || 1) < CATALOG_SCHEMA_VERSION || hasLegacyRules;
+    if (needsMigration && typeof PianoDomain !== "undefined") {
+      const migrated = PianoDomain.migratePlan(plan);
+      writeLocalJson("weekly_plan", migrated);
+      await weeklyPlanRef().set(migrated);
+      return migrated;
+    }
+
     writeLocalJson("weekly_plan", plan);
     return plan;
   } catch (error) {
@@ -282,6 +340,67 @@ async function saveShoppingListCloud(value) {
   await shoppingListRef().set(clean);
 }
 
+// ---- Backup precedente (users/{uid}/backups/previous) ----
+
+async function saveBackup(catalog, plan, shopping, operation, description) {
+  requireUser();
+  const snapshot = {
+    schemaVersion: CATALOG_SCHEMA_VERSION,
+    catalog: cloneData(catalog),
+    plan: cloneData(plan),
+    shoppingList: cloneData(shopping),
+    operation,
+    description,
+    createdAt: new Date().toISOString()
+  };
+  await backupsRef().set({
+    ...snapshot,
+    createdAtServer: firebase.firestore.FieldValue.serverTimestamp()
+  });
+  return snapshot;
+}
+
+async function getBackup() {
+  requireUser();
+  const snapshot = await backupsRef().get();
+  return snapshot.exists ? snapshot.data() : null;
+}
+
+async function deleteBackup() {
+  requireUser();
+  await backupsRef().delete();
+}
+
+// Ripristino atomico: legge il backup, ripristina catalogo/piano/spesa e
+// cancella il backup in un'unica transazione. Utilizzabile una sola volta.
+async function restoreBackupAtomic() {
+  const user = requireUser();
+  let restored = null;
+  await db.runTransaction(async transaction => {
+    const backupDoc = await transaction.get(backupsRef());
+    if (!backupDoc.exists) throw new Error("Non esiste un backup da ripristinare");
+    const backup = backupDoc.data();
+    if (!backup?.catalog?.recipes || !backup?.plan) throw new Error("Il backup non è valido");
+    transaction.set(recipeCatalogRef(), {
+      schemaVersion: CATALOG_SCHEMA_VERSION,
+      recipes: cloneData(backup.catalog.recipes),
+      recipeCount: backup.catalog.recipes.length,
+      restoredAt: firebase.firestore.FieldValue.serverTimestamp(),
+      updatedAt: firebase.firestore.FieldValue.serverTimestamp()
+    });
+    transaction.set(weeklyPlanRef(), cloneData(backup.plan));
+    transaction.set(shoppingListRef(), cloneData(backup.shoppingList || getDefaultShoppingList()));
+    transaction.delete(backupsRef());
+    restored = backup;
+  });
+  // Aggiorna anche la cache locale e la UI.
+  writeLocalJson("recipe_catalog", restored.catalog.recipes);
+  writeLocalJson("weekly_plan", restored.plan);
+  writeLocalJson("shopping", restored.shoppingList || getDefaultShoppingList());
+  catalogMeta = restored.catalogMeta || catalogMeta;
+  return restored;
+}
+
 async function importUserDataset(dataset) {
   validateImportedDataset(dataset);
   const recipes = cloneData(dataset.recipes);
@@ -295,11 +414,11 @@ async function importUserDataset(dataset) {
     importedAt: firebase.firestore.FieldValue.serverTimestamp(),
     updatedAt: firebase.firestore.FieldValue.serverTimestamp()
   });
-  batch.set(weeklyPlanRef(), plan);
+  if (plan) batch.set(weeklyPlanRef(), plan);
   batch.set(shoppingListRef(), shopping);
   await batch.commit();
   writeLocalJson("recipe_catalog", recipes);
-  writeLocalJson("weekly_plan", plan);
+  if (plan) writeLocalJson("weekly_plan", plan);
   writeLocalJson("shopping", shopping);
   return { recipes, plan, shopping };
 }
@@ -327,7 +446,7 @@ async function findUserByUsername(username) {
   return snapshot.data();
 }
 
-async function sendRecipeShare(recipientUsername, recipes) {
+async function sendRecipeShare(recipientUsername, recipes, plan = null) {
   requireUser();
   validateRecipeCatalog(recipes);
   if (!recipes.length) throw new Error("Non ci sono ricette da inviare");
@@ -336,6 +455,10 @@ async function sendRecipeShare(recipientUsername, recipes) {
   if (recipient.uid === currentUser.uid) throw new Error("Non puoi inviare ricette al tuo stesso account");
   const senderUsername = usernameFromUser(currentUser);
   const shareRef = db.collection("recipeShares").doc();
+  const includesPlan = Boolean(plan && plan.days);
+  const normalizedPlan = includesPlan && typeof PianoDomain !== "undefined"
+    ? PianoDomain.migratePlan(cloneData(plan))
+    : null;
   await shareRef.set({
     senderUid: currentUser.uid,
     senderUsername,
@@ -344,6 +467,8 @@ async function sendRecipeShare(recipientUsername, recipes) {
     status: "pending",
     recipeCount: recipes.length,
     recipes: cloneData(recipes),
+    includesPlan,
+    plan: normalizedPlan,
     createdAt: firebase.firestore.FieldValue.serverTimestamp()
   });
   return shareRef.id;

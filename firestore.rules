@@ -1,43 +1,73 @@
 rules_version = '2';
 service cloud.firestore {
   match /databases/{database}/documents {
+    // App Check NON sostituisce Authentication e Firestore Rules: viene
+    // valutato a parte. Qui ogni accesso richiede comunque un utente
+    // autenticato con l'UID corretto.
+
     function signedIn() {
       return request.auth != null;
     }
 
     // Directory minima username → uid, necessaria per cercare il destinatario.
-    // L'email tecnica del token impedisce di registrare lo username di un altro account.
+    // L'email tecnica del token impedisce di registrare lo username di un altro
+    // account e un account diverso non può sovrascrivere una voce esistente.
     match /usernames/{username} {
       allow read: if signedIn();
-      allow create, update: if signedIn()
+      allow create: if signedIn()
+        && request.resource.data.uid == request.auth.uid
+        && request.resource.data.username == username
+        && request.auth.token.email == username + '@utenti.pianonutrizionale.app';
+      allow update: if signedIn()
+        && resource.data.uid == request.auth.uid
         && request.resource.data.uid == request.auth.uid
         && request.resource.data.username == username
         && request.auth.token.email == username + '@utenti.pianonutrizionale.app';
       allow delete: if false;
     }
 
-    // Richieste di condivisione. Il mittente crea; solo il destinatario decide.
+    // Richieste di condivisione. Il mittente crea (mai verso se stesso);
+    // mittente e destinatario leggono; solo il destinatario accetta/rifiuta
+    // (una sola transizione pending → accepted/rejected) ed elimina.
     match /recipeShares/{shareId} {
+      function shareIsPending() {
+        return resource.data.status == 'pending';
+      }
       allow create: if signedIn()
         && request.resource.data.senderUid == request.auth.uid
         && request.resource.data.recipientUid != request.auth.uid
+        && request.resource.data.recipientUid is string
+        && request.resource.data.recipientUid.size() > 0
+        && request.resource.data.senderUsername is string
+        && request.resource.data.recipientUsername is string
         && request.resource.data.status == 'pending'
-        && request.resource.data.recipeCount > 0;
+        && request.resource.data.recipeCount is int
+        && request.resource.data.recipeCount > 0
+        && request.resource.data.recipes is list
+        && (request.resource.data.includesPlan == true
+          ? request.resource.data.plan != null
+          : request.resource.data.plan == null || request.resource.data.includesPlan == false);
       allow read: if signedIn()
         && (resource.data.senderUid == request.auth.uid
           || resource.data.recipientUid == request.auth.uid);
       allow update: if signedIn()
         && resource.data.recipientUid == request.auth.uid
-        && resource.data.status == 'pending'
+        && shareIsPending()
         && request.resource.data.status in ['accepted', 'rejected']
         && request.resource.data.diff(resource.data).affectedKeys()
           .hasOnly(['status', 'respondedAt']);
       allow delete: if signedIn() && resource.data.recipientUid == request.auth.uid;
     }
 
-    // Ogni account può leggere e modificare esclusivamente la propria area privata.
+    // Area privata: catalogo, piano, lista spesa e backup. Solo il proprietario.
     match /users/{userId}/{document=**} {
       allow read, write: if signedIn() && request.auth.uid == userId;
+    }
+
+    // Backup precedente (users/{uid}/backups/previous): una sola copia per
+    // utente, ripristinabile una sola volta dall'app (transazione atomica).
+    match /users/{userId}/backups/{backupId} {
+      allow read, write, delete: if signedIn() && request.auth.uid == userId;
     }
 
     match /{document=**} {
