@@ -476,12 +476,17 @@ input[type="checkbox"], input[type="radio"] { accent-color: var(--primary); widt
   display: flex;
   flex-direction: column;
   width: min(100%, 720px);
+  min-height: 0;
   max-height: min(92vh, 900px);
+  max-height: min(92dvh, 900px);
   padding: 22px;
   border-radius: 22px;
   background: var(--surface);
   box-shadow: 0 28px 80px rgba(0,0,0,.25);
-  overflow: auto;
+  overflow-y: auto;
+  overflow-x: hidden;
+  overscroll-behavior: contain;
+  -webkit-overflow-scrolling: touch;
   animation: modal-in .2s ease;
 }
 @keyframes modal-in { from { opacity: 0; transform: translateY(12px) scale(.98); } }
@@ -493,9 +498,9 @@ input[type="checkbox"], input[type="radio"] { accent-color: var(--primary); widt
 .tab-btn.active { border-bottom-color: var(--primary); color: var(--primary); }
 .tab-content { min-height: 200px; }
 .modal-ingredient-list, .modal-prep-list { list-style: none; }
-.modal-ingredient-list > li:not(.edit-ingredient) { display: flex; align-items: flex-start; justify-content: space-between; gap: 16px; padding: 10px 2px; border-bottom: 1px solid var(--line); }
-.modal-ingredient-list > li span { flex: 1; }
-.modal-ingredient-list > li strong { color: var(--primary); text-align: right; }
+.modal-ingredient-list > li:not(.edit-ingredient) { display: flex; align-items: flex-start; justify-content: space-between; gap: 16px; flex-wrap: wrap; padding: 10px 2px; border-bottom: 1px solid var(--line); }
+.modal-ingredient-list > li span { flex: 1; min-width: 0; }
+.modal-ingredient-list > li strong { color: var(--primary); text-align: right; min-width: 0; margin-left: auto; }
 .modal-prep-list > li:not(.edit-step) { padding: 11px 2px; border-bottom: 1px solid var(--line); }
 .modal-prep-list > li > strong { color: var(--primary); }
 .special-note { margin-top: 12px; padding: 13px !important; border: 0 !important; border-radius: 11px; background: var(--accent-soft); color: #80502a; }
@@ -810,7 +815,12 @@ body.dark-mode .login-card {
   .profile-option > span { position: absolute; left: 16px; top: 20px; }
   .cloud-section { flex-direction: column; align-items: stretch; }
   .modal { align-items: flex-end; padding: 0; }
-  .modal-content { max-height: 94vh; padding: 18px 15px; border-radius: 22px 22px 0 0; }
+  .modal-content {
+    max-height: 94vh;
+    max-height: min(94dvh, 94vh);
+    padding: 18px 15px calc(18px + env(safe-area-inset-bottom));
+    border-radius: 22px 22px 0 0;
+  }
   .modal-header h2 { font-size: 1.1rem; }
   .modal-footer { flex-direction: column-reverse; }
   .edit-ingredient > div,
