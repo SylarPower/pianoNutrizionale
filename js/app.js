@@ -1088,6 +1088,7 @@ function setupTransferModals() {
         <div class="modal-header"><div><p class="eyebrow">CONDIVISIONE</p><h2>Invia ricette a un utente</h2></div><button class="btn-icon" onclick="closeShareDialog()">&times;</button></div>
         <p id="share-send-summary" class="text-muted"></p>
         <label class="share-username-field">Username destinatario<input id="share-recipient-username" autocomplete="off" autocapitalize="none" placeholder="es. mario"></label>
+        <label class="share-plan-option"><input id="share-include-plan" type="checkbox"> Invia anche la struttura della settimana</label>
         <p class="text-muted transfer-privacy-note">Il destinatario riceverà una richiesta e potrà aggiungere, sostituire o rifiutare le ricette.</p>
         <button id="share-send-button" class="btn btn-primary full-width" onclick="submitRecipeShare()">Invia richiesta</button>
       </div>
@@ -1109,6 +1110,8 @@ window.openShareDialog = function(recipeId = null) {
   pendingShareRecipeIds = recipes.map(recipe => recipe.id);
   document.getElementById("share-send-summary").textContent = recipeId ? `Invierai: ${getRecipe(recipeId).name}` : `Invierai tutte le ${recipes.length} ricette del catalogo.`;
   document.getElementById("share-recipient-username").value = "";
+  document.getElementById("share-include-plan").checked = !recipeId;
+  document.getElementById("share-include-plan").disabled = Boolean(recipeId);
   document.getElementById("share-send-modal").classList.remove("hidden");
   setTimeout(() => document.getElementById("share-recipient-username").focus(), 50);
 };
@@ -1121,11 +1124,13 @@ window.closeShareDialog = function() {
 window.submitRecipeShare = async function() {
   const username = document.getElementById("share-recipient-username").value;
   const recipes = pendingShareRecipeIds.map(getRecipe).filter(Boolean).map(cleanRecipeForTransfer);
+  const includePlan = document.getElementById("share-include-plan")?.checked;
+  const sharedPlan = includePlan ? clone(appState.plan) : null;
   const button = document.getElementById("share-send-button");
   button.disabled = true;
   button.textContent = "Invio…";
   try {
-    await sendRecipeShare(username, recipes);
+    await sendRecipeShare(username, recipes, sharedPlan);
     closeShareDialog();
     showToast("Richiesta di condivisione inviata ✅");
   } catch (error) {
@@ -1160,8 +1165,8 @@ function renderIncomingShares() {
   list.innerHTML = incomingRecipeShares.map(share => `
     <article class="incoming-share-card">
       <div><span class="account-avatar small">${escapeHtml((share.senderUsername || "?").slice(0, 1).toUpperCase())}</span><div><strong>${escapeHtml(share.senderUsername || "Utente")}</strong><small>${share.recipeCount || share.recipes?.length || 0} ricett${(share.recipeCount || share.recipes?.length) === 1 ? "a" : "e"}</small></div></div>
-      <p>${escapeHtml((share.recipes || []).slice(0, 4).map(recipe => recipe.name).join(" · "))}${(share.recipes || []).length > 4 ? "…" : ""}</p>
-      <div class="incoming-share-actions"><button class="btn btn-outline" onclick="acceptSharedRecipes('${share.id}', 'add')">Aggiungi</button><button class="btn btn-danger" onclick="acceptSharedRecipes('${share.id}', 'replace')">Sostituisci tutte</button><button class="btn btn-outline" onclick="rejectSharedRecipes('${share.id}')">Rifiuta</button></div>
+      <p>${escapeHtml((share.recipes || []).slice(0, 4).map(recipe => recipe.name).join(" · "))}${(share.recipes || []).length > 4 ? "…" : ""}${share.includesPlan ? " · 📅 Include settimana" : ""}</p>
+      <div class="incoming-share-actions"><button class="btn btn-outline" onclick="acceptSharedRecipes('${share.id}', 'recipes')">Solo ricette</button>${share.includesPlan ? `<button class="btn btn-outline" onclick="acceptSharedRecipes('${share.id}', 'plan')">Solo settimana</button><button class="btn btn-primary" onclick="acceptSharedRecipes('${share.id}', 'all')">Importa tutto</button>` : ""}<button class="btn btn-danger" onclick="acceptSharedRecipes('${share.id}', 'replace')">Sostituisci ricette</button><button class="btn btn-outline" onclick="rejectSharedRecipes('${share.id}')">Rifiuta</button></div>
     </article>`).join("");
 }
 
@@ -1172,20 +1177,23 @@ window.closeIncomingShares = function() {
 window.acceptSharedRecipes = async function(shareId, mode) {
   const share = incomingRecipeShares.find(item => item.id === shareId);
   if (!share) return;
-  if (mode === "replace" && !confirm(`Sostituire tutte le tue ricette con le ${share.recipes.length} ricevute da ${share.senderUsername}?`)) return;
-  setLoading("Salvataggio ricette condivise…");
+  const replacesRecipes = mode === "replace";
+  if (replacesRecipes && !confirm(`Sostituire tutte le tue ricette con le ${share.recipes.length} ricevute da ${share.senderUsername}?`)) return;
+  if (mode === "plan" && !share.plan) return showToast("Questa condivisione non contiene una settimana", true);
+  setLoading("Salvataggio condivisione…");
   try {
     const incoming = (share.recipes || []).map(cleanRecipeForTransfer);
     validateRecipeCatalog(incoming);
-    const nextRecipes = mode === "add" ? mergeRecipeCatalogs(appState.recipes, incoming) : incoming;
-    const nextPlan = sanitizePlanForCatalog(appState.plan, nextRecipes);
+    const nextRecipes = mode === "plan" ? appState.recipes : (replacesRecipes ? incoming : mergeRecipeCatalogs(appState.recipes, incoming));
+    const receivedPlan = share.plan ? clone(share.plan) : null;
+    const nextPlan = mode === "recipes" || replacesRecipes ? sanitizePlanForCatalog(appState.plan, nextRecipes) : sanitizePlanForCatalog(receivedPlan || appState.plan, nextRecipes);
     await acceptRecipeShare(shareId, nextRecipes, nextPlan);
     setRecipes(nextRecipes);
     appState.plan = nextPlan;
     incomingRecipeShares = incomingRecipeShares.filter(item => item.id !== shareId);
     renderIncomingShares();
     handleRoute();
-    showToast("Ricette accettate e salvate ✅");
+    showToast(mode === "plan" ? "Settimana importata e salvata ✅" : mode === "all" ? "Ricette e settimana importate ✅" : "Ricette accettate e salvate ✅");
   } catch (error) {
     console.error(error);
     showToast(error.message || "Accettazione non riuscita", true);

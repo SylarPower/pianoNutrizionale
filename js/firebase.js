@@ -320,7 +320,7 @@ async function findUserByUsername(username) {
   return snapshot.data();
 }
 
-async function sendRecipeShare(recipientUsername, recipes) {
+async function sendRecipeShare(recipientUsername, recipes, plan = null) {
   requireUser();
   validateRecipeCatalog(recipes);
   if (!recipes.length) throw new Error("Non ci sono ricette da inviare");
@@ -337,6 +337,8 @@ async function sendRecipeShare(recipientUsername, recipes) {
     status: "pending",
     recipeCount: recipes.length,
     recipes: cloneData(recipes),
+    includesPlan: Boolean(plan),
+    plan: plan ? cloneData(plan) : null,
     createdAt: firebase.firestore.FieldValue.serverTimestamp()
   });
   return shareRef.id;
