@@ -1,0 +1,13 @@
+{
+  "name": "piano-nutrizionale",
+  "version": "4.0.0",
+  "private": true,
+  "description": "WebApp PWA privata per piano nutrizionale, ricette e lista della spesa.",
+  "scripts": {
+    "test": "node --test test/*.test.js",
+    "syntax": "node --check js/domain.js && node --check js/data.js && node --check js/firebase.js && node --check js/app.js && node --check sw.js"
+  },
+  "engines": {
+    "node": ">=18"
+  }
+}

@@ -111,39 +111,8 @@ function getProfileLabel() {
 }
 
 function normalizeRecipeSchema(recipe) {
-  const normalized = clone(recipe);
-
-  normalized.ingredients = (normalized.ingredients || []).map(ingredient => {
-    const portions = ingredient.portions || {};
-
-    return {
-      ...ingredient,
-      portions: {
-        ipoTraining:
-          portions.ipoTraining ??
-          portions.ipo ??
-          "—",
-
-        ipoRest:
-          portions.ipoRest ??
-          portions.ipo ??
-          "—",
-
-        manTraining:
-          portions.manTraining ??
-          portions.training ??
-          "—",
-
-        manRest:
-          portions.manRest ??
-          portions.rest ??
-          portions.training ??
-          "—"
-      }
-    };
-  });
-
-  return normalized;
+  // Schema 4: ingredientId stabile + porzioni normalizzate (supporto legacy).
+  return window.PianoDomain ? PianoDomain.migrateRecipe(recipe) : clone(recipe);
 }
 
 function setRecipes(recipes) {
@@ -155,24 +124,25 @@ function setRecipes(recipes) {
   );
 }
 
+// Batch cooking dinamico basato su batchTemplates strutturati:
+// cena del giorno corrente (anchor) + pranzo futuro (target).
+// Il tipo A/R del giorno corrente non disattiva mai il batch: conta solo
+// il tipo A/R del giorno target per le quantità.
+function getActiveBatch(dayKey) {
+  if (!window.PianoDomain || !appState.plan?.days?.[dayKey]) return [];
+  return PianoDomain.activeBatch(
+    dayKey,
+    appState.plan,
+    appState.plan.batchTemplates || [],
+    appState.recipesById,
+    getPortionProfile()
+  );
+}
+
+// Retrocompatibilità: primo batch attivo (usato dal vecchio flusso).
 function getActiveBatchRule(dayKey) {
-  const rule = appState.plan?.batchRules?.[dayKey];
-  const current = appState.plan?.days?.[dayKey];
-
-  if (!rule || !current) return null;
-
-  const next = appState.plan?.days?.[rule.nextDay];
-
-  if (!next) return null;
-
-  // Il batch dipende esclusivamente dalla combinazione:
-  // cena corrente + pranzo del giorno successivo.
-  // Il tipo A/R modifica solo i dosaggi e non disattiva il batch.
-  const hasRequiredRecipes =
-    current.dinner === rule.dinner &&
-    next.lunch === rule.nextLunch;
-
-  return hasRequiredRecipes ? rule : null;
+  const batches = getActiveBatch(dayKey);
+  return batches.length ? batches[0] : null;
 }
 
 function showToast(message, isError = false) {
@@ -276,7 +246,10 @@ async function loadUserData(user) {
       getRecipeCatalog(), getWeeklyPlan(), getShoppingListCloud()
     ]);
     setRecipes(recipes);
-    appState.plan = plan;
+    // Normalizzazione in memoria (idempotente, nessuna scrittura automatica):
+    // il salvataggio su Firebase avviene solo quando viene rilevata una
+    // versione precedente in getWeeklyPlan/getRecipeCatalog.
+    appState.plan = window.PianoDomain ? PianoDomain.migratePlan(plan) : plan;
     appState.shopping = shopping;
     appState.deviceSettings = getLocalDeviceSettings();
 
@@ -299,7 +272,9 @@ async function loadUserData(user) {
       setupRouter();
       setupModal();
       setupSwapModal();
+      setupMealOperations();
       setupTransferModals();
+      setupGeneratorModal();
       appStarted = true;
     } else {
       handleRoute();
@@ -429,14 +404,55 @@ window.changeChefDay = function(dayKey) {
   renderChef();
 };
 
+const BATCH_STATUS_LABELS = {
+  today: { label: "Prepara oggi", className: "today" },
+  fresh: { label: "Prepara al momento", className: "fresh" },
+  later: { label: "Non ancora preparabile", className: "later" }
+};
+
+// Raccolta dei task dei batch attivi per il giorno, senza duplicati per ID.
+function collectBatchTasks(dayKey) {
+  const batches = getActiveBatch(dayKey);
+  const byId = new Map();
+  batches.forEach(batch => {
+    (batch.tasks || []).forEach(task => {
+      if (byId.has(task.id)) return;
+      byId.set(task.id, {
+        ...task,
+        targetDay: batch.targetDay,
+        daysUntilTarget: batch.daysUntilTarget,
+        templateTitle: batch.template.title || "Preparazioni in anticipo"
+      });
+    });
+  });
+  return [...byId.values()];
+}
+
 function renderBatchCard(dayKey) {
-  const rule = getActiveBatchRule(dayKey);
-  if (!rule) return "";
+  const tasks = collectBatchTasks(dayKey);
+  if (!tasks.length) return "";
+  const targetInfo = [...new Set(tasks.map(task =>
+    `pranzo di ${DAY_NAMES[task.targetDay]} · tra ${task.daysUntilTarget} ${task.daysUntilTarget === 1 ? "giorno" : "giorni"}`
+  ))];
+  const title = tasks[0].templateTitle || "Preparazioni in anticipo";
   return `
     <section class="batch-card">
-      <div class="batch-title"><span>🍳</span><div><small>Batch cooking attivo</small><h3>${escapeHtml(rule.title)}</h3></div></div>
-      <ol>${rule.actions.map(action => `<li class="step-item" onclick="this.classList.toggle('done')">${escapeHtml(action)}</li>`).join("")}</ol>
-      <p class="batch-next"><strong>⏰ ${escapeHtml(rule.nextLunchNote)}</strong></p>
+      <div class="batch-title"><span>🍳</span><div><small>Batch cooking attivo</small><h3>${escapeHtml(title)}</h3></div></div>
+      <p class="batch-next"><strong>🎯 ${escapeHtml(targetInfo.join(" · "))}</strong></p>
+      <ol>${tasks.map(task => {
+        const status = BATCH_STATUS_LABELS[task.status] || BATCH_STATUS_LABELS.later;
+        const method = task.storage?.method === "fridge" ? "frigo" : (task.storage?.method || "frigo");
+        const maxDays = task.storage?.maxDays;
+        const storageNote = maxDays === 0
+          ? "Fresco: da preparare al momento"
+          : `Conservazione: ${escapeHtml(method)} · max ${maxDays} ${maxDays === 1 ? "giorno" : "giorni"}`;
+        return `<li class="step-item batch-task">
+          <span class="batch-task-label">${escapeHtml(task.label)}</span>
+          <span class="batch-task-status ${status.className}">${status.label}</span>
+          ${task.quantity ? `<span class="batch-task-quantity">${escapeHtml(task.quantity)}</span>` : ""}
+          <small class="batch-task-storage">${storageNote}${task.storage?.instructions ? ` · ${escapeHtml(task.storage.instructions)}` : ""}</small>
+        </li>`;
+      }).join("")}</ol>
     </section>`;
 }
 
@@ -446,7 +462,7 @@ function renderChef() {
   const nextDay = getNextDay(selectedDay);
   const dinner = getPlannedRecipe(selectedDay, "dinner");
   const nextLunch = getPlannedRecipe(nextDay, "lunch");
-  const activeBatch = getActiveBatchRule(selectedDay);
+  const activeBatch = getActiveBatch(selectedDay);
   const daytimeSlots = ["breakfast", "snack1", "lunch", "snack2"];
 
   container.innerHTML = `
@@ -480,7 +496,7 @@ function renderChef() {
     ${renderBatchCard(selectedDay)}
 
     <section class="chef-section tomorrow-section">
-      <div class="section-title"><span>🍱</span><div><small>${activeBatch ? "Incluso nel batch cooking" : "Prossimo pranzo"}</small><h2>Pranzo di ${DAY_NAMES[nextDay]}</h2></div></div>
+      <div class="section-title"><span>🍱</span><div><small>${activeBatch.length ? "Incluso nel batch cooking" : "Prossimo pranzo"}</small><h2>Pranzo di ${DAY_NAMES[nextDay]}</h2></div></div>
       ${mealCardHtml(nextLunch, nextDay, "lunch")}
     </section>
   `;
@@ -536,7 +552,7 @@ function renderWeek() {
   const container = document.getElementById("view-week");
   const today = getTodayKey();
   container.innerHTML = `
-    <div class="page-heading"><div><p class="eyebrow">Schema ottimizzato</p><h1>Piano settimanale</h1><p>Sab(R) · Dom(A) · Lun(A) · Mar(R) · Mer(A) · Gio(R) · Ven(A)</p></div></div>
+    <div class="page-heading week-heading"><div><p class="eyebrow">Schema ottimizzato</p><h1>Piano settimanale</h1><p>Sab(R) · Dom(A) · Lun(A) · Mar(R) · Mer(A) · Gio(R) · Ven(A)</p></div><button class="btn btn-outline" onclick="openGeneratorModal()">✨ Genera settimana</button></div>
     ${renderWeekAnalysis()}
     <div class="week-grid">
       ${DAY_ORDER.map(day => {
@@ -555,10 +571,10 @@ function renderWeek() {
               return `<div class="week-meal">
                 <small>${escapeHtml(slot.shortLabel)}</small>
                 <button class="week-meal-name" onclick="openRecipeModal('${escapeAttr(recipe?.id || "")}', '${day}')">${escapeHtml(recipe?.emoji || "")} ${escapeHtml(recipe ? getRecipeDisplayName(recipe, planDay.type) : "Non disponibile")}</button>
-                <button class="btn-icon btn-swap" onclick="openSwapModal('${day}', '${slot.id}')">🔄</button>
+                <button class="btn-icon btn-swap" onclick="openMealActions('${day}', '${slot.id}')" title="Operazioni sul pasto" aria-label="Operazioni sul pasto">⋯</button>
               </div>`;
             }).join("")}
-            ${getActiveBatchRule(day) ? `<div class="batch-active-chip">🍳 Batch cooking disponibile</div>` : ""}
+            ${getActiveBatch(day).length ? `<div class="batch-active-chip">🍳 Batch cooking disponibile</div>` : ""}
           </article>`;
       }).join("")}
     </div>`;
@@ -609,6 +625,11 @@ window.closeSwapModal = function() {
 };
 
 window.confirmSwap = async function(dayKey, slot, recipeId) {
+  if (appState.plan.days[dayKey][slot] === recipeId) {
+    closeSwapModal();
+    return;
+  }
+  if (!confirm("Sostituire questo pasto con la ricetta scelta? Frequenze e batch cooking potrebbero cambiare.")) return;
   appState.plan.days[dayKey][slot] = recipeId;
   try {
     await saveWeeklyPlan(appState.plan);
@@ -617,6 +638,114 @@ window.confirmSwap = async function(dayKey, slot, recipeId) {
     showToast("Piano aggiornato");
   } catch (error) {
     showToast("Salvataggio non riuscito", true);
+  }
+};
+
+// ---- Operazioni sui pasti: scambia, copia, ripristina ----
+
+let mealActionsTarget = null;
+
+function setupMealOperations() {
+  if (document.getElementById("meal-actions-modal")) return;
+  document.body.insertAdjacentHTML("beforeend", `
+    <div id="meal-actions-modal" class="modal hidden" role="dialog" aria-modal="true">
+      <div class="modal-content meal-actions-content">
+        <div class="modal-header"><div><p class="eyebrow">PIANO SETTIMANALE</p><h2 id="meal-actions-title">Operazioni sul pasto</h2></div><button class="btn-icon" onclick="closeMealActions()">&times;</button></div>
+        <p class="text-muted" id="meal-actions-subtitle"></p>
+        <div class="meal-actions-list">
+          <button class="swap-item" onclick="closeMealActions(); openSwapModal(mealActionsTarget.day, mealActionsTarget.slot)"><span>🔁</span><span><strong>Sostituisci con una ricetta</strong><small>Scegli dal ricettario dello stesso tipo pasto</small></span></button>
+          <button class="swap-item" onclick="renderMealSwapList()"><span>⇄</span><span><strong>Scambia con altro pasto</strong><small>Scambio bidirezionale tra giorni dello stesso tipo</small></span></button>
+          <button class="swap-item" onclick="renderMealCopyList()"><span>📋</span><span><strong>Copia in altro giorno</strong><small>Il pasto sorgente resta invariato</small></span></button>
+          <button class="swap-item" id="meal-restore-item" onclick="confirmRestoreMeal()"><span>↩</span><span><strong>Ripristina scelta iniziale</strong><small>Torna alla ricetta del piano di partenza</small></span></button>
+        </div>
+        <div id="meal-target-list" class="meal-target-list hidden"></div>
+      </div>
+    </div>`);
+}
+
+window.openMealActions = function(dayKey, slot) {
+  if (!mealActionsTarget) mealActionsTarget = { day: dayKey, slot };
+  mealActionsTarget.day = dayKey;
+  mealActionsTarget.slot = slot;
+  const modal = document.getElementById("meal-actions-modal");
+  document.getElementById("meal-actions-title").textContent = `${DAY_NAMES[dayKey]} · ${getSlotMeta(slot).label}`;
+  const currentId = appState.plan.days[dayKey][slot];
+  const defaultId = appState.plan.defaultDays?.[dayKey]?.[slot];
+  document.getElementById("meal-actions-subtitle").textContent = currentId
+    ? `Ricetta attuale: ${getRecipeDisplayName(getRecipe(currentId), getDayType(dayKey))}`
+    : "Nessuna ricetta assegnata a questo pasto.";
+  document.getElementById("meal-restore-item").style.display = (defaultId && defaultId !== currentId) ? "" : "none";
+  document.getElementById("meal-target-list").classList.add("hidden");
+  modal.classList.remove("hidden");
+};
+
+window.closeMealActions = function() {
+  document.getElementById("meal-actions-modal")?.classList.add("hidden");
+};
+
+function mealTargetRows(mode) {
+  const { day: sourceDay, slot } = mealActionsTarget;
+  const options = [];
+  DAY_ORDER.forEach(day => {
+    if (day === sourceDay) return;
+    const recipe = getRecipe(appState.plan.days[day][slot]);
+    const icon = mode === "swap" ? "⇄" : "→";
+    options.push(`<button class="swap-item" onclick="${mode === "swap" ? "confirmSwapMeal" : "confirmCopyMeal"}('${sourceDay}', '${slot}', '${day}')"><span class="swap-code">${DAY_NAMES[day].slice(0, 3).toUpperCase()}</span><span><strong>${escapeHtml(recipe ? `${recipe.emoji || "🍲"} ${getRecipeDisplayName(recipe, getDayType(day))}` : "Nessuna ricetta")}</strong><small>${escapeHtml(getSlotMeta(slot).label)} · ${icon} ${mode === "swap" ? "scambia" : "copia"}</small></span></button>`);
+  });
+  return options.join("");
+}
+
+window.renderMealSwapList = function() {
+  document.getElementById("meal-target-list").classList.remove("hidden");
+  document.getElementById("meal-target-list").innerHTML = `<h3>Scambia con un altro giorno (stesso tipo pasto)</h3>${mealTargetRows("swap")}`;
+};
+
+window.renderMealCopyList = function() {
+  document.getElementById("meal-target-list").classList.remove("hidden");
+  document.getElementById("meal-target-list").innerHTML = `<h3>Copia in un altro giorno</h3>${mealTargetRows("copy")}`;
+};
+
+window.confirmSwapMeal = async function(dayA, slot, dayB) {
+  if (!confirm(`Scambiare i pasti tra ${DAY_NAMES[dayA]} e ${DAY_NAMES[dayB]}? Lo scambio è bidirezionale e salva il piano una sola volta.`)) return;
+  try {
+    appState.plan = window.PianoDomain ? PianoDomain.swapMeals(appState.plan, dayA, slot, dayB, slot) : appState.plan;
+    await saveWeeklyPlan(appState.plan);
+    closeMealActions();
+    handleRoute();
+    showToast("Pasti scambiati ✅");
+  } catch (error) {
+    console.error(error);
+    showToast(error.message || "Scambio non riuscito", true);
+  }
+};
+
+window.confirmCopyMeal = async function(fromDay, slot, toDay) {
+  if (!confirm(`Copiare il pasto da ${DAY_NAMES[fromDay]} a ${DAY_NAMES[toDay]}? Il pasto sorgente resta invariato.`)) return;
+  try {
+    appState.plan = window.PianoDomain ? PianoDomain.copyMeal(appState.plan, fromDay, slot, toDay) : appState.plan;
+    await saveWeeklyPlan(appState.plan);
+    closeMealActions();
+    handleRoute();
+    showToast("Pasto copiato ✅");
+  } catch (error) {
+    console.error(error);
+    showToast(error.message || "Copia non riuscita", true);
+  }
+};
+
+window.confirmRestoreMeal = async function() {
+  if (!mealActionsTarget) return;
+  const { day, slot } = mealActionsTarget;
+  if (!confirm(`Ripristinare la scelta iniziale per ${DAY_NAMES[day]} ${getSlotMeta(slot).label}?`)) return;
+  try {
+    appState.plan = window.PianoDomain ? PianoDomain.restoreMeal(appState.plan, day, slot) : appState.plan;
+    await saveWeeklyPlan(appState.plan);
+    closeMealActions();
+    handleRoute();
+    showToast("Scelta iniziale ripristinata ✅");
+  } catch (error) {
+    console.error(error);
+    showToast(error.message || "Ripristino non riuscito", true);
   }
 };
 
@@ -711,40 +840,25 @@ function shoppingPortionsForIngredient(ingredient, dayType) {
 }
 
 function aggregateShoppingList() {
-  const aggregate = {};
-  DAY_ORDER.forEach(day => {
-    const selected = appState.shopping.selectedMeals?.[day] || [];
-    selected.forEach(slot => {
-      const recipe = getPlannedRecipe(day, slot);
-      if (!recipe) return;
-      recipe.ingredients.forEach(ingredient => {
-        const key = normalizeIngredientName(ingredient.name);
-        if (!aggregate[key]) {
-          aggregate[key] = {
-            id: key.replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, ""),
-            name: ingredient.name,
-            category: getCategoryForIngredient(ingredient.name),
-            totals: {}, opaque: {}, free: false, tags: []
-          };
-        }
-        const entry = aggregate[key];
-        const tag = `${DAY_NAMES[day].slice(0, 3)} · ${getSlotMeta(slot).shortLabel}`;
-        if (!entry.tags.includes(tag)) entry.tags.push(tag);
-        shoppingPortionsForIngredient(ingredient, getDayType(day)).forEach(portion => {
-          const parsed = parseSimpleAmount(portion.raw);
-          if (parsed.skip) return;
-          if (parsed.free) { entry.free = true; return; }
-          if (parsed.opaque) {
-            const label = getPortionProfile() === "couple" ? `${portion.role}: ${parsed.opaque}` : parsed.opaque;
-            entry.opaque[label] = (entry.opaque[label] || 0) + 1;
-            return;
-          }
-          entry.totals[parsed.unit] = (entry.totals[parsed.unit] || 0) + parsed.value;
-        });
-      });
-    });
-  });
-  return Object.values(aggregate);
+  if (!window.PianoDomain || !appState.plan) return [];
+  // Aggregazione per ingredientId (schema 4): le quantità vengono sommate
+  // solo quando condividono lo stesso ingredientId stabile.
+  const entries = PianoDomain.aggregateShopping(
+    appState.plan,
+    appState.recipesById,
+    appState.shopping.selectedMeals,
+    getPortionProfile(),
+    getCanonicalIngredientLabels()
+  );
+  return entries.map(entry => ({
+    ...entry,
+    id: entry.ingredientId,
+    legacyId: PianoDomain.slug(entry.name)
+  }));
+}
+
+function entryMatchesId(entry, id) {
+  return entry.id === id || entry.legacyId === id;
 }
 
 function formatNumber(value) {
@@ -752,7 +866,8 @@ function formatNumber(value) {
 }
 
 function shoppingAmountText(entry) {
-  if (appState.shopping.customQuantities?.[entry.id] !== undefined) return appState.shopping.customQuantities[entry.id];
+  const custom = appState.shopping.customQuantities?.[entry.id] ?? appState.shopping.customQuantities?.[entry.legacyId];
+  if (custom !== undefined) return custom;
   const pieces = Object.entries(entry.totals).map(([unit, total]) => `${formatNumber(total)}${unit === "pz" ? " pz" : unit}`);
   Object.entries(entry.opaque).forEach(([label, count]) => pieces.push(count > 1 ? `${label} × ${count}` : label));
   if (entry.free && !pieces.length) pieces.push("q.b. / libera");
@@ -762,7 +877,8 @@ function shoppingAmountText(entry) {
 function getVisibleShoppingEntries() {
   const excluded = new Set(appState.shopping.excludedItems || []);
   return aggregateShoppingList().filter(entry => {
-    if (excluded.has(entry.id)) return false;
+    // Compatibilità con esclusioni salvate con il vecchio id (slug del nome).
+    if (excluded.has(entry.id) || excluded.has(entry.legacyId)) return false;
     if (!appState.shopping.includePantry && ["🥫 Dispensa", "🌿 Spezie e aromi"].includes(entry.category)) return false;
     return true;
   });
@@ -938,6 +1054,29 @@ function renderSettings() {
       <div><h2>Dati Firebase</h2><p class="text-muted">${appState.recipes.length} ricette totali · ${breakfastCount} colazioni · catalogo schema v${CATALOG_SCHEMA_VERSION}</p><p class="cloud-call-info">⚡ Avvio ottimizzato: 3 letture documento in parallelo (catalogo completo, piano, spesa).</p></div>
       <label class="btn btn-outline file-import-button">Importa o ripristina JSON<input type="file" accept="application/json,.json" onchange="prepareRecipeImport(this.files[0]); this.value='' "></label>
     </section>
+
+    ${renderBackupSection()}
+  `;
+}
+
+function renderBackupSection() {
+  const meta = readLocalJson("backup_meta", null);
+  const hasBackup = Boolean(meta?.operation || meta?.description || meta?.createdAt);
+  return `
+    <section class="settings-section backup-section">
+      <div class="flex-between"><h2>Backup e annullamento</h2><span class="recipe-code">users/{uid}/backups/previous</span></div>
+      ${hasBackup ? `
+        <div class="backup-meta">
+          <div><small>Ultima operazione</small><strong>${escapeHtml(meta.operation || "—")}</strong></div>
+          <div><small>Descrizione</small><strong>${escapeHtml(meta.description || "—")}</strong></div>
+          <div><small>Data backup</small><strong>${escapeHtml(formatBackupDate(meta.createdAt) || "—")}</strong></div>
+        </div>
+        <button class="btn btn-danger full-width" onclick="undoLastModification()">↩ Annulla ultima modifica</button>
+        <p class="text-muted backup-note">Il ripristino è atomico e utilizzabile una sola volta: dopo il ripristino il backup viene eliminato.</p>
+      ` : `
+        <p class="text-muted backup-note">Nessun backup disponibile. Prima delle operazioni distruttive (importazione “Sostituisci tutte”, accettazione di una condivisione con sostituzione, applicazione del generatore settimana) viene salvata una copia di catalogo, piano e lista spesa.</p>
+      `}
+    </section>
   `;
 }
 
@@ -956,6 +1095,44 @@ let pendingRecipeImport = null;
 let pendingShareRecipeIds = [];
 let incomingRecipeShares = [];
 
+// ---- Backup precedente (users/{uid}/backups/previous) ----
+
+async function createBackup(catalog, plan, shopping, operation, description) {
+  const snapshot = await saveBackup(catalog, plan, shopping, operation, description);
+  writeLocalJson("backup_meta", {
+    operation: snapshot.operation,
+    description: snapshot.description,
+    createdAt: snapshot.createdAt
+  });
+  return snapshot;
+}
+
+function formatBackupDate(value) {
+  if (!value) return "";
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return String(value);
+  return date.toLocaleString("it-IT", { dateStyle: "short", timeStyle: "short" });
+}
+
+window.undoLastModification = async function() {
+  if (!confirm("Ripristinare l'ultimo stato salvato prima dell'ultima modifica? Il ripristino è disponibile una sola volta.")) return;
+  setLoading("Ripristino dell'ultimo backup…");
+  try {
+    const restored = await restoreBackupAtomic();
+    setRecipes(restored.catalog.recipes || []);
+    appState.plan = restored.plan;
+    appState.shopping = restored.shoppingList || getDefaultShoppingList();
+    writeLocalJson("backup_meta", null);
+    handleRoute();
+    showToast("Ultima modifica annullata ✅");
+  } catch (error) {
+    console.error(error);
+    showToast(error.message || "Ripristino non riuscito", true);
+  } finally {
+    clearLoading();
+  }
+};
+
 function cleanRecipeForTransfer(recipe) {
   const clean = normalizeRecipeSchema(recipe);
   delete clean._original;
@@ -972,7 +1149,7 @@ function buildRecipeExport(recipes, includePlan = false) {
   };
 
   if (includePlan && appState.plan) {
-    payload.plan = clone(appState.plan);
+    payload.plan = window.PianoDomain ? PianoDomain.migratePlan(clone(appState.plan)) : clone(appState.plan);
   }
 
   return payload;
@@ -1077,14 +1254,30 @@ window.closeRecipeImportModal = function() {
 
 window.applyRecipeImport = async function(mode) {
   if (!pendingRecipeImport || !["add", "replace"].includes(mode)) return;
-  if (mode === "replace" && !confirm("Sostituire tutte le ricette attuali con quelle del file?")) return;
+  const incoming = pendingRecipeImport.recipes.map(cleanRecipeForTransfer);
+  if (mode === "replace") {
+    const removed = appState.recipes.filter(recipe => !incoming.some(item => item.id === recipe.id));
+    const affectedSlots = window.PianoDomain
+      ? PianoDomain.planSlotsForRecipeRemoval(appState.plan, removed.map(recipe => recipe.id))
+      : [];
+    const slotText = affectedSlots.length
+      ? `\n\n${affectedSlots.length} slot del piano diventeranno vuoti:\n${affectedSlots.slice(0, 8).map(slot => `· ${DAY_NAMES[slot.day]} ${getSlotMeta(slot.slot).shortLabel}`).join("\n")}${affectedSlots.length > 8 ? `\n· e altri ${affectedSlots.length - 8}…` : ""}`
+      : "";
+    if (!confirm(`Sostituire tutte le ricette attuali con quelle del file?\n\nVerrano rimosse ${removed.length} ricett${removed.length === 1 ? "a" : "e"} attuali.${slotText}`)) return;
+    try {
+      await createBackup(appState.recipes, appState.plan, appState.shopping, "import-replace", `Sostituzione del catalogo con ${pendingRecipeImport.filename}`);
+    } catch (error) {
+      console.error(error);
+      showToast("Backup non creato: importazione annullata", true);
+      return;
+    }
+  }
   setLoading("Importazione ricette su Firebase…");
   try {
-    const incoming = pendingRecipeImport.recipes;
-    const nextRecipes = mode === "add" ? mergeRecipeCatalogs(appState.recipes, incoming) : incoming.map(cleanRecipeForTransfer);
+    const nextRecipes = mode === "add" ? PianoDomain.mergeRecipeCatalogs(appState.recipes, incoming) : incoming;
     let nextPlan;
     const canApplyImportedPlan = importedPlanIsUsable(pendingRecipeImport.plan, nextRecipes);
-    if ((mode === "replace" || appState.recipes.length === 0) && canApplyImportedPlan) nextPlan = clone(pendingRecipeImport.plan);
+    if ((mode === "replace" || appState.recipes.length === 0) && canApplyImportedPlan) nextPlan = PianoDomain.migratePlan(clone(pendingRecipeImport.plan));
     else nextPlan = sanitizePlanForCatalog(appState.plan, nextRecipes);
     await Promise.all([saveRecipeCatalog(nextRecipes), saveWeeklyPlan(nextPlan)]);
     setRecipes(nextRecipes);
@@ -1118,7 +1311,8 @@ function setupTransferModals() {
         <div class="modal-header"><div><p class="eyebrow">CONDIVISIONE</p><h2>Invia ricette a un utente</h2></div><button class="btn-icon" onclick="closeShareDialog()">&times;</button></div>
         <p id="share-send-summary" class="text-muted"></p>
         <label class="share-username-field">Username destinatario<input id="share-recipient-username" autocomplete="off" autocapitalize="none" placeholder="es. mario"></label>
-        <p class="text-muted transfer-privacy-note">Il destinatario riceverà una richiesta e potrà aggiungere, sostituire o rifiutare le ricette.</p>
+        <label class="share-plan-option"><input id="share-include-plan" type="checkbox"> Invia anche la struttura della settimana</label>
+        <p class="text-muted transfer-privacy-note">Il destinatario riceverà una richiesta e potrà importare solo le ricette, solo la settimana o tutto.</p>
         <button id="share-send-button" class="btn btn-primary full-width" onclick="submitRecipeShare()">Invia richiesta</button>
       </div>
     </div>
@@ -1126,6 +1320,16 @@ function setupTransferModals() {
       <div class="modal-content incoming-modal-content">
         <div class="modal-header"><div><p class="eyebrow">RICHIESTE RICEVUTE</p><h2>Ricette condivise con te</h2></div><button class="btn-icon" onclick="closeIncomingShares()">&times;</button></div>
         <div id="incoming-shares-list"></div>
+      </div>
+    </div>
+    <div id="share-conflict-modal" class="modal hidden" role="dialog" aria-modal="true">
+      <div class="modal-content incoming-modal-content">
+        <div class="modal-header"><div><p class="eyebrow">ANTEPRIMA CONDIVISIONE</p><h2 id="share-conflict-title">Conflitti e riepilogo</h2></div><button class="btn-icon" onclick="closeShareConflictModal()">&times;</button></div>
+        <div id="share-conflict-body" class="share-conflict-body"></div>
+        <div class="modal-footer">
+          <button class="btn btn-outline" onclick="closeShareConflictModal()">Annulla</button>
+          <button class="btn btn-primary" onclick="applyShareAccept()">Conferma e importa</button>
+        </div>
       </div>
     </div>`);
 }
@@ -1139,6 +1343,11 @@ window.openShareDialog = function(recipeId = null) {
   pendingShareRecipeIds = recipes.map(recipe => recipe.id);
   document.getElementById("share-send-summary").textContent = recipeId ? `Invierai: ${getRecipe(recipeId).name}` : `Invierai tutte le ${recipes.length} ricette del catalogo.`;
   document.getElementById("share-recipient-username").value = "";
+  const includePlan = document.getElementById("share-include-plan");
+  if (includePlan) {
+    includePlan.checked = !recipeId;
+    includePlan.disabled = Boolean(recipeId);
+  }
   document.getElementById("share-send-modal").classList.remove("hidden");
   setTimeout(() => document.getElementById("share-recipient-username").focus(), 50);
 };
@@ -1151,11 +1360,13 @@ window.closeShareDialog = function() {
 window.submitRecipeShare = async function() {
   const username = document.getElementById("share-recipient-username").value;
   const recipes = pendingShareRecipeIds.map(getRecipe).filter(Boolean).map(cleanRecipeForTransfer);
+  const includePlan = document.getElementById("share-include-plan")?.checked;
+  const sharedPlan = includePlan ? clone(appState.plan) : null;
   const button = document.getElementById("share-send-button");
   button.disabled = true;
   button.textContent = "Invio…";
   try {
-    await sendRecipeShare(username, recipes);
+    await sendRecipeShare(username, recipes, sharedPlan);
     closeShareDialog();
     showToast("Richiesta di condivisione inviata ✅");
   } catch (error) {
@@ -1187,35 +1398,168 @@ function renderIncomingShares() {
     list.innerHTML = `<div class="empty-state"><span>📭</span><h3>Nessuna richiesta</h3><p>Quando un utente ti invierà delle ricette, compariranno qui.</p></div>`;
     return;
   }
-  list.innerHTML = incomingRecipeShares.map(share => `
+  list.innerHTML = incomingRecipeShares.map(share => {
+    const hasPlan = Boolean(share.includesPlan && share.plan?.days);
+    const count = share.recipeCount || share.recipes?.length || 0;
+    const actions = hasPlan
+      ? `<button class="btn btn-outline" onclick="acceptSharedRecipes('${share.id}', 'recipes')">Solo ricette</button>
+         <button class="btn btn-outline" onclick="acceptSharedRecipes('${share.id}', 'plan')">Solo settimana</button>
+         <button class="btn btn-primary" onclick="acceptSharedRecipes('${share.id}', 'all')">Importa tutto</button>
+         <button class="btn btn-danger" onclick="acceptSharedRecipes('${share.id}', 'replace')">Sostituisci ricette</button>`
+      : `<button class="btn btn-outline" onclick="acceptSharedRecipes('${share.id}', 'recipes')">Aggiungi</button>
+         <button class="btn btn-danger" onclick="acceptSharedRecipes('${share.id}', 'replace')">Sostituisci tutte</button>`;
+    return `
     <article class="incoming-share-card">
-      <div><span class="account-avatar small">${escapeHtml((share.senderUsername || "?").slice(0, 1).toUpperCase())}</span><div><strong>${escapeHtml(share.senderUsername || "Utente")}</strong><small>${share.recipeCount || share.recipes?.length || 0} ricett${(share.recipeCount || share.recipes?.length) === 1 ? "a" : "e"}</small></div></div>
+      <div><span class="account-avatar small">${escapeHtml((share.senderUsername || "?").slice(0, 1).toUpperCase())}</span><div><strong>${escapeHtml(share.senderUsername || "Utente")}</strong><small>${count} ricett${count === 1 ? "a" : "e"}${hasPlan ? " · 📅 include settimana" : ""}</small></div></div>
       <p>${escapeHtml((share.recipes || []).slice(0, 4).map(recipe => recipe.name).join(" · "))}${(share.recipes || []).length > 4 ? "…" : ""}</p>
-      <div class="incoming-share-actions"><button class="btn btn-outline" onclick="acceptSharedRecipes('${share.id}', 'add')">Aggiungi</button><button class="btn btn-danger" onclick="acceptSharedRecipes('${share.id}', 'replace')">Sostituisci tutte</button><button class="btn btn-outline" onclick="rejectSharedRecipes('${share.id}')">Rifiuta</button></div>
-    </article>`).join("");
+      <div class="incoming-share-actions">${actions}<button class="btn btn-outline" onclick="rejectSharedRecipes('${share.id}')">Rifiuta</button></div>
+    </article>`;
+  }).join("");
 }
 
 window.closeIncomingShares = function() {
   document.getElementById("incoming-shares-modal")?.classList.add("hidden");
 };
 
+// ---- Anteprima conflitti e accettazione condivisione ----
+
+let pendingShareAccept = null;
+
+function shareRecipeName(recipe) {
+  return recipe?.name || recipe?.id || "Ricetta sconosciuta";
+}
+
+function openShareConflictPreview(share, mode) {
+  const incoming = (share.recipes || []).map(cleanRecipeForTransfer);
+  const analysis = window.PianoDomain ? PianoDomain.analyzeShare(appState.recipes, incoming) : { newRecipes: incoming, identical: [], conflicts: [], invalid: [], migratedIngredients: 0, missingIngredientIds: [], incoming };
+  pendingShareAccept = { shareId: share.id, mode, resolution: {}, analysis };
+  const body = document.getElementById("share-conflict-body");
+  const hasPlan = Boolean(share.includesPlan && share.plan?.days);
+  let html = `
+    <div class="share-analysis-grid">
+      <div><small>Mittente</small><strong>${escapeHtml(share.senderUsername || "Utente")}</strong></div>
+      <div><small>Ricette nel messaggio</small><strong>${analysis.incoming.length}</strong></div>
+      <div><small>Ricette nuove</small><strong>${analysis.newRecipes.length}</strong></div>
+      <div><small>Già presenti identiche</small><strong>${analysis.identical.length}</strong></div>
+      <div><small>Conflitti</small><strong>${analysis.conflicts.length}</strong></div>
+      <div><small>Non valide</small><strong>${analysis.invalid.length}</strong></div>
+      <div><small>Ingredienti migrati (senza ingredientId)</small><strong>${analysis.migratedIngredients}</strong></div>
+    </div>`;
+  if (analysis.newRecipes.length) {
+    html += `<h3 class="share-preview-heading">Nuove ricette (${analysis.newRecipes.length})</h3><p class="share-preview-names">${escapeHtml(analysis.newRecipes.map(shareRecipeName).join(" · "))}</p>`;
+  }
+  if (analysis.identical.length) {
+    html += `<h3 class="share-preview-heading">Identiche alle tue (${analysis.identical.length})</h3><p class="share-preview-names">${escapeHtml(analysis.identical.map(shareRecipeName).join(" · "))}</p>`;
+  }
+  if (analysis.conflicts.length) {
+    html += `<h3 class="share-preview-heading">Conflitti: scegli per ogni ricetta</h3>`;
+    html += analysis.conflicts.map((conflict, index) => `
+      <div class="share-conflict-row">
+        <div class="share-conflict-recipe"><strong>${escapeHtml(conflict.incoming.name)}</strong><small>${escapeHtml(conflict.incoming.id)} · tua: ${escapeHtml(conflict.existing.name)}</small></div>
+        <select data-conflict-index="${index}" onchange="setShareConflictMode(${index}, this.value)">
+          <option value="theirs">Usa quella ricevuta</option>
+          <option value="mine">Mantieni la mia</option>
+          <option value="both">Salva entrambe con nuovo ID</option>
+        </select>
+      </div>`).join("");
+  }
+  if (analysis.invalid.length) {
+    html += `<h3 class="share-preview-heading">Non valide (${analysis.invalid.length})</h3><p class="share-preview-warning">Verranno ignorate: ${escapeHtml(analysis.invalid.map(item => item?.id || "?").join(", "))}</p>`;
+  }
+  if (analysis.missingIngredientIds.length) {
+    html += `<h3 class="share-preview-heading">Ingredienti senza ingredientId</h3><p class="share-preview-warning">Verranno normalizzati automaticamente: ${escapeHtml(analysis.missingIngredientIds.map(item => item.name).join(", "))}</p>`;
+  }
+  if (mode === "replace") {
+    const removed = appState.recipes.filter(recipe => !incoming.some(item => item.id === recipe.id));
+    const affectedSlots = window.PianoDomain ? PianoDomain.planSlotsForRecipeRemoval(appState.plan, removed.map(recipe => recipe.id)) : [];
+    html += `<div class="share-replace-note">⚠️ Sostituzione: verrano rimosse <strong>${removed.length}</strong> ricett${removed.length === 1 ? "a" : "e"} attuali${affectedSlots.length ? ` e <strong>${affectedSlots.length}</strong> slot del piano diventeranno vuoti (${escapeHtml(affectedSlots.slice(0, 8).map(slot => `${DAY_NAMES[slot.day]} ${getSlotMeta(slot.slot).shortLabel}`).join(", "))}${affectedSlots.length > 8 ? ", …" : ""})` : ""}. Un backup verrà creato prima dell'applicazione.</div>`;
+  } else if (hasPlan && mode === "plan") {
+    html += `<div class="share-plan-note">📅 Verrà importata solo la settimana: il catalogo attuale resta invariato e i riferimenti a ricette non presenti verranno rimossi.</div>`;
+  } else if (hasPlan && mode === "all") {
+    html += `<div class="share-plan-note">📅 Verranno importate ricette e settimana: il piano verrà normalizzato per non contenere riferimenti mancanti.</div>`;
+  }
+  document.getElementById("share-conflict-title").textContent = hasPlan ? "Ricette e settimana ricevute" : "Ricette ricevute";
+  body.innerHTML = html;
+  document.getElementById("share-conflict-modal").classList.remove("hidden");
+}
+
+window.setShareConflictMode = function(index, mode) {
+  if (pendingShareAccept) pendingShareAccept.resolution[pendingShareAccept.analysis.conflicts[index].incoming.id] = mode;
+};
+
+window.closeShareConflictModal = function() {
+  pendingShareAccept = null;
+  document.getElementById("share-conflict-modal")?.classList.add("hidden");
+};
+
 window.acceptSharedRecipes = async function(shareId, mode) {
   const share = incomingRecipeShares.find(item => item.id === shareId);
   if (!share) return;
-  if (mode === "replace" && !confirm(`Sostituire tutte le tue ricette con le ${share.recipes.length} ricevute da ${share.senderUsername}?`)) return;
-  setLoading("Salvataggio ricette condivise…");
+  if (mode === "plan" && !share.plan?.days) {
+    showToast("Questa condivisione non contiene una settimana", true);
+    return;
+  }
+  if (mode === "replace" && !confirm(`Sostituire tutte le tue ricette con le ${(share.recipes || []).length} ricevute da ${share.senderUsername}? Verrà creato un backup prima dell'applicazione.`)) return;
+  openShareConflictPreview(share, mode);
+};
+
+window.applyShareAccept = async function() {
+  if (!pendingShareAccept) return;
+  const { shareId, mode, resolution } = pendingShareAccept;
+  const share = incomingRecipeShares.find(item => item.id === shareId);
+  if (!share) return;
+  const destructive = mode === "replace" || mode === "all";
+  if (destructive) {
+    try {
+      await createBackup(appState.recipes, appState.plan, appState.shopping, mode === "replace" ? "share-replace" : "share-import-all", `Condivisione accettata da ${share.senderUsername} (${mode})`);
+    } catch (error) {
+      console.error(error);
+      showToast("Backup non creato: operazione annullata", true);
+      return;
+    }
+  }
+  setLoading("Salvataggio condivisione…");
   try {
     const incoming = (share.recipes || []).map(cleanRecipeForTransfer);
-    validateRecipeCatalog(incoming);
-    const nextRecipes = mode === "add" ? mergeRecipeCatalogs(appState.recipes, incoming) : incoming;
-    const nextPlan = sanitizePlanForCatalog(appState.plan, nextRecipes);
-    await acceptRecipeShare(shareId, nextRecipes, nextPlan);
+    let nextRecipes;
+    let nextPlan;
+    let planSaved = true;
+    if (mode === "plan") {
+      nextRecipes = appState.recipes;
+      nextPlan = window.PianoDomain
+        ? PianoDomain.sanitizePlanForCatalog(PianoDomain.migratePlan(share.plan), nextRecipes)
+        : sanitizePlanForCatalog(appState.plan, nextRecipes);
+    } else {
+      nextRecipes = window.PianoDomain
+        ? PianoDomain.resolveRecipeConflicts(appState.recipes, incoming, resolution)
+        : mergeRecipeCatalogs(appState.recipes, incoming);
+      if (mode === "all") {
+        nextPlan = window.PianoDomain
+          ? (PianoDomain.importedPlanIsUsable(share.plan, nextRecipes)
+              ? PianoDomain.sanitizePlanForCatalog(PianoDomain.migratePlan(share.plan), nextRecipes)
+              : PianoDomain.sanitizePlanForCatalog(appState.plan, nextRecipes))
+          : sanitizePlanForCatalog(appState.plan, nextRecipes);
+      } else {
+        // Solo ricette: mantiene il piano attuale, aggiorna solo i riferimenti.
+        nextPlan = sanitizePlanForCatalog(appState.plan, nextRecipes);
+        planSaved = JSON.stringify(nextPlan) !== JSON.stringify(appState.plan);
+        if (!planSaved) nextPlan = appState.plan;
+      }
+    }
+    await acceptRecipeShare(shareId, nextRecipes, planSaved ? nextPlan : null);
     setRecipes(nextRecipes);
-    appState.plan = nextPlan;
+    if (nextPlan) appState.plan = nextPlan;
+    const nulledRefs = window.PianoDomain
+      ? PianoDomain.diffPlans(appState.plan, nextPlan).filter(change => change.to === null).length
+      : 0;
     incomingRecipeShares = incomingRecipeShares.filter(item => item.id !== shareId);
+    closeShareConflictModal();
     renderIncomingShares();
     handleRoute();
-    showToast("Ricette accettate e salvate ✅");
+    const toast = mode === "plan"
+      ? (nulledRefs ? `Settimana importata: rimossi ${nulledRefs} riferimenti a ricette mancanti ⚠️` : "Settimana importata e salvata ✅")
+      : mode === "all" ? "Ricette e settimana importate ✅" : "Ricette accettate e salvate ✅";
+    showToast(toast);
   } catch (error) {
     console.error(error);
     showToast(error.message || "Accettazione non riuscita", true);
@@ -1234,6 +1578,185 @@ window.rejectSharedRecipes = async function(shareId) {
   } catch (error) {
     console.error(error);
     showToast("Impossibile rifiutare la richiesta", true);
+  }
+};
+
+// ---- Generatore automatico della settimana ----
+
+const GENERATOR_COUNT_LABELS = {
+  poultry: "Pollame",
+  beef: "Manzo/Vitello",
+  omega: "Pesce omega-3",
+  otherFish: "Altro pesce",
+  dairy: "Latticini",
+  eggs: "Uova",
+  legumes: "Legumi"
+};
+
+let generatorState = { seed: null, blocks: {}, proposal: null };
+
+function setupGeneratorModal() {
+  if (document.getElementById("generator-modal")) return;
+  document.body.insertAdjacentHTML("beforeend", `
+    <div id="generator-modal" class="modal hidden" role="dialog" aria-modal="true">
+      <div class="modal-content generator-modal-content">
+        <div class="modal-header"><div><p class="eyebrow">GENERATORE</p><h2>Genera settimana</h2></div><button class="btn-icon" onclick="closeGeneratorModal()">&times;</button></div>
+        <p class="text-muted">Proposta rispettosa di A/R e frequenze proteiche. Non modifica mai i dosaggi. Prima dell'applicazione viene creato un backup.</p>
+        <div class="generator-controls">
+          <label class="share-username-field">Seed (risultato riproducibile)<input id="generator-seed" type="text" inputmode="numeric" placeholder="es. 42" onchange="generatorSeedChanged(this.value)"></label>
+          <button class="btn btn-outline" onclick="computeGeneratorProposal(true)">Rigenera (nuovo seed)</button>
+          <button class="btn btn-primary" onclick="computeGeneratorProposal(false)">Anteprima</button>
+        </div>
+        <div id="generator-blocks" class="generator-blocks"></div>
+        <div id="generator-preview" class="generator-preview"></div>
+        <div class="modal-footer">
+          <button class="btn btn-outline" onclick="closeGeneratorModal()">Annulla</button>
+          <button class="btn btn-primary" id="generator-apply-btn" onclick="applyGenerator()">Applica</button>
+        </div>
+      </div>
+    </div>`);
+}
+
+window.openGeneratorModal = function() {
+  generatorState = { seed: Math.floor(Math.random() * 1000000), blocks: {}, proposal: null };
+  renderGeneratorModal();
+  document.getElementById("generator-modal").classList.remove("hidden");
+};
+
+window.closeGeneratorModal = function() {
+  document.getElementById("generator-modal")?.classList.add("hidden");
+  generatorState.proposal = null;
+};
+
+window.generatorSeedChanged = function(value) {
+  const trimmed = String(value || "").trim();
+  generatorState.seed = trimmed === "" ? null : (Number.isFinite(Number(trimmed)) ? Number(trimmed) : trimmed);
+};
+
+window.toggleGeneratorDayLock = function(day, checked) {
+  if (checked) generatorState.blocks[day] = { all: true };
+  else delete generatorState.blocks[day];
+  generatorState.proposal = null;
+  renderGeneratorModal();
+};
+
+window.toggleGeneratorSlotLock = function(day, slot, checked) {
+  const block = generatorState.blocks[day];
+  if (block?.all) return;
+  if (checked) {
+    if (!generatorState.blocks[day]) generatorState.blocks[day] = {};
+    generatorState.blocks[day][slot] = true;
+  } else {
+    if (generatorState.blocks[day]) delete generatorState.blocks[day][slot];
+    if (generatorState.blocks[day] && !Object.keys(generatorState.blocks[day]).length) delete generatorState.blocks[day];
+  }
+  generatorState.proposal = null;
+  renderGeneratorModal();
+};
+
+function renderGeneratorBlocks() {
+  return `<div class="generator-blocks-title"><strong>Blocca / sblocca pasto</strong><small>Gli elementi bloccati non vengono sovrascritti dalla generazione.</small></div>
+    <div class="generator-block-table">
+      ${DAY_ORDER.map(day => {
+        const block = generatorState.blocks[day];
+        const dayLocked = Boolean(block?.all);
+        return `<div class="generator-block-row">
+          <label class="generator-day-lock"><input type="checkbox" ${dayLocked ? "checked" : ""} onchange="toggleGeneratorDayLock('${day}', this.checked)"> ${DAY_NAMES[day]}</label>
+          <div class="generator-slot-locks">${MEAL_SLOTS.map(slot => `<label class="${dayLocked ? "locked" : ""}"><input type="checkbox" ${dayLocked || block?.[slot.id] ? "checked" : ""} ${dayLocked ? "disabled" : ""} onchange="toggleGeneratorSlotLock('${day}', '${slot.id}', this.checked)"> ${escapeHtml(slot.shortLabel)}</label>`).join("")}</div>
+        </div>`;
+      }).join("")}
+    </div>`;
+}
+
+window.computeGeneratorProposal = function(newSeed) {
+  if (newSeed) generatorState.seed = Math.floor(Math.random() * 1000000);
+  const result = window.PianoDomain
+    ? PianoDomain.generateWeek(appState.recipes, {
+        plan: appState.plan,
+        seed: generatorState.seed ?? Date.now(),
+        blocks: generatorState.blocks,
+        templates: appState.plan.batchTemplates || []
+      })
+    : null;
+  if (!result) {
+    showToast("Generatore non disponibile", true);
+    return;
+  }
+  generatorState.proposal = result;
+  document.getElementById("generator-seed").value = String(result.seed ?? generatorState.seed ?? "");
+  renderGeneratorPreview();
+};
+
+function generatorRecipeName(recipeId) {
+  const recipe = getRecipe(recipeId);
+  return recipe ? `${recipe.emoji || "🍲"} ${recipe.name}` : (recipeId || "—");
+}
+
+function renderGeneratorPreview() {
+  const preview = document.getElementById("generator-preview");
+  const result = generatorState.proposal;
+  if (!result) {
+    preview.innerHTML = "";
+    return;
+  }
+  const changes = window.PianoDomain ? PianoDomain.diffPlans(appState.plan, result.plan) : [];
+  const changesByDay = {};
+  changes.forEach(change => {
+    if (!changesByDay[change.day]) changesByDay[change.day] = [];
+    changesByDay[change.day].push(change);
+  });
+  preview.innerHTML = `
+    <div class="generator-preview-head"><strong>Anteprima proposta</strong><span>${changes.length} modifiche</span></div>
+    ${result.warnings.length ? `<div class="generator-warnings">${result.warnings.map(warning => `<p>⚠️ ${escapeHtml(warning)}</p>`).join("")}</div>` : ""}
+    <div class="generator-counts">${Object.entries(result.counts).map(([key, value]) => `<span>${escapeHtml(GENERATOR_COUNT_LABELS[key] || key)}: ${value}</span>`).join("")}</div>
+    <div class="generator-diff">
+      ${DAY_ORDER.map(day => {
+        const dayChanges = changesByDay[day] || [];
+        return `<div class="generator-diff-day"><strong>${DAY_NAMES[day]} ${result.plan.days[day].type === "training" ? "(A)" : "(R)"}</strong>
+          ${MEAL_SLOTS.map(slot => {
+            const change = dayChanges.find(item => item.slot === slot.id);
+            const from = change?.from ?? appState.plan.days[day][slot.id];
+            const to = change?.to ?? result.plan.days[day][slot.id];
+            return `<div class="generator-diff-slot ${change ? "changed" : ""}"><small>${escapeHtml(slot.shortLabel)}</small><span>${change ? `↻ ${escapeHtml(generatorRecipeName(from))} → ${escapeHtml(generatorRecipeName(to))}` : escapeHtml(generatorRecipeName(to))}</span></div>`;
+          }).join("")}
+        </div>`;
+      }).join("")}
+    </div>`;
+}
+
+function renderGeneratorModal() {
+  document.getElementById("generator-seed").value = generatorState.seed ?? "";
+  document.getElementById("generator-blocks").innerHTML = renderGeneratorBlocks();
+  renderGeneratorPreview();
+}
+
+window.applyGenerator = async function() {
+  if (!generatorState.proposal) {
+    showToast("Genera prima un'anteprima", true);
+    return;
+  }
+  const changes = window.PianoDomain ? PianoDomain.diffPlans(appState.plan, generatorState.proposal.plan).length : 0;
+  if (!confirm(`Applicare la settimana generata (${changes} modifiche)? Verrà creato un backup prima dell'applicazione.`)) return;
+  try {
+    await createBackup(appState.recipes, appState.plan, appState.shopping, "week-generator", `Generatore settimana (seed ${generatorState.proposal.seed ?? "—"})`);
+  } catch (error) {
+    console.error(error);
+    showToast("Backup non creato: operazione annullata", true);
+    return;
+  }
+  setLoading("Applicazione della settimana generata…");
+  try {
+    const nextPlan = generatorState.proposal.plan;
+    await saveWeeklyPlan(nextPlan);
+    appState.plan = nextPlan;
+    closeGeneratorModal();
+    handleRoute();
+    showToast("Settimana generata e salvata ✅");
+  } catch (error) {
+    console.error(error);
+    showToast(error.message || "Applicazione non riuscita", true);
+  } finally {
+    clearLoading();
   }
 };
 
@@ -1289,19 +1812,29 @@ function setModalTab(tabId) {
 
 function modalBatchRule() {
   if (!currentModal?.dayKey) return null;
-  const rule = getActiveBatchRule(currentModal.dayKey);
-  if (!rule) return null;
+  const batches = getActiveBatch(currentModal.dayKey);
+  if (!batches.length) return null;
   const plannedDinner = appState.plan.days[currentModal.dayKey].dinner;
-  return currentModal.recipe.id === plannedDinner ? rule : null;
+  return currentModal.recipe.id === plannedDinner ? batches : null;
 }
 
 function renderModalContent() {
   const recipe = currentModal.recipe;
   const dayType = currentModal.dayType;
-  const batchRule = modalBatchRule();
+  const batches = modalBatchRule();
   const batchTab = document.querySelector('.tab-btn[data-target="tab-batch"]');
-  batchTab.classList.toggle("hidden", !batchRule && !editMode);
-  if (!editMode && document.querySelector('.tab-btn[data-target="tab-batch"]').classList.contains("active") && !batchRule) setModalTab("tab-ingredients");
+  const tabsBar = document.querySelector('.tabs');
+  // Consultazione = schermata unica: ingredienti e preparazione restano
+  // contemporaneamente visibili, come nella sezione DA CUCINARE.
+  // Le tab restano disponibili solo in modalità modifica.
+  tabsBar?.classList.toggle("hidden", !editMode);
+  document.getElementById("tab-ingredients")?.classList.remove("hidden");
+  document.getElementById("tab-prep")?.classList.toggle("hidden", editMode);
+  // In modifica la visibilità delle tab è gestita dai click; in consultazione
+  // (schermata unica) il blocco batch è visibile solo se pertinente.
+  if (!editMode) document.getElementById("tab-batch")?.classList.toggle("hidden", !batches);
+  batchTab.classList.toggle("hidden", !batches && !editMode);
+  if (!editMode && document.querySelector('.tab-btn[data-target="tab-batch"]').classList.contains("active") && !batches) setModalTab("tab-ingredients");
 
   document.getElementById("modal-title").innerHTML = editMode
     ? `<input id="edit-recipe-name" class="modal-title-input" value="${escapeAttr(recipe.name)}">`
@@ -1333,8 +1866,16 @@ function renderModalContent() {
   const batchContent = document.getElementById("modal-batch-text");
   if (editMode) {
     batchContent.innerHTML = `<label class="full-field">Nota speciale<textarea id="edit-recipe-special">${escapeHtml(recipe.specialNote || "")}</textarea></label><label class="full-field">Note (una per riga)<textarea id="edit-recipe-notes">${escapeHtml((recipe.notes || []).join("\n"))}</textarea></label>`;
-  } else if (batchRule) {
-    batchContent.innerHTML = `<div class="batch-modal"><h3>${escapeHtml(batchRule.title)}</h3><ol>${batchRule.actions.map(action => `<li>${escapeHtml(action)}</li>`).join("")}</ol><p><strong>${escapeHtml(batchRule.nextLunchNote)}</strong></p></div>`;
+  } else if (batches && batches.length) {
+    batchContent.innerHTML = batches.map(batch => `
+      <div class="batch-modal">
+        <h3>${escapeHtml(batch.template.title || "Preparazioni in anticipo")}</h3>
+        <p><strong>🎯 Pranzo di ${DAY_NAMES[batch.targetDay]} · tra ${batch.daysUntilTarget} ${batch.daysUntilTarget === 1 ? "giorno" : "giorni"}</strong></p>
+        <ol>${batch.tasks.map(task => {
+          const status = BATCH_STATUS_LABELS[task.status] || BATCH_STATUS_LABELS.later;
+          return `<li><span>${escapeHtml(task.label)}</span> <span class="batch-task-status ${status.className}">${status.label}</span>${task.quantity ? ` <strong>${escapeHtml(task.quantity)}</strong>` : ""}</li>`;
+        }).join("")}</ol>
+      </div>`).join("");
   } else {
     batchContent.textContent = "";
   }

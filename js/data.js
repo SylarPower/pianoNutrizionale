@@ -1,6 +1,7 @@
 // Configurazione dell'interfaccia. Le ricette, gli ingredienti e il piano
 // settimanale NON sono presenti nel codice: vengono caricati da Firebase.
-const CATALOG_SCHEMA_VERSION = 3;
+const CATALOG_SCHEMA_VERSION = 4;
+const DOMAIN_SCHEMA_VERSION = 4;
 
 function createEmptyWeeklyPlan() {
   const types = {
@@ -11,7 +12,13 @@ function createEmptyWeeklyPlan() {
   Object.entries(types).forEach(([day, type]) => {
     days[day] = { type, breakfast: null, snack1: null, lunch: null, snack2: null, dinner: null };
   });
-  return { schemaVersion: CATALOG_SCHEMA_VERSION, days, defaultDays: JSON.parse(JSON.stringify(days)), batchRules: {} };
+  return {
+    schemaVersion: CATALOG_SCHEMA_VERSION,
+    days,
+    defaultDays: JSON.parse(JSON.stringify(days)),
+    batchRules: {},
+    batchTemplates: []
+  };
 }
 
 const GENERAL_RULES = {
