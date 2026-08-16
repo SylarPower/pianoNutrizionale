@@ -221,6 +221,9 @@ function showApp() {
   document.getElementById("login-screen")?.classList.add("hidden");
   document.getElementById("app-container")?.classList.remove("hidden");
   document.querySelector(".bottom-nav")?.classList.remove("hidden");
+  // Anche l'avvio rapido da cache deve chiudere l'overlay: in quel percorso
+  // loadUserData() è silenzioso e il suo finally non chiama clearLoading().
+  clearLoading();
 }
 
 function mapLoginError(error) {
