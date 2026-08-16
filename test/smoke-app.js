@@ -223,6 +223,30 @@ assert.doesNotMatch(exportedShopping, /Basilico[^\n]*mazzetto/);
   global.saveShoppingListCloud = originalCloud;
 }
 
+// ---- Preferenza A/R persistente nell'anteprima del ricettario ----
+// Aprendo una ricetta dal ricettario (nessun giorno assegnato) la scelta
+// manuale A/R resta memorizzata e riproposta alle aperture successive.
+openRecipeModal('L1');
+assert.equal(currentModal.dayType, 'training', 'default: Allenamento');
+setModalDayType('rest');
+assert.equal(currentModal.dayType, 'rest');
+assert.equal(appState.deviceSettings.recipePreviewDayType, 'rest', 'la scelta viene salvata nelle impostazioni dispositivo');
+closeRecipeModal();
+openRecipeModal('L1');
+assert.equal(currentModal.dayType, 'rest', 'riaprendo dal ricettario la scelta A/R resta quella dell\'utente');
+// La preferenza sopravvive a un riavvio: viene riletta da localStorage.
+assert.equal(getLocalDeviceSettings().recipePreviewDayType, 'rest');
+// Con un giorno assegnato prevale sempre il tipo A/R del giorno del piano.
+openRecipeModal('L1', 'monday');
+assert.equal(currentModal.dayType, 'training', 'monday è training nel piano: il giorno vince sull\'anteprima');
+setModalDayType('training'); // con dayKey non deve toccare la preferenza salvata
+assert.equal(appState.deviceSettings.recipePreviewDayType, 'rest');
+closeRecipeModal();
+// Anche una nuova ricetta senza giorno parte dalla preferenza salvata.
+createNewRecipe('lunch');
+assert.equal(currentModal.dayType, 'rest');
+closeRecipeModal();
+
 // ---- Avvio senza letture duplicate in modalità household ----
 // In modalità household i listener onSnapshot rileggono comunque i tre
 // documenti: con una cache locale valida loadUserData NON deve eseguire anche

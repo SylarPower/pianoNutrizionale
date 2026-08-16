@@ -978,7 +978,7 @@ window.createNewRecipe = function(slot = "lunch", assignDay = null) {
     id, slot: selectedSlot, name: "Nuova ricetta", emoji: getSlotMeta(selectedSlot).emoji, proteinCategory: "", frequency: "",
     ingredients: [], steps: [], notes: [], specialNote: ""
   };
-  currentModal = { recipe, original: null, dayKey: DAY_ORDER.includes(assignDay) ? assignDay : null, dayType: DAY_ORDER.includes(assignDay) ? getDayType(assignDay) : "training", assignAfterSave: DAY_ORDER.includes(assignDay) ? { day: assignDay, slot: selectedSlot } : null, isNew: true };
+  currentModal = { recipe, original: null, dayKey: DAY_ORDER.includes(assignDay) ? assignDay : null, dayType: DAY_ORDER.includes(assignDay) ? getDayType(assignDay) : getRecipePreviewDayType(), assignAfterSave: DAY_ORDER.includes(assignDay) ? { day: assignDay, slot: selectedSlot } : null, isNew: true };
   editMode = true;
   renderModalContent();
   document.getElementById("recipe-modal").classList.remove("hidden");
@@ -2222,10 +2222,20 @@ function setupModal() {
   document.getElementById("modal-delete-btn").addEventListener("click", deleteCurrentRecipe);
 }
 
+// Preferenza A/R dell'anteprima ricette: persistita nelle impostazioni
+// dispositivo, così riaprendo una ricetta dal ricettario resta l'ultima
+// scelta manuale (finché non viene cambiata di nuovo).
+function getRecipePreviewDayType() {
+  const saved = appState.deviceSettings?.recipePreviewDayType;
+  return ["training", "rest"].includes(saved) ? saved : "training";
+}
+
 window.setModalDayType = function(type) {
   if (!currentModal || currentModal.dayKey) return;
   if (!["training", "rest"].includes(type)) return;
   currentModal.dayType = type;
+  appState.deviceSettings.recipePreviewDayType = type;
+  saveLocalDeviceSettings(appState.deviceSettings);
   renderModalContent();
 };
 
@@ -2252,7 +2262,7 @@ window.openRecipeModal = function(recipeId, dayKey = null) {
     recipe: clone(recipe),
     original: clone(recipe),
     dayKey: DAY_ORDER.includes(dayKey) ? dayKey : null,
-    dayType: DAY_ORDER.includes(dayKey) ? getDayType(dayKey) : "training",
+    dayType: DAY_ORDER.includes(dayKey) ? getDayType(dayKey) : getRecipePreviewDayType(),
     isNew: false
   };
   editMode = false;
