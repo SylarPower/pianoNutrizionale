@@ -19,13 +19,17 @@ let appState = {
   recipesById: {},
   plan: null,
   deviceSettings: null,
-  shopping: null
+  shopping: null,
+  household: null
 };
 let appStarted = false;
 let currentModal = null;
 let editMode = false;
 let shopSettingsVisible = false;
 let toastTimeout = null;
+let stopHouseholdObserver = null;
+let stopSharedDataObserver = null;
+let activeHouseholdId = null;
 
 // ---- Session cache per avvio veloce ----
 function readSessionCache() {
@@ -258,11 +262,24 @@ async function loadUserData(user, { silent = false } = {}) {
   appState.user = user;
   if (!silent) setLoading("Sincronizzazione del piano personale…");
   try {
-    // Tre sole letture in parallelo: catalogo, piano e lista spesa.
+    // Prima individua l'eventuale household, poi le tre letture puntano in modo
+    // trasparente ai documenti personali oppure a quelli condivisi.
+    try {
+      await prepareDataScope();
+    } catch (scopeError) {
+      clearDataScope();
+      console.warn("Area condivisa non disponibile: uso i dati personali", scopeError);
+    }
+    appState.household = getCurrentHousehold();
     const [recipes, plan, shopping] = await Promise.all([
       getRecipeCatalog(), getWeeklyPlan(), getShoppingListCloud()
     ]);
     applyState(recipes, plan, shopping);
+    writeSessionCache({
+      uid: user.uid,
+      email: user.email,
+      householdId: appState.household?.id || null
+    });
     ensureUsernameDirectory().catch(error => console.warn("Directory username non disponibile", error));
     if (appStarted) handleRoute();
   } catch (error) {
@@ -309,6 +326,53 @@ function applyState(recipes, plan, shopping) {
   }
 }
 
+function stopAccountRealtimeSync() {
+  stopHouseholdObserver?.();
+  stopSharedDataObserver?.();
+  stopHouseholdObserver = null;
+  stopSharedDataObserver = null;
+  activeHouseholdId = null;
+}
+
+function bindSharedDataObserver() {
+  stopSharedDataObserver?.();
+  stopSharedDataObserver = observeSharedDataChanges((kind, value) => {
+    if (!appState.user) return;
+    if (kind === "recipes") setRecipes(value);
+    if (kind === "plan") appState.plan = window.PianoDomain ? PianoDomain.migratePlan(value) : value;
+    if (kind === "shopping") appState.shopping = value;
+    if (appStarted) handleRoute();
+  });
+}
+
+function startAccountRealtimeSync() {
+  stopAccountRealtimeSync();
+  activeHouseholdId = getCurrentHousehold()?.id || null;
+  appState.household = getCurrentHousehold();
+  if (activeHouseholdId) bindSharedDataObserver();
+  stopHouseholdObserver = observeHouseholdChanges(async household => {
+    const nextId = household?.id || null;
+    appState.household = household;
+    if (nextId === activeHouseholdId) {
+      if (window.location.hash === "#settings") renderSettings();
+      return;
+    }
+
+    activeHouseholdId = nextId;
+    stopSharedDataObserver?.();
+    stopSharedDataObserver = null;
+    try {
+      await loadUserData(appState.user, { silent: true });
+      activeHouseholdId = getCurrentHousehold()?.id || null;
+      appState.household = getCurrentHousehold();
+      if (activeHouseholdId) bindSharedDataObserver();
+      showToast(activeHouseholdId ? "Account collegato: dati condivisi sincronizzati ✅" : "Account scollegato: copia indipendente attiva");
+    } catch (error) {
+      console.error(error);
+    }
+  });
+}
+
 async function initApp() {
   setupLoginForm();
   if (!initFirebase()) {
@@ -320,9 +384,10 @@ async function initApp() {
   // Avvio veloce: se la sessione è in cache locale, mostra subito l'app
   // con i dati già scaricati, poi rinfresca in background.
   const cachedSession = readSessionCache();
-  const cachedRecipes = cachedSession?.uid ? readLocalJsonFor(cachedSession.uid, "recipe_catalog", []) : [];
-  const cachedPlan = cachedSession?.uid ? readLocalJsonFor(cachedSession.uid, "weekly_plan", null) : null;
-  const cachedShopping = cachedSession?.uid ? readLocalJsonFor(cachedSession.uid, "shopping", null) : null;
+  const cachedDataOwner = cachedSession?.householdId ? `household-${cachedSession.householdId}` : cachedSession?.uid;
+  const cachedRecipes = cachedDataOwner ? readLocalJsonFor(cachedDataOwner, "recipe_catalog", []) : [];
+  const cachedPlan = cachedDataOwner ? readLocalJsonFor(cachedDataOwner, "weekly_plan", null) : null;
+  const cachedShopping = cachedDataOwner ? readLocalJsonFor(cachedDataOwner, "shopping", null) : null;
   const canBoot = Boolean(cachedSession?.uid && cachedRecipes.length && cachedPlan?.days);
   if (canBoot) {
     appState.user = { uid: cachedSession.uid, email: cachedSession.email || "" };
@@ -334,14 +399,22 @@ async function initApp() {
 
   observeAuthState(async user => {
     if (!user) {
+      stopAccountRealtimeSync();
+      clearDataScope();
       writeSessionCache(null);
       setLocalDataOwner(null);
       appState.user = null;
+      appState.household = null;
       showLogin();
       return;
     }
-    writeSessionCache({ uid: user.uid, email: user.email });
+    writeSessionCache({
+      uid: user.uid,
+      email: user.email,
+      householdId: cachedSession?.uid === user.uid ? (cachedSession.householdId || null) : null
+    });
     await loadUserData(user, { silent: canBoot });
+    startAccountRealtimeSync();
   });
 }
 
@@ -807,11 +880,11 @@ function recipeSectionHtml(title, recipes, slot) {
   const sectionId = `recipe-section-${slot.id}`;
   return `
     <section class="recipe-library-section">
-      <button class="recipe-section-toggle" onclick="toggleRecipeSection('${slot.id}', this)" aria-expanded="true">
+      <button class="recipe-section-toggle collapsed" onclick="toggleRecipeSection('${slot.id}', this)" aria-expanded="false">
         <span class="section-title" style="margin:0"><span>${slot.emoji}</span><div><small>${recipes.length} proposte</small><h2>${escapeHtml(title)}</h2></div></span>
         <b class="recipe-section-chevron">⌄</b>
       </button>
-      <div id="${sectionId}" class="recipe-section-body">
+      <div id="${sectionId}" class="recipe-section-body hidden">
         <div class="recipe-grid">
           ${recipes.map(recipe => `<button class="recipe-library-card" data-search="${escapeAttr(`${recipe.id} ${recipe.name} ${recipe.namesByDayType?.training || ""} ${recipe.namesByDayType?.rest || ""} ${recipe.proteinCategory} ${(recipe.ingredients || []).map(i => i.name).join(" ")}`.toLowerCase())}" onclick="openRecipeModal('${escapeAttr(recipe.id)}')"><span class="recipe-code">${escapeHtml(recipe.id)}</span><span class="recipe-card-emoji">${escapeHtml(recipe.emoji || "🍲")}</span><strong>${escapeHtml(recipe.name)}</strong><small>${escapeHtml(recipe.proteinCategory || "")}</small><span class="frequency-chip">${escapeHtml(recipe.frequency || "")}</span></button>`).join("")}
         </div>
@@ -829,8 +902,29 @@ window.toggleRecipeSection = function(slotId, button) {
 
 window.filterRecipeCards = function(query) {
   const normalized = String(query || "").trim().toLowerCase();
-  document.querySelectorAll(".recipe-library-card").forEach(card => {
-    card.classList.toggle("hidden", normalized && !card.dataset.search.includes(normalized));
+  document.querySelectorAll(".recipe-library-section").forEach(section => {
+    const cards = [...section.querySelectorAll(".recipe-library-card")];
+    let matchingCards = 0;
+    cards.forEach(card => {
+      const matches = !normalized || card.dataset.search.includes(normalized);
+      card.classList.toggle("hidden", !matches);
+      if (matches) matchingCards += 1;
+    });
+
+    const toggle = section.querySelector(".recipe-section-toggle");
+    const body = section.querySelector(".recipe-section-body");
+    if (!normalized) {
+      section.classList.remove("hidden");
+      body?.classList.add("hidden");
+      toggle?.classList.add("collapsed");
+      toggle?.setAttribute("aria-expanded", "false");
+      return;
+    }
+
+    section.classList.toggle("hidden", matchingCards === 0);
+    body?.classList.toggle("hidden", matchingCards === 0);
+    toggle?.classList.toggle("collapsed", matchingCards === 0);
+    toggle?.setAttribute("aria-expanded", String(matchingCards > 0));
   });
 };
 
@@ -869,14 +963,20 @@ function getCategoryForIngredient(name) {
 }
 
 function parseSimpleAmount(raw) {
+  // Mantiene il fallback locale per il rendering del modale, ma usa la stessa
+  // normalizzazione della lista spesa quando il dominio è disponibile.
+  if (window.PianoDomain?.parseSimpleAmount) return PianoDomain.parseSimpleAmount(raw);
   const original = String(raw ?? "").trim();
   if (isEmptyPortion(original) || /^0(?:[.,]0+)?\s*(g|ml)?$/i.test(original)) return { skip: true };
   if (/^(q\.?b\.?|liber[oaie]|a piacere)$/i.test(original)) return { free: true, label: original };
   const fractionMap = { "½": 0.5, "¼": 0.25, "¾": 0.75 };
-  const match = original.match(/^(\d+(?:[.,]\d+)?|[½¼¾])\s*(g|ml|pz)?$/i);
+  const match = original.match(/^(\d+(?:[.,]\d+)?|[½¼¾])\s*(g|ml|pz|cucchiaio|cucchiai|cucchiaino|cucchiaini)?$/i);
   if (!match) return { opaque: original };
-  const value = fractionMap[match[1]] ?? Number(match[1].replace(",", "."));
-  return { value, unit: (match[2] || "pz").toLowerCase() };
+  let value = fractionMap[match[1]] ?? Number(match[1].replace(",", "."));
+  let unit = (match[2] || "pz").toLowerCase();
+  if (unit === "cucchiaio" || unit === "cucchiai") { value *= 10; unit = "g"; }
+  if (unit === "cucchiaino" || unit === "cucchiaini") { value *= 5; unit = "g"; }
+  return { value, unit };
 }
 
 function shoppingPortionsForIngredient(ingredient, dayType) {
@@ -915,13 +1015,65 @@ function formatNumber(value) {
   return Number.isInteger(value) ? String(value) : String(Math.round(value * 100) / 100).replace(".", ",");
 }
 
+function pluralizeOpaqueUnit(unit, amount) {
+  const value = String(unit || "").trim();
+  if (amount === 1 || !value) return value;
+  const [first, ...rest] = value.split(/\s+/);
+  const known = {
+    mazzetto: "mazzetti", fetta: "fette", spicchio: "spicchi", ciuffo: "ciuffi",
+    rametto: "rametti", foglia: "foglie", vasetto: "vasetti", confezione: "confezioni"
+  };
+  let plural = known[first.toLowerCase()];
+  if (!plural && /o$/i.test(first)) plural = first.slice(0, -1) + "i";
+  if (!plural && /a$/i.test(first)) plural = first.slice(0, -1) + "e";
+  if (!plural && /e$/i.test(first)) plural = first.slice(0, -1) + "i";
+  return [plural || first, ...rest].join(" ");
+}
+
+function formatOpaqueShoppingParts(opaque = {}) {
+  const items = Object.entries(opaque).map(([label, count]) => {
+    const roleMatch = label.match(/^(Uomo|Donna IPO):\s*(.+)$/i);
+    return {
+      label,
+      count,
+      role: roleMatch ? roleMatch[1] : null,
+      raw: roleMatch ? roleMatch[2] : label
+    };
+  });
+  const groups = new Map();
+  items.forEach(item => {
+    const key = item.raw.trim().toLowerCase();
+    if (!groups.has(key)) groups.set(key, []);
+    groups.get(key).push(item);
+  });
+
+  const primary = [];
+  const details = [];
+  groups.forEach(group => {
+    const counted = group[0].raw.match(/^(\d+(?:[.,]\d+)?)\s+(.+)$/);
+    const roleCount = new Set(group.map(item => item.role).filter(Boolean)).size;
+    // Valori opachi uguali (es. "1 mazzetto") possono essere sommati senza
+    // perdere significato. Per i profili Coppia richiediamo entrambi i ruoli.
+    if (counted && (roleCount > 1 || group.every(item => !item.role))) {
+      const perOccurrence = Number(counted[1].replace(",", "."));
+      const total = group.reduce((sum, item) => sum + perOccurrence * item.count, 0);
+      primary.push(`${formatNumber(total)} ${pluralizeOpaqueUnit(counted[2], total)}`);
+      return;
+    }
+    group.forEach(item => details.push(item.count > 1 ? `${item.label} × ${item.count}` : item.label));
+  });
+  return { primary, details };
+}
+
 function shoppingAmountText(entry) {
   const custom = appState.shopping.customQuantities?.[entry.id] ?? appState.shopping.customQuantities?.[entry.legacyId];
   if (custom !== undefined) return custom;
-  const pieces = Object.entries(entry.totals).map(([unit, total]) => `${formatNumber(total)}${unit === "pz" ? " pz" : unit}`);
-  Object.entries(entry.opaque).forEach(([label, count]) => pieces.push(count > 1 ? `${label} × ${count}` : label));
-  if (entry.free && !pieces.length) pieces.push("q.b. / libera");
-  return pieces.join(" + ") || "—";
+  const numeric = Object.entries(entry.totals).map(([unit, total]) => `${formatNumber(total)}${unit === "pz" ? " pz" : unit}`);
+  const opaque = formatOpaqueShoppingParts(entry.opaque);
+  const primary = [...numeric, ...opaque.primary];
+  if (entry.free && !primary.length && !opaque.details.length) primary.push("q.b. / libera");
+  if (primary.length && opaque.details.length) return `${primary.join(" + ")} (${opaque.details.join(" · ")})`;
+  return primary.join(" + ") || opaque.details.join(" · ") || "—";
 }
 
 function getVisibleShoppingEntries() {
@@ -960,7 +1112,8 @@ function renderShopSettings(allSelected) {
       <div class="shop-day-grid">
         ${DAY_ORDER.map(day => {
           const selected = appState.shopping.selectedMeals[day] || [];
-          return `<div class="shop-day-row"><strong>${DAY_NAMES[day]}</strong><div class="shop-meal-checks">${MEAL_SLOTS.map(slot => `<label><input type="checkbox" ${selected.includes(slot.id) ? "checked" : ""} onchange="toggleShopMeal('${day}', '${slot.id}', this.checked)"> ${escapeHtml(slot.label)}</label>`).join("")}</div></div>`;
+          const dayIsSelected = MEAL_SLOTS.every(slot => selected.includes(slot.id));
+          return `<div class="shop-day-row"><div class="shop-day-head"><strong>${DAY_NAMES[day]}</strong><button class="btn btn-small btn-outline" onclick="toggleShopDay('${day}')">${dayIsSelected ? "Annulla" : "Tutto"}</button></div><div class="shop-meal-checks">${MEAL_SLOTS.map(slot => `<label><input type="checkbox" ${selected.includes(slot.id) ? "checked" : ""} onchange="toggleShopMeal('${day}', '${slot.id}', this.checked)"> ${escapeHtml(slot.label)}</label>`).join("")}</div></div>`;
         }).join("")}
       </div>
       <label class="settings-row"><span><strong>Dispensa e spezie</strong><small>Olio, frutta secca, aromi e condimenti</small></span><input type="checkbox" ${appState.shopping.includePantry ? "checked" : ""} onchange="toggleShopPantry(this.checked)"></label>
@@ -975,6 +1128,15 @@ window.toggleShopSettings = function() {
 
 window.toggleShopAllWeek = async function(select) {
   DAY_ORDER.forEach(day => { appState.shopping.selectedMeals[day] = select ? MEAL_SLOTS.map(slot => slot.id) : []; });
+  await saveShoppingListCloud(appState.shopping);
+  renderShop();
+};
+
+window.toggleShopDay = async function(day) {
+  if (!DAY_ORDER.includes(day)) return;
+  const selected = appState.shopping.selectedMeals[day] || [];
+  const allSelected = MEAL_SLOTS.every(slot => selected.includes(slot.id));
+  appState.shopping.selectedMeals[day] = allSelected ? [] : MEAL_SLOTS.map(slot => slot.id);
   await saveShoppingListCloud(appState.shopping);
   renderShop();
 };
@@ -1063,6 +1225,22 @@ function settingsAccordion(title, content, open = false) {
   return `<section class="settings-section guide-accordion"><button class="guide-toggle" aria-controls="${id}" onclick="document.getElementById('${id}').classList.toggle('hidden')"><span>${escapeHtml(title)}</span><b>⌄</b></button><div id="${id}" class="guide-content ${open ? "" : "hidden"}">${content}</div></section>`;
 }
 
+function renderLinkedAccountsSection() {
+  const ownUsername = usernameFromUser(appState.user);
+  const household = appState.household;
+  const linkedUsernames = (household?.memberUsernames || []).filter(username => username !== ownUsername);
+  return `
+    <section class="settings-section linked-accounts-section">
+      <div class="flex-between"><div><h2>Account collegati</h2><p class="text-muted">Settimana, ricette, batch cooking e spesa condivisi in tempo reale.</p></div><span class="link-status ${household ? "active" : ""}">${household ? "● Sincronizzato" : "Non collegato"}</span></div>
+      ${linkedUsernames.length ? `<div class="linked-member-list">${linkedUsernames.map(username => `<div class="linked-member"><span class="account-avatar small">${escapeHtml(username.slice(0, 1).toUpperCase())}</span><div><strong>${escapeHtml(username)}</strong><small>Può leggere e modificare tutti i dati condivisi</small></div></div>`).join("")}</div>` : `<p class="linked-empty">Nessun altro account collegato. Il profilo porzioni resta sempre personale e salvato solo su questo dispositivo.</p>`}
+      <div class="linked-account-actions">
+        <button class="btn btn-primary" onclick="openAccountLinkDialog()">+ Collega account</button>
+        <button class="btn btn-outline" onclick="openIncomingShares()">📥 Ricevute</button>
+        ${household ? `<button class="btn btn-danger" onclick="disconnectAccount()">Scollega questo account</button>` : ""}
+      </div>
+    </section>`;
+}
+
 function renderSettings() {
   const container = document.getElementById("view-settings");
   const breakfastCount = appState.recipes.filter(recipe => recipe.slot === "breakfast").length;
@@ -1073,6 +1251,8 @@ function renderSettings() {
       <div><small>Accesso personale</small><h2>${escapeHtml(usernameFromUser(appState.user))}</h2><p>Account personale protetto</p></div>
       <button class="btn btn-outline" onclick="logoutCurrentUser()">Esci</button>
     </section>
+
+    ${renderLinkedAccountsSection()}
 
     <section class="settings-section">
       <h2>Aspetto</h2>
@@ -1133,6 +1313,7 @@ window.logoutCurrentUser = async function() {
 let pendingRecipeImport = null;
 let pendingShareRecipeIds = [];
 let incomingRecipeShares = [];
+let incomingAccountLinks = [];
 
 // ---- Backup precedente (users/{uid}/backups/previous) ----
 
@@ -1357,7 +1538,7 @@ function setupTransferModals() {
     </div>
     <div id="incoming-shares-modal" class="modal hidden" role="dialog" aria-modal="true">
       <div class="modal-content incoming-modal-content">
-        <div class="modal-header"><div><p class="eyebrow">RICHIESTE RICEVUTE</p><h2>Ricette condivise con te</h2></div><button class="btn-icon" onclick="closeIncomingShares()">&times;</button></div>
+        <div class="modal-header"><div><p class="eyebrow">RICHIESTE RICEVUTE</p><h2>Condivisioni e collegamenti</h2></div><button class="btn-icon" onclick="closeIncomingShares()">&times;</button></div>
         <div id="incoming-shares-list"></div>
       </div>
     </div>
@@ -1370,8 +1551,85 @@ function setupTransferModals() {
           <button class="btn btn-primary" onclick="applyShareAccept()">Conferma e importa</button>
         </div>
       </div>
+    </div>
+    <div id="account-link-modal" class="modal hidden" role="dialog" aria-modal="true">
+      <div class="modal-content transfer-modal-content">
+        <div class="modal-header"><div><p class="eyebrow">ACCOUNT COLLEGATI</p><h2>Collega un altro account</h2></div><button class="btn-icon" onclick="closeAccountLinkDialog()">&times;</button></div>
+        <p class="text-muted">Invia una richiesta tramite username. Dopo l'accettazione condividerete piano, ricette, batch cooking e lista della spesa; ciascuno manterrà il proprio profilo porzioni locale.</p>
+        <label class="share-username-field">Username da collegare<input id="account-link-username" autocomplete="off" autocapitalize="none" placeholder="es. anna"></label>
+        <p class="text-muted transfer-privacy-note">Prima dell'invio verrà creato un backup del tuo stato corrente.</p>
+        <button id="account-link-send-button" class="btn btn-primary full-width" onclick="submitAccountLink()">Invia richiesta di collegamento</button>
+      </div>
     </div>`);
 }
+
+window.openAccountLinkDialog = function() {
+  const input = document.getElementById("account-link-username");
+  if (input) input.value = "";
+  document.getElementById("account-link-modal")?.classList.remove("hidden");
+  setTimeout(() => input?.focus(), 50);
+};
+
+window.closeAccountLinkDialog = function() {
+  document.getElementById("account-link-modal")?.classList.add("hidden");
+};
+
+window.submitAccountLink = async function() {
+  const username = document.getElementById("account-link-username")?.value || "";
+  const button = document.getElementById("account-link-send-button");
+  if (!username.trim()) {
+    showToast("Inserisci lo username da collegare", true);
+    return;
+  }
+  button.disabled = true;
+  button.textContent = "Creazione backup…";
+  try {
+    await createBackup(
+      appState.recipes,
+      appState.plan,
+      appState.shopping,
+      "account-link-invite",
+      `Stato prima dell'invito di collegamento a ${normalizeUsername(username)}`
+    );
+    button.textContent = "Invio richiesta…";
+    await sendAccountLink(username, appState.recipes, appState.plan, appState.shopping);
+    closeAccountLinkDialog();
+    if (window.location.hash === "#settings") renderSettings();
+    showToast("Richiesta di collegamento inviata ✅");
+  } catch (error) {
+    console.error(error);
+    showToast(error.message || "Invio del collegamento non riuscito", true);
+  } finally {
+    button.disabled = false;
+    button.textContent = "Invia richiesta di collegamento";
+  }
+};
+
+window.disconnectAccount = async function() {
+  if (!appState.household) return;
+  if (!confirm("Scollegare questo account? Verrà creato un backup e conserverai una copia indipendente di settimana, ricette, batch cooking e spesa correnti.")) return;
+  setLoading("Creazione backup e scollegamento…");
+  try {
+    await createBackup(
+      appState.recipes,
+      appState.plan,
+      appState.shopping,
+      "account-unlink",
+      "Stato condiviso prima dello scollegamento account"
+    );
+    await unlinkCurrentAccount(appState.recipes, appState.plan, appState.shopping);
+    appState.household = null;
+    await loadUserData(appState.user, { silent: true });
+    startAccountRealtimeSync();
+    handleRoute();
+    showToast("Account scollegato: ora usi una copia indipendente ✅");
+  } catch (error) {
+    console.error(error);
+    showToast(error.message || "Scollegamento non riuscito", true);
+  } finally {
+    clearLoading();
+  }
+};
 
 window.openShareDialog = function(recipeId = null) {
   const recipes = recipeId ? [getRecipe(recipeId)].filter(Boolean) : appState.recipes;
@@ -1423,7 +1681,10 @@ window.openIncomingShares = async function() {
   list.innerHTML = `<div class="empty-state"><div class="loading-spinner"></div><p>Caricamento richieste…</p></div>`;
   modal.classList.remove("hidden");
   try {
-    incomingRecipeShares = await getPendingRecipeShares();
+    [incomingRecipeShares, incomingAccountLinks] = await Promise.all([
+      getPendingRecipeShares(),
+      getPendingAccountLinks()
+    ]);
     renderIncomingShares();
   } catch (error) {
     console.error(error);
@@ -1433,11 +1694,21 @@ window.openIncomingShares = async function() {
 
 function renderIncomingShares() {
   const list = document.getElementById("incoming-shares-list");
-  if (!incomingRecipeShares.length) {
-    list.innerHTML = `<div class="empty-state"><span>📭</span><h3>Nessuna richiesta</h3><p>Quando un utente ti invierà delle ricette, compariranno qui.</p></div>`;
+  if (!incomingRecipeShares.length && !incomingAccountLinks.length) {
+    list.innerHTML = `<div class="empty-state"><span>📭</span><h3>Nessuna richiesta</h3><p>Le ricette condivise e gli inviti a collegare un account compariranno qui.</p></div>`;
     return;
   }
-  list.innerHTML = incomingRecipeShares.map(share => {
+  const linkCards = incomingAccountLinks.map(request => `
+    <article class="incoming-share-card account-link-request">
+      <div><span class="account-avatar small">${escapeHtml((request.senderUsername || "?").slice(0, 1).toUpperCase())}</span><div><strong>${escapeHtml(request.senderUsername || "Utente")}</strong><small>🔗 Invito a collegare gli account</small></div></div>
+      <p>Dopo il collegamento condividerete settimana, catalogo ricette, batch cooking e spesa. Scegli ora quale stato completo usare come base; l'altro verrà salvato in backup.</p>
+      <div class="account-base-choices">
+        <button class="btn btn-primary" onclick="acceptPendingAccountLink('${request.id}', 'sender')">Usa la settimana di ${escapeHtml(request.senderUsername || "chi invita")}</button>
+        <button class="btn btn-outline" onclick="acceptPendingAccountLink('${request.id}', 'recipient')">Usa la mia settimana</button>
+        <button class="btn btn-danger" onclick="rejectPendingAccountLink('${request.id}')">Rifiuta</button>
+      </div>
+    </article>`).join("");
+  const recipeCards = incomingRecipeShares.map(share => {
     const hasPlan = Boolean(share.includesPlan && share.plan?.days);
     const count = share.recipeCount || share.recipes?.length || 0;
     const actions = hasPlan
@@ -1454,10 +1725,53 @@ function renderIncomingShares() {
       <div class="incoming-share-actions">${actions}<button class="btn btn-outline" onclick="rejectSharedRecipes('${share.id}')">Rifiuta</button></div>
     </article>`;
   }).join("");
+  list.innerHTML = linkCards + recipeCards;
 }
 
 window.closeIncomingShares = function() {
   document.getElementById("incoming-shares-modal")?.classList.add("hidden");
+};
+
+window.acceptPendingAccountLink = async function(shareId, base) {
+  const request = incomingAccountLinks.find(item => item.id === shareId);
+  if (!request) return;
+  const baseLabel = base === "sender" ? `quella di ${request.senderUsername}` : "la tua";
+  if (!confirm(`Collegare gli account usando come base ${baseLabel}? Catalogo, settimana, batch cooking e spesa dell'altra base verranno sostituiti dopo aver creato un backup.`)) return;
+  setLoading("Backup e collegamento account…");
+  try {
+    await createBackup(
+      appState.recipes,
+      appState.plan,
+      appState.shopping,
+      "account-link-accept",
+      `Stato prima del collegamento con ${request.senderUsername}; base scelta: ${base}`
+    );
+    await acceptAccountLink(shareId, base, appState.recipes, appState.plan, appState.shopping);
+    incomingAccountLinks = incomingAccountLinks.filter(item => item.id !== shareId);
+    closeIncomingShares();
+    await loadUserData(appState.user, { silent: true });
+    startAccountRealtimeSync();
+    handleRoute();
+    showToast("Account collegati e sincronizzazione realtime attiva ✅");
+  } catch (error) {
+    console.error(error);
+    showToast(error.message || "Collegamento non riuscito", true);
+  } finally {
+    clearLoading();
+  }
+};
+
+window.rejectPendingAccountLink = async function(shareId) {
+  if (!confirm("Rifiutare questa richiesta di collegamento?")) return;
+  try {
+    await rejectAccountLink(shareId);
+    incomingAccountLinks = incomingAccountLinks.filter(item => item.id !== shareId);
+    renderIncomingShares();
+    showToast("Richiesta di collegamento rifiutata");
+  } catch (error) {
+    console.error(error);
+    showToast(error.message || "Impossibile rifiutare la richiesta", true);
+  }
 };
 
 // ---- Anteprima conflitti e accettazione condivisione ----

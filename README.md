@@ -9,7 +9,9 @@ WebApp PWA privata per gestire colazioni, spuntini, pranzi, cene, batch cooking 
 - creazione manuale di ricette con dosi Donna IPO A/R e Uomo A/R;
 - importazione ed esportazione JSON di una ricetta o dell'intero catalogo (schema 4);
 - condivisione di ricette **e/o della struttura della settimana** con un altro username, con anteprima dei conflitti e scelta della modalità di sostituzione;
-- richieste ricevute con **Solo ricette**, **Solo settimana**, **Importa tutto**, **Sostituisci ricette** oppure **Rifiuta**;
+- collegamento di due o più account in una **household**: piano, catalogo, batch cooking e spesa condivisi in tempo reale, con profilo porzioni locale per ogni persona;
+- invito al collegamento per username, scelta della settimana base, backup automatico di entrambi gli account e scollegamento con copia indipendente;
+- richieste ricevute con **Solo ricette**, **Solo settimana**, **Importa tutto**, **Sostituisci ricette**, scelta della base account oppure **Rifiuta**;
 - catalogo opzionale di partenza fornito nel file esterno `firebase-seed.json` (mai committato nel repository);
 - colazioni e spuntini inclusi nel piano;
 - crackers dello spuntino mattutino aggiunti nei giorni A e rimossi nei giorni R (dinamici, derivati dal piano);
@@ -27,41 +29,51 @@ WebApp PWA privata per gestire colazioni, spuntini, pranzi, cene, batch cooking 
 
 Le ricette non sono hardcoded nel repository GitHub. Il codice contiene soltanto interfaccia, regole di visualizzazione, servizi di dominio puri (`js/domain.js`) e manuale di Meller.
 
-Dopo il salvataggio, le ricette si trovano nel documento privato:
+Finché l'account è indipendente, i dati si trovano nei documenti privati:
 
 ```text
 users/{uid}/content/recipeCatalog
+users/{uid}/config/weeklyPlan
+users/{uid}/config/shoppingList
+```
+
+Quando l'account entra in un gruppo, le stesse funzioni puntano invece ai documenti condivisi:
+
+```text
+households/{householdId}
+households/{householdId}/content/recipeCatalog
+households/{householdId}/config/weeklyPlan
+households/{householdId}/config/shoppingList
 ```
 
 Altri dati:
 
 ```text
-users/{uid}/config/weeklyPlan
-users/{uid}/config/shoppingList
 users/{uid}/backups/previous
 usernames/{username}
 recipeShares/{requestId}
 ```
 
-`usernames` contiene solamente username e UID, necessari per individuare il destinatario. `recipeShares` contiene le richieste ancora da accettare o rifiutare. `backups/previous` contiene un'unica copia (catalogo + piano + lista spesa) creata prima delle operazioni distruttive e cancellata dopo il ripristino.
+`households/{householdId}` contiene gli UID autorizzati; le regole Firestore consentono a ogni membro di leggere e modificare i tre documenti condivisi. `usernames` contiene solamente username e UID, necessari per individuare il destinatario. `recipeShares` contiene sia le condivisioni ricetta sia gli inviti `accountLink` ancora da accettare o rifiutare. `backups/previous` rimane sempre personale e contiene un'unica copia (catalogo + piano + lista spesa), cancellata dopo il ripristino.
 
 ## Chiamate Firestore
 
-Un normale avvio esegue in parallelo tre letture documento:
+Un normale avvio cerca prima l'eventuale household e poi esegue in parallelo tre letture documento:
 
 1. catalogo completo (un solo documento, mai una lettura per ricetta o per ingrediente);
 2. piano settimanale;
 3. lista della spesa.
 
-Il catalogo è un unico documento: 62 ricette non generano 62 letture. Non ci sono listener realtime permanenti. La casella delle condivisioni viene interrogata solo quando si preme **Ricevute**.
+Il catalogo è un unico documento: 62 ricette non generano 62 letture. Per gli account collegati sono attivi listener `onSnapshot` sui tre documenti condivisi e sulla membership, così le modifiche compaiono in tempo reale su tutti i dispositivi. Gli account indipendenti continuano a usare le sole letture iniziali. La casella delle condivisioni viene interrogata solo quando si preme **Ricevute**.
 
 Operazioni indicative (catalogo medio ~60 ricette):
 
 - esportazione JSON: zero chiamate Firebase;
 - importazione **Aggiungi**: una scrittura catalogo (+ una scrittura piano solo se cambiano riferimenti);
 - importazione **Sostituisci tutte**: backup (1 scrittura) + catalogo (1) + piano (1);
-- invio condivisione: una lettura per cercare il destinatario + una scrittura richiesta;
+- invio condivisione o invito account: una lettura per cercare il destinatario + una scrittura richiesta (l'invito crea prima un backup personale);
 - accettazione condivisione: catalogo, piano (se incluso) e rimozione richiesta in un **unico batch**;
+- accettazione collegamento: backup del destinatario + membership, tre documenti condivisi quando necessari e rimozione invito in un **unico batch**;
 - rifiuto: una cancellazione della richiesta;
 - **Annulla ultima modifica**: una **transazione atomica** (legge backup, riscrive catalogo/piano/spesa, elimina il backup);
 - generatore: solo letture locali; l'applicazione scrive il piano (1) preceduta dal backup (1);
@@ -154,7 +166,10 @@ Questo passaggio è obbligatorio, soprattutto per la condivisione.
 
 Le regole garantiscono che:
 
-- ogni utente possa modificare solo i propri dati;
+- ogni utente possa modificare solo i propri dati e backup personali;
+- solo gli UID elencati nella household possano leggere o modificare piano, catalogo e spesa condivisi;
+- l'ingresso in una household sia possibile soltanto tramite un invito `accountLink` pending destinato all'UID autenticato;
+- ogni membro possa rimuovere soltanto se stesso dal gruppo;
 - lo username possa essere registrato solo dal relativo account Firebase;
 - il mittente possa creare una richiesta;
 - solo il destinatario possa accettarla, rifiutarla o eliminarla.

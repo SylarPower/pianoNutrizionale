@@ -323,10 +323,20 @@
     if (isEmptyPortion(original) || /^0(?:[.,]0+)?\s*(g|ml)?$/i.test(original)) return { skip: true };
     if (/^(q\.?b\.?|liber[oaie]|a piacere)$/i.test(original)) return { free: true, label: original };
     const fractionMap = { '½': 0.5, '¼': 0.25, '¾': 0.75 };
-    const match = original.match(/^(\d+(?:[.,]\d+)?|[½¼¾])\s*(g|ml|pz)?$/i);
+    const match = original.match(/^(\d+(?:[.,]\d+)?|[½¼¾])\s*(g|ml|pz|cucchiaio|cucchiai|cucchiaino|cucchiaini)?$/i);
     if (!match) return { opaque: original };
-    const value = fractionMap[match[1]] ?? Number(match[1].replace(',', '.'));
-    return { value, unit: (match[2] || 'pz').toLowerCase() };
+    let value = fractionMap[match[1]] ?? Number(match[1].replace(',', '.'));
+    let unit = (match[2] || 'pz').toLowerCase();
+    // Le misure da cucina vengono normalizzate in grammi per produrre una
+    // quantità acquistabile e aggregabile in tutti i profili porzione.
+    if (unit === 'cucchiaio' || unit === 'cucchiai') {
+      value *= 10;
+      unit = 'g';
+    } else if (unit === 'cucchiaino' || unit === 'cucchiaini') {
+      value *= 5;
+      unit = 'g';
+    }
+    return { value, unit };
   }
 
   // Aggrega la lista della spesa per ingredientId. Le dosi "—" vengono saltate.

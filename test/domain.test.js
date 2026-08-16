@@ -150,6 +150,10 @@ test('profilo Coppia somma dosi uomo + donna', () => {
   const list = d.aggregateShopping(planWith(days), recipesById, { monday: ['lunch'] }, 'couple');
   const pollo = list.find(entry => entry.ingredientId === 'petto-di-pollo');
   assert.equal(pollo.totals.g, 350); // 200 uomo + 150 donna IPO
+  assert.deepEqual(d.parseSimpleAmount('1 cucchiaio'), { value: 10, unit: 'g' });
+  assert.deepEqual(d.parseSimpleAmount('3 cucchiai'), { value: 30, unit: 'g' });
+  assert.deepEqual(d.parseSimpleAmount('1 cucchiaino'), { value: 5, unit: 'g' });
+  assert.deepEqual(d.parseSimpleAmount('2 cucchiaini'), { value: 10, unit: 'g' });
 });
 
 test('dosi "—" non entrano nella lista', () => {
@@ -553,6 +557,9 @@ test('firestore.rules: backup privato e condivisioni vincolate', () => {
   assert.match(rules, /recipientUid == request\.auth\.uid/);
   assert.match(rules, /senderUid == request\.auth\.uid/);
   assert.match(rules, /includesPlan/);
+  assert.match(rules, /households\/\{householdId\}/);
+  assert.match(rules, /type == 'accountLink'/);
+  assert.match(rules, /getAfter/);
 });
 
 test('nessuna ricetta hardcoded nei file applicativi', () => {
