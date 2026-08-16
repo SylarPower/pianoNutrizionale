@@ -427,6 +427,10 @@ function setupRouter() {
   }
 }
 
+// Ultima vista renderizzata: consente di far scorrere la settimana sul giorno
+// corrente solo quando la si apre, non a ogni re-render della stessa vista.
+let lastRenderedRoute = null;
+
 function handleRoute() {
   if (!appState.user || !appState.plan) return;
   const hash = window.location.hash || "#chef";
@@ -435,11 +439,24 @@ function handleRoute() {
   document.getElementById(`view-${hash.slice(1)}`)?.classList.remove("hidden");
   document.getElementById(`nav-${hash.slice(1)}`)?.classList.add("active");
 
+  const enteringWeek = hash === "#week" && lastRenderedRoute !== "#week";
   if (hash === "#chef") renderChef();
   if (hash === "#week") renderWeek();
   if (hash === "#recipes") renderRecipes();
   if (hash === "#shop") renderShop();
   if (hash === "#settings") renderSettings();
+  lastRenderedRoute = hash;
+
+  if (enteringWeek) scrollWeekToToday();
+}
+
+function scrollWeekToToday() {
+  const target = document.getElementById(`day-${getTodayKey()}`);
+  if (!target || typeof target.scrollIntoView !== "function") return;
+  const scroll = () => target.scrollIntoView({ behavior: "smooth", block: "start" });
+  // Attende il layout del nuovo markup; scroll-margin-top compensa l'header fisso.
+  if (typeof requestAnimationFrame === "function") requestAnimationFrame(scroll);
+  else scroll();
 }
 
 function renderGlobalHeader() {
@@ -667,9 +684,9 @@ function renderWeek() {
       ${DAY_ORDER.map(day => {
         const planDay = appState.plan.days[day];
         return `
-          <article class="day-column ${day === today ? "current-day" : ""}">
+          <article id="day-${day}" class="day-column ${day === today ? "current-day" : ""}">
             <div class="day-column-head">
-              <div><span class="recipe-code">${day === today ? "OGGI" : "GIORNO"}</span><h2>${DAY_NAMES[day]}</h2></div>
+              <div>${day === today ? `<span class="today-badge">OGGI</span>` : `<span class="recipe-code">GIORNO</span>`}<h2>${DAY_NAMES[day]}</h2></div>
               <div class="day-type-control">
                 <button class="type-option training ${planDay.type === "training" ? "active" : ""}" onclick="changeDayType('${day}', 'training')">A</button>
                 <button class="type-option rest ${planDay.type === "rest" ? "active" : ""}" onclick="changeDayType('${day}', 'rest')">R</button>

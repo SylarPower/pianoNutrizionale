@@ -354,8 +354,9 @@ h3 { font-size: 1rem; }
 .validation-ok { color: var(--success); }
 .validation-warning { color: var(--danger); }
 .week-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 14px; }
-.day-column { padding: 17px; border: 1px solid var(--line); border-radius: var(--radius); background: var(--surface); box-shadow: var(--shadow); }
-.day-column.current-day { border: 2px solid var(--primary); }
+.day-column { padding: 17px; border: 1px solid var(--line); border-radius: var(--radius); background: var(--surface); box-shadow: var(--shadow); scroll-margin-top: calc(var(--header-height) + 14px); }
+.day-column.current-day { border: 3px double var(--primary); background: var(--primary-soft); }
+.today-badge { display: inline-block; padding: 2px 10px; border-radius: 999px; background: var(--primary); color: #fff; font-size: .68rem; font-weight: 850; letter-spacing: .11em; }
 .day-column-head { display: flex; align-items: center; justify-content: space-between; margin-bottom: 12px; }
 .day-column-head h2 { margin-top: 2px; }
 .day-type-control { display: flex; gap: 4px; padding: 3px; border-radius: 10px; background: var(--surface-alt); }
@@ -715,6 +716,14 @@ body.dark-mode .global-header {
   box-shadow: none;
 }
 
+/* Opzioni del selettore profilo porzioni: nel menu a tendina espanso il testo
+   deve restare bianco su fondo scuro (di default erediterebbe il colore
+   chiaro-su-chiaro pensato per il tema normale). */
+body.dark-mode .global-header select option {
+  background: #080808;
+  color: #fff;
+}
+
 body.dark-mode .bottom-nav,
 body.dark-mode .shop-actions {
   background: #000000;
@@ -734,6 +743,11 @@ body.dark-mode .transfer-choice {
   background: #000000;
   border-color: #202020;
   box-shadow: none;
+}
+
+body.dark-mode .day-column.current-day {
+  background: #0b1712;
+  border-color: var(--primary);
 }
 
 body.dark-mode .surface-alt,
