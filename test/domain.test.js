@@ -156,6 +156,39 @@ test('profilo Coppia somma dosi uomo + donna', () => {
   assert.deepEqual(d.parseSimpleAmount('2 cucchiaini'), { value: 10, unit: 'g' });
 });
 
+test('parseSimpleAmount usa il massimo degli intervalli e normalizza le unità', () => {
+  assert.deepEqual(d.parseSimpleAmount('8-10'), { value: 10, unit: 'pz' });
+  assert.deepEqual(d.parseSimpleAmount('8-10 pz'), { value: 10, unit: 'pz' });
+  assert.deepEqual(d.parseSimpleAmount('1-2 cucchiai'), { value: 20, unit: 'g' });
+  assert.deepEqual(d.parseSimpleAmount('8–10 pz'), { value: 10, unit: 'pz' });
+  assert.deepEqual(d.parseSimpleAmount('1—2 cucchiai'), { value: 20, unit: 'g' });
+});
+
+test('lista spesa somma valori fissi e intervalli per Uomo, Donna IPO e Coppia', () => {
+  const samePortions = (man, ipo) => ({
+    ipoTraining: ipo, ipoRest: ipo, manTraining: man, manRest: man
+  });
+  const days = {
+    monday: { type: 'training', lunch: 'T1' },
+    tuesday: { type: 'rest', lunch: 'T2' },
+    wednesday: { type: 'training', lunch: 'T3' }
+  };
+  const recipesById = {
+    T1: recipe('T1', 'Pomodorini fissi', 'lunch', [ingredient('Pomodorini', samePortions('10', '8'))]),
+    T2: recipe('T2', 'Pomodorini intervallo', 'lunch', [ingredient('Pomodorini', samePortions('8-10', '8-10 pz'))]),
+    T3: recipe('T3', 'Pomodorini intervallo lungo', 'lunch', [ingredient('Pomodorini', samePortions('8—10 pz', '—'))])
+  };
+  const selected = { monday: ['lunch'], tuesday: ['lunch'], wednesday: ['lunch'] };
+  const expected = { man: 30, ipo: 18, couple: 48 };
+
+  Object.entries(expected).forEach(([profile, total]) => {
+    const list = d.aggregateShopping(planWith(days), recipesById, selected, profile);
+    const tomatoes = list.find(entry => entry.ingredientId === 'cherry-tomatoes');
+    assert.equal(tomatoes.totals.pz, total, `totale profilo ${profile}`);
+    assert.deepEqual(tomatoes.opaque, {}, `nessun intervallo opaco per ${profile}`);
+  });
+});
+
 test('dosi "—" non entrano nella lista', () => {
   const { days, recipesById } = shoppingFixture();
   const list = d.aggregateShopping(planWith(days), recipesById, { saturday: ['lunch'] }, 'man');

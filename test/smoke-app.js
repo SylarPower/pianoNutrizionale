@@ -130,6 +130,9 @@ const recipes = [
   R('S1', 'Frutta', 'snack1', ''),
   R('M1', 'Yogurt', 'snack2', '')
 ];
+const samePortion = value => ({ ipoTraining: value, ipoRest: value, manTraining: value, manRest: value });
+recipes.find(item => item.id === 'L1').ingredients.push({ name: 'Basilico', ingredientId: 'basilico', portions: samePortion('1') });
+recipes.find(item => item.id === 'D1').ingredients.push({ name: 'Basilico', ingredientId: 'basilico', portions: samePortion('un mazzetto') });
 const days = {};
 window.PianoDomain.DAYS.forEach(day => {
   days[day] = { type: ['monday', 'wednesday', 'friday', 'sunday'].includes(day) ? 'training' : 'rest', breakfast: 'B1', snack1: 'S1', lunch: 'L1', snack2: 'M1', dinner: 'D1' };
@@ -166,9 +169,13 @@ renderShop();
 shopSettingsVisible = true;
 renderShop();
 assert.match(document.getElementById('view-shop').innerHTML, /toggleShopDay\('monday'\)/);
-assert.equal(shoppingAmountText({ id: 'opaque-a', legacyId: 'opaque-a', totals: { pz: 28 }, opaque: { 'Uomo: 8-10': 2, 'Donna IPO: 8-10': 1 }, free: false }), '28 pz (Uomo: 8-10 × 2 · Donna IPO: 8-10)');
+assert.equal(shoppingAmountText({ id: 'opaque-a', legacyId: 'opaque-a', totals: { pz: 28 }, opaque: { 'Uomo: 8-10': 2, 'Donna IPO: 8-10': 1 }, free: false }), '28 pz');
 assert.equal(shoppingAmountText({ id: 'opaque-b', legacyId: 'opaque-b', totals: {}, opaque: { 'Uomo: 1 mazzetto': 1, 'Donna IPO: 1 mazzetto': 1 }, free: false }), '2 mazzetti');
+assert.equal(shoppingAmountText({ id: 'opaque-only', legacyId: 'opaque-only', totals: {}, opaque: { 'Uomo: una confezione piccola': 2 }, free: false }), 'Uomo: una confezione piccola');
 assert.equal(shoppingAmountText({ id: 'spoons', legacyId: 'spoons', totals: { g: 50 }, opaque: {}, free: false }), '50g');
+const exportedShopping = shoppingText();
+assert.match(exportedShopping, /Basilico - 7 pz/);
+assert.doesNotMatch(exportedShopping, /Basilico[^\n]*mazzetto/);
 renderSettings();
 assert.match(document.getElementById('view-settings').innerHTML, /Account collegati/);
 renderIncomingShares();

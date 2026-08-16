@@ -323,10 +323,12 @@
     if (isEmptyPortion(original) || /^0(?:[.,]0+)?\s*(g|ml)?$/i.test(original)) return { skip: true };
     if (/^(q\.?b\.?|liber[oaie]|a piacere)$/i.test(original)) return { free: true, label: original };
     const fractionMap = { '½': 0.5, '¼': 0.25, '¾': 0.75 };
-    const match = original.match(/^(\d+(?:[.,]\d+)?|[½¼¾])\s*(g|ml|pz|cucchiaio|cucchiai|cucchiaino|cucchiaini)?$/i);
+    const match = original.match(/^(\d+(?:[.,]\d+)?|[½¼¾])(?:\s*[-–—]\s*(\d+(?:[.,]\d+)?|[½¼¾]))?\s*(g|ml|pz|cucchiaio|cucchiai|cucchiaino|cucchiaini)?$/i);
     if (!match) return { opaque: original };
-    let value = fractionMap[match[1]] ?? Number(match[1].replace(',', '.'));
-    let unit = (match[2] || 'pz').toLowerCase();
+    const numberValue = token => fractionMap[token] ?? Number(token.replace(',', '.'));
+    // Per la spesa un intervallo usa prudenzialmente il valore massimo.
+    let value = match[2] ? Math.max(numberValue(match[1]), numberValue(match[2])) : numberValue(match[1]);
+    let unit = (match[3] || 'pz').toLowerCase();
     // Le misure da cucina vengono normalizzate in grammi per produrre una
     // quantità acquistabile e aggregabile in tutti i profili porzione.
     if (unit === 'cucchiaio' || unit === 'cucchiai') {

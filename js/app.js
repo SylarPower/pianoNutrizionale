@@ -1078,20 +1078,22 @@ function formatOpaqueShoppingParts(opaque = {}) {
       primary.push(`${formatNumber(total)} ${pluralizeOpaqueUnit(counted[2], total)}`);
       return;
     }
-    group.forEach(item => details.push(item.count > 1 ? `${item.label} × ${item.count}` : item.label));
+    // Se non è possibile sommare, conserviamo l'etichetta originale come
+    // ripiego leggibile. Sarà ignorata quando esiste un valore primario.
+    group.forEach(item => details.push(item.label));
   });
   return { primary, details };
 }
 
 function shoppingAmountText(entry) {
   const custom = appState.shopping.customQuantities?.[entry.id] ?? appState.shopping.customQuantities?.[entry.legacyId];
-  if (custom !== undefined) return custom;
+  if (custom !== undefined && String(custom).trim()) return custom;
   const numeric = Object.entries(entry.totals).map(([unit, total]) => `${formatNumber(total)}${unit === "pz" ? " pz" : unit}`);
   const opaque = formatOpaqueShoppingParts(entry.opaque);
   const primary = [...numeric, ...opaque.primary];
-  if (entry.free && !primary.length && !opaque.details.length) primary.push("q.b. / libera");
-  if (primary.length && opaque.details.length) return `${primary.join(" + ")} (${opaque.details.join(" · ")})`;
-  return primary.join(" + ") || opaque.details.join(" · ") || "—";
+  if (primary.length) return primary.join(" + ");
+  if (entry.free && !opaque.details.length) return "q.b. / libera";
+  return opaque.details.join(" · ") || "—";
 }
 
 function getVisibleShoppingEntries() {
