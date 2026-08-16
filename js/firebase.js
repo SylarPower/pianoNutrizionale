@@ -345,6 +345,15 @@ async function getRecipeCatalog() {
       return recipes;
     }
 
+    // In ambito condiviso il documento può risultare momentaneamente mancante
+    // (es. household appena creata o snapshot non ancora propagato). In quel
+    // caso NON bisogna mai scrivere un catalogo vuoto: azzererebbe le ricette
+    // per tutti i membri. Si restituisce la cache locale senza scrivere nulla;
+    // il listener realtime aggiornerà i dati appena il documento è leggibile.
+    if (currentHousehold) {
+      return readLocalJson("recipe_catalog", []);
+    }
+
     // Migrazione una tantum dalla vecchia sottocollezione recipes, se presente.
     // Dopo la migrazione gli avvii costano una sola lettura catalogo.
     const legacySnapshot = await userRoot().collection("recipes").limit(100).get();
@@ -366,7 +375,8 @@ async function getRecipeCatalog() {
     }
 
     // Primo avvio: catalogo vuoto in un documento unico (una sola lettura
-    // per gli avvii successivi).
+    // per gli avvii successivi). Solo in ambito PERSONALE: l'inizializzazione
+    // vuota non deve mai toccare un documento condiviso.
     await saveRecipeCatalog([], {
       initializedEmpty: true
     });
@@ -705,6 +715,20 @@ async function acceptAccountLink(shareId, base, recipientRecipes, recipientPlan,
   }
 
   const senderDataset = accountLinkDataset(share.recipes || [], share.plan, share.shoppingList);
+  const chosen = base === "recipient" ? recipientDataset : senderDataset;
+  const other = base === "recipient" ? senderDataset : recipientDataset;
+  // Protezione anti-svuotamento: se la base scelta ha 0 ricette mentre
+  // l'altra parte ne ha, procedere significherebbe far "sparire" le ricette
+  // per entrambi senza alcun errore. Meglio bloccare e spiegare.
+  if (!chosen.recipes.length && other.recipes.length) {
+    const chosenLabel = base === "sender"
+      ? `la settimana di ${share.senderUsername || "chi invita"}`
+      : "la tua settimana";
+    throw new Error(
+      `Non puoi usare come base ${chosenLabel}: non contiene ricette, mentre l'altra ne ha ${other.recipes.length}. ` +
+      "Scegli l'altra settimana come base per non perdere i dati."
+    );
+  }
   const oldHousehold = currentHousehold;
   const targetId = share.sourceHouseholdId || shareId;
   if (oldHousehold?.id === targetId) throw new Error("L'account risulta già collegato");
@@ -745,19 +769,20 @@ async function acceptAccountLink(shareId, base, recipientRecipes, recipientPlan,
     });
   }
 
-  const chosen = base === "recipient" ? recipientDataset : senderDataset;
-  // Se si usa la base del mittente e la household esiste già, i documenti
-  // correnti sono l'autorità (potrebbero essere cambiati dopo l'invito).
-  if (base === "recipient" || !share.sourceHouseholdId) {
-    batch.set(householdRef.collection("content").doc("recipeCatalog"), {
-      schemaVersion: CATALOG_SCHEMA_VERSION,
-      recipes: chosen.recipes,
-      recipeCount: chosen.recipes.length,
-      updatedAt: firebase.firestore.FieldValue.serverTimestamp()
-    });
-    batch.set(householdRef.collection("config").doc("weeklyPlan"), chosen.plan);
-    batch.set(householdRef.collection("config").doc("shoppingList"), chosen.shoppingList);
-  }
+  // I dati della base scelta vengono scritti SEMPRE nel documento condiviso,
+  // nello stesso batch atomico dell'ingresso in household (consentito dalle
+  // Security Rules tramite getAfter). In passato, con base "sender" e una
+  // household già esistente, ci si fidava del contenuto corrente: se il
+  // documento condiviso era vuoto o mancante, entrambi i membri finivano a
+  // leggere un catalogo vuoto e le ricette "sparivano" senza errori.
+  batch.set(householdRef.collection("content").doc("recipeCatalog"), {
+    schemaVersion: CATALOG_SCHEMA_VERSION,
+    recipes: chosen.recipes,
+    recipeCount: chosen.recipes.length,
+    updatedAt: firebase.firestore.FieldValue.serverTimestamp()
+  });
+  batch.set(householdRef.collection("config").doc("weeklyPlan"), chosen.plan);
+  batch.set(householdRef.collection("config").doc("shoppingList"), chosen.shoppingList);
   batch.delete(shareRef);
   await batch.commit();
 
@@ -767,11 +792,9 @@ async function acceptAccountLink(shareId, base, recipientRecipes, recipientPlan,
     memberUids: [...new Set([...(share.sourceMemberUids || [share.senderUid]), user.uid])],
     memberUsernames: [...new Set([...(share.sourceMemberUsernames || [share.senderUsername]), usernameFromUser(user)])]
   };
-  if (base === "recipient" || !share.sourceHouseholdId) {
-    writeLocalJson("recipe_catalog", chosen.recipes);
-    writeLocalJson("weekly_plan", chosen.plan);
-    writeLocalJson("shopping", chosen.shoppingList);
-  }
+  writeLocalJson("recipe_catalog", chosen.recipes);
+  writeLocalJson("weekly_plan", chosen.plan);
+  writeLocalJson("shopping", chosen.shoppingList);
   return currentHousehold;
 }
 
