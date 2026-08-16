@@ -274,9 +274,31 @@ async function loadUserData(user, { silent = false } = {}) {
       console.warn("Area condivisa non disponibile: uso i dati personali", scopeError);
     }
     appState.household = getCurrentHousehold();
-    const [recipes, plan, shopping] = await Promise.all([
-      getRecipeCatalog(), getWeeklyPlan(), getShoppingListCloud()
-    ]);
+    // In modalità household i tre documenti hanno listener onSnapshot attivi
+    // (startAccountRealtimeSync parte subito dopo questa funzione): eseguire
+    // anche le .get() iniziali rileggerebbe gli stessi documenti, ~3 letture
+    // duplicate a ogni avvio. Con una cache locale valida lo stato parte da lì
+    // e il primo snapshot dei listener lo allinea. Senza cache utilizzabile
+    // (primo accesso dal dispositivo, household appena creata) restano le
+    // letture dirette come fallback, così la schermata non rimane mai vuota.
+    // In modalità personale non ci sono listener: le .get() restano sempre.
+    let recipes = null;
+    let plan = null;
+    let shopping = null;
+    if (appState.household) {
+      const cachedRecipes = readLocalJson("recipe_catalog", []);
+      const cachedPlan = readLocalJson("weekly_plan", null);
+      if (cachedRecipes.length && cachedPlan?.days) {
+        recipes = cachedRecipes;
+        plan = cachedPlan;
+        shopping = shoppingValueFromData(readLocalJson("shopping", {}));
+      }
+    }
+    if (!plan) {
+      [recipes, plan, shopping] = await Promise.all([
+        getRecipeCatalog(), getWeeklyPlan(), getShoppingListCloud()
+      ]);
+    }
     applyState(recipes, plan, shopping);
     writeSessionCache({
       uid: user.uid,

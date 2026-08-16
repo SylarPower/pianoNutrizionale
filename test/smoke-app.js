@@ -223,6 +223,69 @@ assert.doesNotMatch(exportedShopping, /Basilico[^\n]*mazzetto/);
   global.saveShoppingListCloud = originalCloud;
 }
 
+// ---- Avvio senza letture duplicate in modalità household ----
+// In modalità household i listener onSnapshot rileggono comunque i tre
+// documenti: con una cache locale valida loadUserData NON deve eseguire anche
+// le .get() iniziali. In modalità personale (nessun listener) le .get()
+// devono restare, altrimenti l'app non carica nulla.
+const startupChecks = (async () => {
+  const originals = {
+    prepareDataScope: global.prepareDataScope,
+    getCurrentHousehold: global.getCurrentHousehold,
+    getRecipeCatalog: global.getRecipeCatalog,
+    getWeeklyPlan: global.getWeeklyPlan,
+    getShoppingListCloud: global.getShoppingListCloud,
+    readLocalJson: global.readLocalJson,
+    applyState: global.applyState,
+    ensureUsernameDirectory: global.ensureUsernameDirectory
+  };
+  let reads = 0;
+  let applied = null;
+  let cache = {};
+  global.prepareDataScope = async () => global.getCurrentHousehold();
+  global.getRecipeCatalog = async () => { reads += 1; return [R('L1', 'Riso e uova', 'lunch', 'Legumi')]; };
+  global.getWeeklyPlan = async () => { reads += 1; return plan; };
+  global.getShoppingListCloud = async () => { reads += 1; return appState.shopping; };
+  global.readLocalJson = (name, fallback) => (name in cache ? JSON.parse(JSON.stringify(cache[name])) : fallback);
+  global.applyState = (recipes, planValue, shopping) => { applied = { recipes, plan: planValue, shopping }; };
+  global.ensureUsernameDirectory = async () => {};
+  const user = { uid: 'u1', email: 'mario@utenti.pianonutrizionale.app' };
+
+  // Household + cache locale valida: ZERO .get(), stato popolato dalla cache
+  // (il primo snapshot dei listener lo allineerà).
+  global.getCurrentHousehold = () => ({ id: 'hh1', memberUids: ['u1', 'u2'] });
+  cache = { recipe_catalog: [R('L9', 'Dalla cache', 'lunch', 'Uova')], weekly_plan: plan, shopping: {} };
+  await loadUserData(user, { silent: true });
+  assert.equal(reads, 0, 'household con cache valida: nessuna .get() duplicata (ci pensano i listener)');
+  assert.equal(applied.recipes[0].id, 'L9', 'lo stato parte dalla cache locale');
+  assert.ok(applied.plan?.days, 'piano popolato dalla cache');
+  assert.ok(applied.shopping?.selectedMeals, 'lista spesa normalizzata dalla cache');
+
+  // Household SENZA cache utilizzabile: fallback alle tre letture dirette,
+  // nessuna schermata vuota in attesa di listener che potrebbero non arrivare.
+  reads = 0; applied = null; cache = {};
+  await loadUserData(user, { silent: true });
+  assert.equal(reads, 3, 'household senza cache: restano le tre letture di fallback');
+  assert.equal(applied.recipes[0].id, 'L1');
+
+  // Modalità personale: le .get() iniziali restano sempre.
+  reads = 0; applied = null;
+  cache = { recipe_catalog: [R('L9', 'Dalla cache', 'lunch', 'Uova')], weekly_plan: plan, shopping: {} };
+  global.getCurrentHousehold = () => null;
+  await loadUserData(user, { silent: true });
+  assert.equal(reads, 3, 'modalità personale: tre letture iniziali come sempre');
+
+  // Regressione PR #16: il percorso non-silent chiude sempre l\'overlay.
+  setLoading('Sincronizzazione del piano personale…');
+  await loadUserData(user, { silent: false });
+  assert.equal(
+    document.getElementById('loading-overlay').classList.contains('hidden'),
+    true,
+    'loadUserData non-silent deve chiudere l\'overlay (fix PR #16)'
+  );
+
+  Object.assign(global, originals);
+})();
 renderSettings();
 assert.match(document.getElementById('view-settings').innerHTML, /Account collegati/);
 renderIncomingShares();
@@ -260,4 +323,9 @@ assert.equal(
   true
 );
 
-console.log('SMOKE OK — tutti i percorsi di rendering eseguiti senza errori');
+startupChecks.then(() => {
+  console.log('SMOKE OK — tutti i percorsi di rendering eseguiti senza errori');
+}, error => {
+  console.error(error);
+  process.exit(1);
+});
