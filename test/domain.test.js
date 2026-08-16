@@ -156,6 +156,39 @@ test('profilo Coppia somma dosi uomo + donna', () => {
   assert.deepEqual(d.parseSimpleAmount('2 cucchiaini'), { value: 10, unit: 'g' });
 });
 
+test('parseSimpleAmount usa il massimo degli intervalli e normalizza le unità', () => {
+  assert.deepEqual(d.parseSimpleAmount('8-10'), { value: 10, unit: 'pz' });
+  assert.deepEqual(d.parseSimpleAmount('8-10 pz'), { value: 10, unit: 'pz' });
+  assert.deepEqual(d.parseSimpleAmount('1-2 cucchiai'), { value: 20, unit: 'g' });
+  assert.deepEqual(d.parseSimpleAmount('8–10 pz'), { value: 10, unit: 'pz' });
+  assert.deepEqual(d.parseSimpleAmount('1—2 cucchiai'), { value: 20, unit: 'g' });
+});
+
+test('lista spesa somma valori fissi e intervalli per Uomo, Donna IPO e Coppia', () => {
+  const samePortions = (man, ipo) => ({
+    ipoTraining: ipo, ipoRest: ipo, manTraining: man, manRest: man
+  });
+  const days = {
+    monday: { type: 'training', lunch: 'T1' },
+    tuesday: { type: 'rest', lunch: 'T2' },
+    wednesday: { type: 'training', lunch: 'T3' }
+  };
+  const recipesById = {
+    T1: recipe('T1', 'Pomodorini fissi', 'lunch', [ingredient('Pomodorini', samePortions('10', '8'))]),
+    T2: recipe('T2', 'Pomodorini intervallo', 'lunch', [ingredient('Pomodorini', samePortions('8-10', '8-10 pz'))]),
+    T3: recipe('T3', 'Pomodorini intervallo lungo', 'lunch', [ingredient('Pomodorini', samePortions('8—10 pz', '—'))])
+  };
+  const selected = { monday: ['lunch'], tuesday: ['lunch'], wednesday: ['lunch'] };
+  const expected = { man: 30, ipo: 18, couple: 48 };
+
+  Object.entries(expected).forEach(([profile, total]) => {
+    const list = d.aggregateShopping(planWith(days), recipesById, selected, profile);
+    const tomatoes = list.find(entry => entry.ingredientId === 'cherry-tomatoes');
+    assert.equal(tomatoes.totals.pz, total, `totale profilo ${profile}`);
+    assert.deepEqual(tomatoes.opaque, {}, `nessun intervallo opaco per ${profile}`);
+  });
+});
+
 test('dosi "—" non entrano nella lista', () => {
   const { days, recipesById } = shoppingFixture();
   const list = d.aggregateShopping(planWith(days), recipesById, { saturday: ['lunch'] }, 'man');
@@ -519,9 +552,14 @@ test('buildBackup contiene catalogo, piano, spesa e metadati operazione', () => 
 
 // ---- Service worker e PWA ----
 
-test('service worker: shell versionata con asset esistenti', () => {
+test('service worker: shell v5 derivata da una sola versione con asset esistenti', () => {
   const sw = fs.readFileSync(path.join(ROOT, 'sw.js'), 'utf8');
-  assert.match(sw, /piano-nutrizionale-shell-v4/);
+  const versionMatch = sw.match(/const CACHE_VERSION = (\d+);/);
+  assert.ok(versionMatch, 'CACHE_VERSION presente');
+  assert.equal(Number(versionMatch[1]), 5);
+  assert.equal((sw.match(/const CACHE_VERSION/g) || []).length, 1);
+  assert.match(sw, /const CACHE = `piano-nutrizionale-shell-v\$\{CACHE_VERSION\}`;/);
+  assert.match(sw, /incrementare CACHE_VERSION a OGNI modifica di CSS, JS o index\.html/);
   const shellMatch = sw.match(/const SHELL = \[([\s\S]*?)\];/);
   assert.ok(shellMatch, 'SHELL presente');
   const assets = [...shellMatch[1].matchAll(/'(\.[^']+)'/g)].map(m => m[1]);
@@ -535,10 +573,13 @@ test('service worker: shell versionata con asset esistenti', () => {
 test('service worker: non intercetta Firebase, pulisce cache, gestisce SKIP_WAITING', () => {
   const sw = fs.readFileSync(path.join(ROOT, 'sw.js'), 'utf8');
   assert.match(sw, /isFirebaseRequest/);
-  assert.match(sw, /SKIP_WAITING/);
+  assert.match(sw, /if \(event\.data === 'SKIP_WAITING'\) self\.skipWaiting\(\)/);
   assert.match(sw, /offline\.html/);
   assert.match(sw, /caches\.delete/);
   assert.match(sw, /mode === 'navigate'/);
+  const installHandler = sw.match(/self\.addEventListener\('install',[\s\S]*?\n\}\);/);
+  assert.ok(installHandler, 'gestore install presente');
+  assert.doesNotMatch(installHandler[0], /self\.skipWaiting/, 'il worker deve attendere il click sul banner');
 });
 
 test('index.html: banner aggiorna ora senza loop di refresh', () => {

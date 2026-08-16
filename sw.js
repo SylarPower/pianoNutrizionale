@@ -4,7 +4,9 @@
  * delle cache obsolete. Tutti i percorsi sono relativi per GitHub Pages
  * (sottocartella /pianoNutrizionale/).
  */
-const CACHE = 'piano-nutrizionale-shell-v4';
+// IMPORTANTE: incrementare CACHE_VERSION a OGNI modifica di CSS, JS o index.html.
+const CACHE_VERSION = 5;
+const CACHE = `piano-nutrizionale-shell-v${CACHE_VERSION}`;
 const SHELL = [
   './',
   './index.html',
@@ -28,11 +30,8 @@ const FIREBASE_HOSTS = [
 ];
 
 self.addEventListener('install', event => {
-  event.waitUntil(
-    caches.open(CACHE)
-      .then(cache => cache.addAll(SHELL))
-      .then(() => self.skipWaiting())
-  );
+  // L'aggiornamento resta in attesa finché il banner non invia SKIP_WAITING.
+  event.waitUntil(caches.open(CACHE).then(cache => cache.addAll(SHELL)));
 });
 
 self.addEventListener('activate', event => {
