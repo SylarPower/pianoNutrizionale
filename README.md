@@ -58,13 +58,16 @@ recipeShares/{requestId}
 
 ## Chiamate Firestore
 
-Un normale avvio cerca prima l'eventuale household e poi esegue in parallelo tre letture documento:
+Un normale avvio cerca prima l'eventuale household e poi carica i tre documenti (catalogo completo, piano settimanale, lista della spesa):
 
-1. catalogo completo (un solo documento, mai una lettura per ricetta o per ingrediente);
-2. piano settimanale;
-3. lista della spesa.
+- **account indipendente**: tre letture documento in parallelo, come sempre (non ci sono listener attivi);
+- **account collegati**: i listener `onSnapshot` sui tre documenti condivisi rileggono comunque quei documenti, quindi con una cache locale valida l'avvio parte dalla cache e lascia che sia il primo snapshot dei listener a popolare lo stato, **senza letture duplicate**. Senza cache utilizzabile restano le tre letture dirette come fallback.
 
-Il catalogo è un unico documento: 62 ricette non generano 62 letture. Per gli account collegati sono attivi listener `onSnapshot` sui tre documenti condivisi e sulla membership, così le modifiche compaiono in tempo reale su tutti i dispositivi. Gli account indipendenti continuano a usare le sole letture iniziali. La casella delle condivisioni viene interrogata solo quando si preme **Ricevute**.
+Il catalogo è un unico documento: 62 ricette non generano 62 letture. Per gli account collegati sono attivi listener `onSnapshot` sui tre documenti condivisi e sulla membership, così le modifiche compaiono in tempo reale su tutti i dispositivi.
+
+Le interazioni con la lista della spesa (spunte dei pasti, quantità personalizzate, esclusioni) aggiornano subito interfaccia e `localStorage`, ma la scrittura del documento Firestore è accorpata con un **debounce di ~800 ms**: configurare l'intera settimana produce una manciata di scritture invece di 50-100. La scrittura pendente viene forzata su `visibilitychange` (pagina nascosta) e `pagehide`, così chiudere la scheda non perde nulla.
+
+La casella delle condivisioni viene interrogata solo quando si preme **Ricevute**, con **una sola query** su `recipeShares` ripartita lato client tra condivisioni ricette e inviti di collegamento account (quei documenti incorporano interi cataloghi: la query unica dimezza anche il traffico in uscita).
 
 Operazioni indicative (catalogo medio ~60 ricette):
 
@@ -542,12 +545,13 @@ Anteprima prima dell'accettazione con: mittente, numero di ricette, ricette nuov
 
 # PWA offline
 
-`sw.js` (cache versionata `piano-nutrizionale-shell-v6`):
+`sw.js` (cache versionata `piano-nutrizionale-shell-v7`):
 
 - shell dell'app: `index.html`, CSS, JS, manifest, icone, `offline.html`;
 - navigazione **network-first** con fallback in cache (e pagina offline comprensibile);
 - asset statici **cache-first / stale-while-revalidate**;
-- nessuna intercettazione di Firebase Auth, Firestore o App Check;
+- SDK Firebase compat da `www.gstatic.com/firebasejs/` in cache **cache-first** (file immutabili versionati): l'app si inizializza anche offline con la cache HTTP scaduta;
+- nessuna intercettazione delle chiamate runtime di Firebase Auth, Firestore o App Check;
 - pulizia delle cache obsolete;
 - percorsi relativi (supporto sottocartella GitHub Pages `/pianoNutrizionale/`);
 - banner **Nuova versione disponibile → Aggiorna ora** (nessun loop di refresh);

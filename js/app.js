@@ -274,9 +274,31 @@ async function loadUserData(user, { silent = false } = {}) {
       console.warn("Area condivisa non disponibile: uso i dati personali", scopeError);
     }
     appState.household = getCurrentHousehold();
-    const [recipes, plan, shopping] = await Promise.all([
-      getRecipeCatalog(), getWeeklyPlan(), getShoppingListCloud()
-    ]);
+    // In modalità household i tre documenti hanno listener onSnapshot attivi
+    // (startAccountRealtimeSync parte subito dopo questa funzione): eseguire
+    // anche le .get() iniziali rileggerebbe gli stessi documenti, ~3 letture
+    // duplicate a ogni avvio. Con una cache locale valida lo stato parte da lì
+    // e il primo snapshot dei listener lo allinea. Senza cache utilizzabile
+    // (primo accesso dal dispositivo, household appena creata) restano le
+    // letture dirette come fallback, così la schermata non rimane mai vuota.
+    // In modalità personale non ci sono listener: le .get() restano sempre.
+    let recipes = null;
+    let plan = null;
+    let shopping = null;
+    if (appState.household) {
+      const cachedRecipes = readLocalJson("recipe_catalog", []);
+      const cachedPlan = readLocalJson("weekly_plan", null);
+      if (cachedRecipes.length && cachedPlan?.days) {
+        recipes = cachedRecipes;
+        plan = cachedPlan;
+        shopping = shoppingValueFromData(readLocalJson("shopping", {}));
+      }
+    }
+    if (!plan) {
+      [recipes, plan, shopping] = await Promise.all([
+        getRecipeCatalog(), getWeeklyPlan(), getShoppingListCloud()
+      ]);
+    }
     applyState(recipes, plan, shopping);
     writeSessionCache({
       uid: user.uid,
@@ -956,7 +978,7 @@ window.createNewRecipe = function(slot = "lunch", assignDay = null) {
     id, slot: selectedSlot, name: "Nuova ricetta", emoji: getSlotMeta(selectedSlot).emoji, proteinCategory: "", frequency: "",
     ingredients: [], steps: [], notes: [], specialNote: ""
   };
-  currentModal = { recipe, original: null, dayKey: DAY_ORDER.includes(assignDay) ? assignDay : null, dayType: DAY_ORDER.includes(assignDay) ? getDayType(assignDay) : "training", assignAfterSave: DAY_ORDER.includes(assignDay) ? { day: assignDay, slot: selectedSlot } : null, isNew: true };
+  currentModal = { recipe, original: null, dayKey: DAY_ORDER.includes(assignDay) ? assignDay : null, dayType: DAY_ORDER.includes(assignDay) ? getDayType(assignDay) : getRecipePreviewDayType(), assignAfterSave: DAY_ORDER.includes(assignDay) ? { day: assignDay, slot: selectedSlot } : null, isNew: true };
   editMode = true;
   renderModalContent();
   document.getElementById("recipe-modal").classList.remove("hidden");
@@ -1149,49 +1171,87 @@ window.toggleShopSettings = function() {
   renderShop();
 };
 
-window.toggleShopAllWeek = async function(select) {
+// ---- Salvataggio lista spesa con debounce ----
+// Ogni interazione aggiorna SUBITO interfaccia e cache locale (localStorage),
+// così un refresh immediato non perde le spunte. La scrittura del documento
+// Firestore viene invece accorpata: configurare la settimana spuntando le
+// caselle una a una produce UNA sola scrittura remota invece di 50-100.
+const SHOPPING_SAVE_DEBOUNCE_MS = 800;
+let shoppingSaveTimer = null;
+let shoppingSavePending = false;
+
+function queueShoppingSave() {
+  saveShoppingListLocal(appState.shopping);
+  shoppingSavePending = true;
+  clearTimeout(shoppingSaveTimer);
+  shoppingSaveTimer = setTimeout(flushShoppingSave, SHOPPING_SAVE_DEBOUNCE_MS);
+}
+
+async function flushShoppingSave() {
+  if (!shoppingSavePending) return;
+  shoppingSavePending = false;
+  clearTimeout(shoppingSaveTimer);
+  shoppingSaveTimer = null;
+  try {
+    await saveShoppingListCloud(appState.shopping);
+  } catch (error) {
+    // Nessun errore bloccante: i dati restano in localStorage e nella coda
+    // offline di Firestore; la prossima scrittura riallinea il documento.
+    console.warn("Scrittura lista spesa rimandata", error);
+  }
+}
+
+// Chiudendo la scheda o passando in background la scrittura pendente parte subito.
+document.addEventListener("visibilitychange", () => {
+  if (document.visibilityState === "hidden") flushShoppingSave();
+});
+if (typeof window.addEventListener === "function") {
+  window.addEventListener("pagehide", () => { flushShoppingSave(); });
+}
+
+window.toggleShopAllWeek = function(select) {
   DAY_ORDER.forEach(day => { appState.shopping.selectedMeals[day] = select ? MEAL_SLOTS.map(slot => slot.id) : []; });
-  await saveShoppingListCloud(appState.shopping);
+  queueShoppingSave();
   renderShop();
 };
 
-window.toggleShopDay = async function(day) {
+window.toggleShopDay = function(day) {
   if (!DAY_ORDER.includes(day)) return;
   const selected = appState.shopping.selectedMeals[day] || [];
   const allSelected = MEAL_SLOTS.every(slot => selected.includes(slot.id));
   appState.shopping.selectedMeals[day] = allSelected ? [] : MEAL_SLOTS.map(slot => slot.id);
-  await saveShoppingListCloud(appState.shopping);
+  queueShoppingSave();
   renderShop();
 };
 
-window.toggleShopMeal = async function(day, slot, checked) {
+window.toggleShopMeal = function(day, slot, checked) {
   const selected = new Set(appState.shopping.selectedMeals[day] || []);
   checked ? selected.add(slot) : selected.delete(slot);
   appState.shopping.selectedMeals[day] = [...selected];
-  await saveShoppingListCloud(appState.shopping);
+  queueShoppingSave();
   renderShop();
 };
 
-window.toggleShopPantry = async function(checked) {
+window.toggleShopPantry = function(checked) {
   appState.shopping.includePantry = checked;
-  await saveShoppingListCloud(appState.shopping);
+  queueShoppingSave();
   renderShop();
 };
 
-window.updateShopItemQty = async function(id, value) {
+window.updateShopItemQty = function(id, value) {
   appState.shopping.customQuantities[id] = value;
-  await saveShoppingListCloud(appState.shopping);
+  queueShoppingSave();
 };
 
-window.excludeShopItem = async function(id) {
+window.excludeShopItem = function(id) {
   if (!appState.shopping.excludedItems.includes(id)) appState.shopping.excludedItems.push(id);
-  await saveShoppingListCloud(appState.shopping);
+  queueShoppingSave();
   renderShop();
 };
 
-window.includeShopItem = async function(id) {
+window.includeShopItem = function(id) {
   appState.shopping.excludedItems = appState.shopping.excludedItems.filter(value => value !== id);
-  await saveShoppingListCloud(appState.shopping);
+  queueShoppingSave();
   renderShop();
 };
 
@@ -1704,10 +1764,11 @@ window.openIncomingShares = async function() {
   list.innerHTML = `<div class="empty-state"><div class="loading-spinner"></div><p>Caricamento richieste…</p></div>`;
   modal.classList.remove("hidden");
   try {
-    [incomingRecipeShares, incomingAccountLinks] = await Promise.all([
-      getPendingRecipeShares(),
-      getPendingAccountLinks()
-    ]);
+    // Una sola query server: i documenti (che incorporano interi cataloghi
+    // ricette) vengono letti una volta e ripartiti tra i due elenchi.
+    const { recipeShares, accountLinks } = await getPendingIncomingRequests();
+    incomingRecipeShares = recipeShares;
+    incomingAccountLinks = accountLinks;
     renderIncomingShares();
   } catch (error) {
     console.error(error);
@@ -2161,10 +2222,20 @@ function setupModal() {
   document.getElementById("modal-delete-btn").addEventListener("click", deleteCurrentRecipe);
 }
 
+// Preferenza A/R dell'anteprima ricette: persistita nelle impostazioni
+// dispositivo, così riaprendo una ricetta dal ricettario resta l'ultima
+// scelta manuale (finché non viene cambiata di nuovo).
+function getRecipePreviewDayType() {
+  const saved = appState.deviceSettings?.recipePreviewDayType;
+  return ["training", "rest"].includes(saved) ? saved : "training";
+}
+
 window.setModalDayType = function(type) {
   if (!currentModal || currentModal.dayKey) return;
   if (!["training", "rest"].includes(type)) return;
   currentModal.dayType = type;
+  appState.deviceSettings.recipePreviewDayType = type;
+  saveLocalDeviceSettings(appState.deviceSettings);
   renderModalContent();
 };
 
@@ -2191,7 +2262,7 @@ window.openRecipeModal = function(recipeId, dayKey = null) {
     recipe: clone(recipe),
     original: clone(recipe),
     dayKey: DAY_ORDER.includes(dayKey) ? dayKey : null,
-    dayType: DAY_ORDER.includes(dayKey) ? getDayType(dayKey) : "training",
+    dayType: DAY_ORDER.includes(dayKey) ? getDayType(dayKey) : getRecipePreviewDayType(),
     isNew: false
   };
   editMode = false;

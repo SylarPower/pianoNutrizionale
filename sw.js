@@ -5,7 +5,7 @@
  * (sottocartella /pianoNutrizionale/).
  */
 // IMPORTANTE: incrementare CACHE_VERSION a OGNI modifica di CSS, JS o index.html.
-const CACHE_VERSION = 6;
+const CACHE_VERSION = 7;
 const CACHE = `piano-nutrizionale-shell-v${CACHE_VERSION}`;
 const SHELL = [
   './',
@@ -21,6 +21,17 @@ const SHELL = [
   './icons/icon-512.svg'
 ];
 
+// SDK Firebase compat servito da CDN: file statici immutabili (l'URL contiene
+// la versione), quindi cache-first. Senza questa cache, offline con la cache
+// HTTP scaduta l'app non riusciva nemmeno a inizializzarsi.
+const FIREBASE_SDK_PREFIX = 'https://www.gstatic.com/firebasejs/';
+const FIREBASE_SDK = [
+  'https://www.gstatic.com/firebasejs/9.23.0/firebase-app-compat.js',
+  'https://www.gstatic.com/firebasejs/9.23.0/firebase-auth-compat.js',
+  'https://www.gstatic.com/firebasejs/9.23.0/firebase-firestore-compat.js',
+  'https://www.gstatic.com/firebasejs/9.23.0/firebase-app-check-compat.js'
+];
+
 const FIREBASE_HOSTS = [
   'firebaseapp.com',
   'firebaseio.com',
@@ -31,7 +42,13 @@ const FIREBASE_HOSTS = [
 
 self.addEventListener('install', event => {
   // L'aggiornamento resta in attesa finché il banner non invia SKIP_WAITING.
-  event.waitUntil(caches.open(CACHE).then(cache => cache.addAll(SHELL)));
+  event.waitUntil(caches.open(CACHE).then(cache =>
+    cache.addAll(SHELL).then(() =>
+      // La CDN irraggiungibile non deve far fallire l'installazione della shell:
+      // l'SDK verrà comunque messo in cache al primo fetch riuscito.
+      cache.addAll(FIREBASE_SDK).catch(() => {})
+    )
+  ));
 });
 
 self.addEventListener('activate', event => {
@@ -50,8 +67,29 @@ function isFirebaseRequest(url) {
   return FIREBASE_HOSTS.some(host => url.hostname === host || url.hostname.endsWith('.' + host));
 }
 
+// Solo i file statici della libreria (www.gstatic.com/firebasejs/...): le
+// chiamate runtime a Firestore, Auth e App Check NON devono mai passare da qui.
+function isFirebaseSdkAsset(url) {
+  return url.href.startsWith(FIREBASE_SDK_PREFIX);
+}
+
 self.addEventListener('fetch', event => {
   const url = new URL(event.request.url);
+
+  // SDK Firebase da CDN: cache-first, i file sono versionati e immutabili.
+  if (isFirebaseSdkAsset(url)) {
+    event.respondWith(
+      caches.match(event.request).then(cached => cached || fetch(event.request).then(response => {
+        // Nessuna risposta opaca o di errore in cache: solo copie utilizzabili.
+        if (response && response.ok) {
+          const copy = response.clone();
+          caches.open(CACHE).then(cache => cache.put(event.request, copy));
+        }
+        return response;
+      }))
+    );
+    return;
+  }
 
   // Non intercettare mai Firebase Auth, Firestore o App Check.
   if (url.origin !== self.location.origin || isFirebaseRequest(url)) return;

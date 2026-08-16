@@ -92,6 +92,9 @@ const dbStub = {
 };
 
 global.window = global;
+// Stub degli event listener globali (es. pagehide): registra i gestori per
+// poterli scatenare manualmente nei test.
+global.addEventListener = (name, fn) => { global['_on_' + name] = fn; };
 global.document = doc;
 global.localStorage = localStorage;
 Object.defineProperty(global, 'navigator', { value: {}, configurable: true, writable: true });
@@ -176,6 +179,137 @@ assert.equal(shoppingAmountText({ id: 'spoons', legacyId: 'spoons', totals: { g:
 const exportedShopping = shoppingText();
 assert.match(exportedShopping, /Basilico - 7 pz/);
 assert.doesNotMatch(exportedShopping, /Basilico[^\n]*mazzetto/);
+
+// ---- Debounce lista spesa: cache locale subito, una sola scrittura remota ----
+{
+  const originalLocal = global.saveShoppingListLocal;
+  const originalCloud = global.saveShoppingListCloud;
+  let localWrites = 0;
+  let remoteWrites = 0;
+  global.saveShoppingListLocal = value => { localWrites += 1; return value; };
+  global.saveShoppingListCloud = async () => { remoteWrites += 1; };
+
+  toggleShopMeal('monday', 'lunch', false);
+  toggleShopMeal('monday', 'dinner', false);
+  toggleShopPantry(false);
+  updateShopItemQty('riso-venere', '500g');
+  assert.equal(localWrites, 4, 'la cache locale si aggiorna SUBITO a ogni interazione');
+  assert.equal(remoteWrites, 0, 'nessuna scrittura remota immediata: parte il debounce');
+  assert.equal(appState.shopping.customQuantities['riso-venere'], '500g', 'l\'ultima modifica digitata resta nello stato');
+
+  flushShoppingSave(); // stesso percorso di visibilitychange/pagehide
+  assert.equal(remoteWrites, 1, 'più interazioni ravvicinate producono UNA sola scrittura remota');
+  flushShoppingSave();
+  assert.equal(remoteWrites, 1, 'senza modifiche pendenti il flush non riscrive');
+
+  // Pagina nascosta: la scrittura pendente parte subito, senza attendere il timer.
+  toggleShopPantry(true);
+  assert.equal(remoteWrites, 1);
+  document.visibilityState = 'hidden';
+  document._on_visibilitychange();
+  assert.equal(remoteWrites, 2, 'flush della scrittura pendente su visibilitychange');
+  document.visibilityState = 'visible';
+
+  // Chiusura della scheda: pagehide esegue il flush della scrittura pendente.
+  excludeShopItem('riso-venere');
+  assert.equal(remoteWrites, 2);
+  window._on_pagehide();
+  assert.equal(remoteWrites, 3, 'flush della scrittura pendente su pagehide');
+  includeShopItem('riso-venere');
+  window._on_pagehide();
+  assert.equal(remoteWrites, 4);
+
+  global.saveShoppingListLocal = originalLocal;
+  global.saveShoppingListCloud = originalCloud;
+}
+
+// ---- Preferenza A/R persistente nell'anteprima del ricettario ----
+// Aprendo una ricetta dal ricettario (nessun giorno assegnato) la scelta
+// manuale A/R resta memorizzata e riproposta alle aperture successive.
+openRecipeModal('L1');
+assert.equal(currentModal.dayType, 'training', 'default: Allenamento');
+setModalDayType('rest');
+assert.equal(currentModal.dayType, 'rest');
+assert.equal(appState.deviceSettings.recipePreviewDayType, 'rest', 'la scelta viene salvata nelle impostazioni dispositivo');
+closeRecipeModal();
+openRecipeModal('L1');
+assert.equal(currentModal.dayType, 'rest', 'riaprendo dal ricettario la scelta A/R resta quella dell\'utente');
+// La preferenza sopravvive a un riavvio: viene riletta da localStorage.
+assert.equal(getLocalDeviceSettings().recipePreviewDayType, 'rest');
+// Con un giorno assegnato prevale sempre il tipo A/R del giorno del piano.
+openRecipeModal('L1', 'monday');
+assert.equal(currentModal.dayType, 'training', 'monday è training nel piano: il giorno vince sull\'anteprima');
+setModalDayType('training'); // con dayKey non deve toccare la preferenza salvata
+assert.equal(appState.deviceSettings.recipePreviewDayType, 'rest');
+closeRecipeModal();
+// Anche una nuova ricetta senza giorno parte dalla preferenza salvata.
+createNewRecipe('lunch');
+assert.equal(currentModal.dayType, 'rest');
+closeRecipeModal();
+
+// ---- Avvio senza letture duplicate in modalità household ----
+// In modalità household i listener onSnapshot rileggono comunque i tre
+// documenti: con una cache locale valida loadUserData NON deve eseguire anche
+// le .get() iniziali. In modalità personale (nessun listener) le .get()
+// devono restare, altrimenti l'app non carica nulla.
+const startupChecks = (async () => {
+  const originals = {
+    prepareDataScope: global.prepareDataScope,
+    getCurrentHousehold: global.getCurrentHousehold,
+    getRecipeCatalog: global.getRecipeCatalog,
+    getWeeklyPlan: global.getWeeklyPlan,
+    getShoppingListCloud: global.getShoppingListCloud,
+    readLocalJson: global.readLocalJson,
+    applyState: global.applyState,
+    ensureUsernameDirectory: global.ensureUsernameDirectory
+  };
+  let reads = 0;
+  let applied = null;
+  let cache = {};
+  global.prepareDataScope = async () => global.getCurrentHousehold();
+  global.getRecipeCatalog = async () => { reads += 1; return [R('L1', 'Riso e uova', 'lunch', 'Legumi')]; };
+  global.getWeeklyPlan = async () => { reads += 1; return plan; };
+  global.getShoppingListCloud = async () => { reads += 1; return appState.shopping; };
+  global.readLocalJson = (name, fallback) => (name in cache ? JSON.parse(JSON.stringify(cache[name])) : fallback);
+  global.applyState = (recipes, planValue, shopping) => { applied = { recipes, plan: planValue, shopping }; };
+  global.ensureUsernameDirectory = async () => {};
+  const user = { uid: 'u1', email: 'mario@utenti.pianonutrizionale.app' };
+
+  // Household + cache locale valida: ZERO .get(), stato popolato dalla cache
+  // (il primo snapshot dei listener lo allineerà).
+  global.getCurrentHousehold = () => ({ id: 'hh1', memberUids: ['u1', 'u2'] });
+  cache = { recipe_catalog: [R('L9', 'Dalla cache', 'lunch', 'Uova')], weekly_plan: plan, shopping: {} };
+  await loadUserData(user, { silent: true });
+  assert.equal(reads, 0, 'household con cache valida: nessuna .get() duplicata (ci pensano i listener)');
+  assert.equal(applied.recipes[0].id, 'L9', 'lo stato parte dalla cache locale');
+  assert.ok(applied.plan?.days, 'piano popolato dalla cache');
+  assert.ok(applied.shopping?.selectedMeals, 'lista spesa normalizzata dalla cache');
+
+  // Household SENZA cache utilizzabile: fallback alle tre letture dirette,
+  // nessuna schermata vuota in attesa di listener che potrebbero non arrivare.
+  reads = 0; applied = null; cache = {};
+  await loadUserData(user, { silent: true });
+  assert.equal(reads, 3, 'household senza cache: restano le tre letture di fallback');
+  assert.equal(applied.recipes[0].id, 'L1');
+
+  // Modalità personale: le .get() iniziali restano sempre.
+  reads = 0; applied = null;
+  cache = { recipe_catalog: [R('L9', 'Dalla cache', 'lunch', 'Uova')], weekly_plan: plan, shopping: {} };
+  global.getCurrentHousehold = () => null;
+  await loadUserData(user, { silent: true });
+  assert.equal(reads, 3, 'modalità personale: tre letture iniziali come sempre');
+
+  // Regressione PR #16: il percorso non-silent chiude sempre l\'overlay.
+  setLoading('Sincronizzazione del piano personale…');
+  await loadUserData(user, { silent: false });
+  assert.equal(
+    document.getElementById('loading-overlay').classList.contains('hidden'),
+    true,
+    'loadUserData non-silent deve chiudere l\'overlay (fix PR #16)'
+  );
+
+  Object.assign(global, originals);
+})();
 renderSettings();
 assert.match(document.getElementById('view-settings').innerHTML, /Account collegati/);
 renderIncomingShares();
@@ -213,4 +347,9 @@ assert.equal(
   true
 );
 
-console.log('SMOKE OK — tutti i percorsi di rendering eseguiti senza errori');
+startupChecks.then(() => {
+  console.log('SMOKE OK — tutti i percorsi di rendering eseguiti senza errori');
+}, error => {
+  console.error(error);
+  process.exit(1);
+});

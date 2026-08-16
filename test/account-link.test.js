@@ -41,6 +41,7 @@ function makeQuery(colPath) {
     where: () => makeQuery(colPath),
     limit: () => makeQuery(colPath),
     get: async () => ({
+      _logged: ops.push({ type: 'query', path: colPath }),
       forEach: fn => {
         const depth = colPath.split('/').length + 1;
         for (const [docPath, data] of store) {
@@ -221,4 +222,77 @@ test('getRecipeCatalog inizializza il catalogo vuoto SOLO in ambito personale', 
   assert.ok(personal, 'il primo avvio personale crea il documento privato');
   assert.equal(personal.initializedEmpty, true);
   assert.ok(!Array.from(store.keys()).some(key => key.startsWith('households/')), 'nessun documento household coinvolto');
+});
+
+// ---- Casella condivisioni: query unica per ricette e collegamenti account ----
+
+test('getPendingIncomingRequests: una sola query server ripartisce ricette e collegamenti', async () => {
+  reset();
+  const ts = millis => ({ toMillis: () => millis });
+  // Condivisione storica di sole ricette: NESSUN campo `type` (le regole lo
+  // consentono). Deve finire tra le ricette, non tra i collegamenti account.
+  store.set('recipeShares/legacy1', {
+    status: 'pending',
+    senderUid: 'u1',
+    senderUsername: 'mario',
+    recipientUid: 'u2',
+    recipes: [sampleRecipe('L1', 'Riso storico')],
+    recipeCount: 1,
+    createdAt: ts(1000)
+  });
+  store.set('recipeShares/share2', {
+    type: 'recipe',
+    status: 'pending',
+    senderUid: 'u3',
+    senderUsername: 'luca',
+    recipientUid: 'u2',
+    recipes: [sampleRecipe('L2', 'Riso nuovo')],
+    recipeCount: 1,
+    createdAt: ts(3000)
+  });
+  store.set('recipeShares/link2', {
+    type: 'accountLink',
+    status: 'pending',
+    senderUid: 'u1',
+    senderUsername: 'mario',
+    recipientUid: 'u2',
+    recipes: [],
+    createdAt: ts(2000)
+  });
+  // Richiesta già consumata: non deve comparire in nessun elenco.
+  store.set('recipeShares/done1', {
+    status: 'accepted',
+    recipientUid: 'u2',
+    createdAt: ts(4000)
+  });
+
+  const { recipeShares, accountLinks } = await getPendingIncomingRequests();
+
+  const queries = ops.filter(op => op.type === 'query' && op.path === 'recipeShares');
+  assert.equal(queries.length, 1, 'una singola apertura deve eseguire UNA sola query su recipeShares');
+
+  assert.deepEqual(recipeShares.map(item => item.id), ['share2', 'legacy1'], 'ricette ordinate per createdAt decrescente; la condivisione senza `type` resta tra le ricette');
+  assert.deepEqual(accountLinks.map(item => item.id), ['link2']);
+  assert.equal(recipeShares[1].recipes[0].name, 'Riso storico', 'la forma { id, ...data } resta invariata');
+});
+
+test('getPendingRecipeShares e getPendingAccountLinks restano compatibili sopra la query condivisa', async () => {
+  reset();
+  store.set('recipeShares/legacy1', {
+    status: 'pending',
+    recipientUid: 'u2',
+    recipes: [sampleRecipe('L1', 'Riso storico')],
+    createdAt: { toMillis: () => 1000 }
+  });
+  store.set('recipeShares/link2', {
+    type: 'accountLink',
+    status: 'pending',
+    recipientUid: 'u2',
+    createdAt: { toMillis: () => 2000 }
+  });
+
+  const shares = await getPendingRecipeShares();
+  assert.deepEqual(shares.map(item => item.id), ['legacy1']);
+  const links = await getPendingAccountLinks();
+  assert.deepEqual(links.map(item => item.id), ['link2']);
 });

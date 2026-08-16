@@ -3,6 +3,7 @@ const test = require('node:test');
 const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const path = require('node:path');
+const vm = require('node:vm');
 const d = require('../js/domain.js');
 
 const ROOT = path.join(__dirname, '..');
@@ -552,11 +553,11 @@ test('buildBackup contiene catalogo, piano, spesa e metadati operazione', () => 
 
 // ---- Service worker e PWA ----
 
-test('service worker: shell v6 derivata da una sola versione con asset esistenti', () => {
+test('service worker: shell v7 derivata da una sola versione con asset esistenti', () => {
   const sw = fs.readFileSync(path.join(ROOT, 'sw.js'), 'utf8');
   const versionMatch = sw.match(/const CACHE_VERSION = (\d+);/);
   assert.ok(versionMatch, 'CACHE_VERSION presente');
-  assert.equal(Number(versionMatch[1]), 6);
+  assert.equal(Number(versionMatch[1]), 7);
   assert.equal((sw.match(/const CACHE_VERSION/g) || []).length, 1);
   assert.match(sw, /const CACHE = `piano-nutrizionale-shell-v\$\{CACHE_VERSION\}`;/);
   assert.match(sw, /incrementare CACHE_VERSION a OGNI modifica di CSS, JS o index\.html/);
@@ -580,6 +581,77 @@ test('service worker: non intercetta Firebase, pulisce cache, gestisce SKIP_WAIT
   const installHandler = sw.match(/self\.addEventListener\('install',[\s\S]*?\n\}\);/);
   assert.ok(installHandler, 'gestore install presente');
   assert.doesNotMatch(installHandler[0], /self\.skipWaiting/, 'il worker deve attendere il click sul banner');
+});
+
+test('service worker: SDK Firebase in cache, endpoint runtime mai intercettati', () => {
+  const sw = fs.readFileSync(path.join(ROOT, 'sw.js'), 'utf8');
+  const context = {
+    self: {
+      location: { origin: 'https://example.github.io' },
+      listeners: {},
+      addEventListener(name, fn) { this.listeners[name] = fn; },
+      clients: { claim: () => {} },
+      skipWaiting: () => {}
+    },
+    caches: {
+      open: async () => ({ addAll: async () => {}, put: async () => {} }),
+      match: async () => undefined,
+      keys: async () => []
+    },
+    fetch: async () => ({ ok: true, clone: () => ({}) }),
+    URL,
+    Promise,
+    console
+  };
+  vm.createContext(context);
+  vm.runInContext(sw, context, { filename: 'sw.js' });
+
+  const fetchHandler = context.self.listeners.fetch;
+  assert.equal(typeof fetchHandler, 'function', 'gestore fetch registrato');
+
+  const dispatch = url => {
+    const event = {
+      request: { url, mode: 'cors' },
+      intercepted: false,
+      respondWith() { this.intercepted = true; }
+    };
+    fetchHandler(event);
+    return event.intercepted;
+  };
+
+  // I quattro file statici dell'SDK vengono gestiti dalla cache del worker.
+  [
+    'https://www.gstatic.com/firebasejs/9.23.0/firebase-app-compat.js',
+    'https://www.gstatic.com/firebasejs/9.23.0/firebase-auth-compat.js',
+    'https://www.gstatic.com/firebasejs/9.23.0/firebase-firestore-compat.js',
+    'https://www.gstatic.com/firebasejs/9.23.0/firebase-app-check-compat.js'
+  ].forEach(url => {
+    assert.equal(dispatch(url), true, `SDK non gestito dalla cache: ${url}`);
+  });
+
+  // Le chiamate runtime a Firestore, Auth, App Check e installations NON
+  // devono mai essere intercettate: romperebbero login e sincronizzazione.
+  [
+    'https://firestore.googleapis.com/google.firestore.v1.Firestore/Listen/channel',
+    'https://identitytoolkit.googleapis.com/v1/accounts:signInWithPassword',
+    'https://firebaseinstallations.googleapis.com/v1/projects/x/installations',
+    'https://firebaseappcheck.googleapis.com/v1/projects/x/apps/y:exchangeRecaptchaV3Token',
+    'https://piano-nutrizionale.firebaseio.com/.ws',
+    'https://www.google.com/recaptcha/api.js'
+  ].forEach(url => {
+    assert.equal(dispatch(url), false, `endpoint runtime intercettato: ${url}`);
+  });
+
+  // Anche gli altri asset cross-origin di gstatic (non /firebasejs/) restano fuori.
+  assert.equal(dispatch('https://fonts.gstatic.com/s/font.woff2'), false);
+
+  // Gli asset della shell dello stesso origin restano gestiti dal worker.
+  assert.equal(dispatch('https://example.github.io/pianoNutrizionale/js/app.js'), true);
+
+  // L'install precarica l'SDK con un catch mirato: la CDN irraggiungibile non
+  // deve far fallire l'installazione della shell.
+  assert.match(sw, /FIREBASE_SDK[\s\S]*catch/, 'precache SDK con catch mirato');
+  assert.match(sw, /response\.ok/, 'nessuna risposta opaca o di errore in cache');
 });
 
 test('index.html: banner aggiorna ora senza loop di refresh', () => {
