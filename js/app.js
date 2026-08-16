@@ -1149,49 +1149,87 @@ window.toggleShopSettings = function() {
   renderShop();
 };
 
-window.toggleShopAllWeek = async function(select) {
+// ---- Salvataggio lista spesa con debounce ----
+// Ogni interazione aggiorna SUBITO interfaccia e cache locale (localStorage),
+// così un refresh immediato non perde le spunte. La scrittura del documento
+// Firestore viene invece accorpata: configurare la settimana spuntando le
+// caselle una a una produce UNA sola scrittura remota invece di 50-100.
+const SHOPPING_SAVE_DEBOUNCE_MS = 800;
+let shoppingSaveTimer = null;
+let shoppingSavePending = false;
+
+function queueShoppingSave() {
+  saveShoppingListLocal(appState.shopping);
+  shoppingSavePending = true;
+  clearTimeout(shoppingSaveTimer);
+  shoppingSaveTimer = setTimeout(flushShoppingSave, SHOPPING_SAVE_DEBOUNCE_MS);
+}
+
+async function flushShoppingSave() {
+  if (!shoppingSavePending) return;
+  shoppingSavePending = false;
+  clearTimeout(shoppingSaveTimer);
+  shoppingSaveTimer = null;
+  try {
+    await saveShoppingListCloud(appState.shopping);
+  } catch (error) {
+    // Nessun errore bloccante: i dati restano in localStorage e nella coda
+    // offline di Firestore; la prossima scrittura riallinea il documento.
+    console.warn("Scrittura lista spesa rimandata", error);
+  }
+}
+
+// Chiudendo la scheda o passando in background la scrittura pendente parte subito.
+document.addEventListener("visibilitychange", () => {
+  if (document.visibilityState === "hidden") flushShoppingSave();
+});
+if (typeof window.addEventListener === "function") {
+  window.addEventListener("pagehide", () => { flushShoppingSave(); });
+}
+
+window.toggleShopAllWeek = function(select) {
   DAY_ORDER.forEach(day => { appState.shopping.selectedMeals[day] = select ? MEAL_SLOTS.map(slot => slot.id) : []; });
-  await saveShoppingListCloud(appState.shopping);
+  queueShoppingSave();
   renderShop();
 };
 
-window.toggleShopDay = async function(day) {
+window.toggleShopDay = function(day) {
   if (!DAY_ORDER.includes(day)) return;
   const selected = appState.shopping.selectedMeals[day] || [];
   const allSelected = MEAL_SLOTS.every(slot => selected.includes(slot.id));
   appState.shopping.selectedMeals[day] = allSelected ? [] : MEAL_SLOTS.map(slot => slot.id);
-  await saveShoppingListCloud(appState.shopping);
+  queueShoppingSave();
   renderShop();
 };
 
-window.toggleShopMeal = async function(day, slot, checked) {
+window.toggleShopMeal = function(day, slot, checked) {
   const selected = new Set(appState.shopping.selectedMeals[day] || []);
   checked ? selected.add(slot) : selected.delete(slot);
   appState.shopping.selectedMeals[day] = [...selected];
-  await saveShoppingListCloud(appState.shopping);
+  queueShoppingSave();
   renderShop();
 };
 
-window.toggleShopPantry = async function(checked) {
+window.toggleShopPantry = function(checked) {
   appState.shopping.includePantry = checked;
-  await saveShoppingListCloud(appState.shopping);
+  queueShoppingSave();
   renderShop();
 };
 
-window.updateShopItemQty = async function(id, value) {
+window.updateShopItemQty = function(id, value) {
   appState.shopping.customQuantities[id] = value;
-  await saveShoppingListCloud(appState.shopping);
+  queueShoppingSave();
 };
 
-window.excludeShopItem = async function(id) {
+window.excludeShopItem = function(id) {
   if (!appState.shopping.excludedItems.includes(id)) appState.shopping.excludedItems.push(id);
-  await saveShoppingListCloud(appState.shopping);
+  queueShoppingSave();
   renderShop();
 };
 
-window.includeShopItem = async function(id) {
+window.includeShopItem = function(id) {
   appState.shopping.excludedItems = appState.shopping.excludedItems.filter(value => value !== id);
-  await saveShoppingListCloud(appState.shopping);
+  queueShoppingSave();
   renderShop();
 };
 

@@ -92,6 +92,9 @@ const dbStub = {
 };
 
 global.window = global;
+// Stub degli event listener globali (es. pagehide): registra i gestori per
+// poterli scatenare manualmente nei test.
+global.addEventListener = (name, fn) => { global['_on_' + name] = fn; };
 global.document = doc;
 global.localStorage = localStorage;
 Object.defineProperty(global, 'navigator', { value: {}, configurable: true, writable: true });
@@ -176,6 +179,50 @@ assert.equal(shoppingAmountText({ id: 'spoons', legacyId: 'spoons', totals: { g:
 const exportedShopping = shoppingText();
 assert.match(exportedShopping, /Basilico - 7 pz/);
 assert.doesNotMatch(exportedShopping, /Basilico[^\n]*mazzetto/);
+
+// ---- Debounce lista spesa: cache locale subito, una sola scrittura remota ----
+{
+  const originalLocal = global.saveShoppingListLocal;
+  const originalCloud = global.saveShoppingListCloud;
+  let localWrites = 0;
+  let remoteWrites = 0;
+  global.saveShoppingListLocal = value => { localWrites += 1; return value; };
+  global.saveShoppingListCloud = async () => { remoteWrites += 1; };
+
+  toggleShopMeal('monday', 'lunch', false);
+  toggleShopMeal('monday', 'dinner', false);
+  toggleShopPantry(false);
+  updateShopItemQty('riso-venere', '500g');
+  assert.equal(localWrites, 4, 'la cache locale si aggiorna SUBITO a ogni interazione');
+  assert.equal(remoteWrites, 0, 'nessuna scrittura remota immediata: parte il debounce');
+  assert.equal(appState.shopping.customQuantities['riso-venere'], '500g', 'l\'ultima modifica digitata resta nello stato');
+
+  flushShoppingSave(); // stesso percorso di visibilitychange/pagehide
+  assert.equal(remoteWrites, 1, 'più interazioni ravvicinate producono UNA sola scrittura remota');
+  flushShoppingSave();
+  assert.equal(remoteWrites, 1, 'senza modifiche pendenti il flush non riscrive');
+
+  // Pagina nascosta: la scrittura pendente parte subito, senza attendere il timer.
+  toggleShopPantry(true);
+  assert.equal(remoteWrites, 1);
+  document.visibilityState = 'hidden';
+  document._on_visibilitychange();
+  assert.equal(remoteWrites, 2, 'flush della scrittura pendente su visibilitychange');
+  document.visibilityState = 'visible';
+
+  // Chiusura della scheda: pagehide esegue il flush della scrittura pendente.
+  excludeShopItem('riso-venere');
+  assert.equal(remoteWrites, 2);
+  window._on_pagehide();
+  assert.equal(remoteWrites, 3, 'flush della scrittura pendente su pagehide');
+  includeShopItem('riso-venere');
+  window._on_pagehide();
+  assert.equal(remoteWrites, 4);
+
+  global.saveShoppingListLocal = originalLocal;
+  global.saveShoppingListCloud = originalCloud;
+}
+
 renderSettings();
 assert.match(document.getElementById('view-settings').innerHTML, /Account collegati/);
 renderIncomingShares();

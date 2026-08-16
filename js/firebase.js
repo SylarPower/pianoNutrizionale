@@ -453,9 +453,16 @@ async function getShoppingListCloud() {
   }
 }
 
-async function saveShoppingListCloud(value) {
+// Aggiorna SOLO la cache locale: usata dalle interazioni rapide della lista
+// spesa, dove la scrittura remota viene accorpata con un debounce in app.js.
+function saveShoppingListLocal(value) {
   const clean = cloneData(value);
   writeLocalJson("shopping", clean);
+  return clean;
+}
+
+async function saveShoppingListCloud(value) {
+  const clean = saveShoppingListLocal(value);
   await shoppingListRef().set(clean);
 }
 
