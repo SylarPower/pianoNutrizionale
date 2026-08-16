@@ -14,6 +14,9 @@ let auth = null;
 let currentUser = null;
 // Metadati dell'ultimo catalogo letto (es. etichette canoniche degli ingredienti).
 let catalogMeta = {};
+let localDataOwner = null;
+
+function setLocalDataOwner(uid) { localDataOwner = uid || null; }
 
 function initFirebase() {
   try {
@@ -117,7 +120,8 @@ function backupsRef() {
 }
 
 function localKey(name) {
-  return `pn_${currentUser ? currentUser.uid : "anonymous"}_${name}`;
+  const owner = currentUser?.uid || localDataOwner || "anonymous";
+  return `pn_${owner}_${name}`;
 }
 
 function cloneData(value) {

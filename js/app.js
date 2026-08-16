@@ -27,6 +27,23 @@ let editMode = false;
 let shopSettingsVisible = false;
 let toastTimeout = null;
 
+// ---- Session cache per avvio veloce ----
+function readSessionCache() {
+  try { return JSON.parse(localStorage.getItem("pn_session") || "null"); } catch (_) { return null; }
+}
+function writeSessionCache(session) {
+  try {
+    if (session) localStorage.setItem("pn_session", JSON.stringify(session));
+    else localStorage.removeItem("pn_session");
+  } catch (_) {}
+}
+function readLocalJsonFor(uid, name, fallback) {
+  try {
+    const value = localStorage.getItem(`pn_${uid}_${name}`);
+    return value ? JSON.parse(value) : JSON.parse(JSON.stringify(fallback));
+  } catch (_) { return JSON.parse(JSON.stringify(fallback)); }
+}
+
 function escapeHtml(value) {
   return String(value ?? "")
     .replaceAll("&", "&amp;")
@@ -237,74 +254,94 @@ function setupLoginForm() {
   });
 }
 
-async function loadUserData(user) {
-  setLoading("Sincronizzazione del piano personale…");
+async function loadUserData(user, { silent = false } = {}) {
   appState.user = user;
+  if (!silent) setLoading("Sincronizzazione del piano personale…");
   try {
-    // Tre sole letture Firestore in parallelo: catalogo, piano e lista spesa.
+    // Tre sole letture in parallelo: catalogo, piano e lista spesa.
     const [recipes, plan, shopping] = await Promise.all([
       getRecipeCatalog(), getWeeklyPlan(), getShoppingListCloud()
     ]);
-    setRecipes(recipes);
-    // Normalizzazione in memoria (idempotente, nessuna scrittura automatica):
-    // il salvataggio su Firebase avviene solo quando viene rilevata una
-    // versione precedente in getWeeklyPlan/getRecipeCatalog.
-    appState.plan = window.PianoDomain ? PianoDomain.migratePlan(plan) : plan;
-    appState.shopping = shopping;
-    appState.deviceSettings = getLocalDeviceSettings();
-
-    const today = getTodayKey();
-    const dateKey = new Date().toLocaleDateString("sv-SE");
-    if (appState.deviceSettings.lastOpenDate !== dateKey) {
-      appState.deviceSettings.chefSelectedDay = today;
-      appState.deviceSettings.lastOpenDate = dateKey;
-      saveLocalDeviceSettings(appState.deviceSettings);
-    }
-
-    applyTheme(!!appState.deviceSettings.darkMode);
-    showApp();
-    renderGlobalHeader();
-
-    // Registrazione username eseguita una sola volta per dispositivo; abilita le condivisioni.
+    applyState(recipes, plan, shopping);
     ensureUsernameDirectory().catch(error => console.warn("Directory username non disponibile", error));
-    document.querySelector(".bottom-nav")?.classList.remove("hidden");
-    if (!appStarted) {
-      setupRouter();
-      setupModal();
-      setupSwapModal();
-      setupMealOperations();
-      setupTransferModals();
-      setupGeneratorModal();
-      appStarted = true;
-    } else {
-      handleRoute();
-    }
+    if (appStarted) handleRoute();
   } catch (error) {
     console.error(error);
-    showApp();
-    const container = document.getElementById("view-chef");
-    container.classList.remove("hidden");
-    container.innerHTML = `<div class="empty-state"><h2>Sincronizzazione non riuscita</h2><p>${escapeHtml(error.message || "Controlla Firestore e le regole di sicurezza.")}</p><button class="btn btn-primary" onclick="window.location.reload()">Riprova</button></div>`;
+    if (silent) {
+      showToast("Connessione assente: stai vedendo i dati salvati sul dispositivo.", true);
+    } else {
+      showApp();
+      const container = document.getElementById("view-chef");
+      container.classList.remove("hidden");
+      container.innerHTML = `<div class="empty-state"><h2>Sincronizzazione non riuscita</h2><p>${escapeHtml(error.message || "Controlla la connessione e riprova.")}</p><button class="btn btn-primary" onclick="window.location.reload()">Riprova</button></div>`;
+    }
   } finally {
-    clearLoading();
+    if (!silent) clearLoading();
+  }
+}
+
+function applyState(recipes, plan, shopping) {
+  setRecipes(recipes);
+  appState.plan = window.PianoDomain ? PianoDomain.migratePlan(plan) : plan;
+  appState.shopping = shopping;
+  appState.deviceSettings = getLocalDeviceSettings();
+
+  const today = getTodayKey();
+  const dateKey = new Date().toLocaleDateString("sv-SE");
+  if (appState.deviceSettings.lastOpenDate !== dateKey) {
+    appState.deviceSettings.chefSelectedDay = today;
+    appState.deviceSettings.lastOpenDate = dateKey;
+    saveLocalDeviceSettings(appState.deviceSettings);
+  }
+
+  applyTheme(!!appState.deviceSettings.darkMode);
+  showApp();
+  renderGlobalHeader();
+  document.querySelector(".bottom-nav")?.classList.remove("hidden");
+  if (!appStarted) {
+    setupRouter();
+    setupModal();
+    setupSwapModal();
+    setupMealOperations();
+    setupTransferModals();
+    setupGeneratorModal();
+    appStarted = true;
   }
 }
 
 async function initApp() {
   setupLoginForm();
   if (!initFirebase()) {
-    document.getElementById("login-error").textContent = "Firebase non è configurato correttamente.";
+    document.getElementById("login-error").textContent = "Il servizio non è configurato correttamente.";
     showLogin();
     return;
   }
-  setLoading("Verifica accesso…");
+
+  // Avvio veloce: se la sessione è in cache locale, mostra subito l'app
+  // con i dati già scaricati, poi rinfresca in background.
+  const cachedSession = readSessionCache();
+  const cachedRecipes = cachedSession?.uid ? readLocalJsonFor(cachedSession.uid, "recipe_catalog", []) : [];
+  const cachedPlan = cachedSession?.uid ? readLocalJsonFor(cachedSession.uid, "weekly_plan", null) : null;
+  const cachedShopping = cachedSession?.uid ? readLocalJsonFor(cachedSession.uid, "shopping", null) : null;
+  const canBoot = Boolean(cachedSession?.uid && cachedRecipes.length && cachedPlan?.days);
+  if (canBoot) {
+    appState.user = { uid: cachedSession.uid, email: cachedSession.email || "" };
+    setLocalDataOwner(cachedSession.uid);
+    applyState(cachedRecipes, cachedPlan, cachedShopping || getDefaultShoppingList());
+  } else {
+    setLoading("Verifica accesso…");
+  }
+
   observeAuthState(async user => {
     if (!user) {
+      writeSessionCache(null);
+      setLocalDataOwner(null);
       appState.user = null;
       showLogin();
       return;
     }
-    await loadUserData(user);
+    writeSessionCache({ uid: user.uid, email: user.email });
+    await loadUserData(user, { silent: canBoot });
   });
 }
 
@@ -348,7 +385,7 @@ function renderGlobalHeader() {
       <option value="ipo" ${profile === "ipo" ? "selected" : ""}>👩 Donna · IPO</option>
       <option value="couple" ${profile === "couple" ? "selected" : ""}>👥 Uomo + Donna IPO</option>
     </select>
-    <a href="#settings" class="header-account" title="Account ${escapeAttr(usernameFromUser(appState.user))}">👤 ${escapeHtml(usernameFromUser(appState.user))}</a>
+    <a href="#settings" class="header-account" title="Impostazioni" aria-label="Impostazioni">⚙️ ${escapeHtml(usernameFromUser(appState.user))}</a>
   `;
 }
 
@@ -474,8 +511,7 @@ function renderChef() {
     </div>
     <div class="day-summary ${getDayType(selectedDay)}">
       <span class="day-type-badge">${getDayType(selectedDay) === "training" ? "A" : "R"}</span>
-      <div><strong>${DAY_NAMES[selectedDay]}</strong><small>${getDayType(selectedDay) === "training" ? "Allenamento · crackers inclusi nello spuntino mattutino" : "Riposo · niente crackers nello spuntino mattutino"}</small></div>
-      <span class="profile-chip">${escapeHtml(getProfileLabel())}</span>
+      <div><strong>${DAY_NAMES[selectedDay]}</strong><small>${getDayType(selectedDay) === "training" ? "Allenamento" : "Riposo"}</small></div>
     </div>
 
     <section class="chef-section">
@@ -753,7 +789,7 @@ function renderRecipes() {
   const container = document.getElementById("view-recipes");
   container.innerHTML = `
     <div class="page-heading recipes-heading">
-      <div><p class="eyebrow">${appState.recipes.length} ricette · un solo documento Firebase</p><h1>Ricettario</h1><p>Puoi creare, esportare, importare e condividere le ricette del tuo account.</p></div>
+      <div><p class="eyebrow">${appState.recipes.length} ricette · sincronizzate nel cloud</p><h1>Ricettario</h1><p>Puoi creare, esportare, importare e condividere le ricette del tuo account.</p></div>
       <div class="recipe-toolbar">
         <button class="btn btn-outline" onclick="openIncomingShares()">📥 Ricevute</button>
         <label class="btn btn-outline file-import-button">Importa<input type="file" accept="application/json,.json" onchange="prepareRecipeImport(this.files[0]); this.value='' "></label>
@@ -762,20 +798,34 @@ function renderRecipes() {
         <button class="btn btn-primary" onclick="createNewRecipe()">+ Nuova</button>
       </div>
     </div>
-    ${appState.recipes.length ? `<label class="search-box"><span>⌕</span><input id="recipe-search" type="search" placeholder="Cerca ricetta o categoria…" oninput="filterRecipeCards(this.value)"></label>${MEAL_SLOTS.map(slot => recipeSectionHtml(slot.label, appState.recipes.filter(recipe => recipe.slot === slot.id), slot)).join("")}` : `<div class="empty-state recipe-empty-state"><span>🍲</span><h2>Il tuo ricettario è vuoto</h2><p>Puoi creare la prima ricetta manualmente, importare un file JSON o attendere una condivisione da un altro utente.</p><button class="btn btn-primary" onclick="createNewRecipe()">+ Crea la prima ricetta</button></div>`}
+    ${appState.recipes.length ? `<label class="search-box"><span>⌕</span><input id="recipe-search" type="search" placeholder="Cerca ricetta, categoria o ingrediente…" oninput="filterRecipeCards(this.value)"></label>${MEAL_SLOTS.map(slot => recipeSectionHtml(slot.label, appState.recipes.filter(recipe => recipe.slot === slot.id), slot)).join("")}` : `<div class="empty-state recipe-empty-state"><span>🍲</span><h2>Il tuo ricettario è vuoto</h2><p>Puoi creare la prima ricetta manualmente, importare un file JSON o attendere una condivisione da un altro utente.</p><button class="btn btn-primary" onclick="createNewRecipe()">+ Crea la prima ricetta</button></div>`}
   `;
 }
 
 function recipeSectionHtml(title, recipes, slot) {
   if (!recipes.length) return "";
+  const sectionId = `recipe-section-${slot.id}`;
   return `
     <section class="recipe-library-section">
-      <div class="section-title"><span>${slot.emoji}</span><div><small>${recipes.length} proposte</small><h2>${escapeHtml(title)}</h2></div></div>
-      <div class="recipe-grid">
-        ${recipes.map(recipe => `<button class="recipe-library-card" data-search="${escapeAttr(`${recipe.id} ${recipe.name} ${recipe.namesByDayType?.training || ""} ${recipe.namesByDayType?.rest || ""} ${recipe.proteinCategory}`.toLowerCase())}" onclick="openRecipeModal('${escapeAttr(recipe.id)}')"><span class="recipe-code">${escapeHtml(recipe.id)}</span><span class="recipe-card-emoji">${escapeHtml(recipe.emoji || "🍲")}</span><strong>${escapeHtml(recipe.name)}</strong><small>${escapeHtml(recipe.proteinCategory || "")}</small><span class="frequency-chip">${escapeHtml(recipe.frequency || "")}</span></button>`).join("")}
+      <button class="recipe-section-toggle" onclick="toggleRecipeSection('${slot.id}', this)" aria-expanded="true">
+        <span class="section-title" style="margin:0"><span>${slot.emoji}</span><div><small>${recipes.length} proposte</small><h2>${escapeHtml(title)}</h2></div></span>
+        <b class="recipe-section-chevron">⌄</b>
+      </button>
+      <div id="${sectionId}" class="recipe-section-body">
+        <div class="recipe-grid">
+          ${recipes.map(recipe => `<button class="recipe-library-card" data-search="${escapeAttr(`${recipe.id} ${recipe.name} ${recipe.namesByDayType?.training || ""} ${recipe.namesByDayType?.rest || ""} ${recipe.proteinCategory} ${(recipe.ingredients || []).map(i => i.name).join(" ")}`.toLowerCase())}" onclick="openRecipeModal('${escapeAttr(recipe.id)}')"><span class="recipe-code">${escapeHtml(recipe.id)}</span><span class="recipe-card-emoji">${escapeHtml(recipe.emoji || "🍲")}</span><strong>${escapeHtml(recipe.name)}</strong><small>${escapeHtml(recipe.proteinCategory || "")}</small><span class="frequency-chip">${escapeHtml(recipe.frequency || "")}</span></button>`).join("")}
+        </div>
       </div>
     </section>`;
 }
+
+window.toggleRecipeSection = function(slotId, button) {
+  const body = document.getElementById(`recipe-section-${slotId}`);
+  if (!body) return;
+  const closed = body.classList.toggle("hidden");
+  button.classList.toggle("collapsed", closed);
+  button.setAttribute("aria-expanded", String(!closed));
+};
 
 window.filterRecipeCards = function(query) {
   const normalized = String(query || "").trim().toLowerCase();
@@ -1015,24 +1065,13 @@ function settingsAccordion(title, content, open = false) {
 
 function renderSettings() {
   const container = document.getElementById("view-settings");
-  const profile = getPortionProfile();
   const breakfastCount = appState.recipes.filter(recipe => recipe.slot === "breakfast").length;
   container.innerHTML = `
     <div class="page-heading"><div><p class="eyebrow">Preferenze e manuale alimentare</p><h1>Impostazioni</h1></div></div>
     <section class="settings-section account-card">
       <div class="account-avatar">${escapeHtml(usernameFromUser(appState.user).slice(0, 1).toUpperCase())}</div>
-      <div><small>Accesso personale</small><h2>${escapeHtml(usernameFromUser(appState.user))}</h2><p>Account protetto da Firebase Authentication</p></div>
+      <div><small>Accesso personale</small><h2>${escapeHtml(usernameFromUser(appState.user))}</h2><p>Account personale protetto</p></div>
       <button class="btn btn-outline" onclick="logoutCurrentUser()">Esci</button>
-    </section>
-
-    <section class="settings-section">
-      <h2>Porzioni</h2>
-      <p class="text-muted settings-intro">Le dosi sono quelle salvate nel catalogo Firebase: nessun moltiplicatore percentuale.</p>
-      <div class="profile-options">
-        <label class="profile-option ${profile === "man" ? "selected" : ""}"><input type="radio" name="profile" value="man" ${profile === "man" ? "checked" : ""} onchange="changePortionProfile(this.value)"><span>👨</span><strong>Uomo</strong><small>Dosi normocaloriche A/R</small></label>
-        <label class="profile-option ${profile === "ipo" ? "selected" : ""}"><input type="radio" name="profile" value="ipo" ${profile === "ipo" ? "checked" : ""} onchange="changePortionProfile(this.value)"><span>👩</span><strong>Donna IPO</strong><small>Dosi IPO originali</small></label>
-        <label class="profile-option ${profile === "couple" ? "selected" : ""}"><input type="radio" name="profile" value="couple" ${profile === "couple" ? "checked" : ""} onchange="changePortionProfile(this.value)"><span>👥</span><strong>Coppia</strong><small>Entrambe le dosi separate</small></label>
-      </div>
     </section>
 
     <section class="settings-section">
@@ -1042,17 +1081,17 @@ function renderSettings() {
 
     <div class="manual-heading"><p class="eyebrow">INDICAZIONI DI MELLER</p><h2>Manuale dieta e alternative</h2><p>Le alternative originali restano sempre consultabili nell'app.</p></div>
 
-    ${settingsAccordion("Struttura della dieta", `<ul class="guide-list">${MELLER_GUIDE.structure.map(item => `<li>${escapeHtml(item)}</li>`).join("")}</ul>`, true)}
+    ${settingsAccordion("Struttura della dieta", `<ul class="guide-list">${MELLER_GUIDE.structure.map(item => `<li>${escapeHtml(item)}</li>`).join("")}</ul>`)}
     ${settingsAccordion("Giorno di allenamento", guideDayHtml(MELLER_GUIDE.trainingDay, "training"))}
     ${settingsAccordion("Giorno di riposo", guideDayHtml(MELLER_GUIDE.restDay, "rest"))}
-    ${settingsAccordion("Alternative alimentari di Meller", `<div class="alternatives-grid">${alternativesTableHtml(MELLER_GUIDE.alternatives.carbohydrates)}${alternativesTableHtml(MELLER_GUIDE.alternatives.proteins)}</div>`, true)}
+    ${settingsAccordion("Alternative alimentari di Meller", `<div class="alternatives-grid">${alternativesTableHtml(MELLER_GUIDE.alternatives.carbohydrates)}${alternativesTableHtml(MELLER_GUIDE.alternatives.proteins)}</div>`)}
     ${settingsAccordion("Frequenze proteiche", `<div class="alternative-table frequency-table">${MELLER_GUIDE.proteinFrequencies.map(row => `<div><span>${escapeHtml(row[0])}</span><strong>${escapeHtml(row[1])}</strong></div>`).join("")}</div>`)}
     ${settingsAccordion("Integrazione Syform", `<ul class="guide-list">${MELLER_GUIDE.integration.map(item => `<li>${escapeHtml(item)}</li>`).join("")}</ul>`)}
     ${settingsAccordion("Altre informazioni e FAQ", `<ul class="guide-list">${MELLER_GUIDE.faq.map(item => `<li>${escapeHtml(item)}</li>`).join("")}</ul>`)}
 
     <section class="settings-section cloud-section">
-      <div><h2>Dati Firebase</h2><p class="text-muted">${appState.recipes.length} ricette totali · ${breakfastCount} colazioni · catalogo schema v${CATALOG_SCHEMA_VERSION}</p><p class="cloud-call-info">⚡ Avvio ottimizzato: 3 letture documento in parallelo (catalogo completo, piano, spesa).</p></div>
-      <label class="btn btn-outline file-import-button">Importa o ripristina JSON<input type="file" accept="application/json,.json" onchange="prepareRecipeImport(this.files[0]); this.value='' "></label>
+      <div><h2>Dati e sincronizzazione</h2><p class="text-muted">${appState.recipes.length} ricette totali · ${breakfastCount} colazioni</p><p class="cloud-call-info">⚡ Dati sincronizzati tra i tuoi dispositivi.</p></div>
+      <label class="btn btn-outline file-import-button">Importa o ripristina ricette<input type="file" accept="application/json,.json" onchange="prepareRecipeImport(this.files[0]); this.value='' "></label>
     </section>
 
     ${renderBackupSection()}
@@ -1064,7 +1103,7 @@ function renderBackupSection() {
   const hasBackup = Boolean(meta?.operation || meta?.description || meta?.createdAt);
   return `
     <section class="settings-section backup-section">
-      <div class="flex-between"><h2>Backup e annullamento</h2><span class="recipe-code">users/{uid}/backups/previous</span></div>
+      <div class="flex-between"><h2>Backup e annullamento</h2><span class="recipe-code">Copia di sicurezza automatica</span></div>
       ${hasBackup ? `
         <div class="backup-meta">
           <div><small>Ultima operazione</small><strong>${escapeHtml(meta.operation || "—")}</strong></div>
@@ -1072,7 +1111,7 @@ function renderBackupSection() {
           <div><small>Data backup</small><strong>${escapeHtml(formatBackupDate(meta.createdAt) || "—")}</strong></div>
         </div>
         <button class="btn btn-danger full-width" onclick="undoLastModification()">↩ Annulla ultima modifica</button>
-        <p class="text-muted backup-note">Il ripristino è atomico e utilizzabile una sola volta: dopo il ripristino il backup viene eliminato.</p>
+        <p class="text-muted backup-note">Il ripristino è disponibile una sola volta: dopo il ripristino la copia di sicurezza viene eliminata.</p>
       ` : `
         <p class="text-muted backup-note">Nessun backup disponibile. Prima delle operazioni distruttive (importazione “Sostituisci tutte”, accettazione di una condivisione con sostituzione, applicazione del generatore settimana) viene salvata una copia di catalogo, piano e lista spesa.</p>
       `}
@@ -1272,7 +1311,7 @@ window.applyRecipeImport = async function(mode) {
       return;
     }
   }
-  setLoading("Importazione ricette su Firebase…");
+  setLoading("Importazione ricette in corso…");
   try {
     const nextRecipes = mode === "add" ? PianoDomain.mergeRecipeCatalogs(appState.recipes, incoming) : incoming;
     let nextPlan;
@@ -1784,6 +1823,29 @@ function setupModal() {
   document.getElementById("modal-share-btn").addEventListener("click", () => openShareDialog(currentModal?.recipe?.id));
 }
 
+window.setModalDayType = function(type) {
+  if (!currentModal || currentModal.dayKey) return;
+  if (!["training", "rest"].includes(type)) return;
+  currentModal.dayType = type;
+  renderModalContent();
+};
+
+function getIngredientCoupleHtml(ingredient, dayType) {
+  const profile = getPortionProfile();
+  if (profile !== "couple") return `<strong>${escapeHtml(getIngredientDisplay(ingredient, dayType))}</strong>`;
+  const man = getPortionValue(ingredient, "man", dayType);
+  const woman = getPortionValue(ingredient, "ipo", dayType);
+  const manP = parseSimpleAmount(man);
+  const womanP = parseSimpleAmount(woman);
+  if (!manP.skip && !womanP.skip && !manP.free && !womanP.free && !manP.opaque && !womanP.opaque
+      && manP.unit === womanP.unit && manP.value > 0 && womanP.value > 0) {
+    const total = manP.value + womanP.value;
+    const unit = manP.unit === "pz" ? " pz" : manP.unit;
+    return `<span class="portion-sum"><strong>${formatNumber(total)}${unit}</strong> <small class="portion-detail">(Uomo: ${escapeHtml(man)} · Donna IPO: ${escapeHtml(woman)})</small></span>`;
+  }
+  return `<strong>${escapeHtml(getIngredientDisplay(ingredient, dayType))}</strong>`;
+}
+
 window.openRecipeModal = function(recipeId, dayKey = null) {
   const recipe = getRecipe(recipeId);
   if (!recipe) return;
@@ -1839,9 +1901,18 @@ function renderModalContent() {
   document.getElementById("modal-title").innerHTML = editMode
     ? `<input id="edit-recipe-name" class="modal-title-input" value="${escapeAttr(recipe.name)}">`
     : `<span class="recipe-code">${escapeHtml(recipe.id)}</span> ${escapeHtml(recipe.emoji || "🍲")} ${escapeHtml(getRecipeDisplayName(recipe, dayType))}`;
+  const dayTypeLabel = currentModal.dayKey
+    ? `${DAY_NAMES[currentModal.dayKey]} (${dayType === "training" ? "A" : "R"})`
+    : "anteprima";
+  const canToggle = !currentModal.dayKey && getPortionProfile() !== "ipo";
+  const toggleHtml = canToggle ? `
+    <span class="modal-daytype-toggle day-type-control" style="margin-left:8px">
+      <button class="type-option training ${dayType === "training" ? "active" : ""}" onclick="setModalDayType('training')" title="Allenamento">A</button>
+      <button class="type-option rest ${dayType === "rest" ? "active" : ""}" onclick="setModalDayType('rest')" title="Riposo">R</button>
+    </span>` : "";
   document.getElementById("modal-time").innerHTML = editMode
     ? `<div class="edit-meta-grid"><label>Emoji<input id="edit-recipe-emoji" value="${escapeAttr(recipe.emoji || "🍲")}"></label><label>Tipo<select id="edit-recipe-slot">${MEAL_SLOTS.map(slot => `<option value="${slot.id}" ${recipe.slot === slot.id ? "selected" : ""}>${escapeHtml(slot.label)}</option>`).join("")}</select></label><label>Categoria<input id="edit-recipe-category" value="${escapeAttr(recipe.proteinCategory || "")}"></label><label>Frequenza<input id="edit-recipe-frequency" value="${escapeAttr(recipe.frequency || "")}"></label></div>`
-    : `${escapeHtml(getSlotMeta(recipe.slot).label)} · ${currentModal.dayKey ? `${DAY_NAMES[currentModal.dayKey]} (${dayType === "training" ? "A" : "R"})` : "anteprima A"} · ${escapeHtml(getProfileLabel())}`;
+    : `${escapeHtml(getSlotMeta(recipe.slot).label)} · ${dayTypeLabel} · ${escapeHtml(getProfileLabel())}${toggleHtml}`;
 
   const ingredientList = document.getElementById("modal-ingredients-list");
   if (editMode) {
@@ -1851,7 +1922,7 @@ function renderModalContent() {
         <div class="portion-edit-grid"><label>IPO A<input id="edit-ing-ipo-training-${index}" value="${escapeAttr(getPortionValue(ingredient, "ipo", "training"))}"></label><label>IPO R<input id="edit-ing-ipo-rest-${index}" value="${escapeAttr(getPortionValue(ingredient, "ipo", "rest"))}"></label><label>Uomo A<input id="edit-ing-man-training-${index}" value="${escapeAttr(getPortionValue(ingredient, "man", "training"))}"></label><label>Uomo R<input id="edit-ing-man-rest-${index}" value="${escapeAttr(getPortionValue(ingredient, "man", "rest"))}"></label><button class="btn-icon remove-edit-item" onclick="removeIngredient(${index})">×</button></div>
       </li>`).join("") + `<li><button class="btn btn-outline full-width" onclick="addIngredient()">+ Aggiungi ingrediente</button></li>`;
   } else {
-    ingredientList.innerHTML = recipe.ingredients.map(ingredient => `<li><span>${escapeHtml(ingredient.name)}</span><strong>${escapeHtml(getIngredientDisplay(ingredient, dayType))}</strong></li>`).join("");
+    ingredientList.innerHTML = recipe.ingredients.map(ingredient => `<li><span>${escapeHtml(ingredient.name)}</span>${getIngredientCoupleHtml(ingredient, dayType)}</li>`).join("");
   }
 
   const prepList = document.getElementById("modal-prep-list");
@@ -1885,8 +1956,8 @@ function renderModalContent() {
   document.getElementById("modal-export-btn").classList.toggle("hidden", editMode || currentModal.isNew);
   document.getElementById("modal-share-btn").classList.toggle("hidden", editMode || currentModal.isNew);
   document.getElementById("modal-revert-btn").classList.toggle("hidden", editMode || !recipe._original);
-  document.getElementById("modal-edit-btn").textContent = "Modifica su Firebase";
-  document.getElementById("modal-save-btn").textContent = "Salva su Firebase";
+  document.getElementById("modal-edit-btn").textContent = "Modifica ricetta";
+  document.getElementById("modal-save-btn").textContent = "Salva nel cloud";
 }
 
 function captureEditState() {
@@ -1955,7 +2026,7 @@ async function saveRecipeEdit() {
     delete baseline._original;
     recipe._original = baseline;
   }
-  setLoading("Salvataggio del catalogo su Firebase…");
+  setLoading("Salvataggio delle ricette…");
   const previousRecipes = clone(appState.recipes);
   try {
     const existingIndex = appState.recipes.findIndex(item => item.id === recipe.id);
@@ -1974,7 +2045,7 @@ async function saveRecipeEdit() {
     currentModal.original = clone(recipe);
     editMode = false;
     renderModalContent();
-    showToast("Ricetta salvata su Firebase ✅");
+    showToast("Ricetta salvata nel cloud ✅");
     if (window.location.hash === "#recipes") renderRecipes();
   } catch (error) {
     setRecipes(previousRecipes);
@@ -1987,7 +2058,7 @@ async function saveRecipeEdit() {
 
 async function revertRecipe() {
   if (!currentModal.recipe._original || !confirm("Ripristinare dosi, ingredienti e procedimento precedenti alla prima modifica?")) return;
-  setLoading("Ripristino ricetta su Firebase…");
+  setLoading("Ripristino della ricetta…");
   const previousRecipes = clone(appState.recipes);
   try {
     const original = clone(currentModal.recipe._original);
