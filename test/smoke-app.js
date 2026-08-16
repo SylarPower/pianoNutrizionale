@@ -196,4 +196,21 @@ removeIngredient(0);
 addStep();
 moveStep(0, 1);
 
+// ---- Regressione: l'overlay di caricamento deve chiudersi con showApp() ----
+// L'avvio rapido da cache chiama applyState() -> showApp() e poi
+// loadUserData({ silent: true }), che nel finally non esegue clearLoading():
+// senza il clearLoading() dentro showApp() l'overlay "Caricamento…" resta
+// visibile per sempre dopo un refresh.
+setLoading('Caricamento…');
+assert.equal(
+  document.getElementById('loading-overlay').classList.contains('hidden'),
+  false
+);
+assert.equal(document.getElementById('loading-message').textContent, 'Caricamento…');
+showApp();
+assert.equal(
+  document.getElementById('loading-overlay').classList.contains('hidden'),
+  true
+);
+
 console.log('SMOKE OK — tutti i percorsi di rendering eseguiti senza errori');
