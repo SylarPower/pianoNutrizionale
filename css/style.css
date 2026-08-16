@@ -609,7 +609,9 @@ input[type="checkbox"], input[type="radio"] { accent-color: var(--primary); widt
 .daily-meal-wrap .meal-card { height: calc(100% - 26px); display: flex; flex-direction: column; }
 .daily-meal-wrap .meal-open-btn { margin-top: auto; }
 
-.shop-day-row { display: grid; grid-template-columns: 110px 1fr; gap: 12px; align-items: start; }
+.shop-day-row { display: grid; grid-template-columns: 150px 1fr; gap: 12px; align-items: start; }
+.shop-day-head { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
+.shop-day-head .btn { min-width: 64px; min-height: 30px; padding: 3px 8px; font-size: .7rem; }
 .shop-meal-checks { display: flex; flex-wrap: wrap; gap: 8px 14px; }
 .shop-meal-checks label { display: flex; align-items: center; gap: 4px; white-space: nowrap; }
 
@@ -988,6 +990,21 @@ body.dark-mode .login-card {
 }
 .share-replace-note { background: var(--danger-soft); color: var(--danger); }
 .share-plan-note { background: var(--rest-soft); color: var(--rest); }
+
+/* Account collegati */
+.linked-accounts-section { display: flex; flex-direction: column; gap: 14px; }
+.linked-accounts-section .flex-between { align-items: flex-start; }
+.link-status { flex: 0 0 auto; padding: 5px 9px; border-radius: 999px; background: var(--surface-alt); color: var(--text-muted); font-size: .7rem; font-weight: 800; }
+.link-status.active { background: var(--primary-soft); color: var(--success); }
+.linked-empty { padding: 13px; border-radius: 12px; background: var(--surface-alt); color: var(--text-muted); font-size: .83rem; }
+.linked-member-list { display: grid; gap: 8px; }
+.linked-member { display: flex; align-items: center; gap: 11px; padding: 11px; border: 1px solid var(--line); border-radius: 12px; background: var(--surface-alt); }
+.linked-member > div { display: flex; flex-direction: column; }
+.linked-member small { color: var(--text-muted); }
+.linked-account-actions, .account-base-choices { display: flex; flex-wrap: wrap; gap: 8px; }
+.account-link-request { border-color: rgba(36,90,67,.35); background: var(--primary-soft); }
+.account-link-request > p { color: var(--text); }
+.account-base-choices .btn { min-height: 40px; padding: 7px 11px; font-size: .76rem; }
 
 /* Backup / undo */
 .backup-section { display: flex; flex-direction: column; gap: 12px; }

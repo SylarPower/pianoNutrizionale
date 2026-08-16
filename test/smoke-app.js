@@ -5,6 +5,7 @@
 const fs = require('node:fs');
 const path = require('node:path');
 const vm = require('node:vm');
+const assert = require('node:assert/strict');
 
 const ROOT = path.join(__dirname, '..');
 
@@ -158,8 +159,18 @@ appState.deviceSettings = { portionProfile: 'man', darkMode: false, chefSelected
 renderGlobalHeader();
 renderChef();
 renderWeek();
+renderRecipes();
+assert.match(document.getElementById('view-recipes').innerHTML, /recipe-section-toggle collapsed/);
+assert.match(document.getElementById('view-recipes').innerHTML, /recipe-section-body hidden/);
 renderShop();
+shopSettingsVisible = true;
+renderShop();
+assert.match(document.getElementById('view-shop').innerHTML, /toggleShopDay\('monday'\)/);
+assert.equal(shoppingAmountText({ id: 'opaque-a', legacyId: 'opaque-a', totals: { pz: 28 }, opaque: { 'Uomo: 8-10': 2, 'Donna IPO: 8-10': 1 }, free: false }), '28 pz (Uomo: 8-10 × 2 · Donna IPO: 8-10)');
+assert.equal(shoppingAmountText({ id: 'opaque-b', legacyId: 'opaque-b', totals: {}, opaque: { 'Uomo: 1 mazzetto': 1, 'Donna IPO: 1 mazzetto': 1 }, free: false }), '2 mazzetti');
+assert.equal(shoppingAmountText({ id: 'spoons', legacyId: 'spoons', totals: { g: 50 }, opaque: {}, free: false }), '50g');
 renderSettings();
+assert.match(document.getElementById('view-settings').innerHTML, /Account collegati/);
 renderIncomingShares();
 openRecipeModal('L1', 'monday');
 renderModalContent();

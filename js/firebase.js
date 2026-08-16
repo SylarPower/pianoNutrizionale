@@ -15,8 +15,14 @@ let currentUser = null;
 // Metadati dell'ultimo catalogo letto (es. etichette canoniche degli ingredienti).
 let catalogMeta = {};
 let localDataOwner = null;
+// Se valorizzato, catalogo/piano/spesa vengono letti dalla stessa area
+// household per tutti i membri. Le preferenze dispositivo restano personali.
+let currentHousehold = null;
+const SHARED_CACHE_NAMES = new Set(["recipe_catalog", "weekly_plan", "shopping"]);
 
 function setLocalDataOwner(uid) { localDataOwner = uid || null; }
+function getCurrentHousehold() { return currentHousehold; }
+function clearDataScope() { currentHousehold = null; }
 
 function initFirebase() {
   try {
@@ -103,24 +109,52 @@ function userRoot() {
   return db.collection("users").doc(requireUser().uid);
 }
 
-function recipeCatalogRef() {
+function householdRoot(householdId = currentHousehold?.id) {
+  if (!householdId) throw new Error("Account condiviso non disponibile");
+  return db.collection("households").doc(householdId);
+}
+
+function personalRecipeCatalogRef() {
   return userRoot().collection("content").doc("recipeCatalog");
 }
 
-function weeklyPlanRef() {
+function personalWeeklyPlanRef() {
   return userRoot().collection("config").doc("weeklyPlan");
 }
 
-function shoppingListRef() {
+function personalShoppingListRef() {
   return userRoot().collection("config").doc("shoppingList");
 }
 
+function recipeCatalogRef() {
+  return currentHousehold
+    ? householdRoot().collection("content").doc("recipeCatalog")
+    : personalRecipeCatalogRef();
+}
+
+function weeklyPlanRef() {
+  return currentHousehold
+    ? householdRoot().collection("config").doc("weeklyPlan")
+    : personalWeeklyPlanRef();
+}
+
+function shoppingListRef() {
+  return currentHousehold
+    ? householdRoot().collection("config").doc("shoppingList")
+    : personalShoppingListRef();
+}
+
 function backupsRef() {
+  // Il backup è sempre personale: in questo modo ogni membro può tornare al
+  // proprio stato precedente senza condividere anche la cronologia di undo.
   return userRoot().collection("backups").doc("previous");
 }
 
 function localKey(name) {
-  const owner = currentUser?.uid || localDataOwner || "anonymous";
+  const personalOwner = currentUser?.uid || localDataOwner || "anonymous";
+  const owner = SHARED_CACHE_NAMES.has(name) && currentHousehold?.id
+    ? `household-${currentHousehold.id}`
+    : personalOwner;
   return `pn_${owner}_${name}`;
 }
 
@@ -139,6 +173,85 @@ function readLocalJson(name, fallback) {
 
 function writeLocalJson(name, value) {
   try { localStorage.setItem(localKey(name), JSON.stringify(value)); } catch (_) {}
+}
+
+function householdFromSnapshot(snapshot) {
+  const households = [];
+  snapshot.forEach(doc => households.push({ id: doc.id, ...doc.data() }));
+  if (!households.length) return null;
+  // In condizioni normali un account appartiene a una sola household. Se una
+  // vecchia operazione offline ne lascia più di una, manteniamo quella già in
+  // uso oppure la più recente, evitando cambi di area dati non deterministici.
+  const active = households.find(item => item.id === currentHousehold?.id);
+  if (active) return active;
+  return households.sort((a, b) => {
+    const left = a.updatedAt?.toMillis?.() || a.createdAt?.toMillis?.() || 0;
+    const right = b.updatedAt?.toMillis?.() || b.createdAt?.toMillis?.() || 0;
+    return right - left;
+  })[0];
+}
+
+async function prepareDataScope() {
+  const user = requireUser();
+  const snapshot = await db.collection("households")
+    .where("memberUids", "array-contains", user.uid)
+    .get();
+  currentHousehold = householdFromSnapshot(snapshot);
+  return currentHousehold;
+}
+
+function observeHouseholdChanges(callback, onError = null) {
+  const user = requireUser();
+  return db.collection("households")
+    .where("memberUids", "array-contains", user.uid)
+    .onSnapshot(snapshot => {
+      currentHousehold = householdFromSnapshot(snapshot);
+      callback(currentHousehold);
+    }, error => {
+      console.warn("Sincronizzazione collegamento account non disponibile", error);
+      if (onError) onError(error);
+    });
+}
+
+function shoppingValueFromData(data = {}) {
+  const defaults = getDefaultShoppingList();
+  return {
+    ...defaults,
+    ...data,
+    selectedMeals: { ...defaults.selectedMeals, ...(data.selectedMeals || {}) },
+    excludedItems: data.excludedItems || [],
+    customQuantities: data.customQuantities || {}
+  };
+}
+
+function observeSharedDataChanges(callback, onError = null) {
+  if (!currentHousehold) return () => {};
+  const reportError = error => {
+    console.warn("Sincronizzazione realtime non disponibile", error);
+    if (onError) onError(error);
+  };
+  const unsubscribers = [
+    recipeCatalogRef().onSnapshot(snapshot => {
+      if (!snapshot.exists) return;
+      const data = snapshot.data();
+      const recipes = Array.isArray(data.recipes) ? data.recipes : [];
+      catalogMeta = data;
+      writeLocalJson("recipe_catalog", recipes);
+      callback("recipes", recipes);
+    }, reportError),
+    weeklyPlanRef().onSnapshot(snapshot => {
+      if (!snapshot.exists) return;
+      const plan = snapshot.data();
+      writeLocalJson("weekly_plan", plan);
+      callback("plan", plan);
+    }, reportError),
+    shoppingListRef().onSnapshot(snapshot => {
+      const shopping = shoppingValueFromData(snapshot.exists ? snapshot.data() : {});
+      writeLocalJson("shopping", shopping);
+      callback("shopping", shopping);
+    }, reportError)
+  ];
+  return () => unsubscribers.forEach(unsubscribe => unsubscribe?.());
 }
 
 function getDefaultDeviceSettings() {
@@ -322,19 +435,11 @@ async function getShoppingListCloud() {
   const defaults = getDefaultShoppingList();
   try {
     const snapshot = await shoppingListRef().get();
-    const data = snapshot.exists ? snapshot.data() : {};
-    const value = {
-      ...defaults,
-      ...data,
-      selectedMeals: { ...defaults.selectedMeals, ...(data.selectedMeals || {}) },
-      excludedItems: data.excludedItems || [],
-      customQuantities: data.customQuantities || {}
-    };
+    const value = shoppingValueFromData(snapshot.exists ? snapshot.data() : {});
     writeLocalJson("shopping", value);
     return value;
   } catch (error) {
-    const cached = readLocalJson("shopping", defaults);
-    return { ...defaults, ...cached, selectedMeals: { ...defaults.selectedMeals, ...(cached.selectedMeals || {}) } };
+    return shoppingValueFromData(readLocalJson("shopping", defaults));
   }
 }
 
@@ -348,9 +453,13 @@ async function saveShoppingListCloud(value) {
 
 async function saveBackup(catalog, plan, shopping, operation, description) {
   requireUser();
+  const recipes = Array.isArray(catalog) ? catalog : (catalog?.recipes || []);
   const snapshot = {
     schemaVersion: CATALOG_SCHEMA_VERSION,
-    catalog: cloneData(catalog),
+    catalog: {
+      schemaVersion: CATALOG_SCHEMA_VERSION,
+      recipes: cloneData(recipes)
+    },
     plan: cloneData(plan),
     shoppingList: cloneData(shopping),
     operation,
@@ -378,17 +487,19 @@ async function deleteBackup() {
 // Ripristino atomico: legge il backup, ripristina catalogo/piano/spesa e
 // cancella il backup in un'unica transazione. Utilizzabile una sola volta.
 async function restoreBackupAtomic() {
-  const user = requireUser();
+  requireUser();
   let restored = null;
   await db.runTransaction(async transaction => {
     const backupDoc = await transaction.get(backupsRef());
     if (!backupDoc.exists) throw new Error("Non esiste un backup da ripristinare");
     const backup = backupDoc.data();
-    if (!backup?.catalog?.recipes || !backup?.plan) throw new Error("Il backup non è valido");
+    const recipes = Array.isArray(backup?.catalog) ? backup.catalog : backup?.catalog?.recipes;
+    if (!Array.isArray(recipes) || !backup?.plan) throw new Error("Il backup non è valido");
+    backup.catalog = { schemaVersion: CATALOG_SCHEMA_VERSION, recipes };
     transaction.set(recipeCatalogRef(), {
       schemaVersion: CATALOG_SCHEMA_VERSION,
-      recipes: cloneData(backup.catalog.recipes),
-      recipeCount: backup.catalog.recipes.length,
+      recipes: cloneData(recipes),
+      recipeCount: recipes.length,
       restoredAt: firebase.firestore.FieldValue.serverTimestamp(),
       updatedAt: firebase.firestore.FieldValue.serverTimestamp()
     });
@@ -487,7 +598,7 @@ async function getPendingRecipeShares() {
   const shares = [];
   snapshot.forEach(doc => {
     const data = doc.data();
-    if (data.status === "pending") shares.push({ id: doc.id, ...data });
+    if (data.status === "pending" && data.type !== "accountLink") shares.push({ id: doc.id, ...data });
   });
   shares.sort((a, b) => {
     const left = a.createdAt?.toMillis?.() || 0;
@@ -515,4 +626,186 @@ async function acceptRecipeShare(shareId, recipes, plan = null) {
   await batch.commit();
   writeLocalJson("recipe_catalog", recipes);
   if (plan) writeLocalJson("weekly_plan", plan);
+}
+
+// ---- Collegamento account / household condivisa ----
+
+function accountLinkDataset(recipes, plan, shoppingList) {
+  validateRecipeCatalog(recipes || []);
+  if (!plan?.days) throw new Error("Il piano settimanale non è valido");
+  return {
+    recipes: cloneData(recipes || []),
+    plan: cloneData(plan),
+    shoppingList: cloneData(shoppingList || getDefaultShoppingList())
+  };
+}
+
+async function sendAccountLink(recipientUsername, recipes, plan, shoppingList) {
+  const user = requireUser();
+  const dataset = accountLinkDataset(recipes, plan, shoppingList);
+  await ensureUsernameDirectory();
+  const recipient = await findUserByUsername(recipientUsername);
+  if (recipient.uid === user.uid) throw new Error("Non puoi collegare il tuo stesso account");
+
+  const senderUsername = usernameFromUser(user);
+  const sourceMemberUids = currentHousehold?.memberUids?.length
+    ? [...currentHousehold.memberUids]
+    : [user.uid];
+  const sourceMemberUsernames = currentHousehold?.memberUsernames?.length
+    ? [...currentHousehold.memberUsernames]
+    : [senderUsername];
+  const shareRef = db.collection("recipeShares").doc();
+  await shareRef.set({
+    type: "accountLink",
+    senderUid: user.uid,
+    senderUsername,
+    recipientUid: recipient.uid,
+    recipientUsername: recipient.username,
+    status: "pending",
+    sourceHouseholdId: currentHousehold?.id || null,
+    sourceMemberUids,
+    sourceMemberUsernames,
+    recipeCount: dataset.recipes.length,
+    recipes: dataset.recipes,
+    includesPlan: true,
+    plan: dataset.plan,
+    shoppingList: dataset.shoppingList,
+    createdAt: firebase.firestore.FieldValue.serverTimestamp()
+  });
+  return shareRef.id;
+}
+
+async function getPendingAccountLinks() {
+  const user = requireUser();
+  await ensureUsernameDirectory();
+  const snapshot = await db.collection("recipeShares")
+    .where("recipientUid", "==", user.uid)
+    .get();
+  const requests = [];
+  snapshot.forEach(doc => {
+    const data = doc.data();
+    if (data.status === "pending" && data.type === "accountLink") {
+      requests.push({ id: doc.id, ...data });
+    }
+  });
+  requests.sort((a, b) => (b.createdAt?.toMillis?.() || 0) - (a.createdAt?.toMillis?.() || 0));
+  return requests;
+}
+
+async function acceptAccountLink(shareId, base, recipientRecipes, recipientPlan, recipientShopping) {
+  const user = requireUser();
+  if (!["sender", "recipient"].includes(base)) throw new Error("Scegli quale settimana usare come base");
+  const recipientDataset = accountLinkDataset(recipientRecipes, recipientPlan, recipientShopping);
+  const shareRef = db.collection("recipeShares").doc(shareId);
+  const shareSnapshot = await shareRef.get();
+  if (!shareSnapshot.exists) throw new Error("La richiesta non è più disponibile");
+  const share = shareSnapshot.data();
+  if (share.type !== "accountLink" || share.status !== "pending" || share.recipientUid !== user.uid) {
+    throw new Error("Richiesta di collegamento non valida");
+  }
+
+  const senderDataset = accountLinkDataset(share.recipes || [], share.plan, share.shoppingList);
+  const oldHousehold = currentHousehold;
+  const targetId = share.sourceHouseholdId || shareId;
+  if (oldHousehold?.id === targetId) throw new Error("L'account risulta già collegato");
+  if (oldHousehold?.memberUids?.length > 1) {
+    throw new Error("Scollega prima il tuo account dal gruppo attuale");
+  }
+
+  const householdRef = householdRoot(targetId);
+  const batch = db.batch();
+  if (share.sourceHouseholdId) {
+    // Il destinatario non può leggere la household prima dell'accettazione;
+    // arrayUnion consente un'aggiunta atomica verificata dalle Security Rules.
+    batch.update(householdRef, {
+      memberUids: firebase.firestore.FieldValue.arrayUnion(user.uid),
+      memberUsernames: firebase.firestore.FieldValue.arrayUnion(usernameFromUser(user)),
+      lastLinkRequestId: shareId,
+      updatedAt: firebase.firestore.FieldValue.serverTimestamp()
+    });
+  } else {
+    batch.set(householdRef, {
+      ownerUid: share.senderUid,
+      memberUids: [share.senderUid, user.uid],
+      memberUsernames: [share.senderUsername, usernameFromUser(user)],
+      createdFromLinkRequest: shareId,
+      lastLinkRequestId: shareId,
+      createdAt: firebase.firestore.FieldValue.serverTimestamp(),
+      updatedAt: firebase.firestore.FieldValue.serverTimestamp()
+    });
+  }
+
+  // Un eventuale gruppo residuo composto dal solo destinatario viene lasciato
+  // nello stesso batch prima di entrare nel nuovo gruppo.
+  if (oldHousehold && oldHousehold.id !== targetId) {
+    batch.update(householdRoot(oldHousehold.id), {
+      memberUids: firebase.firestore.FieldValue.arrayRemove(user.uid),
+      memberUsernames: firebase.firestore.FieldValue.arrayRemove(usernameFromUser(user)),
+      updatedAt: firebase.firestore.FieldValue.serverTimestamp()
+    });
+  }
+
+  const chosen = base === "recipient" ? recipientDataset : senderDataset;
+  // Se si usa la base del mittente e la household esiste già, i documenti
+  // correnti sono l'autorità (potrebbero essere cambiati dopo l'invito).
+  if (base === "recipient" || !share.sourceHouseholdId) {
+    batch.set(householdRef.collection("content").doc("recipeCatalog"), {
+      schemaVersion: CATALOG_SCHEMA_VERSION,
+      recipes: chosen.recipes,
+      recipeCount: chosen.recipes.length,
+      updatedAt: firebase.firestore.FieldValue.serverTimestamp()
+    });
+    batch.set(householdRef.collection("config").doc("weeklyPlan"), chosen.plan);
+    batch.set(householdRef.collection("config").doc("shoppingList"), chosen.shoppingList);
+  }
+  batch.delete(shareRef);
+  await batch.commit();
+
+  currentHousehold = {
+    id: targetId,
+    ownerUid: share.senderUid,
+    memberUids: [...new Set([...(share.sourceMemberUids || [share.senderUid]), user.uid])],
+    memberUsernames: [...new Set([...(share.sourceMemberUsernames || [share.senderUsername]), usernameFromUser(user)])]
+  };
+  if (base === "recipient" || !share.sourceHouseholdId) {
+    writeLocalJson("recipe_catalog", chosen.recipes);
+    writeLocalJson("weekly_plan", chosen.plan);
+    writeLocalJson("shopping", chosen.shoppingList);
+  }
+  return currentHousehold;
+}
+
+async function rejectAccountLink(shareId) {
+  return rejectRecipeShare(shareId);
+}
+
+async function unlinkCurrentAccount(recipes, plan, shoppingList) {
+  const user = requireUser();
+  if (!currentHousehold) throw new Error("Nessun account collegato");
+  const dataset = accountLinkDataset(recipes, plan, shoppingList);
+  const household = currentHousehold;
+  const batch = db.batch();
+
+  // Ogni persona riparte da una copia completa dello stato condiviso corrente.
+  batch.set(personalRecipeCatalogRef(), {
+    schemaVersion: CATALOG_SCHEMA_VERSION,
+    recipes: dataset.recipes,
+    recipeCount: dataset.recipes.length,
+    detachedAt: firebase.firestore.FieldValue.serverTimestamp(),
+    updatedAt: firebase.firestore.FieldValue.serverTimestamp()
+  });
+  batch.set(personalWeeklyPlanRef(), dataset.plan);
+  batch.set(personalShoppingListRef(), dataset.shoppingList);
+  batch.update(householdRoot(household.id), {
+    memberUids: firebase.firestore.FieldValue.arrayRemove(user.uid),
+    memberUsernames: firebase.firestore.FieldValue.arrayRemove(usernameFromUser(user)),
+    updatedAt: firebase.firestore.FieldValue.serverTimestamp()
+  });
+  await batch.commit();
+
+  currentHousehold = null;
+  writeLocalJson("recipe_catalog", dataset.recipes);
+  writeLocalJson("weekly_plan", dataset.plan);
+  writeLocalJson("shopping", dataset.shoppingList);
+  return dataset;
 }
