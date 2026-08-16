@@ -868,6 +868,7 @@ function renderRecipes() {
         <label class="btn btn-outline file-import-button">Importa<input type="file" accept="application/json,.json" onchange="prepareRecipeImport(this.files[0]); this.value='' "></label>
         <button class="btn btn-outline" onclick="exportAllRecipes()">Esporta</button>
         <button class="btn btn-outline" onclick="openShareDialog()">Invia tutte</button>
+        ${appState.recipes.length ? `<button class="btn btn-danger" onclick="deleteAllRecipes()">🗑 Elimina tutte</button>` : ""}
         <button class="btn btn-primary" onclick="createNewRecipe()">+ Nuova</button>
       </div>
     </div>
@@ -2135,6 +2136,7 @@ function setupModal() {
   document.getElementById("modal-revert-btn").addEventListener("click", revertRecipe);
   document.getElementById("modal-export-btn").addEventListener("click", exportCurrentRecipe);
   document.getElementById("modal-share-btn").addEventListener("click", () => openShareDialog(currentModal?.recipe?.id));
+  document.getElementById("modal-delete-btn").addEventListener("click", deleteCurrentRecipe);
 }
 
 window.setModalDayType = function(type) {
@@ -2270,6 +2272,7 @@ function renderModalContent() {
   document.getElementById("modal-export-btn").classList.toggle("hidden", editMode || currentModal.isNew);
   document.getElementById("modal-share-btn").classList.toggle("hidden", editMode || currentModal.isNew);
   document.getElementById("modal-revert-btn").classList.toggle("hidden", editMode || !recipe._original);
+  document.getElementById("modal-delete-btn").classList.toggle("hidden", editMode || currentModal.isNew);
   document.getElementById("modal-edit-btn").textContent = "Modifica ricetta";
   document.getElementById("modal-save-btn").textContent = "Salva nel cloud";
 }
@@ -2394,5 +2397,62 @@ async function revertRecipe() {
     clearLoading();
   }
 }
+
+async function deleteRecipes(recipesToDelete, description) {
+  const ids = new Set(recipesToDelete.map(recipe => recipe.id));
+  const affectedSlots = window.PianoDomain
+    ? PianoDomain.planSlotsForRecipeRemoval(appState.plan, [...ids])
+    : [];
+  const slotText = affectedSlots.length
+    ? `\n\n${affectedSlots.length} slot del piano diventeranno vuoti:\n${affectedSlots.slice(0, 8).map(slot => `· ${DAY_NAMES[slot.day]} ${getSlotMeta(slot.slot).shortLabel}`).join("\n")}${affectedSlots.length > 8 ? `\n· e altri ${affectedSlots.length - 8}…` : ""}`
+    : "";
+  const label = recipesToDelete.length === 1
+    ? `Eliminare la ricetta “${recipesToDelete[0].name}”?`
+    : `Eliminare tutte le ${recipesToDelete.length} ricette del catalogo?`;
+  if (!confirm(`${label}${slotText}\n\nVerrà creato un backup prima dell'eliminazione.`)) return false;
+  try {
+    await createBackup(appState.recipes, appState.plan, appState.shopping, "delete-recipes", description);
+  } catch (error) {
+    console.error(error);
+    showToast("Backup non creato: eliminazione annullata", true);
+    return false;
+  }
+  setLoading("Eliminazione ricette…");
+  const previousRecipes = clone(appState.recipes);
+  const previousPlan = clone(appState.plan);
+  try {
+    const nextRecipes = appState.recipes.filter(recipe => !ids.has(recipe.id));
+    const nextPlan = sanitizePlanForCatalog(appState.plan, nextRecipes);
+    await Promise.all([saveRecipeCatalog(nextRecipes), saveWeeklyPlan(nextPlan)]);
+    setRecipes(nextRecipes);
+    appState.plan = nextPlan;
+    return true;
+  } catch (error) {
+    setRecipes(previousRecipes);
+    appState.plan = previousPlan;
+    console.error(error);
+    showToast("Eliminazione non riuscita", true);
+    return false;
+  } finally {
+    clearLoading();
+  }
+}
+
+async function deleteCurrentRecipe() {
+  if (!currentModal?.recipe) return;
+  const deleted = await deleteRecipes([currentModal.recipe], `Eliminazione della ricetta “${currentModal.recipe.name}”`);
+  if (!deleted) return;
+  closeRecipeModal();
+  handleRoute();
+  showToast("Ricetta eliminata");
+}
+
+window.deleteAllRecipes = async function() {
+  if (!appState.recipes.length) return;
+  const deleted = await deleteRecipes(appState.recipes, "Eliminazione di tutte le ricette del catalogo");
+  if (!deleted) return;
+  handleRoute();
+  showToast("Ricettario svuotato");
+};
 
 document.addEventListener("DOMContentLoaded", initApp);
