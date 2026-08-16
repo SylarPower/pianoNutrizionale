@@ -606,23 +606,34 @@ async function sendRecipeShare(recipientUsername, recipes, plan = null) {
   return shareRef.id;
 }
 
-async function getPendingRecipeShares() {
+// Query unica sulla casella delle richieste in arrivo: i documenti vengono
+// letti UNA volta e ripartiti lato client tra condivisioni ricette e inviti
+// accountLink. Le vecchie condivisioni possono NON avere il campo `type`
+// (le regole lo consentono), quindi la discriminante è `type === "accountLink"`
+// per i collegamenti e tutto il resto per le ricette. Il filtro su status/type
+// resta in JavaScript: un secondo `where` richiederebbe un indice composito.
+async function getPendingIncomingRequests() {
   const user = requireUser();
   await ensureUsernameDirectory();
   const snapshot = await db.collection("recipeShares")
     .where("recipientUid", "==", user.uid)
     .get();
-  const shares = [];
+  const recipeShares = [];
+  const accountLinks = [];
   snapshot.forEach(doc => {
     const data = doc.data();
-    if (data.status === "pending" && data.type !== "accountLink") shares.push({ id: doc.id, ...data });
+    if (data.status !== "pending") return;
+    (data.type === "accountLink" ? accountLinks : recipeShares).push({ id: doc.id, ...data });
   });
-  shares.sort((a, b) => {
-    const left = a.createdAt?.toMillis?.() || 0;
-    const right = b.createdAt?.toMillis?.() || 0;
-    return right - left;
-  });
-  return shares;
+  const byCreatedAtDesc = (a, b) => (b.createdAt?.toMillis?.() || 0) - (a.createdAt?.toMillis?.() || 0);
+  recipeShares.sort(byCreatedAtDesc);
+  accountLinks.sort(byCreatedAtDesc);
+  return { recipeShares, accountLinks };
+}
+
+async function getPendingRecipeShares() {
+  const { recipeShares } = await getPendingIncomingRequests();
+  return recipeShares;
 }
 
 async function rejectRecipeShare(shareId) {
@@ -693,20 +704,8 @@ async function sendAccountLink(recipientUsername, recipes, plan, shoppingList) {
 }
 
 async function getPendingAccountLinks() {
-  const user = requireUser();
-  await ensureUsernameDirectory();
-  const snapshot = await db.collection("recipeShares")
-    .where("recipientUid", "==", user.uid)
-    .get();
-  const requests = [];
-  snapshot.forEach(doc => {
-    const data = doc.data();
-    if (data.status === "pending" && data.type === "accountLink") {
-      requests.push({ id: doc.id, ...data });
-    }
-  });
-  requests.sort((a, b) => (b.createdAt?.toMillis?.() || 0) - (a.createdAt?.toMillis?.() || 0));
-  return requests;
+  const { accountLinks } = await getPendingIncomingRequests();
+  return accountLinks;
 }
 
 async function acceptAccountLink(shareId, base, recipientRecipes, recipientPlan, recipientShopping) {

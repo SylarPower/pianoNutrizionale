@@ -1764,10 +1764,11 @@ window.openIncomingShares = async function() {
   list.innerHTML = `<div class="empty-state"><div class="loading-spinner"></div><p>Caricamento richieste…</p></div>`;
   modal.classList.remove("hidden");
   try {
-    [incomingRecipeShares, incomingAccountLinks] = await Promise.all([
-      getPendingRecipeShares(),
-      getPendingAccountLinks()
-    ]);
+    // Una sola query server: i documenti (che incorporano interi cataloghi
+    // ricette) vengono letti una volta e ripartiti tra i due elenchi.
+    const { recipeShares, accountLinks } = await getPendingIncomingRequests();
+    incomingRecipeShares = recipeShares;
+    incomingAccountLinks = accountLinks;
     renderIncomingShares();
   } catch (error) {
     console.error(error);
