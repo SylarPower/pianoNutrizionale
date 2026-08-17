@@ -114,11 +114,6 @@ const MELLER_GUIDE = {
     ["Latticini e uova a pranzo/cena", "1-2 volte a settimana"],
     ["Legumi e derivati", "Almeno 3-4 volte a settimana"]
   ],
-  integration: [
-    "Creatp Syform: 7g al giorno con acqua dopo colazione.",
-    "Optiwhey Syform: seguendo lo schema della dieta.",
-    "Sconto 20% su syform.com con codice AD20MTML."
-  ],
   faq: [
     "Punta a un consumo di almeno 2-2,5 litri di acqua al giorno.",
     "Usa solo sale iodato. Spezie, limone e aceto sono liberi.",
