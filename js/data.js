@@ -21,31 +21,6 @@ function createEmptyWeeklyPlan() {
   };
 }
 
-const GENERAL_RULES = {
-  dayTypes: [
-    "A = giorno di allenamento (target ~1903 kcal)",
-    "R = giorno di riposo (target ~1719 kcal)",
-    "IPO = regime ipocalorico donna (grammature basse originali)"
-  ],
-  rules: [
-    "Tra A e R cambia la quota di carboidrati al pranzo e la presenza dei crackers nello spuntino mattutino; la cena è identica.",
-    "Le colazioni non variano tra allenamento e riposo e possono essere alternate liberamente.",
-    "Verdura sempre libera, indicativamente 200g, senza obbligo di pesarla.",
-    "Mai due pasti a base di pesce nello stesso giorno.",
-    "Farinata di ceci: non aggiungere pane."
-  ],
-  frequencies: [
-    "Pollame: 1-2x/settimana",
-    "Manzo/Vitello: max 1x/settimana",
-    "Affettati: max 1x/settimana",
-    "Pesce omega-3: 2-3x/settimana",
-    "Altro pesce e molluschi: 1-2x/settimana",
-    "Latticini e formaggi: 1-2x/settimana",
-    "Uova: 1-2x/settimana",
-    "Legumi: almeno 3-4x/settimana"
-  ]
-};
-
 // Manuale e alternative alimentari consegnate da Meller. Sono contenuti
 // informativi dell'interfaccia, non ricette.
 const MELLER_GUIDE = {
