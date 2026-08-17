@@ -589,18 +589,6 @@ input[type="checkbox"], input[type="radio"] { accent-color: var(--primary); widt
 }
 .app-toast.toast-error { background: var(--danger); color: #fff; }
 
-/* Piano completo, import Firebase e manuale Meller */
-.dataset-setup {
-  width: min(100%, 620px);
-  margin: 8vh auto 0;
-  padding: 34px;
-  text-align: center;
-}
-.dataset-setup .login-mark { margin: 0 auto 18px; }
-.dataset-setup h1 { margin: 6px 0 14px; }
-.dataset-setup p { margin-bottom: 20px; color: var(--text-muted); }
-.dataset-setup .btn { margin: 5px; }
-.dataset-setup > small { display: block; margin-top: 16px; color: var(--text-muted); }
 .file-import-button { position: relative; overflow: hidden; cursor: pointer; }
 .file-import-button input { position: absolute; width: 1px; height: 1px; opacity: 0; pointer-events: none; }
 
@@ -875,7 +863,6 @@ body.dark-mode .login-card {
   .edit-ingredient > div.portion-edit-grid { grid-template-columns: 1fr 1fr; }
   .edit-ingredient > div .remove-edit-item { grid-column: 1 / -1; width: 100%; }
   .shop-day-row { grid-template-columns: 1fr; }
-  .dataset-setup { padding: 24px 18px; }
   .bottom-nav { height: calc(64px + env(safe-area-inset-bottom)); }
   .nav-label { font-size: .62rem; }
 }
@@ -1098,6 +1085,23 @@ body.dark-mode .generator-preview-head { background: #173d2d; color: #d9efe4; }
 body.dark-mode .share-replace-note { background: rgba(200, 70, 79, .15); }
 body.dark-mode .share-plan-note { background: rgba(90, 136, 165, .15); }
 body.dark-mode .generator-warnings { background: rgba(200, 70, 79, .15); }
+
+/* A4 - Alternative Meller inline */
+.meller-ingredient { cursor: pointer; transition: background .15s; }
+.meller-ingredient:hover { background: var(--primary-soft); border-radius: 8px; }
+.meller-hint { color: var(--primary); font-size: .62rem; font-weight: 800; opacity: .45; margin-left: 6px; vertical-align: middle; }
+.meller-ingredient:hover .meller-hint { opacity: 1; }
+.meller-footnote { border-bottom: 0 !important; padding: 10px 2px 2px !important; justify-content: center !important; background: transparent !important; }
+.meller-footnote small { color: var(--text-muted); font-size: .72rem; font-style: italic; }
+.meller-modal-content { max-width: 640px; }
+#meller-modal-subtitle { margin-top: 4px; font-size: .82rem; }
+.meller-tables { display: grid; gap: 14px; margin-top: 14px; }
+.meller-tables .alternative-table { margin-top: 0; }
+.meller-highlight { background: var(--primary-soft) !important; border: 1px solid rgba(36,90,67,.25); border-radius: 8px; font-weight: 700; }
+.meller-highlight span { color: var(--primary-strong); }
+.meller-modal-note { margin-top: 14px; font-size: .78rem; padding: 10px 12px; border-radius: 10px; background: var(--surface-alt); }
+body.dark-mode .meller-highlight { background: rgba(110,231,165,.14) !important; border-color: rgba(110,231,165,.3); }
+body.dark-mode .meller-modal-note { background: #0d0d0d; border: 1px solid #232323; }
 
 @media (max-width: 640px) {
   .generator-diff { grid-template-columns: 1fr; }

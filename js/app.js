@@ -347,6 +347,7 @@ function applyState(recipes, plan, shopping) {
     setupMealOperations();
     setupTransferModals();
     setupGeneratorModal();
+    setupMellerModal();
     appStarted = true;
   }
 }
@@ -456,15 +457,31 @@ function setupRouter() {
 // corrente solo quando la si apre, non a ogni re-render della stessa vista.
 let lastRenderedRoute = null;
 
+// Memoria scroll per Oggi: quando si lascia #chef e si torna, si ritrova
+// esattamente dove si era lasciato (richiesta utente).
+let chefScrollY = 0;
+try {
+  const saved = sessionStorage.getItem("pn_chef_scroll");
+  if (saved !== null) chefScrollY = parseInt(saved, 10) || 0;
+} catch (_) {}
+
 function handleRoute() {
   if (!appState.user || !appState.plan) return;
   const hash = window.location.hash || "#chef";
+
+  // Salva la posizione di Oggi prima di nasconderla.
+  if (lastRenderedRoute === "#chef" && hash !== "#chef") {
+    chefScrollY = window.scrollY || document.documentElement.scrollTop || 0;
+    try { sessionStorage.setItem("pn_chef_scroll", String(chefScrollY)); } catch (_) {}
+  }
+
   document.querySelectorAll(".view").forEach(view => view.classList.add("hidden"));
   document.querySelectorAll(".nav-item").forEach(item => item.classList.remove("active"));
   document.getElementById(`view-${hash.slice(1)}`)?.classList.remove("hidden");
   document.getElementById(`nav-${hash.slice(1)}`)?.classList.add("active");
 
   const enteringWeek = hash === "#week" && lastRenderedRoute !== "#week";
+  const enteringChef = hash === "#chef" && lastRenderedRoute !== "#chef";
   if (hash === "#chef") renderChef();
   if (hash === "#week") renderWeek();
   if (hash === "#recipes") renderRecipes();
@@ -473,7 +490,27 @@ function handleRoute() {
   lastRenderedRoute = hash;
 
   if (enteringWeek) scrollWeekToToday();
+  if (enteringChef) {
+    let saved = chefScrollY;
+    try {
+      const s = sessionStorage.getItem("pn_chef_scroll");
+      if (s !== null) saved = parseInt(s, 10) || saved;
+    } catch (_) {}
+    if (saved > 0) {
+      const restore = () => window.scrollTo(0, saved);
+      if (typeof requestAnimationFrame === "function") requestAnimationFrame(() => requestAnimationFrame(restore));
+      else setTimeout(restore, 0);
+    }
+  }
 }
+
+// Aggiorna la memoria scroll mentre si è su Oggi (scroll continuo).
+window.addEventListener("scroll", () => {
+  if ((window.location.hash || "#chef") === "#chef" && !document.getElementById("view-chef")?.classList.contains("hidden")) {
+    chefScrollY = window.scrollY || document.documentElement.scrollTop || 0;
+    try { sessionStorage.setItem("pn_chef_scroll", String(chefScrollY)); } catch (_) {}
+  }
+}, { passive: true });
 
 function scrollWeekToToday() {
   const target = document.getElementById(`day-${getTodayKey()}`);
@@ -512,18 +549,18 @@ window.changePortionProfile = function(profile) {
   handleRoute();
 };
 
-function ingredientListHtml(recipe, dayType, compact = false) {
+function ingredientListHtml(recipe, dayType, compact = false, enableToggle = true) {
   if (!recipe) return "";
   return `<ul class="ingredient-list ${compact ? "compact" : ""}">${recipe.ingredients.map(ingredient => `
-    <li class="step-item" onclick="this.classList.toggle('done')">
+    <li class="${enableToggle ? "step-item" : "no-toggle"}" ${enableToggle ? "onclick=\"this.classList.toggle('done')\"" : ""}>
       <span>${escapeHtml(ingredient.name)}</span>
       <strong>${escapeHtml(getIngredientDisplay(ingredient, dayType))}</strong>
     </li>`).join("")}</ul>`;
 }
 
-function stepsHtml(recipe, compact = false) {
+function stepsHtml(recipe, compact = false, enableToggle = true) {
   if (!recipe) return "";
-  return `<ol class="steps-list ${compact ? "compact" : ""}">${recipe.steps.map(step => `<li class="step-item" onclick="this.classList.toggle('done')">${escapeHtml(step)}</li>`).join("")}</ol>`;
+  return `<ol class="steps-list ${compact ? "compact" : ""}">${recipe.steps.map(step => `<li class="${enableToggle ? "step-item" : "no-toggle"}" ${enableToggle ? "onclick=\"this.classList.toggle('done')\"" : ""}>${escapeHtml(step)}</li>`).join("")}</ol>`;
 }
 
 function mealCardHtml(recipe, dayKey, slot, options = {}) {
@@ -534,6 +571,7 @@ function mealCardHtml(recipe, dayKey, slot, options = {}) {
   const dayType = getDayType(dayKey);
   const typeLabel = dayType === "training" ? "A · Allenamento" : "R · Riposo";
   const context = `${DAY_NAMES[dayKey]} · ${typeLabel}`;
+  const enableToggle = options.noToggle ? false : true;
   return `
     <article class="card meal-card ${dayType}">
       <div class="meal-card-head">
@@ -544,7 +582,7 @@ function mealCardHtml(recipe, dayKey, slot, options = {}) {
         </div>
         ${options.swap ? `<button class="btn-icon btn-swap" title="Sostituisci ricetta" onclick="openSwapModal('${dayKey}', '${slot}')">🔄</button>` : ""}
       </div>
-      ${options.open ? `<div class="meal-preview">${ingredientListHtml(recipe, dayType, true)}${stepsHtml(recipe, true)}</div>` : ""}
+      ${options.open ? `<div class="meal-preview">${ingredientListHtml(recipe, dayType, true, enableToggle)}${stepsHtml(recipe, true, enableToggle)}</div>` : ""}
       <button class="btn ${options.primary ? "btn-primary" : "btn-outline"} meal-open-btn" onclick="openRecipeModal('${escapeAttr(recipe.id)}', '${dayKey}')">Vedi ricetta completa</button>
     </article>`;
 }
@@ -641,14 +679,14 @@ function renderChef() {
 
     <section class="chef-section">
       <div class="section-title"><span>🌙</span><div><small>Da cucinare</small><h2>Cena di stasera</h2></div></div>
-      ${mealCardHtml(dinner, selectedDay, "dinner", { open: true, primary: true })}
+      ${mealCardHtml(dinner, selectedDay, "dinner", { open: true, primary: true, noToggle: true })}
     </section>
 
     ${renderBatchCard(selectedDay)}
 
     <section class="chef-section tomorrow-section">
       <div class="section-title"><span>🍱</span><div><small>${activeBatch.length ? "Incluso nel batch cooking" : "Prossimo pranzo"}</small><h2>Pranzo di ${DAY_NAMES[nextDay]}</h2></div></div>
-      ${mealCardHtml(nextLunch, nextDay, "lunch")}
+      ${mealCardHtml(nextLunch, nextDay, "lunch", { open: true, noToggle: true })}
     </section>
   `;
 }
@@ -1288,6 +1326,78 @@ window.shareShopWhatsApp = async function() {
   } else {
     window.open(`https://api.whatsapp.com/send?text=${encodeURIComponent(text)}`, "_blank", "noopener");
   }
+};
+
+// ---- A4: Alternative Meller inline (tap ingrediente -> equivalenze) ----
+function isMellerCarbIngredient(name) {
+  const n = normalizeIngredientName(name);
+  return /(pasta|riso|gnocchi|farro|orzo|quinoa|grano saraceno|amaranto|pane|piadina|cracker|grissin|crostin|polenta|patat|avena|cereali|fette biscottate|wasa|cous)/i.test(n);
+}
+function isMellerProteinIngredient(name) {
+  const n = normalizeIngredientName(name);
+  return /(pollo|tacchino|manzo|vitello|maiale|affettat|crostace|mollusc|gamber|calamar|polpo|seppia|merluzzo|nasello|sogliola|tonno|salmone|sgombro|pesce|uova|uovo|ricotta|mozzarella|caprino|feta|parmigiano|grana|montasio|fiocchi di latte|yogurt|skyr|kefir|legum|ceci|lenticch|fagiol|edamame|piselli|barilla|tofu)/i.test(n);
+}
+function getMellerAlternativesForIngredient(ingredientName) {
+  const guide = typeof MELLER_GUIDE !== "undefined" ? MELLER_GUIDE.alternatives : null;
+  if (!guide) return null;
+  const isCarb = isMellerCarbIngredient(ingredientName);
+  const isProtein = isMellerProteinIngredient(ingredientName);
+  // Solo carboidrati e proteine hanno equivalenze Meller: verdura, frutta,
+  // dispensa e spezie non sono tappabili.
+  if (!isCarb && !isProtein) return null;
+  let groups = [];
+  if (isCarb && !isProtein) groups = [guide.carbohydrates];
+  else if (!isCarb && isProtein) groups = [guide.proteins];
+  else groups = [guide.carbohydrates, guide.proteins];
+  return { groups, isCarb, isProtein };
+}
+function shouldHighlightMellerRow(rowLabel, ingredientName) {
+  const rowNorm = normalizeIngredientName(rowLabel);
+  const ingNorm = normalizeIngredientName(ingredientName);
+  const rowTokens = rowNorm.split(/\W+/).filter(Boolean);
+  const ingTokens = ingNorm.split(/\W+/).filter(Boolean);
+  // match se un token significativo (lunghezza >=4) coincide
+  return ingTokens.some(tok => tok.length >= 4 && rowNorm.includes(tok)) ||
+         rowTokens.some(tok => tok.length >= 4 && ingNorm.includes(tok));
+}
+function mellerTableHtmlWithHighlight(group, ingredientName) {
+  const rows = group.rows.map(row => {
+    const highlight = shouldHighlightMellerRow(row[0], ingredientName);
+    return `<div class="${highlight ? "meller-highlight" : ""}"><span>${escapeHtml(row[0])}</span><strong>${escapeHtml(row[1])}</strong></div>`;
+  }).join("");
+  return `<div class="alternative-table${group === MELLER_GUIDE.alternatives.carbohydrates ? " meller-carbs" : " meller-proteins"}"><h3>${escapeHtml(group.title)}</h3>${rows}</div>`;
+}
+function setupMellerModal() {
+  if (document.getElementById("meller-alternatives-modal")) return;
+  document.body.insertAdjacentHTML("beforeend", `
+    <div id="meller-alternatives-modal" class="modal hidden" role="dialog" aria-modal="true" aria-labelledby="meller-modal-title">
+      <div class="modal-content meller-modal-content">
+        <div class="modal-header"><div><p class="eyebrow">ALTERNATIVE MELLER</p><h2 id="meller-modal-title"></h2><p id="meller-modal-subtitle" class="text-muted"></p></div><button class="btn-icon" onclick="closeMellerAlternatives()" aria-label="Chiudi">&times;</button></div>
+        <div id="meller-modal-body"></div>
+        <p class="meller-modal-note text-muted">Equivalenze da <strong>Manuale Meller</strong> (pesi a crudo). Verdura sempre libera ~200g, non pesata.</p>
+        <div class="modal-footer"><button class="btn btn-primary full-width" onclick="closeMellerAlternatives()">Chiudi</button></div>
+      </div>
+    </div>`);
+  document.getElementById("meller-alternatives-modal").addEventListener("click", e => {
+    if (e.target.id === "meller-alternatives-modal") closeMellerAlternatives();
+  });
+}
+window.openMellerAlternatives = function(ingredientName) {
+  const data = getMellerAlternativesForIngredient(ingredientName);
+  if (!data) return;
+  const { groups, isCarb, isProtein } = data;
+  document.getElementById("meller-modal-title").textContent = ingredientName;
+  let subtitle = "";
+  if (isCarb && !isProtein) subtitle = "Carboidrati equivalenti · riferimento Pasta/Riso 70g";
+  else if (!isCarb && isProtein) subtitle = "Proteine equivalenti · riferimento Pollame 200g";
+  else subtitle = "Equivalenze disponibili per questo ingrediente";
+  document.getElementById("meller-modal-subtitle").textContent = subtitle;
+  const body = document.getElementById("meller-modal-body");
+  body.innerHTML = `<div class="meller-tables">${groups.map(g => mellerTableHtmlWithHighlight(g, ingredientName)).join("")}</div>`;
+  document.getElementById("meller-alternatives-modal").classList.remove("hidden");
+};
+window.closeMellerAlternatives = function() {
+  document.getElementById("meller-alternatives-modal")?.classList.add("hidden");
 };
 
 function guideDayHtml(dayGuide, tone) {
@@ -2331,7 +2441,13 @@ function renderModalContent() {
         <div class="portion-edit-grid"><label>IPO A<input id="edit-ing-ipo-training-${index}" value="${escapeAttr(getPortionValue(ingredient, "ipo", "training"))}"></label><label>IPO R<input id="edit-ing-ipo-rest-${index}" value="${escapeAttr(getPortionValue(ingredient, "ipo", "rest"))}"></label><label>Uomo A<input id="edit-ing-man-training-${index}" value="${escapeAttr(getPortionValue(ingredient, "man", "training"))}"></label><label>Uomo R<input id="edit-ing-man-rest-${index}" value="${escapeAttr(getPortionValue(ingredient, "man", "rest"))}"></label><button class="btn-icon remove-edit-item" onclick="removeIngredient(${index})">×</button></div>
       </li>`).join("") + `<li><button class="btn btn-outline full-width" onclick="addIngredient()">+ Aggiungi ingrediente</button></li>`;
   } else {
-    ingredientList.innerHTML = recipe.ingredients.map(ingredient => `<li><span>${escapeHtml(ingredient.name)}</span>${getIngredientCoupleHtml(ingredient, dayType)}</li>`).join("");
+    const hasMeller = recipe.ingredients.some(ing => !!getMellerAlternativesForIngredient(ing.name));
+    ingredientList.innerHTML = recipe.ingredients.map(ingredient => {
+      if (getMellerAlternativesForIngredient(ingredient.name)) {
+        return `<li class="meller-ingredient" onclick="openMellerAlternatives('${escapeAttr(ingredient.name)}')" title="Tocca per alternative Meller"><span>${escapeHtml(ingredient.name)} <small class="meller-hint">⇄</small></span>${getIngredientCoupleHtml(ingredient, dayType)}</li>`;
+      }
+      return `<li><span>${escapeHtml(ingredient.name)}</span>${getIngredientCoupleHtml(ingredient, dayType)}</li>`;
+    }).join("") + (hasMeller ? `<li class="meller-footnote"><small>↑ Tocca carboidrati o proteine per le equivalenze Meller</small></li>` : "");
   }
 
   const prepList = document.getElementById("modal-prep-list");
