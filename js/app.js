@@ -1349,7 +1349,6 @@ function renderSettings() {
     ${settingsAccordion("Giorno di riposo", guideDayHtml(MELLER_GUIDE.restDay, "rest"))}
     ${settingsAccordion("Alternative alimentari di Meller", `<div class="alternatives-grid">${alternativesTableHtml(MELLER_GUIDE.alternatives.carbohydrates)}${alternativesTableHtml(MELLER_GUIDE.alternatives.proteins)}</div>`)}
     ${settingsAccordion("Frequenze proteiche", `<div class="alternative-table frequency-table">${MELLER_GUIDE.proteinFrequencies.map(row => `<div><span>${escapeHtml(row[0])}</span><strong>${escapeHtml(row[1])}</strong></div>`).join("")}</div>`)}
-    ${settingsAccordion("Integrazione Syform", `<ul class="guide-list">${MELLER_GUIDE.integration.map(item => `<li>${escapeHtml(item)}</li>`).join("")}</ul>`)}
     ${settingsAccordion("Altre informazioni e FAQ", `<ul class="guide-list">${MELLER_GUIDE.faq.map(item => `<li>${escapeHtml(item)}</li>`).join("")}</ul>`)}
 
     <section class="settings-section cloud-section">
