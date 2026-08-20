@@ -841,3 +841,193 @@ async function unlinkCurrentAccount(recipes, plan, shoppingList) {
   writeLocalJson("shopping", dataset.shoppingList);
   return dataset;
 }
+
+// ---- Prezzi condivisi (Spesa Smart): UNICO database per tutti gli utenti ----
+// priceEntries: un documento per ogni prezzo registrato, leggibile da tutti
+// gli account; modifica ed eliminazione restano riservate all'autore.
+// priceMeta/global: rubrica dei nomi di negozi, prodotti e marche usati, per
+// i suggerimenti condivisi. Aggiornata con arrayUnion solo quando serve.
+
+function priceEntriesRef() {
+  return db.collection("priceEntries");
+}
+
+function priceMetaRef() {
+  return db.collection("priceMeta").doc("global");
+}
+
+function defaultPriceMeta() {
+  return { stores: [], products: [], brands: [] };
+}
+
+function sanitizePriceMeta(data = {}) {
+  const cleanList = value => (Array.isArray(value) ? value.filter(item => typeof item === "string" && item.trim()) : []);
+  return {
+    stores: cleanList(data.stores),
+    products: cleanList(data.products),
+    brands: cleanList(data.brands)
+  };
+}
+
+async function getPriceMeta() {
+  const fallback = defaultPriceMeta();
+  try {
+    const snapshot = await priceMetaRef().get();
+    const meta = sanitizePriceMeta(snapshot.exists ? snapshot.data() : fallback);
+    writeLocalJson("price_meta", meta);
+    return meta;
+  } catch (error) {
+    console.warn("Rubrica prezzi non disponibile, uso la cache locale", error);
+    return sanitizePriceMeta(readLocalJson("price_meta", fallback));
+  }
+}
+
+// Aggiunge alla rubrica condivisa solo i nomi davvero nuovi (confronto senza
+// distinguere maiuscole/accenti): quando non c'è nulla di nuovo la scrittura
+// viene saltata del tutto. Restituisce true se il documento è stato scritto.
+async function mergePriceMetaFromEntries(entries) {
+  const list = Array.isArray(entries) ? entries : [entries];
+  if (!list.length) return false;
+  const meta = sanitizePriceMeta(readLocalJson("price_meta", defaultPriceMeta()));
+  const additions = { stores: [], products: [], brands: [] };
+  const known = {
+    stores: new Set(meta.stores.map(name => PriceDomain.priceKey(name))),
+    products: new Set(meta.products.map(name => PriceDomain.priceKey(name))),
+    brands: new Set(meta.brands.map(name => PriceDomain.priceKey(name)))
+  };
+  list.forEach(entry => {
+    [["stores", entry.store], ["products", entry.product], ["brands", entry.brand]].forEach(([field, name]) => {
+      const clean = String(name || "").trim();
+      if (!clean) return;
+      const key = PriceDomain.priceKey(clean);
+      if (known[field].has(key)) return;
+      known[field].add(key);
+      additions[field].push(clean);
+      meta[field].push(clean);
+    });
+  });
+  meta.stores.sort((a, b) => a.localeCompare(b, "it"));
+  meta.products.sort((a, b) => a.localeCompare(b, "it"));
+  meta.brands.sort((a, b) => a.localeCompare(b, "it"));
+  writeLocalJson("price_meta", meta);
+  if (!additions.stores.length && !additions.products.length && !additions.brands.length) return false;
+  await priceMetaRef().set({
+    stores: firebase.firestore.FieldValue.arrayUnion(...additions.stores),
+    products: firebase.firestore.FieldValue.arrayUnion(...additions.products),
+    brands: firebase.firestore.FieldValue.arrayUnion(...additions.brands),
+    updatedAt: firebase.firestore.FieldValue.serverTimestamp()
+  }, { merge: true });
+  return true;
+}
+
+function priceEntryPayload(entry) {
+  return {
+    ...cloneData(entry),
+    createdAtMs: entry.createdAtMs || Date.now(),
+    createdAt: firebase.firestore.FieldValue.serverTimestamp()
+  };
+}
+
+function priceEntryFromDoc(doc) {
+  return { id: doc.id, ...doc.data() };
+}
+
+async function savePriceEntry(entry) {
+  requireUser();
+  const ref = await priceEntriesRef().add(priceEntryPayload(entry));
+  await mergePriceMetaFromEntries(entry).catch(error => console.warn("Rubrica prezzi non aggiornata", error));
+  return ref.id;
+}
+
+// Importazione multipla (incolla da volantino): UNA scrittura in batch per
+// tutte le voci + al massimo una scrittura della rubrica.
+async function savePriceEntries(entries) {
+  requireUser();
+  if (!Array.isArray(entries) || !entries.length) return 0;
+  const batch = db.batch();
+  entries.forEach(entry => batch.set(priceEntriesRef().doc(), priceEntryPayload(entry)));
+  await batch.commit();
+  await mergePriceMetaFromEntries(entries).catch(error => console.warn("Rubrica prezzi non aggiornata", error));
+  return entries.length;
+}
+
+async function updatePriceEntry(entryId, entry) {
+  requireUser();
+  await priceEntriesRef().doc(entryId).update({
+    ...cloneData(entry),
+    updatedAt: firebase.firestore.FieldValue.serverTimestamp()
+  });
+  await mergePriceMetaFromEntries(entry).catch(error => console.warn("Rubrica prezzi non aggiornata", error));
+}
+
+async function deletePriceEntry(entryId) {
+  requireUser();
+  await priceEntriesRef().doc(entryId).delete();
+}
+
+// Tutte le voci registrate per un prodotto (chiave normalizzata): una sola
+// query senza indici compositi, l'ordinamento avviene lato client.
+async function getPriceEntriesForProduct(productKey) {
+  requireUser();
+  const snapshot = await priceEntriesRef().where("productKey", "==", productKey).get();
+  const entries = [];
+  snapshot.forEach(doc => entries.push(priceEntryFromDoc(doc)));
+  return PriceDomain.sortEntriesDesc(entries);
+}
+
+// Ultime voci del database condiviso (archivio): orderBy su un solo campo,
+// coperto dagli indici automatici di Firestore.
+async function getRecentPriceEntries(limit = 150) {
+  requireUser();
+  const snapshot = await priceEntriesRef().orderBy("createdAt", "desc").limit(limit).get();
+  const entries = [];
+  snapshot.forEach(doc => entries.push(priceEntryFromDoc(doc)));
+  return PriceDomain.sortEntriesDesc(entries);
+}
+
+// Importazione di un backup prezzi (vecchio formato "Spesa Smart" o formato
+// nuovo). Idempotente: le voci che hanno lo stesso legacyId di una voce già
+// importata in precedenza vengono saltate (query `in` a gruppi di 30, coperte
+// dagli indici automatici). Le scritture avvengono in batch da massimo 450.
+async function savePriceImport(entries, meta = {}) {
+  requireUser();
+  if (!Array.isArray(entries) || !entries.length) return { imported: 0, skippedDuplicates: 0 };
+  const legacyIds = [...new Set(entries.map(entry => entry.legacyId).filter(Number.isFinite))];
+  const known = new Set();
+  for (let start = 0; start < legacyIds.length; start += 30) {
+    const chunk = legacyIds.slice(start, start + 30);
+    const snapshot = await priceEntriesRef().where("legacyId", "in", chunk).get();
+    snapshot.forEach(doc => {
+      const data = doc.data();
+      if (Number.isFinite(Number(data?.legacyId))) known.add(`${data.legacyId}|${data.productKey || ""}`);
+    });
+  }
+  const fresh = entries.filter(entry =>
+    !Number.isFinite(entry.legacyId) || !known.has(`${entry.legacyId}|${entry.productKey}`));
+  const author = {
+    createdBy: meta.uid || requireUser().uid,
+    createdByUsername: meta.username || usernameFromUser(currentUser)
+  };
+  const CHUNK_SIZE = 450;
+  for (let start = 0; start < fresh.length; start += CHUNK_SIZE) {
+    const batch = db.batch();
+    fresh.slice(start, start + CHUNK_SIZE).forEach(entry => {
+      batch.set(priceEntriesRef().doc(), priceEntryPayload({ ...entry, ...author }));
+    });
+    await batch.commit();
+  }
+  if (fresh.length) {
+    await mergePriceMetaFromEntries(fresh).catch(error => console.warn("Rubrica prezzi non aggiornata", error));
+  }
+  return { imported: fresh.length, skippedDuplicates: entries.length - fresh.length };
+}
+
+// Tutte le voci registrate in un negozio (pagina negozio): una sola query
+// sul campo storeKey, coperta dagli indici automatici.
+async function getPriceEntriesForStore(storeKey) {
+  requireUser();
+  const snapshot = await priceEntriesRef().where("storeKey", "==", storeKey).get();
+  const entries = [];
+  snapshot.forEach(doc => entries.push(priceEntryFromDoc(doc)));
+  return PriceDomain.sortEntriesDesc(entries);
+}

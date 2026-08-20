@@ -83,9 +83,12 @@ const dbStub = {
   collection: () => dbStub,
   doc: () => dbStub,
   where: () => dbStub,
+  orderBy: () => dbStub,
   limit: () => dbStub,
   get: async () => ({ exists: false, forEach: () => {}, data: () => ({}) }),
   set: async () => {},
+  add: async () => ({ id: 'price-entry-1' }),
+  update: async () => {},
   delete: async () => {},
   batch: () => ({ set: () => {}, delete: () => {}, commit: async () => {} }),
   runTransaction: async fn => fn({ get: async () => ({ exists: false, data: () => ({}) }), set: () => {}, delete: () => {} })
@@ -112,7 +115,7 @@ global.firebase = {
   firestore: { FieldValue: { serverTimestamp: () => ({}) } }
 };
 
-for (const file of ['js/domain.js', 'js/data.js', 'js/firebase.js', 'js/app.js']) {
+for (const file of ['js/domain.js', 'js/data.js', 'js/prices.js', 'js/firebase.js', 'js/app.js']) {
   vm.runInThisContext(fs.readFileSync(path.join(ROOT, file), 'utf8'), { filename: file });
 }
 
@@ -312,6 +315,65 @@ const startupChecks = (async () => {
 })();
 renderSettings();
 assert.match(document.getElementById('view-settings').innerHTML, /Account collegati/);
+
+// ---- Prezzi condivisi (Spesa Smart): rendering delle tre schede ----
+// Nello smoke non c'è un Firestore reale: la rubrica prezzi arriva da uno stub
+// e l'archivio viene precompilato per non scatenare caricamenti asincroni.
+global.getPriceMeta = async () => ({ stores: ['Conad', 'Lidl'], products: ['Latte'], brands: ['Zymil'] });
+priceState.archive.loadedAt = Date.now();
+renderPrices();
+assert.match(document.getElementById('view-prices').innerHTML, /prices-tabs/);
+assert.match(document.getElementById('view-prices').innerHTML, /Registra prezzo/);
+switchPriceTab('compare');
+assert.match(document.getElementById('view-prices').innerHTML, /price-compare-search/);
+priceState.compare.productKey = 'latte';
+priceState.compare.productName = 'Latte';
+priceState.compare.entries = [
+  { id: 'p1', store: 'Conad', storeKey: 'conad', brand: 'Zymil', brandKey: 'zymil', product: 'Latte', productKey: 'latte', price: 1.5, weight: 1, unit: 'l', normPrice: 1.5, normUnit: 'l', date: '2026-08-20', createdBy: 'u1', createdByUsername: 'mario', createdAtMs: 200 },
+  { id: 'p2', store: 'Lidl', storeKey: 'lidl', brand: 'Zymil', brandKey: 'zymil', product: 'Latte', productKey: 'latte', price: 1.3, weight: 1, unit: 'l', normPrice: 1.3, normUnit: 'l', date: '2026-08-19', createdBy: 'u2', createdByUsername: 'anna', createdAtMs: 100 }
+];
+renderPriceCompareResults();
+assert.match(document.getElementById('price-compare-results').innerHTML, /price-winner-card/);
+assert.match(document.getElementById('price-compare-results').innerHTML, /Lidl/);
+switchPriceTab('archive');
+assert.match(document.getElementById('view-prices').innerHTML, /price-archive-content/);
+assert.match(document.getElementById('view-prices').innerHTML, /preparePriceBackupImport/, 'import backup presente in archivio');
+assert.match(document.getElementById('view-prices').innerHTML, /exportPriceBackup/, 'export backup presente in archivio');
+priceState.archive.entries = [...priceState.compare.entries];
+priceState.archive.loading = false;
+renderPriceArchiveList();
+assert.match(document.getElementById('price-archive-content').innerHTML, /price-archive-row/);
+// Solo le voci proprie mostrano i pulsanti modifica/elimina.
+assert.doesNotMatch(document.getElementById('price-archive-content').innerHTML, /startPriceEdit\('p2'\)/);
+assert.match(document.getElementById('price-archive-content').innerHTML, /startPriceEdit\('p1'\)/);
+switchPriceTab('log');
+setupPriceModals();
+assert.ok(document.getElementById('price-scan-modal'));
+// Suggerimenti: nome scannerizzato lungo → nome semplice già in archivio.
+priceState.meta.products = ['Cereali', 'Latte'];
+renderPriceSuggestions('Cereali di grano duro');
+assert.match(document.getElementById('price-suggestions').innerHTML, /Forse intendevi/);
+assert.match(document.getElementById('price-suggestions').innerHTML, /Cereali/);
+applyPriceSuggestion('Cereali');
+assert.equal(priceState.draft.product, 'Cereali');
+assert.doesNotMatch(document.getElementById('price-suggestions').innerHTML, /Forse intendevi/, 'match esatto: nessun suggerimento');
+
+// ---- Pagina negozio ----
+switchPriceTab('stores');
+priceState.meta.stores = ['Conad', 'Lidl'];
+renderPrices();
+assert.match(document.getElementById('view-prices').innerHTML, /store-card/);
+assert.match(document.getElementById('view-prices').innerHTML, /openStoreDetail\('conad'/);
+priceState.stores = {
+  view: 'detail', storeKey: 'conad', storeName: 'Conad', loading: false,
+  rows: [{ entry: { product: 'Uova', brand: 'Eurovo', store: 'Conad', storeKey: 'conad', price: 2.29, weight: 12, unit: 'pz', normPrice: 0.19, normUnit: 'pz', date: '2026-07-27' }, status: 'best', best: null, deltaPct: null, options: 2 }],
+  summary: { total: 1, compared: 1, bestCount: 1 }
+};
+renderPrices();
+assert.match(document.getElementById('view-prices').innerHTML, /store-status-badge best/);
+assert.match(document.getElementById('view-prices').innerHTML, /Miglior prezzo per 1 prodotto/);
+closeStoreDetail();
+assert.equal(priceState.stores.view, 'list');
 renderIncomingShares();
 openRecipeModal('L1', 'monday');
 renderModalContent();

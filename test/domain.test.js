@@ -553,22 +553,26 @@ test('buildBackup contiene catalogo, piano, spesa e metadati operazione', () => 
 
 // ---- Service worker e PWA ----
 
-test('service worker: shell v8 derivata da una sola versione con asset esistenti', () => {
+test('service worker: shell v13 derivata da una sola versione con asset esistenti', () => {
   const sw = fs.readFileSync(path.join(ROOT, 'sw.js'), 'utf8');
   const versionMatch = sw.match(/const CACHE_VERSION = (\d+);/);
   assert.ok(versionMatch, 'CACHE_VERSION presente');
-  assert.equal(Number(versionMatch[1]), 8);
+  assert.equal(Number(versionMatch[1]), 13);
   assert.equal((sw.match(/const CACHE_VERSION/g) || []).length, 1);
   assert.match(sw, /const CACHE = `piano-nutrizionale-shell-v\$\{CACHE_VERSION\}`;/);
   assert.match(sw, /incrementare CACHE_VERSION a OGNI modifica di CSS, JS o index\.html/);
   const shellMatch = sw.match(/const SHELL = \[([\s\S]*?)\];/);
   assert.ok(shellMatch, 'SHELL presente');
   const assets = [...shellMatch[1].matchAll(/'(\.[^']+)'/g)].map(m => m[1]);
-  assert.ok(assets.length >= 9);
+  assert.ok(assets.length >= 10);
+  assert.ok(assets.includes('./js/prices.js'), 'la shell include il dominio prezzi');
   assets.forEach(asset => {
     const filePath = path.join(ROOT, asset.replace(/^\.\//, ''));
     assert.ok(fs.existsSync(filePath), `asset shell mancante: ${asset}`);
   });
+  // Il lettore barcode esterno è versionato e precaricato come l'SDK Firebase.
+  assert.match(sw, /html5-qrcode@2\.3\.8\/html5-qrcode\.min\.js/);
+  assert.match(sw, /isCachedCdnAsset/);
 });
 
 test('service worker: non intercetta Firebase, pulisce cache, gestisce SKIP_WAITING', () => {
