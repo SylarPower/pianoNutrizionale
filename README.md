@@ -23,7 +23,7 @@ WebApp PWA privata per gestire colazioni, spuntini, pranzi, cene, batch cooking 
 - lista della spesa aggregata per `ingredientId` con profili Uomo, Donna IPO e Coppia;
 - PWA offline con shell versionata, aggiornamento one-tap e fallback offline comprensibile;
 - alternative alimentari di Meller sempre consultabili nelle Impostazioni;
-- **registro prezzi condiviso** (scheda Prezzi): un unico database tra tutti gli utenti per registrare i prezzi nei negozi (con barcode Open Food Facts o incollando il testo di un volantino), confrontare il prezzo normalizzato €/kg tra negozi con indicazione del migliore, giudizio rispetto allo storico (minimo storico / affare / caro), archivio con modifica delle proprie voci e importazione/esportazione di backup JSON (incluso il vecchio formato "Spesa Smart");
+- **registro prezzi condiviso** (scheda Prezzi): un unico database tra tutti gli utenti per registrare i prezzi nei negozi (con barcode Open Food Facts o incollando il testo di un volantino), confrontare il prezzo normalizzato €/kg tra negozi con indicazione del migliore, giudizio rispetto allo storico (minimo storico / affare / caro), suggerimento del nome prodotto già in archivio quando quello scannerizzato è una variante più lunga ("Cereali di grano duro" → "Cereali"), archivio con modifica delle proprie voci e importazione/esportazione di backup JSON (incluso il vecchio formato "Spesa Smart");
 - nessuna funzionalità di notifica (né push né locali).
 
 ## Dove si trovano i dati

@@ -349,6 +349,14 @@ assert.match(document.getElementById('price-archive-content').innerHTML, /startP
 switchPriceTab('log');
 setupPriceModals();
 assert.ok(document.getElementById('price-scan-modal'));
+// Suggerimenti: nome scannerizzato lungo → nome semplice già in archivio.
+priceState.meta.products = ['Cereali', 'Latte'];
+renderPriceSuggestions('Cereali di grano duro');
+assert.match(document.getElementById('price-suggestions').innerHTML, /Forse intendevi/);
+assert.match(document.getElementById('price-suggestions').innerHTML, /Cereali/);
+applyPriceSuggestion('Cereali');
+assert.equal(priceState.draft.product, 'Cereali');
+assert.doesNotMatch(document.getElementById('price-suggestions').innerHTML, /Forse intendevi/, 'match esatto: nessun suggerimento');
 renderIncomingShares();
 openRecipeModal('L1', 'monday');
 renderModalContent();

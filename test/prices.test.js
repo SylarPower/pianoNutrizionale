@@ -254,3 +254,20 @@ test('preparePriceImport: accetta il wrapper con campo entries', () => {
   assert.equal(entries.length, 3);
   assert.throws(() => p.preparePriceImport({ altro: true }), /elenco di prezzi/i);
 });
+
+// ---- Suggerimenti nomi simili ----
+
+test('similarProducts: nome scannerizzato lungo suggerisce il nome semplice in archivio', () => {
+  const products = ['Cereali', 'Latte', 'Pasta Barilla', 'Fiocchi di latte'];
+  assert.deepEqual(p.similarProducts('Cereali di grano duro', products)[0], 'Cereali');
+  assert.equal(p.similarProducts('Latte Zymil scremato UHT', products)[0], 'Latte');
+  assert.equal(p.similarProducts('pasta barilla integrale', products)[0], 'Pasta Barilla');
+});
+
+test('similarProducts: niente falsi positivi né auto-suggerimenti', () => {
+  const products = ['Latte', 'Lattebusche', 'Cereali'];
+  assert.ok(!p.similarProducts('Latte', products).includes('Lattebusche'), 'Lattebusche non è un suggerimento per Latte');
+  assert.ok(!p.similarProducts('cereali', products).includes('Cereali'), 'il match esatto non viene suggerito');
+  assert.deepEqual(p.similarProducts('', products), []);
+  assert.deepEqual(p.similarProducts('Sgombro', products), []);
+});

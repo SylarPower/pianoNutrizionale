@@ -1398,3 +1398,18 @@ body.dark-mode .price-badge.min { background: #10281c; color: #6fd39a; }
 body.dark-mode .price-badge.good { background: #0e2417; color: #63c48e; }
 body.dark-mode .price-badge.high { background: #2b1214; color: #ff8a90; }
 body.dark-mode .price-compare-row { border-color: #1d1d1d; }
+
+/* Suggerimenti nome prodotto (nomi scannerizzati troppo lunghi) */
+.price-suggestions-box {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+  margin: -8px 0 14px 4px;
+}
+.price-suggestions-box small {
+  color: var(--text-muted);
+  font-weight: 700;
+  font-size: .74rem;
+}
+.price-suggestions-box .price-filter-pill { margin-bottom: 0; }

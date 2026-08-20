@@ -393,6 +393,40 @@
     return { entries, skipped };
   }
 
+  // ---- Suggerimenti per nomi simili ----
+  // I prodotti scannerizzati da Open Food Facts spesso hanno nomi lunghi
+  // ("Cereali di grano duro") mentre in archivio esiste già il nome semplice
+  // ("Cereali"): il confronto funziona solo se il prodotto ha sempre la
+  // stessa chiave, quindi suggeriamo il nome già in uso.
+
+  function significantTokens(value) {
+    return priceKey(value).split(' ').filter(token => token.length >= 4);
+  }
+
+  function similarProducts(query, products = [], limit = 5) {
+    const queryKey = priceKey(query);
+    if (!queryKey) return [];
+    const queryWords = queryKey.split(' ');
+    const queryTokens = significantTokens(query);
+    const scored = [];
+    [...new Set((products || []).map(String))].forEach(product => {
+      const productKey = priceKey(product);
+      if (!productKey || productKey === queryKey) return;
+      const productWords = productKey.split(' ');
+      let score = 0;
+      // Un nome è una parola intera dell'altro ("cereali" in "cereali di grano duro").
+      if (queryWords.includes(productKey) || productWords.includes(queryKey)) score += 3;
+      // Parole significative in comune.
+      const shared = queryTokens.filter(token => productWords.includes(token)).length;
+      score += shared * 2;
+      if (score >= 3) scored.push({ product, score });
+    });
+    return scored
+      .sort((a, b) => b.score - a.score || a.product.localeCompare(b.product, 'it'))
+      .slice(0, limit)
+      .map(item => item.product);
+  }
+
   // ---- Ricerca prodotti per il confronto ----
 
   // Corrispondenza esatta sulla chiave + candidati parziali (per la ricerca
@@ -449,6 +483,7 @@
     parseSmartPaste,
     parseLegacyDate,
     preparePriceImport,
+    similarProducts,
     matchProducts,
     formatEuro,
     formatNormPrice,

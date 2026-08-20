@@ -2786,6 +2786,7 @@ function renderPriceLogTab() {
       <input id="price-product" list="list-price-products" placeholder="Cosa compri?" autocomplete="off"
         oninput="priceFieldInput(this, 'products', event); schedulePricePreview()" onclick="priceFieldFocus(this)">
       ${priceDatalistHtml("list-price-products", priceState.meta.products)}
+      <div id="price-suggestions"></div>
 
       <label class="prices-label" for="price-brand">Marca</label>
       <input id="price-brand" list="list-price-brands" placeholder="Quale marca?" autocomplete="off"
@@ -2864,6 +2865,7 @@ window.setPriceUnit = function(unit) {
 // ---- Anteprima prezzo normalizzato + giudizio rispetto allo storico ----
 
 window.schedulePricePreview = function(delay = 350) {
+  renderPriceSuggestions(document.getElementById("price-product")?.value || "");
   renderPricePreviewNow();
   clearTimeout(priceHistoryTimer);
   priceHistoryTimer = setTimeout(loadPriceHistoryForDraft, delay);
@@ -2930,6 +2932,32 @@ function renderPricePreviewNow() {
     else hint.textContent = "";
   }
 }
+
+// Suggerisce i nomi prodotto già presenti nella rubrica condivisa quando
+// quello digitato (o scannerizzato) sembra una variante più lunga o diversa:
+// mantenere un unico nome per prodotto è ciò che fa funzionare i confronti.
+function renderPriceSuggestions(value) {
+  const box = document.getElementById("price-suggestions");
+  if (!box || !window.PriceDomain) return;
+  const trimmed = String(value || "").trim();
+  if (!trimmed) {
+    box.innerHTML = "";
+    return;
+  }
+  const { exact } = PriceDomain.matchProducts(trimmed, priceState.meta.products);
+  const suggestions = exact ? [] : PriceDomain.similarProducts(trimmed, priceState.meta.products);
+  box.innerHTML = suggestions.length
+    ? `<div class="price-suggestions-box"><small>Forse intendevi:</small>${suggestions.map(candidate => `<button type="button" class="price-filter-pill" onclick="applyPriceSuggestion('${escapeAttr(candidate)}')">${escapeHtml(candidate)}</button>`).join("")}</div>`
+    : "";
+}
+
+window.applyPriceSuggestion = function(name) {
+  const input = document.getElementById("price-product");
+  if (input) input.value = name;
+  priceState.draft.product = name;
+  renderPriceSuggestions(name);
+  schedulePricePreview(0);
+};
 
 // ---- Salvataggio / modifica voce ----
 
