@@ -5,7 +5,7 @@
  * (sottocartella /pianoNutrizionale/).
  */
 // IMPORTANTE: incrementare CACHE_VERSION a OGNI modifica di CSS, JS o index.html.
-const CACHE_VERSION = 8;
+const CACHE_VERSION = 9;
 const CACHE = `piano-nutrizionale-shell-v${CACHE_VERSION}`;
 const SHELL = [
   './',
@@ -14,6 +14,7 @@ const SHELL = [
   './css/style.css',
   './js/domain.js',
   './js/data.js',
+  './js/prices.js',
   './js/firebase.js',
   './js/app.js',
   './manifest.json',
@@ -32,6 +33,12 @@ const FIREBASE_SDK = [
   'https://www.gstatic.com/firebasejs/9.23.0/firebase-app-check-compat.js'
 ];
 
+// Lettore barcode per la sezione Prezzi: URL versionato e immutabile come
+// l'SDK Firebase, quindi precache in installazione e cache-first.
+const PRICE_LIBS = [
+  'https://unpkg.com/html5-qrcode@2.3.8/html5-qrcode.min.js'
+];
+
 const FIREBASE_HOSTS = [
   'firebaseapp.com',
   'firebaseio.com',
@@ -45,8 +52,8 @@ self.addEventListener('install', event => {
   event.waitUntil(caches.open(CACHE).then(cache =>
     cache.addAll(SHELL).then(() =>
       // La CDN irraggiungibile non deve far fallire l'installazione della shell:
-      // l'SDK verrà comunque messo in cache al primo fetch riuscito.
-      cache.addAll(FIREBASE_SDK).catch(() => {})
+      // SDK e librerie verranno comunque messi in cache al primo fetch riuscito.
+      cache.addAll(FIREBASE_SDK.concat(PRICE_LIBS)).catch(() => {})
     )
   ));
 });
@@ -73,11 +80,16 @@ function isFirebaseSdkAsset(url) {
   return url.href.startsWith(FIREBASE_SDK_PREFIX);
 }
 
+// Asset di librerie esterne versionate e immutabili (lettore barcode).
+function isCachedCdnAsset(url) {
+  return isFirebaseSdkAsset(url) || PRICE_LIBS.includes(url.href);
+}
+
 self.addEventListener('fetch', event => {
   const url = new URL(event.request.url);
 
-  // SDK Firebase da CDN: cache-first, i file sono versionati e immutabili.
-  if (isFirebaseSdkAsset(url)) {
+  // SDK Firebase e librerie CDN: cache-first, file versionati e immutabili.
+  if (isCachedCdnAsset(url)) {
     event.respondWith(
       caches.match(event.request).then(cached => cached || fetch(event.request).then(response => {
         // Nessuna risposta opaca o di errore in cache: solo copie utilizzabili.

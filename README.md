@@ -23,6 +23,7 @@ WebApp PWA privata per gestire colazioni, spuntini, pranzi, cene, batch cooking 
 - lista della spesa aggregata per `ingredientId` con profili Uomo, Donna IPO e Coppia;
 - PWA offline con shell versionata, aggiornamento one-tap e fallback offline comprensibile;
 - alternative alimentari di Meller sempre consultabili nelle Impostazioni;
+- **registro prezzi condiviso** (scheda Prezzi): un unico database tra tutti gli utenti per registrare i prezzi nei negozi (con barcode Open Food Facts o incollando il testo di un volantino), confrontare il prezzo normalizzato €/kg tra negozi con indicazione del migliore, giudizio rispetto allo storico (minimo storico / affare / caro) e archivio con modifica delle proprie voci;
 - nessuna funzionalità di notifica (né push né locali).
 
 ## Dove si trovano i dati
@@ -54,6 +55,15 @@ usernames/{username}
 recipeShares/{requestId}
 ```
 
+Il registro prezzi è invece un database **unico e condiviso tra tutti gli utenti** (non è legato né all'account né alla household):
+
+```text
+priceEntries/{entryId}
+priceMeta/global
+```
+
+`priceEntries` contiene un documento per ogni prezzo registrato (negozio, prodotto, marca, prezzo, quantità, unità, prezzo normalizzato, data e autore). Tutti gli account autenticati leggono l'intera collezione; ogni utente può modificare o eliminare solo le voci che ha creato. `priceMeta/global` è la rubrica condivisa dei nomi di negozi, prodotti e marche usati, per i suggerimenti durante la digitazione; viene aggiornata con `arrayUnion` solo quando compare un nome nuovo.
+
 `households/{householdId}` contiene gli UID autorizzati; le regole Firestore consentono a ogni membro di leggere e modificare i tre documenti condivisi. `usernames` contiene solamente username e UID, necessari per individuare il destinatario. `recipeShares` contiene sia le condivisioni ricetta sia gli inviti `accountLink` ancora da accettare o rifiutare. `backups/previous` rimane sempre personale e contiene un'unica copia (catalogo + piano + lista spesa), cancellata dopo il ripristino.
 
 ## Chiamate Firestore
@@ -81,6 +91,14 @@ Operazioni indicative (catalogo medio ~60 ricette):
 - **Annulla ultima modifica**: una **transazione atomica** (legge backup, riscrive catalogo/piano/spesa, elimina il backup);
 - generatore: solo letture locali; l'applicazione scrive il piano (1) preceduta dal backup (1);
 - migrazione schema 3 → 4: una sola scrittura per documento, al primo avvio che rileva la versione precedente.
+
+Il registro prezzi (scheda Prezzi) è progettato per costare poco:
+
+- apertura della scheda: 1 lettura della rubrica `priceMeta/global` (poi resta in cache locale);
+- registrazione di un prezzo: 1 scrittura della voce + 0-1 scritture della rubrica (solo se il negozio/prodotto/marca non era mai stato usato da nessuno);
+- confronto di un prodotto: una sola query `where productKey` (tante letture quante sono le voci registrate per quel prodotto, normalmente poche);
+- archivio: una sola query con limite 150, ricaricata al massimo una volta al minuto;
+- incolla da volantino: un'unica scrittura in batch per tutte le righe + al massimo 1 scrittura della rubrica.
 
 La cache offline Firestore è abilitata. Tema, profilo porzioni e metadati del backup restano in `localStorage`.
 

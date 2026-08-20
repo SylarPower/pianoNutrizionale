@@ -178,6 +178,50 @@ service cloud.firestore {
       allow read, write, delete: if signedIn() && request.auth.uid == userId;
     }
 
+    // Prezzi condivisi (Spesa Smart): UNICO database per tutti gli utenti.
+    // Ogni account autenticato legge tutto; la creazione è aperta ma
+    // vincolata ai campi previsti e all'UID dell'autore; modifica ed
+    // eliminazione restano riservate a chi ha registrato la voce.
+    match /priceMeta/global {
+      function validMeta() {
+        return request.resource.data.stores is list
+          && request.resource.data.products is list
+          && request.resource.data.brands is list
+          && request.resource.data.stores.size() <= 2000
+          && request.resource.data.products.size() <= 4000
+          && request.resource.data.brands.size() <= 2000;
+      }
+      allow read: if signedIn();
+      allow create, update: if signedIn() && validMeta();
+      allow delete: if false;
+    }
+
+    match /priceEntries/{entryId} {
+      function validEntry() {
+        return request.resource.data.store is string && request.resource.data.store.size() > 0
+          && request.resource.data.product is string && request.resource.data.product.size() > 0
+          && request.resource.data.brand is string
+          && request.resource.data.storeKey is string
+          && request.resource.data.productKey is string
+          && request.resource.data.brandKey is string
+          && request.resource.data.price is number && request.resource.data.price > 0
+          && request.resource.data.weight is number && request.resource.data.weight > 0
+          && request.resource.data.unit in ['gr', 'kg', 'ml', 'l', 'pz']
+          && request.resource.data.normPrice is number && request.resource.data.normPrice > 0
+          && request.resource.data.normUnit in ['kg', 'l', 'pz']
+          && request.resource.data.date is string
+          && request.resource.data.createdBy == request.auth.uid
+          && request.resource.data.createdByUsername is string;
+      }
+
+      allow read: if signedIn();
+      allow create: if signedIn() && validEntry();
+      allow update: if signedIn()
+        && resource.data.createdBy == request.auth.uid
+        && validEntry();
+      allow delete: if signedIn() && resource.data.createdBy == request.auth.uid;
+    }
+
     match /{document=**} {
       allow read, write: if false;
     }

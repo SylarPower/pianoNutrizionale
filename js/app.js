@@ -348,6 +348,7 @@ function applyState(recipes, plan, shopping) {
     setupTransferModals();
     setupGeneratorModal();
     setupMellerModal();
+    setupPriceModals();
     appStarted = true;
   }
 }
@@ -446,7 +447,7 @@ async function initApp() {
 
 function setupRouter() {
   window.addEventListener("hashchange", handleRoute);
-  if (!window.location.hash || !["#chef", "#week", "#recipes", "#shop", "#settings"].includes(window.location.hash)) {
+  if (!window.location.hash || !["#chef", "#week", "#recipes", "#shop", "#prices", "#settings"].includes(window.location.hash)) {
     window.location.hash = "#chef";
   } else {
     handleRoute();
@@ -486,6 +487,7 @@ function handleRoute() {
   if (hash === "#week") renderWeek();
   if (hash === "#recipes") renderRecipes();
   if (hash === "#shop") renderShop();
+  if (hash === "#prices") renderPrices();
   if (hash === "#settings") renderSettings();
   lastRenderedRoute = hash;
 
@@ -2662,5 +2664,772 @@ window.deleteAllRecipes = async function() {
   handleRoute();
   showToast("Ricettario svuotato");
 };
+
+// ---- Prezzi condivisi (Spesa Smart) ----
+// Un unico database (priceEntries) condiviso tra TUTTI gli utenti: ognuno
+// registra i prezzi che trova e tutti vedono dove conviene comprare.
+
+const PRICE_UNIT_OPTIONS = [
+  { id: "gr", label: "GR" }, { id: "kg", label: "KG" }, { id: "ml", label: "ML" },
+  { id: "l", label: "L" }, { id: "pz", label: "PZ" }
+];
+const PRICE_ARCHIVE_LIMIT = 150;
+
+let priceState = {
+  loaded: false,
+  meta: { stores: [], products: [], brands: [] },
+  tab: "log",
+  unit: "gr",
+  editingId: null,
+  smartPasteOpen: false,
+  draft: { store: "", product: "", brand: "", price: "", weight: "1000" },
+  history: { key: null, entries: [], loading: false },
+  compare: { query: "", productKey: null, productName: null, brandKey: null, entries: [], candidates: [], loading: false },
+  archive: { entries: [], storeFilter: null, loading: false, loadedAt: 0 }
+};
+let priceHistoryTimer = null;
+let priceCompareTimer = null;
+let priceScanner = null;
+
+function priceUserMeta() {
+  return { uid: appState.user?.uid || null, username: usernameFromUser(appState.user) };
+}
+
+async function ensurePriceData(force = false) {
+  if (priceState.loaded && !force) return;
+  priceState.loaded = true;
+  try {
+    priceState.meta = await getPriceMeta();
+  } catch (error) {
+    console.warn("Rubrica prezzi non caricata", error);
+  }
+  if (window.location?.hash === "#prices") renderPrices();
+}
+
+window.refreshPricesData = async function() {
+  priceState.archive.loadedAt = 0;
+  priceState.history = { key: null, entries: [], loading: false };
+  await ensurePriceData(true);
+  if (priceState.tab === "archive") loadPriceArchive(true);
+  else if (priceState.tab === "compare" && priceState.compare.productKey) loadPriceComparison(priceState.compare.productKey);
+  else renderPrices();
+  showToast("Prezzi aggiornati ✅");
+};
+
+window.switchPriceTab = function(tab) {
+  if (!["log", "compare", "archive"].includes(tab)) return;
+  capturePriceDraft();
+  priceState.tab = tab;
+  renderPrices();
+  if (tab === "archive") loadPriceArchive();
+};
+
+function capturePriceDraft() {
+  const fields = ["store", "product", "brand", "price", "weight"];
+  fields.forEach(field => {
+    const element = document.getElementById(`price-${field}`);
+    if (element) priceState.draft[field] = element.value;
+  });
+  const unit = document.querySelector(".price-unit-btn.active")?.dataset?.unit;
+  if (unit) priceState.unit = unit;
+}
+
+// ---- Rendering della sezione ----
+
+function renderPrices() {
+  const container = document.getElementById("view-prices");
+  if (!container) return;
+  ensurePriceData();
+  const tab = priceState.tab;
+  container.innerHTML = `
+    <div class="page-heading prices-heading">
+      <div><p class="eyebrow">Database condiviso tra tutti gli utenti</p><h1>Prezzi</h1><p>Registra i prezzi che trovi e scopri dove conviene comprare.</p></div>
+      <button class="btn btn-outline" onclick="refreshPricesData()">↻ Aggiorna</button>
+    </div>
+    <div class="prices-tabs" role="tablist">
+      <button class="prices-tab ${tab === "log" ? "active" : ""}" onclick="switchPriceTab('log')">🧾 Registra</button>
+      <button class="prices-tab ${tab === "compare" ? "active" : ""}" onclick="switchPriceTab('compare')">🔍 Confronta</button>
+      <button class="prices-tab ${tab === "archive" ? "active" : ""}" onclick="switchPriceTab('archive')">🗂 Archivio</button>
+    </div>
+    ${tab === "log" ? renderPriceLogTab() : tab === "compare" ? renderPriceCompareTab() : renderPriceArchiveTab()}
+  `;
+  if (tab === "log") restorePriceDraft();
+}
+
+function priceDatalistHtml(id, values) {
+  return `<datalist id="${id}">${[...new Set(values)].map(value => `<option value="${escapeAttr(value)}">`).join("")}</datalist>`;
+}
+
+function renderPriceLogTab() {
+  const draft = priceState.draft;
+  const editing = Boolean(priceState.editingId);
+  return `
+    <div class="prices-actions-row">
+      <button class="btn btn-outline price-action-btn" onclick="openPriceScanModal()">📷 Scansiona barcode</button>
+      <button class="btn btn-outline price-action-btn" onclick="togglePriceSmartPaste()">📋 Incolla da volantino</button>
+    </div>
+
+    ${priceState.smartPasteOpen ? `
+      <section class="prices-card">
+        <label class="prices-label" for="price-paste-input">Incolla qui il testo (volantino, NotebookLM…)</label>
+        <textarea id="price-paste-input" rows="6" placeholder="Formati supportati, uno per riga:&#10;Marca | Prodotto | 500 g | 0,89&#10;Pasta Barilla 500g 0,89&#10;Latte Zymil 1,50&#10;&#10;Il negozio viene letto dal campo qui sotto."></textarea>
+        <button class="btn btn-primary full-width" onclick="runPriceSmartPasteImport()">Importa lista</button>
+      </section>` : ""}
+
+    <section class="prices-card">
+      <label class="prices-label" for="price-store">Negozio</label>
+      <input id="price-store" list="list-price-stores" placeholder="Dove ti trovi?" autocomplete="off"
+        oninput="priceFieldInput(this, 'stores', event)" onclick="priceFieldFocus(this)">
+      ${priceDatalistHtml("list-price-stores", priceState.meta.stores)}
+
+      <label class="prices-label" for="price-product">Prodotto</label>
+      <input id="price-product" list="list-price-products" placeholder="Cosa compri?" autocomplete="off"
+        oninput="priceFieldInput(this, 'products', event); schedulePricePreview()" onclick="priceFieldFocus(this)">
+      ${priceDatalistHtml("list-price-products", priceState.meta.products)}
+
+      <label class="prices-label" for="price-brand">Marca</label>
+      <input id="price-brand" list="list-price-brands" placeholder="Quale marca?" autocomplete="off"
+        oninput="priceFieldInput(this, 'brands', event)" onclick="priceFieldFocus(this)">
+      ${priceDatalistHtml("list-price-brands", priceState.meta.brands)}
+
+      <div class="prices-grid-2">
+        <div>
+          <label class="prices-label" for="price-price">Prezzo (€)</label>
+          <input id="price-price" type="number" step="0.01" min="0" inputmode="decimal" placeholder="0,00"
+            value="${escapeAttr(draft.price)}" oninput="schedulePricePreview()" onclick="this.select()">
+        </div>
+        <div>
+          <label class="prices-label" for="price-weight">Peso / Quantità</label>
+          <input id="price-weight" type="number" step="any" min="0" inputmode="decimal" placeholder="1000"
+            value="${escapeAttr(draft.weight)}" oninput="schedulePricePreview()" onclick="this.select()">
+        </div>
+      </div>
+
+      <label class="prices-label">Unità</label>
+      <div class="price-unit-control">
+        ${PRICE_UNIT_OPTIONS.map(unit => `<button type="button" class="price-unit-btn ${priceState.unit === unit.id ? "active" : ""}" data-unit="${unit.id}" onclick="setPriceUnit('${unit.id}')">${unit.label}</button>`).join("")}
+      </div>
+
+      <div class="price-preview-box">
+        <span id="price-badge" class="price-badge hidden"></span>
+        <div id="price-preview" class="price-preview-value"></div>
+        <div id="price-history-hint" class="text-muted price-history-hint"></div>
+      </div>
+
+      <button class="btn btn-primary full-width" id="price-save-btn" onclick="savePriceForm()">${editing ? "Aggiorna prezzo" : "Registra prezzo"}</button>
+      ${editing ? `<button class="btn btn-outline full-width" onclick="cancelPriceEdit()">Annulla modifica</button>` : ""}
+      <p class="text-muted price-save-note">Ogni registrazione resta nello storico condiviso: il confronto usa sempre l'ultimo prezzo per negozio.</p>
+    </section>
+  `;
+}
+
+function restorePriceDraft() {
+  const draft = priceState.draft;
+  const values = { "price-store": draft.store, "price-product": draft.product, "price-brand": draft.brand };
+  Object.entries(values).forEach(([id, value]) => {
+    const element = document.getElementById(id);
+    if (element && value) element.value = value;
+  });
+  schedulePricePreview(0);
+}
+
+// Autocompletamento tipo "smart input": completa la parola suggerita dalla
+// rubrica condivisa mentre si digita (solo quando si aggiungono caratteri).
+window.priceFieldInput = function(input, listName, event) {
+  if (event?.inputType?.startsWith("delete")) return;
+  const value = input.value;
+  if (!value) return;
+  const options = priceState.meta[listName] || [];
+  const match = options.find(option => option.toLowerCase().startsWith(value.toLowerCase()) && option.toLowerCase() !== value.toLowerCase());
+  if (match && value.length < match.length) {
+    const start = value.length;
+    input.value = match;
+    try { input.setSelectionRange(start, match.length); } catch (_) {}
+  }
+};
+
+window.priceFieldFocus = function(input) {
+  if (typeof input.showPicker === "function") {
+    try { input.showPicker(); } catch (_) {}
+  }
+};
+
+window.setPriceUnit = function(unit) {
+  if (!PRICE_UNIT_OPTIONS.some(option => option.id === unit)) return;
+  priceState.unit = unit;
+  document.querySelectorAll(".price-unit-btn").forEach(button => button.classList.toggle("active", button.dataset.unit === unit));
+  renderPricePreviewNow();
+};
+
+// ---- Anteprima prezzo normalizzato + giudizio rispetto allo storico ----
+
+window.schedulePricePreview = function(delay = 350) {
+  renderPricePreviewNow();
+  clearTimeout(priceHistoryTimer);
+  priceHistoryTimer = setTimeout(loadPriceHistoryForDraft, delay);
+};
+
+function draftProductKey() {
+  return window.PriceDomain ? PriceDomain.priceKey(document.getElementById("price-product")?.value || "") : "";
+}
+
+async function loadPriceHistoryForDraft() {
+  const key = draftProductKey();
+  if (!key) return;
+  if (priceState.history.key === key && !priceState.history.loading) {
+    renderPricePreviewNow();
+    return;
+  }
+  priceState.history.loading = true;
+  try {
+    const entries = await getPriceEntriesForProduct(key);
+    priceState.history = { key, entries, loading: false };
+  } catch (error) {
+    console.warn("Storico prezzi non disponibile", error);
+    priceState.history.loading = false;
+    return;
+  }
+  if (draftProductKey() === key) renderPricePreviewNow();
+}
+
+function renderPricePreviewNow() {
+  const preview = document.getElementById("price-preview");
+  const badge = document.getElementById("price-badge");
+  const hint = document.getElementById("price-history-hint");
+  if (!preview || !window.PriceDomain) return;
+  const priceValue = parseFloat(document.getElementById("price-price")?.value);
+  const weightValue = parseFloat(document.getElementById("price-weight")?.value);
+  const computed = Number.isFinite(priceValue) && Number.isFinite(weightValue)
+    ? PriceDomain.computeNormPrice(priceValue, weightValue, priceState.unit)
+    : null;
+  if (!computed) {
+    preview.textContent = "";
+    badge?.classList.add("hidden");
+    if (hint) hint.textContent = "";
+    return;
+  }
+  preview.textContent = `${PriceDomain.formatEuro(computed.normPrice)}/${computed.normUnit}`;
+
+  const key = draftProductKey();
+  const history = key && priceState.history.key === key ? priceState.history.entries : [];
+  const deal = history.length ? PriceDomain.dealBadge(computed.normPrice, history.map(entry => entry.normPrice)) : null;
+  if (badge) {
+    if (deal) {
+      badge.textContent = deal.label;
+      badge.className = `price-badge ${deal.type}`;
+    } else {
+      badge.classList.add("hidden");
+    }
+  }
+  if (hint) {
+    if (!key) hint.textContent = "";
+    else if (priceState.history.key === key && history.length) {
+      const stats = PriceDomain.priceStats(history);
+      hint.textContent = `Storico condiviso (${stats.count} registr.): min ${PriceDomain.formatEuro(stats.min)} · media ${PriceDomain.formatEuro(stats.avg)} · max ${PriceDomain.formatEuro(stats.max)}`;
+    } else if (priceState.history.loading) hint.textContent = "Caricamento storico…";
+    else hint.textContent = "";
+  }
+}
+
+// ---- Salvataggio / modifica voce ----
+
+function readPriceFormInput() {
+  return {
+    store: document.getElementById("price-store")?.value || "",
+    product: document.getElementById("price-product")?.value || "",
+    brand: document.getElementById("price-brand")?.value || "",
+    price: parseFloat(document.getElementById("price-price")?.value),
+    weight: parseFloat(document.getElementById("price-weight")?.value),
+    unit: priceState.unit,
+    date: priceState.editingId ? (priceState.editingDate || undefined) : undefined
+  };
+}
+
+function resetPriceForm(keepStore = true) {
+  const store = keepStore ? (document.getElementById("price-store")?.value || priceState.draft.store) : "";
+  priceState.draft = { store, product: "", brand: "", price: "", weight: "1000" };
+  priceState.history = { key: null, entries: [], loading: false };
+}
+
+window.savePriceForm = async function() {
+  if (!window.PriceDomain) return;
+  let entry;
+  try {
+    entry = PriceDomain.buildPriceEntry(readPriceFormInput(), priceUserMeta());
+  } catch (error) {
+    showToast(`⚠️ ${error.message}`, true);
+    return;
+  }
+  const editingId = priceState.editingId;
+  setLoading(editingId ? "Aggiornamento del prezzo…" : "Registrazione del prezzo…");
+  try {
+    if (editingId) {
+      await updatePriceEntry(editingId, entry);
+      showToast("Prezzo aggiornato ✅");
+    } else {
+      await savePriceEntry(entry);
+      showToast("Prezzo registrato ✅");
+    }
+    const store = document.getElementById("price-store")?.value || "";
+    priceState.editingId = null;
+    priceState.editingDate = null;
+    priceState.archive.loadedAt = 0;
+    resetPriceForm(true);
+    priceState.draft.store = store;
+    priceState.compare.query = "";
+    priceState.compare.productKey = null;
+    priceState.compare.productName = null;
+    priceState.compare.entries = [];
+    priceState.compare.candidates = [];
+    renderPrices();
+  } catch (error) {
+    console.error(error);
+    showToast("Salvataggio non riuscito: controlla la connessione", true);
+  } finally {
+    clearLoading();
+  }
+};
+
+window.startPriceEdit = function(entryId) {
+  const entry = priceState.archive.entries.find(item => item.id === entryId);
+  if (!entry) return;
+  if (entry.createdBy && entry.createdBy !== appState.user?.uid) {
+    showToast("Puoi modificare solo i prezzi registrati da te", true);
+    return;
+  }
+  capturePriceDraft();
+  priceState.editingId = entryId;
+  priceState.editingDate = entry.date;
+  priceState.draft = { store: entry.store, product: entry.product, brand: entry.brand, price: String(entry.price), weight: String(entry.weight) };
+  priceState.unit = entry.unit || "gr";
+  priceState.tab = "log";
+  priceState.history = { key: entry.productKey, entries: [], loading: false };
+  renderPrices();
+  loadPriceHistoryForDraft();
+  showToast("✏️ Modifica in corso");
+};
+
+window.cancelPriceEdit = function() {
+  priceState.editingId = null;
+  priceState.editingDate = null;
+  resetPriceForm(true);
+  renderPrices();
+};
+
+window.deletePriceEntryClick = async function(entryId) {
+  const entry = priceState.archive.entries.find(item => item.id === entryId);
+  if (!entry) return;
+  if (!confirm(`Eliminare “${entry.product}” (${entry.brand}) registrato da ${entry.createdByUsername || "te"}?`)) return;
+  try {
+    await deletePriceEntry(entryId);
+    priceState.archive.entries = priceState.archive.entries.filter(item => item.id !== entryId);
+    priceState.history = { key: null, entries: [], loading: false };
+    renderPrices();
+    showToast("Voce eliminata");
+  } catch (error) {
+    console.error(error);
+    showToast("Eliminazione non riuscita", true);
+  }
+};
+
+// ---- Confronto tra negozi ----
+
+window.priceCompareInput = function(value) {
+  priceState.compare.query = value;
+  clearTimeout(priceCompareTimer);
+  priceCompareTimer = setTimeout(() => runPriceCompareSearch(value), 350);
+};
+
+async function runPriceCompareSearch(query) {
+  if (!window.PriceDomain) return;
+  const { exact, candidates } = PriceDomain.matchProducts(query, priceState.meta.products);
+  if (exact) {
+    priceState.compare.candidates = [];
+    await loadPriceComparison(PriceDomain.priceKey(exact), exact);
+    return;
+  }
+  priceState.compare.productKey = null;
+  priceState.compare.productName = null;
+  priceState.compare.brandKey = null;
+  priceState.compare.entries = [];
+  priceState.compare.candidates = candidates;
+  renderPriceCompareResults();
+}
+
+window.selectPriceCompareCandidate = function(productName) {
+  const input = document.getElementById("price-compare-search");
+  if (input) input.value = productName;
+  priceState.compare.query = productName;
+  runPriceCompareSearch(productName);
+};
+
+async function loadPriceComparison(productKey, productName = null) {
+  priceState.compare.loading = true;
+  priceState.compare.productKey = productKey;
+  if (productName) priceState.compare.productName = productName;
+  renderPriceCompareResults();
+  try {
+    priceState.compare.entries = await getPriceEntriesForProduct(productKey);
+  } catch (error) {
+    console.error(error);
+    showToast("Impossibile caricare i prezzi del prodotto", true);
+  }
+  priceState.compare.loading = false;
+  renderPriceCompareResults();
+}
+
+window.selectPriceBrand = function(brandKey) {
+  priceState.compare.brandKey = brandKey === "all" ? null : brandKey;
+  renderPriceCompareResults();
+};
+
+function priceCompareFilteredEntries() {
+  const { entries, brandKey } = priceState.compare;
+  return brandKey ? entries.filter(entry => entry.brandKey === brandKey) : entries;
+}
+
+function renderPriceCompareResults() {
+  const results = document.getElementById("price-compare-results");
+  if (!results || !window.PriceDomain) return;
+  const { productKey, entries, candidates, loading } = priceState.compare;
+
+  if (!productKey) {
+    results.innerHTML = candidates.length
+      ? `<div class="prices-card"><label class="prices-label">Prodotti simili</label><div class="price-filter-pills">${candidates.map(candidate => `<button class="price-filter-pill" onclick="selectPriceCompareCandidate('${escapeAttr(candidate)}')">${escapeHtml(candidate)}</button>`).join("")}</div></div>`
+      : `<div class="empty-state"><span>🔍</span><h3>Cerca un prodotto</h3><p>Scrivi il nome di un prodotto registrato per scoprire in quale negozio conviene acquistarlo.</p></div>`;
+    return;
+  }
+  if (loading) {
+    results.innerHTML = `<div class="empty-state"><div class="loading-spinner"></div><p>Caricamento prezzi…</p></div>`;
+    return;
+  }
+  if (!entries.length) {
+    results.innerHTML = `<div class="empty-state"><span>📭</span><h3>Nessun prezzo registrato</h3><p>Questo prodotto non è ancora presente nel database condiviso.</p></div>`;
+    return;
+  }
+
+  const brands = [...new Map(entries.map(entry => [entry.brandKey, entry.brand])).entries()];
+  const filtered = priceCompareFilteredEntries();
+  const { best, others } = PriceDomain.compareStores(filtered);
+  const stats = PriceDomain.priceStats(filtered);
+  if (!best) {
+    results.innerHTML = `<div class="empty-state"><span>📭</span><p>Nessun prezzo confrontabile per questa marca.</p></div>`;
+    return;
+  }
+
+  const brandChips = brands.length > 1
+    ? `<div class="price-filter-pills">
+        <button class="price-filter-pill ${!priceState.compare.brandKey ? "active" : ""}" onclick="selectPriceBrand('all')">Tutte le marche</button>
+        ${brands.map(([key, name]) => `<button class="price-filter-pill ${priceState.compare.brandKey === key ? "active" : ""}" onclick="selectPriceBrand('${escapeAttr(key)}')">${escapeHtml(name)}</button>`).join("")}
+      </div>`
+    : "";
+
+  const optionRow = (item, isBest) => {
+    const delta = best.normPrice > 0 ? Math.round(((item.normPrice - best.normPrice) / best.normPrice) * 100) : 0;
+    return `
+      <div class="price-compare-row ${isBest ? "best" : ""}">
+        <div class="price-compare-store">
+          <strong>${escapeHtml(item.store)}</strong>
+          <small>${escapeHtml(item.brand)} · ${escapeHtml(PriceDomain.formatItalianDate(item.date))}${item.createdByUsername ? ` · di ${escapeHtml(item.createdByUsername)}` : ""}</small>
+        </div>
+        <div class="price-compare-values">
+          <strong>${escapeHtml(PriceDomain.formatNormPrice(item))}</strong>
+          <small>${escapeHtml(PriceDomain.formatEuro(item.price))} × ${escapeHtml(String(item.weight))} ${escapeHtml(item.unit)}${!isBest && delta > 0 ? ` · +${delta}%` : ""}</small>
+        </div>
+      </div>`;
+  };
+
+  results.innerHTML = `
+    ${brandChips}
+    <div class="price-winner-card">
+      <small>Conviene da</small>
+      <h2>${escapeHtml(best.store)}</h2>
+      <div class="price-winner-value">${escapeHtml(PriceDomain.formatNormPrice(best))}</div>
+      <small>${escapeHtml(PriceDomain.formatEuro(best.price))} per ${escapeHtml(String(best.weight))} ${escapeHtml(best.unit)} · ${escapeHtml(PriceDomain.formatItalianDate(best.date))}</small>
+    </div>
+    ${others.length ? `<section class="prices-card"><label class="prices-label">Altri negozi (ultimo prezzo)</label>${others.map(item => optionRow(item, false)).join("")}</section>` : ""}
+    ${stats ? `<p class="text-muted price-history-hint">Storico condiviso: ${stats.count} registr. · min ${escapeHtml(PriceDomain.formatEuro(stats.min))} · media ${escapeHtml(PriceDomain.formatEuro(stats.avg))} · max ${escapeHtml(PriceDomain.formatEuro(stats.max))}</p>` : ""}
+    <details class="prices-card price-history-details">
+      <summary>Storico completo (${entries.length})</summary>
+      ${PriceDomain.sortEntriesDesc(filtered).slice(0, 30).map(item => `
+        <div class="price-compare-row">
+          <div class="price-compare-store"><strong>${escapeHtml(item.store)}</strong><small>${escapeHtml(item.brand)} · ${escapeHtml(PriceDomain.formatItalianDate(item.date))}${item.isWeightEstimated ? " · qtà stimata" : ""}</small></div>
+          <div class="price-compare-values"><strong>${escapeHtml(PriceDomain.formatNormPrice(item))}</strong><small>${escapeHtml(PriceDomain.formatEuro(item.price))} × ${escapeHtml(String(item.weight))} ${escapeHtml(item.unit)}</small></div>
+        </div>`).join("")}
+    </details>
+  `;
+}
+
+function renderPriceCompareTab() {
+  const query = priceState.compare.query;
+  return `
+    <section class="prices-card">
+      <label class="prices-label" for="price-compare-search">Prodotto</label>
+      <input id="price-compare-search" list="list-price-products-compare" placeholder="Quale prodotto cerchi?" autocomplete="off"
+        value="${escapeAttr(query)}" oninput="priceCompareInput(this.value)" onclick="priceFieldFocus(this)">
+      ${priceDatalistHtml("list-price-products-compare", priceState.meta.products)}
+    </section>
+    <div id="price-compare-results"></div>
+  `;
+}
+
+// ---- Archivio condiviso ----
+
+async function loadPriceArchive(force = false) {
+  const now = Date.now();
+  if (!force && priceState.archive.loadedAt && now - priceState.archive.loadedAt < 60000) return;
+  priceState.archive.loading = true;
+  renderPriceArchiveList();
+  try {
+    priceState.archive.entries = await getRecentPriceEntries(PRICE_ARCHIVE_LIMIT);
+    priceState.archive.loadedAt = Date.now();
+  } catch (error) {
+    console.error(error);
+    showToast("Archivio non caricato: controlla la connessione", true);
+  }
+  priceState.archive.loading = false;
+  renderPriceArchiveList();
+}
+
+window.filterPriceArchive = function(storeKey) {
+  priceState.archive.storeFilter = storeKey === "all" ? null : storeKey;
+  renderPriceArchiveList();
+};
+
+function renderPriceArchiveTab() {
+  return `
+    <div id="price-archive-content"></div>
+    <p class="text-muted price-save-note">L'archivio mostra le ultime ${PRICE_ARCHIVE_LIMIT} registrazioni di tutti gli utenti. Puoi modificare o eliminare solo le tue voci.</p>
+  `;
+}
+
+function renderPriceArchiveList() {
+  const container = document.getElementById("price-archive-content");
+  if (!container || !window.PriceDomain) return;
+  const { entries, storeFilter, loading } = priceState.archive;
+
+  if (loading) {
+    container.innerHTML = `<div class="empty-state"><div class="loading-spinner"></div><p>Caricamento archivio…</p></div>`;
+    return;
+  }
+  if (!entries.length) {
+    container.innerHTML = `<div class="empty-state"><span>🛒</span><h3>Archivio vuoto</h3><p>Nessuno ha ancora registrato prezzi: inizia tu dalla scheda Registra.</p></div>`;
+    return;
+  }
+
+  const stores = [...new Map(entries.map(entry => [entry.storeKey, entry.store])).entries()];
+  const filtered = storeFilter ? entries.filter(entry => entry.storeKey === storeFilter) : entries;
+  const ownUid = appState.user?.uid;
+
+  container.innerHTML = `
+    <div class="price-filter-pills">
+      <button class="price-filter-pill ${!storeFilter ? "active" : ""}" onclick="filterPriceArchive('all')">Tutti i negozi</button>
+      ${stores.map(([key, name]) => `<button class="price-filter-pill ${storeFilter === key ? "active" : ""}" onclick="filterPriceArchive('${escapeAttr(key)}')">${escapeHtml(name)}</button>`).join("")}
+    </div>
+    ${filtered.map(entry => {
+      const own = entry.createdBy && entry.createdBy === ownUid;
+      return `
+        <div class="price-archive-row">
+          <div class="price-archive-info">
+            <strong>${escapeHtml(entry.product)}</strong>
+            <small>${escapeHtml(entry.brand)} · ${escapeHtml(entry.store)} · ${escapeHtml(PriceDomain.formatItalianDate(entry.date))}${entry.createdByUsername ? ` · di ${escapeHtml(entry.createdByUsername)}` : ""}${entry.isWeightEstimated ? " · qtà stimata" : ""}</small>
+          </div>
+          <div class="price-archive-values">
+            <strong>${escapeHtml(PriceDomain.formatEuro(entry.price))}</strong>
+            <small>${escapeHtml(String(entry.weight))} ${escapeHtml(entry.unit)} → ${escapeHtml(PriceDomain.formatNormPrice(entry))}</small>
+          </div>
+          ${own ? `<div class="price-archive-actions"><button class="btn-icon" title="Modifica" onclick="startPriceEdit('${escapeAttr(entry.id)}')">✎</button><button class="btn-icon price-delete-icon" title="Elimina" onclick="deletePriceEntryClick('${escapeAttr(entry.id)}')">×</button></div>` : ""}
+        </div>`;
+    }).join("")}
+  `;
+}
+
+// ---- Incolla da volantino / NotebookLM ----
+
+window.togglePriceSmartPaste = function() {
+  capturePriceDraft();
+  priceState.smartPasteOpen = !priceState.smartPasteOpen;
+  renderPrices();
+};
+
+window.runPriceSmartPasteImport = async function() {
+  if (!window.PriceDomain) return;
+  const store = document.getElementById("price-store")?.value.trim() || priceState.draft.store.trim();
+  const text = document.getElementById("price-paste-input")?.value || "";
+  if (!store) {
+    showToast("⚠️ Scrivi prima il NEGOZIO nel campo qui sotto", true);
+    priceState.smartPasteOpen = false;
+    renderPrices();
+    document.getElementById("price-store")?.focus();
+    return;
+  }
+  if (!text.trim()) {
+    showToast("⚠️ Incolla prima il testo da importare", true);
+    return;
+  }
+  const { items, skipped } = PriceDomain.parseSmartPaste(text, store);
+  if (!items.length) {
+    showToast("Nessun prezzo riconoscibile nel testo", true);
+    return;
+  }
+  setLoading(`Importazione di ${items.length} prezzi…`);
+  try {
+    const entries = items.map(item => PriceDomain.buildPriceEntry({ ...item, store }, priceUserMeta()));
+    await savePriceEntries(entries);
+    priceState.archive.loadedAt = 0;
+    priceState.smartPasteOpen = false;
+    renderPrices();
+    showToast(`✅ Importati ${entries.length} prodotti in ${store}${skipped ? ` (${skipped} righe scartate)` : ""}`);
+  } catch (error) {
+    console.error(error);
+    showToast(error.message || "Importazione non riuscita", true);
+  } finally {
+    clearLoading();
+  }
+};
+
+// ---- Barcode: fotocamera, foto o digitazione manuale ----
+
+function setupPriceModals() {
+  if (document.getElementById("price-scan-modal")) return;
+  document.body.insertAdjacentHTML("beforeend", `
+    <div id="price-scan-modal" class="modal hidden" role="dialog" aria-modal="true">
+      <div class="modal-content price-scan-content">
+        <div class="modal-header"><div><p class="eyebrow">BARCODE</p><h2>Scansiona un prodotto</h2></div><button class="btn-icon" onclick="closePriceScanModal()">&times;</button></div>
+        <div id="price-scan-region" class="price-scan-region"></div>
+        <div class="price-scan-actions">
+          <button class="btn btn-primary" onclick="startPriceCameraScan()">📷 Fotocamera</button>
+          <label class="btn btn-outline file-import-button">🖼 Da foto<input type="file" accept="image/*" capture="environment" style="display:none" onchange="scanPriceFromPhoto(this); this.value=''"></label>
+        </div>
+        <label class="prices-label" for="price-barcode-manual">Oppure digita il codice a barre</label>
+        <div class="price-barcode-manual-row">
+          <input id="price-barcode-manual" inputmode="numeric" placeholder="es. 8000500310403">
+          <button class="btn btn-outline" onclick="lookupPriceBarcodeManual()">Cerca</button>
+        </div>
+        <p class="text-muted price-save-note">Nome e marca arrivano da Open Food Facts / Beauty Facts / Products Facts.</p>
+      </div>
+    </div>`);
+  document.getElementById("price-scan-modal").addEventListener("click", event => {
+    if (event.target.id === "price-scan-modal") closePriceScanModal();
+  });
+}
+
+window.openPriceScanModal = function() {
+  document.getElementById("price-scan-modal")?.classList.remove("hidden");
+};
+
+async function stopPriceScanner() {
+  if (!priceScanner) return;
+  try { await priceScanner.stop(); } catch (_) {}
+  try { priceScanner.clear(); } catch (_) {}
+  priceScanner = null;
+}
+
+window.closePriceScanModal = async function() {
+  await stopPriceScanner();
+  document.getElementById("price-scan-modal")?.classList.add("hidden");
+};
+
+function priceScannerAvailable() {
+  if (typeof Html5Qrcode === "undefined") {
+    showToast("Lettore barcode non caricato: usa la ricerca manuale o riprova online", true);
+    return false;
+  }
+  return true;
+}
+
+window.startPriceCameraScan = async function() {
+  if (!priceScannerAvailable()) return;
+  await stopPriceScanner();
+  const region = document.getElementById("price-scan-region");
+  region.innerHTML = "";
+  priceScanner = new Html5Qrcode("price-scan-region");
+  try {
+    await priceScanner.start(
+      { facingMode: "environment" },
+      { fps: 10, qrbox: { width: 260, height: 160 } },
+      async code => {
+        await stopPriceScanner();
+        closePriceScanModal();
+        handlePriceBarcode(code);
+      },
+      () => {}
+    );
+  } catch (error) {
+    console.warn("Fotocamera non disponibile", error);
+    showToast("Fotocamera non disponibile: scatta una foto o digita il codice", true);
+  }
+};
+
+window.scanPriceFromPhoto = async function(input) {
+  const file = input?.files?.[0];
+  if (!file) return;
+  if (!priceScannerAvailable()) return;
+  await stopPriceScanner();
+  showToast("Analisi della foto…");
+  try {
+    const scanner = new Html5Qrcode("price-scan-region");
+    const code = await scanner.scanFile(file, false);
+    closePriceScanModal();
+    handlePriceBarcode(code);
+  } catch (_) {
+    showToast("Barcode non riconosciuto nella foto", true);
+  }
+};
+
+window.lookupPriceBarcodeManual = function() {
+  const code = (document.getElementById("price-barcode-manual")?.value || "").trim();
+  if (!code) {
+    showToast("Inserisci il codice a barre", true);
+    return;
+  }
+  closePriceScanModal();
+  handlePriceBarcode(code);
+};
+
+async function lookupOpenFacts(barcode) {
+  const databases = ["food", "beauty", "products"];
+  for (const name of databases) {
+    try {
+      const response = await fetch(`https://world.open${name}facts.org/api/v2/product/${encodeURIComponent(barcode)}.json`);
+      if (!response.ok) continue;
+      const data = await response.json();
+      if (data?.status === 1 && data.product) return data.product;
+    } catch (_) { /* prova il database successivo */ }
+  }
+  return null;
+}
+
+async function handlePriceBarcode(barcode) {
+  setLoading("Ricerca del prodotto…");
+  try {
+    const product = await lookupOpenFacts(barcode);
+    if (!product) {
+      showToast("Prodotto non trovato nei database aperti", true);
+      return;
+    }
+    const name = product.product_name_it || product.product_name || "";
+    const brand = String(product.brands || "").split(",")[0].trim();
+    if (name) document.getElementById("price-product").value = name;
+    if (brand) document.getElementById("price-brand").value = brand;
+    // Se Open Food Facts indica la confezione (es. "500 g"), precostruisce la quantità.
+    const quantity = window.PriceDomain ? PriceDomain.parseWeightToken(product.quantity || "") : null;
+    if (quantity) {
+      const weightInput = document.getElementById("price-weight");
+      if (weightInput) weightInput.value = String(quantity.weight);
+      const unitButton = document.querySelector(`.price-unit-btn[data-unit="${quantity.unit}"]`);
+      if (unitButton) setPriceUnit(quantity.unit);
+    }
+    priceState.draft.product = name;
+    priceState.draft.brand = brand;
+    showToast("✅ Prodotto trovato");
+    schedulePricePreview(0);
+  } catch (error) {
+    console.error(error);
+    showToast("Ricerca non riuscita", true);
+  } finally {
+    clearLoading();
+  }
+}
 
 document.addEventListener("DOMContentLoaded", initApp);
