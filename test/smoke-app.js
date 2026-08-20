@@ -358,18 +358,6 @@ applyPriceSuggestion('Cereali');
 assert.equal(priceState.draft.product, 'Cereali');
 assert.doesNotMatch(document.getElementById('price-suggestions').innerHTML, /Forse intendevi/, 'match esatto: nessun suggerimento');
 
-// ---- Prezzi agganciati alla lista della spesa ----
-shoppingPrices.active = true;
-shoppingPrices.loading = false;
-shoppingPrices.matches = {
-  'whole-eggs': { product: 'Uova', productKey: 'uova', best: { store: 'Cadoro', storeKey: 'cadoro', normPrice: 0.19, normUnit: 'pz', price: 2.29, weight: 12, unit: 'pz' } }
-};
-renderShop();
-assert.match(document.getElementById('view-shop').innerHTML, /shop-prices-panel/, 'pannello prezzi in lista spesa');
-assert.match(document.getElementById('view-shop').innerHTML, /shop-price-match/, 'riga prezzo sotto l\'alimento agganciato');
-assert.match(document.getElementById('view-shop').innerHTML, /Cadoro/);
-shoppingPrices = { active: false, loading: false, matches: {} };
-
 // ---- Pagina negozio ----
 switchPriceTab('stores');
 priceState.meta.stores = ['Conad', 'Lidl'];

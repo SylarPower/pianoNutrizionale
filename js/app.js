@@ -1177,14 +1177,13 @@ function renderShop() {
   const grouped = Object.fromEntries(SHOP_CATEGORY_ORDER.map(category => [category, entries.filter(entry => entry.category === category)]));
   const allSelected = DAY_ORDER.every(day => MEAL_SLOTS.every(slot => (appState.shopping.selectedMeals[day] || []).includes(slot.id)));
   container.innerHTML = `
-    <div class="page-heading shop-heading"><div><p class="eyebrow">Dosi esatte · ${escapeHtml(getProfileLabel())}</p><h1>Lista della spesa</h1><p>Le quantità derivano solo dai pasti selezionati, senza fattori percentuali.</p></div><div class="shop-heading-actions"><button class="btn btn-outline ${shoppingPrices.active ? "btn-active" : ""}" onclick="toggleShoppingPrices()">${shoppingPrices.loading ? "Ricerca…" : shoppingPrices.active ? "Nascondi prezzi" : "💶 Prezzi"}</button><button class="btn btn-outline" onclick="toggleShopSettings()">${shopSettingsVisible ? "Chiudi" : "Seleziona"}</button></div></div>
+    <div class="page-heading shop-heading"><div><p class="eyebrow">Dosi esatte · ${escapeHtml(getProfileLabel())}</p><h1>Lista della spesa</h1><p>Le quantità derivano solo dai pasti selezionati, senza fattori percentuali.</p></div><button class="btn btn-outline" onclick="toggleShopSettings()">${shopSettingsVisible ? "Chiudi" : "Seleziona"}</button></div>
     ${shopSettingsVisible ? renderShopSettings(allSelected) : ""}
     <div class="shopping-summary"><strong>${entries.length} alimenti</strong><span>${DAY_ORDER.reduce((sum, day) => sum + (appState.shopping.selectedMeals[day] || []).length, 0)} pasti selezionati</span></div>
-    ${shoppingPrices.active ? renderShoppingPricesPanel(entries) : ""}
     ${SHOP_CATEGORY_ORDER.map(category => grouped[category].length ? `
       <section class="shop-category">
         <h2 class="shop-category-title">${category}</h2>
-        ${grouped[category].map(entry => `<div class="shop-item"><div class="shop-item-details"><strong>${escapeHtml(entry.name)}</strong><small>${escapeHtml(entry.tags.join(" · "))}</small>${shopPriceMatchHtml(entry)}</div><input class="shop-amount-input" aria-label="Quantità ${escapeAttr(entry.name)}" value="${escapeAttr(shoppingAmountText(entry))}" onchange="updateShopItemQty('${escapeAttr(entry.id)}', this.value)"><button class="btn-icon remove-shop-item" title="Escludi" onclick="excludeShopItem('${escapeAttr(entry.id)}')">×</button></div>`).join("")}
+        ${grouped[category].map(entry => `<div class="shop-item"><div class="shop-item-details"><strong>${escapeHtml(entry.name)}</strong><small>${escapeHtml(entry.tags.join(" · "))}</small></div><input class="shop-amount-input" aria-label="Quantità ${escapeAttr(entry.name)}" value="${escapeAttr(shoppingAmountText(entry))}" onchange="updateShopItemQty('${escapeAttr(entry.id)}', this.value)"><button class="btn-icon remove-shop-item" title="Escludi" onclick="excludeShopItem('${escapeAttr(entry.id)}')">×</button></div>`).join("")}
       </section>` : "").join("")}
     ${entries.length ? `<div class="shop-actions"><button class="btn btn-outline" onclick="copyShopList()">📋 Copia</button><button class="btn btn-primary whatsapp-btn" onclick="shareShopWhatsApp()">Condividi</button></div>` : `<div class="empty-state"><span>🛒</span><h3>Lista vuota</h3><p>Apri “Seleziona” e scegli almeno un pasto.</p></div>`}
   `;
@@ -1211,96 +1210,6 @@ window.toggleShopSettings = function() {
   shopSettingsVisible = !shopSettingsVisible;
   renderShop();
 };
-
-// ---- Prezzi registrati agganciati alla lista della spesa ----
-// Attivabile dall'utente (non automatico): abbina ogni alimento in lista al
-// prodotto corrispondente del database condiviso e mostra il miglior prezzo
-// conosciuto più la spesa stimata sulle quantità selezionate.
-
-window.toggleShoppingPrices = async function() {
-  if (!window.PriceDomain) return;
-  if (shoppingPrices.active) {
-    shoppingPrices = { active: false, loading: false, matches: {} };
-    renderShop();
-    return;
-  }
-  if (shoppingPrices.loading) return;
-  shoppingPrices.loading = true;
-  shoppingPrices.active = true;
-  renderShop();
-  try {
-    await ensurePriceData();
-    const entries = getVisibleShoppingEntries();
-    const matches = {};
-    const keysToFetch = new Set();
-    entries.forEach(entry => {
-      const match = PriceDomain.matchShoppingName(entry.name, priceState.meta.products);
-      if (!match) return;
-      const productKey = PriceDomain.priceKey(match.product);
-      matches[entry.id] = { product: match.product, productKey, best: null };
-      keysToFetch.add(productKey);
-    });
-    await Promise.all([...keysToFetch].map(async key => {
-      try {
-        await getCachedPriceEntries(key);
-      } catch (error) {
-        console.warn(`Prezzi di "${key}" non disponibili`, error);
-      }
-    }));
-    Object.values(matches).forEach(match => {
-      const productEntries = priceEntriesCache.get(match.productKey) || [];
-      match.best = PriceDomain.compareStores(productEntries).best;
-    });
-    shoppingPrices.matches = matches;
-  } catch (error) {
-    console.error(error);
-    shoppingPrices.active = false;
-    showToast("Prezzi non disponibili: controlla la connessione", true);
-  }
-  shoppingPrices.loading = false;
-  renderShop();
-};
-
-function renderShoppingPricesPanel(entries) {
-  if (shoppingPrices.loading) {
-    return `<section class="prices-card shop-prices-panel"><div class="empty-state"><div class="loading-spinner"></div><p>Ricerca dei prezzi registrati…</p></div></section>`;
-  }
-  let matchedCount = 0;
-  let estimateTotal = 0;
-  let estimatedCount = 0;
-  entries.forEach(entry => {
-    const match = shoppingPrices.matches[entry.id];
-    if (!match?.best) return;
-    matchedCount += 1;
-    const estimate = window.PriceDomain ? PriceDomain.estimateShoppingCost(entry.totals, match.best) : null;
-    if (estimate !== null) {
-      estimateTotal += estimate;
-      estimatedCount += 1;
-    }
-  });
-  if (!matchedCount) {
-    return `<section class="prices-card shop-prices-panel"><p>Nessun alimento della lista ha ancora un prezzo nel database condiviso. Registra i prezzi che trovi nei negozi per vedere qui i migliori.</p></section>`;
-  }
-  return `
-    <section class="prices-card shop-prices-panel">
-      <label class="prices-label">Prezzi condivisi</label>
-      <p><strong>Miglior prezzo conosciuto per ${matchedCount} aliment${matchedCount === 1 ? "o" : "i"} su ${entries.length} in lista.</strong></p>
-      ${estimatedCount ? `<p class="shop-prices-total">Spesa stimata ≈ <strong>${escapeHtml(PriceDomain.formatEuro(Math.round(estimateTotal * 100) / 100))}</strong> <small class="text-muted">per ${estimatedCount} prodotti con quantità numerica e prezzo registrato</small></p>` : ""}
-    </section>`;
-}
-
-// Riga sotto l'alimento: miglior prezzo conosciuto e costo stimato della
-// quantità attualmente selezionata (ricalcolata a ogni cambio di pasti).
-function shopPriceMatchHtml(entry) {
-  if (!shoppingPrices.active || shoppingPrices.loading) return "";
-  const match = shoppingPrices.matches[entry.id];
-  if (!match || !window.PriceDomain) return "";
-  if (!match.best) {
-    return `<small class="shop-price-match no-price">💶 ${escapeHtml(match.product)}: nessun prezzo registrato</small>`;
-  }
-  const estimate = PriceDomain.estimateShoppingCost(entry.totals, match.best);
-  return `<small class="shop-price-match">💶 ${escapeHtml(PriceDomain.formatNormPrice(match.best))} · ${escapeHtml(match.best.store)}${estimate !== null ? ` · stimato ${escapeHtml(PriceDomain.formatEuro(estimate))}` : ""}</small>`;
-}
 
 // ---- Salvataggio lista spesa con debounce ----
 // Ogni interazione aggiorna SUBITO interfaccia e cache locale (localStorage),
@@ -2798,14 +2707,6 @@ function invalidatePriceEntriesCache() {
   priceEntriesCache.clear();
 }
 
-// ---- Prezzi nella lista della spesa ----
-// Su richiesta dell'utente abbina gli alimenti in lista ai prodotti del
-// database condiviso e mostra miglior prezzo conosciuto e spesa stimata.
-let shoppingPrices = {
-  active: false,
-  loading: false,
-  matches: {} // id alimento → { product, productKey, best }
-};
 
 function priceUserMeta() {
   return { uid: appState.user?.uid || null, username: usernameFromUser(appState.user) };

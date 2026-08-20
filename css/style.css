@@ -1414,30 +1414,6 @@ body.dark-mode .price-compare-row { border-color: #1d1d1d; }
 }
 .price-suggestions-box .price-filter-pill { margin-bottom: 0; }
 
-/* ---- Prezzi nella lista della spesa ---- */
-.shop-heading-actions {
-  display: flex;
-  gap: 8px;
-  flex-wrap: wrap;
-  justify-content: flex-end;
-}
-.btn-active {
-  background: var(--primary-soft);
-  border-color: var(--primary);
-  color: var(--primary-strong);
-}
-.shop-prices-panel { margin-bottom: 14px; }
-.shop-prices-panel p { margin-bottom: 4px; }
-.shop-prices-total strong { color: var(--primary); font-size: 1.05rem; }
-.shop-price-match {
-  display: block;
-  margin-top: 2px;
-  font-size: .76rem;
-  font-weight: 700;
-  color: var(--primary);
-}
-.shop-price-match.no-price { color: var(--text-muted); font-weight: 500; }
-
 /* ---- Pagina negozio ---- */
 .store-list { display: flex; flex-direction: column; gap: 10px; }
 .store-card {
@@ -1507,13 +1483,11 @@ body.dark-mode .price-compare-row { border-color: #1d1d1d; }
 
 /* Dark mode */
 body.dark-mode .store-card,
-body.dark-mode .store-detail-row,
-body.dark-mode .shop-prices-panel {
+body.dark-mode .store-detail-row {
   background: #000000;
   border-color: #202020;
 }
 body.dark-mode .store-back-btn { background: #111111; border-color: #242424; }
-body.dark-mode .btn-active { background: #10281c; color: #6fd39a; border-color: #2c5c42; }
 body.dark-mode .store-status-badge { background: #141414; color: #9a9a9a; }
 body.dark-mode .store-status-badge.best { background: #10281c; color: #6fd39a; }
 body.dark-mode .store-status-badge.worse { background: #2b1214; color: #ff8a90; }
