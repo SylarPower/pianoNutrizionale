@@ -271,3 +271,34 @@ test('similarProducts: niente falsi positivi né auto-suggerimenti', () => {
   assert.deepEqual(p.similarProducts('', products), []);
   assert.deepEqual(p.similarProducts('Sgombro', products), []);
 });
+
+// ---- Aggancio lista della spesa ↔ prezzi ----
+
+test('matchShoppingName: ingrediente della spesa ritrova il prodotto registrato', () => {
+  const products = ['Uova', 'Albume', 'Yogurt Greco Bianco Magro 0%', 'Farina di avena', 'Latte', 'Crackers'];
+  assert.equal(p.matchShoppingName('Uova intere (sode)', products).product, 'Uova');
+  assert.equal(p.matchShoppingName('Yogurt greco', products).product, 'Yogurt Greco Bianco Magro 0%');
+  assert.equal(p.matchShoppingName('Farina di avena integrale', products).product, 'Farina di avena');
+  assert.equal(p.matchShoppingName('Latte parzialmente scremato', products).product, 'Latte');
+  assert.equal(p.matchShoppingName('crackers', products).product, 'Crackers');
+});
+
+test('matchShoppingName: niente falsi positivi', () => {
+  const products = ['Latte', 'Riso', 'Dentifricio'];
+  assert.equal(p.matchShoppingName('Fiocchi di latte', products), null, 'fiocchi di latte non è latte');
+  assert.equal(p.matchShoppingName('Pomodorini', products), null);
+  assert.equal(p.matchShoppingName('Olio EVO', products), null);
+  assert.equal(p.matchShoppingName('', products), null);
+});
+
+test('estimateShoppingCost: converte le quantità della spesa col prezzo normalizzato', () => {
+  const uova = { normPrice: 0.19, normUnit: 'pz' };
+  assert.equal(p.estimateShoppingCost({ pz: 28 }, uova), 5.32);
+  const latte = { normPrice: 1.5, normUnit: 'l' };
+  assert.equal(p.estimateShoppingCost({ ml: 250 }, latte), 0.38);
+  const farina = { normPrice: 3.73, normUnit: 'kg' };
+  assert.equal(p.estimateShoppingCost({ g: 500 }, farina), 1.87);
+  assert.equal(p.estimateShoppingCost({ g: 500 }, uova), null, 'unità incompatibile: nessuna stima');
+  assert.equal(p.estimateShoppingCost({}, farina), null, 'quantità opache: nessuna stima');
+  assert.equal(p.estimateShoppingCost({ pz: 6 }, { normPrice: 0 }), null);
+});

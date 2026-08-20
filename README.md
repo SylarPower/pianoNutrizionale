@@ -24,6 +24,8 @@ WebApp PWA privata per gestire colazioni, spuntini, pranzi, cene, batch cooking 
 - PWA offline con shell versionata, aggiornamento one-tap e fallback offline comprensibile;
 - alternative alimentari di Meller sempre consultabili nelle Impostazioni;
 - **registro prezzi condiviso** (scheda Prezzi): un unico database tra tutti gli utenti per registrare i prezzi nei negozi (con barcode Open Food Facts o incollando il testo di un volantino), confrontare il prezzo normalizzato €/kg tra negozi con indicazione del migliore, giudizio rispetto allo storico (minimo storico / affare / caro), suggerimento del nome prodotto già in archivio quando quello scannerizzato è una variante più lunga ("Cereali di grano duro" → "Cereali"), archivio con modifica delle proprie voci e importazione/esportazione di backup JSON (incluso il vecchio formato "Spesa Smart");
+- **prezzi agganciati alla lista della spesa**: il pulsante 💶 Prezzi nella Spesa abbina gli alimenti in lista ai prodotti registrati (matching per parole significative, prudente sui falsi positivi) e mostra per ciascuno il miglior prezzo conosciuto e la spesa stimata sulle quantità selezionate;
+- **pagina negozio** (Prezzi → Negozi): per ogni negozio l'ultimo prezzo registrato di ogni prodotto, con indicazione di dove quel prodotto costa meno (🏆 miglior prezzo, scostamento % rispetto al migliore, "solo qui");
 - nessuna funzionalità di notifica (né push né locali).
 
 ## Dove si trovano i dati
@@ -99,7 +101,9 @@ Il registro prezzi (scheda Prezzi) è progettato per costare poco:
 - confronto di un prodotto: una sola query `where productKey` (tante letture quante sono le voci registrate per quel prodotto, normalmente poche);
 - archivio: una sola query con limite 150, ricaricata al massimo una volta al minuto;
 - incolla da volantino: un'unica scrittura in batch per tutte le righe + al massimo 1 scrittura della rubrica;
-- importazione backup JSON: qualche lettura di controllo (una ogni 30 voci, per riconoscere le voci già importate e non duplicarle) + scritture in batch da massimo 450 voci + al massimo 1 scrittura della rubrica.
+- importazione backup JSON: qualche lettura di controllo (una ogni 30 voci, per riconoscere le voci già importate e non duplicarle) + scritture in batch da massimo 450 voci + al massimo 1 scrittura della rubrica;
+- 💶 Prezzi nella lista della spesa: solo su richiesta dell'utente, una query per ogni prodotto effettivamente abbinato (in genere una manciata), con cache per sessione: lo stesso prodotto viene letto una volta sola anche se compare in più schermate;
+- pagina negozio: una query per il negozio + una query per prodotto (in cache se già letto), solo quando si apre il dettaglio del negozio.
 
 La cache offline Firestore è abilitata. Tema, profilo porzioni e metadati del backup restano in `localStorage`.
 

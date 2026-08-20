@@ -1021,3 +1021,13 @@ async function savePriceImport(entries, meta = {}) {
   }
   return { imported: fresh.length, skippedDuplicates: entries.length - fresh.length };
 }
+
+// Tutte le voci registrate in un negozio (pagina negozio): una sola query
+// sul campo storeKey, coperta dagli indici automatici.
+async function getPriceEntriesForStore(storeKey) {
+  requireUser();
+  const snapshot = await priceEntriesRef().where("storeKey", "==", storeKey).get();
+  const entries = [];
+  snapshot.forEach(doc => entries.push(priceEntryFromDoc(doc)));
+  return PriceDomain.sortEntriesDesc(entries);
+}

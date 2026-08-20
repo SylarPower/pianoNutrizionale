@@ -1413,3 +1413,108 @@ body.dark-mode .price-compare-row { border-color: #1d1d1d; }
   font-size: .74rem;
 }
 .price-suggestions-box .price-filter-pill { margin-bottom: 0; }
+
+/* ---- Prezzi nella lista della spesa ---- */
+.shop-heading-actions {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+}
+.btn-active {
+  background: var(--primary-soft);
+  border-color: var(--primary);
+  color: var(--primary-strong);
+}
+.shop-prices-panel { margin-bottom: 14px; }
+.shop-prices-panel p { margin-bottom: 4px; }
+.shop-prices-total strong { color: var(--primary); font-size: 1.05rem; }
+.shop-price-match {
+  display: block;
+  margin-top: 2px;
+  font-size: .76rem;
+  font-weight: 700;
+  color: var(--primary);
+}
+.shop-price-match.no-price { color: var(--text-muted); font-weight: 500; }
+
+/* ---- Pagina negozio ---- */
+.store-list { display: flex; flex-direction: column; gap: 10px; }
+.store-card {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  width: 100%;
+  text-align: left;
+  background: var(--surface);
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  box-shadow: var(--shadow);
+  padding: 16px 18px;
+  cursor: pointer;
+  color: var(--text);
+  transition: border-color .2s, transform .15s;
+}
+.store-card:hover { border-color: var(--primary); }
+.store-card-icon { font-size: 1.6rem; }
+.store-card-info { flex: 1; min-width: 0; }
+.store-card-info strong { display: block; font-size: 1rem; }
+.store-card-info small { color: var(--text-muted); font-size: .78rem; }
+.store-card-arrow { color: var(--text-muted); font-size: 1.3rem; }
+.store-detail-title-row {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  margin-bottom: 14px;
+}
+.store-back-btn {
+  font-size: 1.3rem;
+  margin-top: 14px;
+  background: var(--surface);
+  border: 1px solid var(--line);
+  border-radius: 12px;
+}
+.store-detail-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  background: var(--surface);
+  border: 1px solid var(--line);
+  border-radius: 16px;
+  padding: 13px 15px;
+  margin-bottom: 10px;
+}
+.store-detail-badge { flex: 0 0 auto; text-align: right; }
+.store-status-badge {
+  display: inline-block;
+  padding: 4px 10px;
+  border-radius: 10px;
+  font-size: .68rem;
+  font-weight: 800;
+  white-space: nowrap;
+  background: var(--surface-alt);
+  color: var(--text-muted);
+}
+.store-status-badge.best { background: var(--primary-soft); color: var(--primary-strong); }
+.store-status-badge.worse { background: var(--danger-soft); color: var(--danger); }
+.store-status-badge.only { background: var(--rest-soft); color: var(--rest); }
+
+@media (max-width: 520px) {
+  .shop-heading-actions { justify-content: flex-start; }
+  .store-detail-row { flex-wrap: wrap; }
+  .store-detail-badge { width: 100%; text-align: left; }
+}
+
+/* Dark mode */
+body.dark-mode .store-card,
+body.dark-mode .store-detail-row,
+body.dark-mode .shop-prices-panel {
+  background: #000000;
+  border-color: #202020;
+}
+body.dark-mode .store-back-btn { background: #111111; border-color: #242424; }
+body.dark-mode .btn-active { background: #10281c; color: #6fd39a; border-color: #2c5c42; }
+body.dark-mode .store-status-badge { background: #141414; color: #9a9a9a; }
+body.dark-mode .store-status-badge.best { background: #10281c; color: #6fd39a; }
+body.dark-mode .store-status-badge.worse { background: #2b1214; color: #ff8a90; }
+body.dark-mode .store-status-badge.only { background: #101c24; color: #7fa8c2; }

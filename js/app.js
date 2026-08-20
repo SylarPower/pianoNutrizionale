@@ -1177,13 +1177,14 @@ function renderShop() {
   const grouped = Object.fromEntries(SHOP_CATEGORY_ORDER.map(category => [category, entries.filter(entry => entry.category === category)]));
   const allSelected = DAY_ORDER.every(day => MEAL_SLOTS.every(slot => (appState.shopping.selectedMeals[day] || []).includes(slot.id)));
   container.innerHTML = `
-    <div class="page-heading shop-heading"><div><p class="eyebrow">Dosi esatte · ${escapeHtml(getProfileLabel())}</p><h1>Lista della spesa</h1><p>Le quantità derivano solo dai pasti selezionati, senza fattori percentuali.</p></div><button class="btn btn-outline" onclick="toggleShopSettings()">${shopSettingsVisible ? "Chiudi" : "Seleziona"}</button></div>
+    <div class="page-heading shop-heading"><div><p class="eyebrow">Dosi esatte · ${escapeHtml(getProfileLabel())}</p><h1>Lista della spesa</h1><p>Le quantità derivano solo dai pasti selezionati, senza fattori percentuali.</p></div><div class="shop-heading-actions"><button class="btn btn-outline ${shoppingPrices.active ? "btn-active" : ""}" onclick="toggleShoppingPrices()">${shoppingPrices.loading ? "Ricerca…" : shoppingPrices.active ? "Nascondi prezzi" : "💶 Prezzi"}</button><button class="btn btn-outline" onclick="toggleShopSettings()">${shopSettingsVisible ? "Chiudi" : "Seleziona"}</button></div></div>
     ${shopSettingsVisible ? renderShopSettings(allSelected) : ""}
     <div class="shopping-summary"><strong>${entries.length} alimenti</strong><span>${DAY_ORDER.reduce((sum, day) => sum + (appState.shopping.selectedMeals[day] || []).length, 0)} pasti selezionati</span></div>
+    ${shoppingPrices.active ? renderShoppingPricesPanel(entries) : ""}
     ${SHOP_CATEGORY_ORDER.map(category => grouped[category].length ? `
       <section class="shop-category">
         <h2 class="shop-category-title">${category}</h2>
-        ${grouped[category].map(entry => `<div class="shop-item"><div class="shop-item-details"><strong>${escapeHtml(entry.name)}</strong><small>${escapeHtml(entry.tags.join(" · "))}</small></div><input class="shop-amount-input" aria-label="Quantità ${escapeAttr(entry.name)}" value="${escapeAttr(shoppingAmountText(entry))}" onchange="updateShopItemQty('${escapeAttr(entry.id)}', this.value)"><button class="btn-icon remove-shop-item" title="Escludi" onclick="excludeShopItem('${escapeAttr(entry.id)}')">×</button></div>`).join("")}
+        ${grouped[category].map(entry => `<div class="shop-item"><div class="shop-item-details"><strong>${escapeHtml(entry.name)}</strong><small>${escapeHtml(entry.tags.join(" · "))}</small>${shopPriceMatchHtml(entry)}</div><input class="shop-amount-input" aria-label="Quantità ${escapeAttr(entry.name)}" value="${escapeAttr(shoppingAmountText(entry))}" onchange="updateShopItemQty('${escapeAttr(entry.id)}', this.value)"><button class="btn-icon remove-shop-item" title="Escludi" onclick="excludeShopItem('${escapeAttr(entry.id)}')">×</button></div>`).join("")}
       </section>` : "").join("")}
     ${entries.length ? `<div class="shop-actions"><button class="btn btn-outline" onclick="copyShopList()">📋 Copia</button><button class="btn btn-primary whatsapp-btn" onclick="shareShopWhatsApp()">Condividi</button></div>` : `<div class="empty-state"><span>🛒</span><h3>Lista vuota</h3><p>Apri “Seleziona” e scegli almeno un pasto.</p></div>`}
   `;
@@ -1210,6 +1211,96 @@ window.toggleShopSettings = function() {
   shopSettingsVisible = !shopSettingsVisible;
   renderShop();
 };
+
+// ---- Prezzi registrati agganciati alla lista della spesa ----
+// Attivabile dall'utente (non automatico): abbina ogni alimento in lista al
+// prodotto corrispondente del database condiviso e mostra il miglior prezzo
+// conosciuto più la spesa stimata sulle quantità selezionate.
+
+window.toggleShoppingPrices = async function() {
+  if (!window.PriceDomain) return;
+  if (shoppingPrices.active) {
+    shoppingPrices = { active: false, loading: false, matches: {} };
+    renderShop();
+    return;
+  }
+  if (shoppingPrices.loading) return;
+  shoppingPrices.loading = true;
+  shoppingPrices.active = true;
+  renderShop();
+  try {
+    await ensurePriceData();
+    const entries = getVisibleShoppingEntries();
+    const matches = {};
+    const keysToFetch = new Set();
+    entries.forEach(entry => {
+      const match = PriceDomain.matchShoppingName(entry.name, priceState.meta.products);
+      if (!match) return;
+      const productKey = PriceDomain.priceKey(match.product);
+      matches[entry.id] = { product: match.product, productKey, best: null };
+      keysToFetch.add(productKey);
+    });
+    await Promise.all([...keysToFetch].map(async key => {
+      try {
+        await getCachedPriceEntries(key);
+      } catch (error) {
+        console.warn(`Prezzi di "${key}" non disponibili`, error);
+      }
+    }));
+    Object.values(matches).forEach(match => {
+      const productEntries = priceEntriesCache.get(match.productKey) || [];
+      match.best = PriceDomain.compareStores(productEntries).best;
+    });
+    shoppingPrices.matches = matches;
+  } catch (error) {
+    console.error(error);
+    shoppingPrices.active = false;
+    showToast("Prezzi non disponibili: controlla la connessione", true);
+  }
+  shoppingPrices.loading = false;
+  renderShop();
+};
+
+function renderShoppingPricesPanel(entries) {
+  if (shoppingPrices.loading) {
+    return `<section class="prices-card shop-prices-panel"><div class="empty-state"><div class="loading-spinner"></div><p>Ricerca dei prezzi registrati…</p></div></section>`;
+  }
+  let matchedCount = 0;
+  let estimateTotal = 0;
+  let estimatedCount = 0;
+  entries.forEach(entry => {
+    const match = shoppingPrices.matches[entry.id];
+    if (!match?.best) return;
+    matchedCount += 1;
+    const estimate = window.PriceDomain ? PriceDomain.estimateShoppingCost(entry.totals, match.best) : null;
+    if (estimate !== null) {
+      estimateTotal += estimate;
+      estimatedCount += 1;
+    }
+  });
+  if (!matchedCount) {
+    return `<section class="prices-card shop-prices-panel"><p>Nessun alimento della lista ha ancora un prezzo nel database condiviso. Registra i prezzi che trovi nei negozi per vedere qui i migliori.</p></section>`;
+  }
+  return `
+    <section class="prices-card shop-prices-panel">
+      <label class="prices-label">Prezzi condivisi</label>
+      <p><strong>Miglior prezzo conosciuto per ${matchedCount} aliment${matchedCount === 1 ? "o" : "i"} su ${entries.length} in lista.</strong></p>
+      ${estimatedCount ? `<p class="shop-prices-total">Spesa stimata ≈ <strong>${escapeHtml(PriceDomain.formatEuro(Math.round(estimateTotal * 100) / 100))}</strong> <small class="text-muted">per ${estimatedCount} prodotti con quantità numerica e prezzo registrato</small></p>` : ""}
+    </section>`;
+}
+
+// Riga sotto l'alimento: miglior prezzo conosciuto e costo stimato della
+// quantità attualmente selezionata (ricalcolata a ogni cambio di pasti).
+function shopPriceMatchHtml(entry) {
+  if (!shoppingPrices.active || shoppingPrices.loading) return "";
+  const match = shoppingPrices.matches[entry.id];
+  if (!match || !window.PriceDomain) return "";
+  if (!match.best) {
+    return `<small class="shop-price-match no-price">💶 ${escapeHtml(match.product)}: nessun prezzo registrato</small>`;
+  }
+  const estimate = PriceDomain.estimateShoppingCost(entry.totals, match.best);
+  return `<small class="shop-price-match">💶 ${escapeHtml(PriceDomain.formatNormPrice(match.best))} · ${escapeHtml(match.best.store)}${estimate !== null ? ` · stimato ${escapeHtml(PriceDomain.formatEuro(estimate))}` : ""}</small>`;
+}
 
 // ---- Salvataggio lista spesa con debounce ----
 // Ogni interazione aggiorna SUBITO interfaccia e cache locale (localStorage),
@@ -2685,11 +2776,36 @@ let priceState = {
   draft: { store: "", product: "", brand: "", price: "", weight: "1000" },
   history: { key: null, entries: [], loading: false },
   compare: { query: "", productKey: null, productName: null, brandKey: null, entries: [], candidates: [], loading: false },
+  stores: { view: "list", storeKey: null, storeName: "", loading: false, rows: [], summary: null },
   archive: { entries: [], storeFilter: null, loading: false, loadedAt: 0 }
 };
 let priceHistoryTimer = null;
 let priceCompareTimer = null;
 let priceScanner = null;
+
+// Cache delle query per prodotto (condivisa da confronto, badge, pagina
+// negozio e lista spesa): lo stesso prodotto viene letto UNA volta a sessione.
+const priceEntriesCache = new Map();
+
+async function getCachedPriceEntries(productKey) {
+  if (priceEntriesCache.has(productKey)) return priceEntriesCache.get(productKey);
+  const entries = await getPriceEntriesForProduct(productKey);
+  priceEntriesCache.set(productKey, entries);
+  return entries;
+}
+
+function invalidatePriceEntriesCache() {
+  priceEntriesCache.clear();
+}
+
+// ---- Prezzi nella lista della spesa ----
+// Su richiesta dell'utente abbina gli alimenti in lista ai prodotti del
+// database condiviso e mostra miglior prezzo conosciuto e spesa stimata.
+let shoppingPrices = {
+  active: false,
+  loading: false,
+  matches: {} // id alimento → { product, productKey, best }
+};
 
 function priceUserMeta() {
   return { uid: appState.user?.uid || null, username: usernameFromUser(appState.user) };
@@ -2709,6 +2825,7 @@ async function ensurePriceData(force = false) {
 window.refreshPricesData = async function() {
   priceState.archive.loadedAt = 0;
   priceState.history = { key: null, entries: [], loading: false };
+  invalidatePriceEntriesCache();
   await ensurePriceData(true);
   if (priceState.tab === "archive") loadPriceArchive(true);
   else if (priceState.tab === "compare" && priceState.compare.productKey) loadPriceComparison(priceState.compare.productKey);
@@ -2717,7 +2834,7 @@ window.refreshPricesData = async function() {
 };
 
 window.switchPriceTab = function(tab) {
-  if (!["log", "compare", "archive"].includes(tab)) return;
+  if (!["log", "compare", "stores", "archive"].includes(tab)) return;
   capturePriceDraft();
   priceState.tab = tab;
   renderPrices();
@@ -2749,9 +2866,10 @@ function renderPrices() {
     <div class="prices-tabs" role="tablist">
       <button class="prices-tab ${tab === "log" ? "active" : ""}" onclick="switchPriceTab('log')">🧾 Registra</button>
       <button class="prices-tab ${tab === "compare" ? "active" : ""}" onclick="switchPriceTab('compare')">🔍 Confronta</button>
+      <button class="prices-tab ${tab === "stores" ? "active" : ""}" onclick="switchPriceTab('stores')">🏪 Negozi</button>
       <button class="prices-tab ${tab === "archive" ? "active" : ""}" onclick="switchPriceTab('archive')">🗂 Archivio</button>
     </div>
-    ${tab === "log" ? renderPriceLogTab() : tab === "compare" ? renderPriceCompareTab() : renderPriceArchiveTab()}
+    ${tab === "log" ? renderPriceLogTab() : tab === "compare" ? renderPriceCompareTab() : tab === "stores" ? renderPriceStoresTab() : renderPriceArchiveTab()}
   `;
   if (tab === "log") restorePriceDraft();
 }
@@ -2884,7 +3002,7 @@ async function loadPriceHistoryForDraft() {
   }
   priceState.history.loading = true;
   try {
-    const entries = await getPriceEntriesForProduct(key);
+    const entries = await getCachedPriceEntries(key);
     priceState.history = { key, entries, loading: false };
   } catch (error) {
     console.warn("Storico prezzi non disponibile", error);
@@ -3002,6 +3120,7 @@ window.savePriceForm = async function() {
     priceState.editingId = null;
     priceState.editingDate = null;
     priceState.archive.loadedAt = 0;
+    invalidatePriceEntriesCache();
     resetPriceForm(true);
     priceState.draft.store = store;
     priceState.compare.query = "";
@@ -3051,6 +3170,7 @@ window.deletePriceEntryClick = async function(entryId) {
   try {
     await deletePriceEntry(entryId);
     priceState.archive.entries = priceState.archive.entries.filter(item => item.id !== entryId);
+    invalidatePriceEntriesCache();
     priceState.history = { key: null, entries: [], loading: false };
     renderPrices();
     showToast("Voce eliminata");
@@ -3097,7 +3217,7 @@ async function loadPriceComparison(productKey, productName = null) {
   if (productName) priceState.compare.productName = productName;
   renderPriceCompareResults();
   try {
-    priceState.compare.entries = await getPriceEntriesForProduct(productKey);
+    priceState.compare.entries = await getCachedPriceEntries(productKey);
   } catch (error) {
     console.error(error);
     showToast("Impossibile caricare i prezzi del prodotto", true);
@@ -3198,6 +3318,111 @@ function renderPriceCompareTab() {
       ${priceDatalistHtml("list-price-products-compare", priceState.meta.products)}
     </section>
     <div id="price-compare-results"></div>
+  `;
+}
+
+// ---- Pagina negozio ----
+
+function renderPriceStoresTab() {
+  const state = priceState.stores;
+  if (state.view === "detail") return renderStoreDetail();
+  const stores = priceState.meta.stores;
+  if (!stores.length) {
+    return `<div class="empty-state"><span>🏪</span><h3>Nessun negozio registrato</h3><p>Quando qualcuno registra un prezzo, il negozio compare qui con tutti i suoi prodotti.</p></div>`;
+  }
+  return `
+    <div class="store-list">
+      ${stores.map(store => `
+        <button class="store-card" onclick="openStoreDetail('${escapeAttr(PriceDomain.priceKey(store))}', '${escapeAttr(store)}')">
+          <span class="store-card-icon">🏪</span>
+          <span class="store-card-info"><strong>${escapeHtml(store)}</strong><small>Prezzi registrati e confronto con gli altri negozi</small></span>
+          <b class="store-card-arrow">›</b>
+        </button>`).join("")}
+    </div>
+    <p class="text-muted price-save-note">La pagina negozio mostra l'ultimo prezzo registrato per ogni prodotto e indica dove quel prodotto costa meno.</p>
+  `;
+}
+
+window.closeStoreDetail = function() {
+  priceState.stores = { view: "list", storeKey: null, storeName: "", loading: false, rows: [], summary: null };
+  renderPrices();
+};
+
+window.openStoreDetail = async function(storeKey, storeName) {
+  if (!window.PriceDomain) return;
+  priceState.stores = { view: "detail", storeKey, storeName, loading: true, rows: [], summary: null };
+  renderPrices();
+  let storeEntries;
+  try {
+    storeEntries = await getPriceEntriesForStore(storeKey);
+  } catch (error) {
+    console.error(error);
+    showToast("Prezzi del negozio non disponibili", true);
+    closeStoreDetail();
+    return;
+  }
+  // Ultimo prezzo registrato per ogni prodotto del negozio.
+  const latestByProduct = new Map();
+  PriceDomain.sortEntriesDesc(storeEntries).forEach(entry => {
+    if (!latestByProduct.has(entry.productKey)) latestByProduct.set(entry.productKey, entry);
+  });
+  const rows = [...latestByProduct.values()].map(entry => ({ entry, status: "loading", best: null, deltaPct: null, options: 0 }));
+  priceState.stores.rows = rows;
+  priceState.stores.loading = false;
+  renderPrices();
+  if (!rows.length) return;
+
+  // Per ogni prodotto, una query (in cache se già usata) posiziona il
+  // negozio rispetto agli altri: migliore, peggiore o unico venditore.
+  await Promise.all(rows.map(async row => {
+    try {
+      const productEntries = await getCachedPriceEntries(row.entry.productKey);
+      const { best, others } = PriceDomain.compareStores(productEntries);
+      row.options = (best ? 1 : 0) + others.length;
+      row.best = best;
+      const storeIsBest = best && best.storeKey === storeKey;
+      row.status = row.options <= 1 ? "only" : storeIsBest ? "best" : "worse";
+      row.deltaPct = !storeIsBest && best && best.normPrice > 0
+        ? Math.round(((row.entry.normPrice - best.normPrice) / best.normPrice) * 100)
+        : null;
+    } catch (error) {
+      console.warn("Confronto prodotto non disponibile", error);
+      row.status = "unknown";
+    }
+  }));
+  const compared = rows.filter(row => row.options > 1).length;
+  priceState.stores.summary = {
+    total: rows.length,
+    compared,
+    bestCount: rows.filter(row => row.status === "best").length
+  };
+  renderPrices();
+};
+
+function storeDetailBadgeHtml(row) {
+  const { status, best, deltaPct } = row;
+  if (status === "best") return `<span class="store-status-badge best">🏆 Miglior prezzo</span>`;
+  if (status === "worse") return `<span class="store-status-badge worse">+${deltaPct ?? "?"}% vs ${escapeHtml(best?.store || "migliore")}</span>`;
+  if (status === "only") return `<span class="store-status-badge only">Solo qui</span>`;
+  if (status === "loading") return `<span class="store-status-badge">…</span>`;
+  return "";
+}
+
+function renderStoreDetail() {
+  const { storeName, loading, rows, summary } = priceState.stores;
+  return `
+    <div class="store-detail-title-row">
+      <button class="btn-icon store-back-btn" onclick="closeStoreDetail()" title="Torna ai negozi" aria-label="Torna ai negozi">←</button>
+      <div><p class="eyebrow">Pagina negozio</p><h1>${escapeHtml(storeName)}</h1><p class="text-muted">Ultimo prezzo registrato per prodotto, con il confronto con gli altri negozi.</p></div>
+    </div>
+    ${summary ? `<div class="shopping-summary"><strong>🏆 Miglior prezzo per ${summary.bestCount} prodott${summary.bestCount === 1 ? "o" : "i"}</strong><span>${summary.compared} confrontabili su ${summary.total}</span></div>` : ""}
+    ${loading ? `<div class="empty-state"><div class="loading-spinner"></div><p>Caricamento prezzi del negozio…</p></div>` : ""}
+    ${rows.length ? rows.map(row => `
+      <div class="store-detail-row">
+        <div class="price-archive-info"><strong>${escapeHtml(row.entry.product)}</strong><small>${escapeHtml(row.entry.brand)} · ${escapeHtml(PriceDomain.formatItalianDate(row.entry.date))}${row.entry.isWeightEstimated ? " · qtà stimata" : ""}</small></div>
+        <div class="price-archive-values"><strong>${escapeHtml(PriceDomain.formatNormPrice(row.entry))}</strong><small>${escapeHtml(PriceDomain.formatEuro(row.entry.price))} × ${escapeHtml(String(row.entry.weight))} ${escapeHtml(row.entry.unit)}</small></div>
+        <div class="store-detail-badge">${storeDetailBadgeHtml(row)}</div>
+      </div>`).join("") : (!loading ? `<div class="empty-state"><span>🏪</span><p>Nessun prezzo registrato in questo negozio.</p></div>` : "")}
   `;
 }
 
@@ -3360,6 +3585,7 @@ window.applyPriceBackupImport = async function() {
   try {
     const result = await savePriceImport(entries, priceUserMeta());
     closePriceImportModal();
+    invalidatePriceEntriesCache();
     priceState.archive.loadedAt = 0;
     priceState.history = { key: null, entries: [], loading: false };
     priceState.compare.productKey = null;

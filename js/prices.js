@@ -399,8 +399,21 @@
   // ("Cereali"): il confronto funziona solo se il prodotto ha sempre la
   // stessa chiave, quindi suggeriamo il nome già in uso.
 
+  // Token puliti: parentesi e punteggiatura non contano ("Uova intere (sode)"
+  // → uova intere sode).
+  function cleanTokens(value) {
+    return priceKey(String(value || '').replace(/[()]/g, ' '))
+      .replace(/[^a-z0-9\s]/g, ' ')
+      .split(/\s+/)
+      .filter(Boolean);
+  }
+
+  function significantTokensFor(tokens) {
+    return tokens.filter(token => token.length >= 4 || /^\d+$/.test(token));
+  }
+
   function significantTokens(value) {
-    return priceKey(value).split(' ').filter(token => token.length >= 4);
+    return significantTokensFor(cleanTokens(value));
   }
 
   function similarProducts(query, products = [], limit = 5) {
@@ -425,6 +438,83 @@
       .sort((a, b) => b.score - a.score || a.product.localeCompare(b.product, 'it'))
       .slice(0, limit)
       .map(item => item.product);
+  }
+
+  // ---- Aggancio lista della spesa ↔ prezzi registrati ----
+
+  // Abbina il nome di un ingrediente della spesa al prodotto più vicino tra
+  // quelli registrati nel database condiviso. Punteggi prudenziali: meglio
+  // nessuna indicazione che un prezzo sbagliato.
+  //  100 → nomi uguali (token per token)
+  //   70 → il prodotto registrato è contenuto nell'ingrediente
+  //        ("Uova intere (sode)" → "Uova"), con guardia anti false coppie
+  //        ("Fiocchi di latte" NON diventa "Latte")
+  //   60 → l'ingrediente è contenuto nel prodotto con almeno 2 parole
+  //        significative ("Yogurt greco" → "Yogurt Greco Bianco Magro 0%")
+  //   40 → almeno 2 parole significative in comune
+  //   30 → prodotto composto da una sola parola presente nell'ingrediente
+  function matchShoppingName(name, products = []) {
+    const nameTokens = cleanTokens(name);
+    const nameSig = significantTokensFor(nameTokens);
+    const nameTokenKey = nameTokens.join(' ');
+    if (!nameTokenKey || !nameSig.length) return null;
+    let best = null;
+    [...new Set((products || []).map(String))].forEach(product => {
+      const productTokens = cleanTokens(product);
+      const productTokenKey = productTokens.join(' ');
+      if (!productTokenKey) return;
+      let score = 0;
+      if (productTokenKey === nameTokenKey) {
+        score = 100;
+      } else {
+        const productSig = significantTokensFor(productTokens);
+        if (!productSig.length) return;
+        const shared = nameSig.filter(token => productTokens.includes(token)).length;
+        const productInName = productSig.every(token => nameTokens.includes(token));
+        const nameInProduct = nameSig.every(token => productTokens.includes(token));
+        if (productInName && productTokens.length <= Math.max(2, nameTokens.length)) {
+          score = 70 + shared * 5;
+          // Prodotto di una sola parola che non apre il nome dell'ingrediente:
+          // "Fiocchi di latte" non può essere venduto come "Latte".
+          if (productSig.length === 1 && nameSig.length >= 2 && productTokens[0] !== nameTokens[0]) score = 0;
+        } else if (nameInProduct && shared >= 2) {
+          score = 60 + shared * 5;
+        } else if (shared >= 2) {
+          score = 40 + shared * 5;
+        } else if (shared === 1 && productTokens.length === 1 && productSig.length === 1) {
+          score = 30;
+          if (nameSig.length >= 2 && productTokens[0] !== nameTokens[0]) score = 0;
+        }
+      }
+      if (score > 0 && (!best || score > best.score)) best = { product, score };
+    });
+    return best;
+  }
+
+  // Costo stimato della quantità in lista al miglior prezzo conosciuto.
+  // `totals` è l'aggregato della lista spesa ({ g, ml, pz }); se l'unità del
+  // prezzo non è compatibile con le quantità (o sono opache) restituisce null.
+  function estimateShoppingCost(totals, priceEntry) {
+    const norm = Number(priceEntry?.normPrice);
+    if (!Number.isFinite(norm) || norm <= 0) return null;
+    const grams = Number(totals?.g) || 0;
+    const milliliters = Number(totals?.ml) || 0;
+    const pieces = Number(totals?.pz) || 0;
+    let cost = 0;
+    let usable = false;
+    if (priceEntry.normUnit === 'kg' && grams > 0) {
+      cost += (grams / 1000) * norm;
+      usable = true;
+    }
+    if (priceEntry.normUnit === 'l' && milliliters > 0) {
+      cost += (milliliters / 1000) * norm;
+      usable = true;
+    }
+    if (priceEntry.normUnit === 'pz' && pieces > 0) {
+      cost += pieces * norm;
+      usable = true;
+    }
+    return usable ? round2(cost) : null;
   }
 
   // ---- Ricerca prodotti per il confronto ----
@@ -484,6 +574,8 @@
     parseLegacyDate,
     preparePriceImport,
     similarProducts,
+    matchShoppingName,
+    estimateShoppingCost,
     matchProducts,
     formatEuro,
     formatNormPrice,

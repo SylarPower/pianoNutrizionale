@@ -357,6 +357,35 @@ assert.match(document.getElementById('price-suggestions').innerHTML, /Cereali/);
 applyPriceSuggestion('Cereali');
 assert.equal(priceState.draft.product, 'Cereali');
 assert.doesNotMatch(document.getElementById('price-suggestions').innerHTML, /Forse intendevi/, 'match esatto: nessun suggerimento');
+
+// ---- Prezzi agganciati alla lista della spesa ----
+shoppingPrices.active = true;
+shoppingPrices.loading = false;
+shoppingPrices.matches = {
+  'whole-eggs': { product: 'Uova', productKey: 'uova', best: { store: 'Cadoro', storeKey: 'cadoro', normPrice: 0.19, normUnit: 'pz', price: 2.29, weight: 12, unit: 'pz' } }
+};
+renderShop();
+assert.match(document.getElementById('view-shop').innerHTML, /shop-prices-panel/, 'pannello prezzi in lista spesa');
+assert.match(document.getElementById('view-shop').innerHTML, /shop-price-match/, 'riga prezzo sotto l\'alimento agganciato');
+assert.match(document.getElementById('view-shop').innerHTML, /Cadoro/);
+shoppingPrices = { active: false, loading: false, matches: {} };
+
+// ---- Pagina negozio ----
+switchPriceTab('stores');
+priceState.meta.stores = ['Conad', 'Lidl'];
+renderPrices();
+assert.match(document.getElementById('view-prices').innerHTML, /store-card/);
+assert.match(document.getElementById('view-prices').innerHTML, /openStoreDetail\('conad'/);
+priceState.stores = {
+  view: 'detail', storeKey: 'conad', storeName: 'Conad', loading: false,
+  rows: [{ entry: { product: 'Uova', brand: 'Eurovo', store: 'Conad', storeKey: 'conad', price: 2.29, weight: 12, unit: 'pz', normPrice: 0.19, normUnit: 'pz', date: '2026-07-27' }, status: 'best', best: null, deltaPct: null, options: 2 }],
+  summary: { total: 1, compared: 1, bestCount: 1 }
+};
+renderPrices();
+assert.match(document.getElementById('view-prices').innerHTML, /store-status-badge best/);
+assert.match(document.getElementById('view-prices').innerHTML, /Miglior prezzo per 1 prodotto/);
+closeStoreDetail();
+assert.equal(priceState.stores.view, 'list');
 renderIncomingShares();
 openRecipeModal('L1', 'monday');
 renderModalContent();
