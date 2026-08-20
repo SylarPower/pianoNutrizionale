@@ -212,3 +212,45 @@ test('formatEuro e formatNormPrice usano la virgola', () => {
   assert.equal(p.formatItalianDate('2026-08-20'), '20/08/2026');
   assert.equal(p.formatItalianDate('20/08/2026'), '20/08/2026');
 });
+
+// ---- Importazione backup legacy ----
+
+test('parseLegacyDate: dd/mm/yyyy e ISO', () => {
+  assert.equal(p.parseLegacyDate('27/07/2026'), '2026-07-27');
+  assert.equal(p.parseLegacyDate('4/8/2026'), '2026-08-04');
+  assert.equal(p.parseLegacyDate('2026-08-20'), '2026-08-20');
+});
+
+const LEGACY_BACKUP = [
+  { id: 1785167730046, date: '27/07/2026', store: 'Cadoro', product: 'Uova', brand: 'Eurovo, Le Naturelle', price: 2.29, weight: 12, unit: 'pz', isWeightEstimated: false, normPrice: '0.19', normUnit: 'pz' },
+  { id: 1785169287841, date: '27/07/2026', store: 'Cadoro', product: 'Gnocchi di patate', brand: 'Cadoro', price: 7.48, weight: 1000, unit: 'gr', isWeightEstimated: false, normPrice: '7.48', normUnit: 'kg' },
+  { id: 1786705208251, date: '14/08/2026', store: 'Famila', product: 'Latte', brand: 'Zymi', price: 1.5, weight: 1000, unit: 'ml', isWeightEstimated: false, normPrice: '1.50', normUnit: 'l' }
+];
+
+test('preparePriceImport: converte il backup legacy di Spesa Smart', () => {
+  const { entries, skipped } = p.preparePriceImport(LEGACY_BACKUP);
+  assert.equal(skipped, 0);
+  assert.equal(entries.length, 3);
+  const uova = entries[0];
+  assert.equal(uova.date, '2026-07-27');
+  assert.equal(uova.createdAtMs, 1785167730046, 'l\'ordine cronologico arriva dal vecchio id');
+  assert.equal(uova.legacyId, 1785167730046);
+  assert.equal(uova.productKey, 'uova');
+  assert.equal(uova.storeKey, 'cadoro');
+  assert.equal(typeof uova.normPrice, 'number');
+  assert.equal(uova.normPrice, 0.19);
+  assert.equal(entries[2].normUnit, 'l', 'ml normalizzato a litri');
+});
+
+test('preparePriceImport: scarta righe non valide e duplicati interni', () => {
+  const data = [...LEGACY_BACKUP, LEGACY_BACKUP[0], { id: 9, store: 'X', product: '', price: 1, weight: 1, unit: 'pz' }];
+  const { entries, skipped } = p.preparePriceImport(data);
+  assert.equal(entries.length, 3);
+  assert.equal(skipped, 2);
+});
+
+test('preparePriceImport: accetta il wrapper con campo entries', () => {
+  const { entries } = p.preparePriceImport({ format: 'piano-nutrizionale-prices', entries: LEGACY_BACKUP });
+  assert.equal(entries.length, 3);
+  assert.throws(() => p.preparePriceImport({ altro: true }), /elenco di prezzi/i);
+});

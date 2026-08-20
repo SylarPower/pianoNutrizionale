@@ -337,6 +337,8 @@ assert.match(document.getElementById('price-compare-results').innerHTML, /price-
 assert.match(document.getElementById('price-compare-results').innerHTML, /Lidl/);
 switchPriceTab('archive');
 assert.match(document.getElementById('view-prices').innerHTML, /price-archive-content/);
+assert.match(document.getElementById('view-prices').innerHTML, /preparePriceBackupImport/, 'import backup presente in archivio');
+assert.match(document.getElementById('view-prices').innerHTML, /exportPriceBackup/, 'export backup presente in archivio');
 priceState.archive.entries = [...priceState.compare.entries];
 priceState.archive.loading = false;
 renderPriceArchiveList();

@@ -315,6 +315,84 @@
     return { items, skipped };
   }
 
+  // ---- Importazione backup (formato legacy "Spesa Smart" e formato nuovo) ----
+
+  // dd/mm/yyyy → yyyy-mm-dd; le date ISO restano invariate.
+  function parseLegacyDate(raw) {
+    const value = String(raw || '').trim();
+    const iso = value.match(/^(\d{4})-(\d{2})-(\d{2})/);
+    if (iso) return `${iso[1]}-${iso[2]}-${iso[3]}`;
+    const italian = value.match(/^(\d{1,2})[\/\-.](\d{1,2})[\/\-.](\d{4})$/);
+    if (italian) {
+      return `${italian[3]}-${italian[2].padStart(2, '0')}-${italian[1].padStart(2, '0')}`;
+    }
+    return todayISODate();
+  }
+
+  // Converte una voce esportata dal vecchio prototipo (id numerico = epoch ms,
+  // data dd/mm/yyyy, normPrice stringa) oppure una voce già nel formato nuovo.
+  function migrateImportedEntry(raw) {
+    if (!raw || typeof raw !== 'object') return null;
+    const store = String(raw.store || '').trim();
+    const product = String(raw.product || '').trim();
+    if (!priceKey(store) || !priceKey(product)) return null;
+    const computed = computeNormPrice(raw.price, raw.weight, raw.unit);
+    if (!computed) return null;
+    const brand = String(raw.brand || '').trim() || DEFAULT_BRAND;
+    const legacyId = Number(raw.legacyId ?? (typeof raw.id === 'number' ? raw.id : Number.NaN));
+    const rawCreatedAt = Number(raw.createdAtMs);
+    const createdAtMs = Number.isFinite(rawCreatedAt)
+      ? rawCreatedAt
+      : (Number.isFinite(legacyId) ? legacyId : Date.now());
+    const entry = {
+      store,
+      product,
+      brand,
+      storeKey: priceKey(store),
+      productKey: priceKey(product),
+      brandKey: priceKey(brand),
+      price: computed.price,
+      weight: computed.weight,
+      unit: computed.unit,
+      normPrice: computed.normPrice,
+      normUnit: computed.normUnit,
+      isWeightEstimated: Boolean(raw.isWeightEstimated),
+      date: parseLegacyDate(raw.date),
+      createdAtMs
+    };
+    if (Number.isFinite(legacyId)) entry.legacyId = legacyId;
+    return entry;
+  }
+
+  // Prepara un file di backup per l'importazione: accetta un array diretto
+  // oppure un oggetto wrapper con campo `entries`. Le voci non valide e i
+  // duplicati interni al file vengono scartati e contati.
+  function preparePriceImport(data) {
+    const list = Array.isArray(data) ? data : (Array.isArray(data?.entries) ? data.entries : null);
+    if (!list) throw new Error('Il file non contiene un elenco di prezzi');
+    const migrated = [];
+    let skipped = 0;
+    list.forEach(raw => {
+      const entry = migrateImportedEntry(raw);
+      if (entry) migrated.push(entry);
+      else skipped += 1;
+    });
+    const seen = new Set();
+    const entries = [];
+    migrated.forEach(entry => {
+      const dedupeKey = Number.isFinite(entry.legacyId)
+        ? `id:${entry.legacyId}`
+        : [entry.storeKey, entry.productKey, entry.brandKey, entry.price, entry.weight, entry.unit, entry.date].join('|');
+      if (seen.has(dedupeKey)) {
+        skipped += 1;
+        return;
+      }
+      seen.add(dedupeKey);
+      entries.push(entry);
+    });
+    return { entries, skipped };
+  }
+
   // ---- Ricerca prodotti per il confronto ----
 
   // Corrispondenza esatta sulla chiave + candidati parziali (per la ricerca
@@ -369,6 +447,8 @@
     parseItalianNumber,
     parseWeightToken,
     parseSmartPaste,
+    parseLegacyDate,
+    preparePriceImport,
     matchProducts,
     formatEuro,
     formatNormPrice,

@@ -3198,6 +3198,10 @@ window.filterPriceArchive = function(storeKey) {
 
 function renderPriceArchiveTab() {
   return `
+    <div class="prices-actions-row">
+      <label class="btn btn-outline price-action-btn file-import-button">⬆️ Importa backup<input type="file" accept="application/json,.json" style="display:none" onchange="preparePriceBackupImport(this)"></label>
+      <button class="btn btn-outline price-action-btn" onclick="exportPriceBackup()">⬇️ Esporta</button>
+    </div>
     <div id="price-archive-content"></div>
     <p class="text-muted price-save-note">L'archivio mostra le ultime ${PRICE_ARCHIVE_LIMIT} registrazioni di tutti gli utenti. Puoi modificare o eliminare solo le tue voci.</p>
   `;
@@ -3288,6 +3292,79 @@ window.runPriceSmartPasteImport = async function() {
   }
 };
 
+// ---- Backup prezzi: importazione e esportazione ----
+
+let pendingPriceImport = null;
+
+window.preparePriceBackupImport = async function(input) {
+  const file = input?.files?.[0];
+  if (input) input.value = "";
+  if (!file || !window.PriceDomain) return;
+  try {
+    const parsed = JSON.parse(await file.text());
+    const { entries, skipped } = PriceDomain.preparePriceImport(parsed);
+    if (!entries.length) throw new Error("Il file non contiene prezzi validi");
+    pendingPriceImport = { entries, skipped, filename: file.name };
+    const stores = [...new Set(entries.map(entry => entry.store))];
+    const dates = entries.map(entry => entry.date).sort();
+    document.getElementById("price-import-file-name").textContent = file.name;
+    document.getElementById("price-import-count").textContent = `${entries.length} prezzi pronti`;
+    document.getElementById("price-import-summary").textContent =
+      `Negozi: ${stores.join(", ")} · dal ${PriceDomain.formatItalianDate(dates[0])} al ${PriceDomain.formatItalianDate(dates[dates.length - 1])}.` +
+      (skipped ? ` ${skipped} righe scartate perché non valide o duplicate.` : "") +
+      " Le voci già importate in precedenza verranno riconosciute e saltate.";
+    document.getElementById("price-import-modal").classList.remove("hidden");
+  } catch (error) {
+    console.error(error);
+    showToast(error.message || "File di backup non valido", true);
+  }
+};
+
+window.closePriceImportModal = function() {
+  pendingPriceImport = null;
+  document.getElementById("price-import-modal")?.classList.add("hidden");
+};
+
+window.applyPriceBackupImport = async function() {
+  if (!pendingPriceImport) return;
+  const { entries } = pendingPriceImport;
+  setLoading(`Importazione di ${entries.length} prezzi…`);
+  try {
+    const result = await savePriceImport(entries, priceUserMeta());
+    closePriceImportModal();
+    priceState.archive.loadedAt = 0;
+    priceState.history = { key: null, entries: [], loading: false };
+    priceState.compare.productKey = null;
+    priceState.compare.entries = [];
+    renderPrices();
+    showToast(`✅ Importati ${result.imported} prezzi${result.skippedDuplicates ? ` (${result.skippedDuplicates} già presenti)` : ""}`);
+  } catch (error) {
+    console.error(error);
+    showToast("Importazione non riuscita: controlla la connessione", true);
+  } finally {
+    clearLoading();
+  }
+};
+
+window.exportPriceBackup = async function() {
+  await loadPriceArchive(true);
+  const entries = priceState.archive.entries;
+  if (!entries.length) {
+    showToast("Nessun prezzo da esportare", true);
+    return;
+  }
+  const date = new Date().toISOString().slice(0, 10);
+  downloadJsonFile(`prezzi-backup-${date}.json`, {
+    format: "piano-nutrizionale-prices",
+    schemaVersion: 1,
+    exportedAt: new Date().toISOString(),
+    exportedBy: usernameFromUser(appState.user),
+    note: `Ultime ${entries.length} registrazioni del database condiviso`,
+    entries
+  });
+  showToast(`${entries.length} prezzi esportati`);
+};
+
 // ---- Barcode: fotocamera, foto o digitazione manuale ----
 
 function setupPriceModals() {
@@ -3307,6 +3384,17 @@ function setupPriceModals() {
           <button class="btn btn-outline" onclick="lookupPriceBarcodeManual()">Cerca</button>
         </div>
         <p class="text-muted price-save-note">Nome e marca arrivano da Open Food Facts / Beauty Facts / Products Facts.</p>
+      </div>
+    </div>
+    <div id="price-import-modal" class="modal hidden" role="dialog" aria-modal="true">
+      <div class="modal-content transfer-modal-content">
+        <div class="modal-header"><div><p class="eyebrow">IMPORTAZIONE PREZZI</p><h2>Backup da caricare</h2></div><button class="btn-icon" onclick="closePriceImportModal()">&times;</button></div>
+        <div class="transfer-summary"><strong id="price-import-file-name"></strong><span id="price-import-count"></span><p id="price-import-summary"></p></div>
+        <p class="text-muted transfer-privacy-note">Le voci entrano nel database condiviso visibile a tutti gli utenti. L'autore risulti tu: potrai modificarle o eliminarle.</p>
+        <div class="modal-footer">
+          <button class="btn btn-outline" onclick="closePriceImportModal()">Annulla</button>
+          <button class="btn btn-primary" onclick="applyPriceBackupImport()">Conferma e importa</button>
+        </div>
       </div>
     </div>`);
   document.getElementById("price-scan-modal").addEventListener("click", event => {

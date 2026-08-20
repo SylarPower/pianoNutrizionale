@@ -984,3 +984,40 @@ async function getRecentPriceEntries(limit = 150) {
   snapshot.forEach(doc => entries.push(priceEntryFromDoc(doc)));
   return PriceDomain.sortEntriesDesc(entries);
 }
+
+// Importazione di un backup prezzi (vecchio formato "Spesa Smart" o formato
+// nuovo). Idempotente: le voci che hanno lo stesso legacyId di una voce già
+// importata in precedenza vengono saltate (query `in` a gruppi di 30, coperte
+// dagli indici automatici). Le scritture avvengono in batch da massimo 450.
+async function savePriceImport(entries, meta = {}) {
+  requireUser();
+  if (!Array.isArray(entries) || !entries.length) return { imported: 0, skippedDuplicates: 0 };
+  const legacyIds = [...new Set(entries.map(entry => entry.legacyId).filter(Number.isFinite))];
+  const known = new Set();
+  for (let start = 0; start < legacyIds.length; start += 30) {
+    const chunk = legacyIds.slice(start, start + 30);
+    const snapshot = await priceEntriesRef().where("legacyId", "in", chunk).get();
+    snapshot.forEach(doc => {
+      const data = doc.data();
+      if (Number.isFinite(Number(data?.legacyId))) known.add(`${data.legacyId}|${data.productKey || ""}`);
+    });
+  }
+  const fresh = entries.filter(entry =>
+    !Number.isFinite(entry.legacyId) || !known.has(`${entry.legacyId}|${entry.productKey}`));
+  const author = {
+    createdBy: meta.uid || requireUser().uid,
+    createdByUsername: meta.username || usernameFromUser(currentUser)
+  };
+  const CHUNK_SIZE = 450;
+  for (let start = 0; start < fresh.length; start += CHUNK_SIZE) {
+    const batch = db.batch();
+    fresh.slice(start, start + CHUNK_SIZE).forEach(entry => {
+      batch.set(priceEntriesRef().doc(), priceEntryPayload({ ...entry, ...author }));
+    });
+    await batch.commit();
+  }
+  if (fresh.length) {
+    await mergePriceMetaFromEntries(fresh).catch(error => console.warn("Rubrica prezzi non aggiornata", error));
+  }
+  return { imported: fresh.length, skippedDuplicates: entries.length - fresh.length };
+}
