@@ -378,14 +378,20 @@ assert.ok(document.getElementById('price-scan-modal'));
 assert.equal(typeof runPriceSmartPasteImport, 'undefined', 'import da volantino rimosso');
 assert.equal(typeof togglePriceSmartPaste, 'undefined', 'toggle volantino rimosso');
 assert.doesNotMatch(document.getElementById('view-prices').innerHTML, /volantino/i);
-// Suggerimenti: nome scannerizzato lungo → nome semplice già in archivio.
+// Suggerimenti live nei campi Registra: nome scannerizzato lungo → nome
+// semplice già in archivio (menu a discesa al posto delle vecchie pilloline).
 priceState.meta.products = ['Cereali', 'Latte'];
-renderPriceSuggestions('Cereali di grano duro');
-assert.match(document.getElementById('price-suggestions').innerHTML, /Forse intendevi/);
-assert.match(document.getElementById('price-suggestions').innerHTML, /Cereali/);
-applyPriceSuggestion(0);
+renderPriceFieldSuggestions('product', 'Cereali di grano duro', { skipExact: true });
+assert.equal(document.getElementById('price-product-suggest').classList.contains('hidden'), false, 'menu aperto con varianti');
+assert.match(document.getElementById('price-product-suggest').innerHTML, /Cereali/);
+selectPriceFieldSuggestion('product', 0);
 assert.equal(priceState.draft.product, 'Cereali');
-assert.doesNotMatch(document.getElementById('price-suggestions').innerHTML, /Forse intendevi/, 'match esatto: nessun suggerimento');
+assert.equal(document.getElementById('price-product-suggest').classList.contains('hidden'), true, 'menu chiuso dopo la selezione');
+// Campo negozio vuoto: la rubrica si sceglie a un tocco dal menu.
+priceState.meta.stores = ['Conad', 'Lidl'];
+renderPriceFieldSuggestions('store', '');
+assert.match(document.getElementById('price-store-suggest').innerHTML, /Conad/);
+hidePriceFieldSuggestions('store');
 
 // ---- Pagina negozio ----
 switchPriceTab('stores');

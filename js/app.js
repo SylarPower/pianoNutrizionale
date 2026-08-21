@@ -2827,10 +2827,6 @@ function renderPrices() {
   }
 }
 
-function priceDatalistHtml(id, values) {
-  return `<datalist id="${id}">${[...new Set(values)].map(value => `<option value="${escapeAttr(value)}">`).join("")}</datalist>`;
-}
-
 function renderPriceLogTab() {
   const draft = priceState.draft;
   const editing = Boolean(priceState.editingId);
@@ -2841,31 +2837,39 @@ function renderPriceLogTab() {
 
     <section class="prices-card">
       <label class="prices-label" for="price-store">Negozio</label>
-      <input id="price-store" list="list-price-stores" placeholder="Dove ti trovi?" autocomplete="off"
-        oninput="priceFieldInput(this, 'stores', event)" onclick="priceFieldFocus(this)">
-      ${priceDatalistHtml("list-price-stores", priceState.meta.stores)}
+      <div class="price-field-wrap">
+        <input id="price-store" placeholder="Dove ti trovi? Es. Conad, Lidl…" autocomplete="off" autocorrect="off" spellcheck="false" enterkeyhint="next"
+          oninput="priceFieldInput('store', this)" onkeydown="priceFieldKeydown('store', event)"
+          onfocus="priceFieldFocus('store', this)" onblur="priceFieldBlur('store')">
+        <div id="price-store-suggest" class="price-compare-suggest hidden" role="listbox" aria-label="Suggerimenti negozio"></div>
+      </div>
 
       <label class="prices-label" for="price-product">Prodotto</label>
-      <input id="price-product" list="list-price-products" placeholder="Cosa compri?" autocomplete="off"
-        oninput="priceFieldInput(this, 'products', event); schedulePricePreview()" onclick="priceFieldFocus(this)">
-      ${priceDatalistHtml("list-price-products", priceState.meta.products)}
-      <div id="price-suggestions"></div>
+      <div class="price-field-wrap">
+        <input id="price-product" placeholder="Cosa compri? Es. latte, pasta…" autocomplete="off" autocorrect="off" spellcheck="false" enterkeyhint="next"
+          oninput="priceFieldInput('product', this)" onkeydown="priceFieldKeydown('product', event)"
+          onfocus="priceFieldFocus('product', this)" onblur="priceFieldBlur('product')">
+        <div id="price-product-suggest" class="price-compare-suggest hidden" role="listbox" aria-label="Suggerimenti prodotto"></div>
+      </div>
 
       <label class="prices-label" for="price-brand">Marca</label>
-      <input id="price-brand" list="list-price-brands" placeholder="Quale marca?" autocomplete="off"
-        oninput="priceFieldInput(this, 'brands', event)" onclick="priceFieldFocus(this)">
-      ${priceDatalistHtml("list-price-brands", priceState.meta.brands)}
+      <div class="price-field-wrap">
+        <input id="price-brand" placeholder="Quale marca? Es. Barilla…" autocomplete="off" autocorrect="off" spellcheck="false" enterkeyhint="next"
+          oninput="priceFieldInput('brand', this)" onkeydown="priceFieldKeydown('brand', event)"
+          onfocus="priceFieldFocus('brand', this)" onblur="priceFieldBlur('brand')">
+        <div id="price-brand-suggest" class="price-compare-suggest hidden" role="listbox" aria-label="Suggerimenti marca"></div>
+      </div>
 
       <div class="prices-grid-2">
         <div>
           <label class="prices-label" for="price-price">Prezzo (€)</label>
           <input id="price-price" type="number" step="0.01" min="0" inputmode="decimal" placeholder="0,00"
-            value="${escapeAttr(draft.price)}" oninput="schedulePricePreview()" onclick="this.select()">
+            value="${escapeAttr(draft.price)}" enterkeyhint="next" onkeydown="priceEnterNext(event, 'price-weight')" oninput="schedulePricePreview()" onclick="priceSelectValue(this)">
         </div>
         <div>
           <label class="prices-label" for="price-weight">Peso / Quantità</label>
           <input id="price-weight" type="number" step="any" min="0" inputmode="decimal" placeholder="1000"
-            value="${escapeAttr(draft.weight)}" oninput="schedulePricePreview()" onclick="this.select()">
+            value="${escapeAttr(draft.weight)}" enterkeyhint="done" onkeydown="priceEnterNext(event, 'price-save-btn')" oninput="schedulePricePreview()" onclick="priceSelectValue(this)">
         </div>
       </div>
 
@@ -2897,25 +2901,148 @@ function restorePriceDraft() {
   schedulePricePreview(0);
 }
 
-// Autocompletamento tipo "smart input": completa la parola suggerita dalla
-// rubrica condivisa mentre si digita (solo quando si aggiungono caratteri).
-window.priceFieldInput = function(input, listName, event) {
-  if (event?.inputType?.startsWith("delete")) return;
-  const value = input.value;
-  if (!value) return;
-  const options = priceState.meta[listName] || [];
-  const match = options.find(option => option.toLowerCase().startsWith(value.toLowerCase()) && option.toLowerCase() !== value.toLowerCase());
-  if (match && value.length < match.length) {
-    const start = value.length;
-    input.value = match;
-    try { input.setSelectionRange(start, match.length); } catch (_) {}
+// ---- Registra: suggerimenti live per negozio / prodotto / marca ----
+// Stesso componente già usato in Confronta (le datalist native e il
+// completamento inline sono inaffidabili su tastiera mobile). Tutto locale:
+// la rubrica è già in memoria, nessuna lettura Firebase.
+
+const PRICE_FIELD_SUGGESTS = {
+  store: { inputId: "price-store", boxId: "price-store-suggest", listName: "stores", label: "Negozi", next: "price-product" },
+  product: { inputId: "price-product", boxId: "price-product-suggest", listName: "products", label: "Prodotti", next: "price-brand" },
+  brand: { inputId: "price-brand", boxId: "price-brand-suggest", listName: "brands", label: "Marche", next: "price-price" }
+};
+const priceFieldSuggestNames = { store: [], product: [], brand: [] };
+let priceFieldSuggestActive = -1;
+
+// Campo vuoto → i primi 8 nomi della rubrica (scelta a un tocco); testo →
+// match esatto + (per i prodotti) nomi simili + sottostringhe.
+function priceFieldSuggestList(field, query, options = {}) {
+  const config = PRICE_FIELD_SUGGESTS[field];
+  if (!config || !window.PriceDomain) return [];
+  const names = priceState.meta[config.listName] || [];
+  if (!names.length) return [];
+  const trimmed = String(query || "").trim();
+  if (!trimmed) return [...new Set(names)].slice(0, 8);
+  const { exact, candidates } = PriceDomain.matchProducts(trimmed, names);
+  const similar = field === "product" ? PriceDomain.similarProducts(trimmed, names, 5) : [];
+  const merged = [];
+  const seen = new Set();
+  [exact, ...similar, ...candidates].forEach(name => {
+    if (!name) return;
+    const key = PriceDomain.priceKey(name);
+    if (seen.has(key)) return;
+    if (options.skipExact && exact && key === PriceDomain.priceKey(exact)) return;
+    seen.add(key);
+    merged.push(name);
+  });
+  return merged.slice(0, 8);
+}
+
+function renderPriceFieldSuggestions(field, query, options = {}) {
+  const config = PRICE_FIELD_SUGGESTS[field];
+  const box = config ? document.getElementById(config.boxId) : null;
+  if (!box) return;
+  const list = priceFieldSuggestList(field, query, options);
+  priceFieldSuggestNames[field] = list;
+  priceFieldSuggestActive = -1;
+  if (!list.length) {
+    hidePriceFieldSuggestions(field);
+    return;
   }
+  box.innerHTML = `
+    <div class="price-compare-suggest-label">${config.label}</div>
+    ${list.map((name, index) => `<button type="button" class="price-compare-suggest-item" role="option" data-field="${field}" data-idx="${index}" onmousedown="event.preventDefault()" onclick="selectPriceFieldSuggestion('${field}', ${index})">${escapeHtml(name)}</button>`).join("")}`;
+  box.classList.remove("hidden");
+}
+
+function hidePriceFieldSuggestions(field) {
+  const config = PRICE_FIELD_SUGGESTS[field];
+  priceFieldSuggestActive = -1;
+  if (!config) return;
+  const box = document.getElementById(config.boxId);
+  if (box) { box.classList.add("hidden"); box.innerHTML = ""; }
+}
+
+function hideOtherPriceFieldSuggestions(field) {
+  Object.keys(PRICE_FIELD_SUGGESTS).forEach(name => { if (name !== field) hidePriceFieldSuggestions(name); });
+}
+
+function updatePriceFieldSuggestActive(field) {
+  document.querySelectorAll(`.price-compare-suggest-item[data-field="${field}"]`).forEach(item => {
+    const active = Number(item.dataset?.idx) === priceFieldSuggestActive;
+    item.classList.toggle("active", active);
+    if (active && typeof item.scrollIntoView === "function") item.scrollIntoView({ block: "nearest" });
+  });
+}
+
+window.priceFieldInput = function(field, input) {
+  priceState.draft[field] = input?.value || "";
+  renderPriceFieldSuggestions(field, input?.value || "");
+  if (field === "product") schedulePricePreview();
 };
 
-window.priceFieldFocus = function(input) {
-  if (typeof input.showPicker === "function") {
-    try { input.showPicker(); } catch (_) {}
+window.priceFieldFocus = function(field, input) {
+  hideOtherPriceFieldSuggestions(field);
+  renderPriceFieldSuggestions(field, input?.value || "");
+};
+
+window.priceFieldBlur = function(field) {
+  setTimeout(() => hidePriceFieldSuggestions(field), 180);
+};
+
+window.priceFieldKeydown = function(field, event) {
+  const names = priceFieldSuggestNames[field] || [];
+  const config = PRICE_FIELD_SUGGESTS[field];
+  const box = config ? document.getElementById(config.boxId) : null;
+  const boxOpen = Boolean(names.length && box && !box.classList.contains("hidden"));
+  if (event.key === "ArrowDown" || event.key === "ArrowUp") {
+    if (!boxOpen) return;
+    event.preventDefault();
+    const delta = event.key === "ArrowDown" ? 1 : -1;
+    priceFieldSuggestActive = (priceFieldSuggestActive + delta + names.length) % names.length;
+    updatePriceFieldSuggestActive(field);
+    return;
   }
+  if (event.key === "Enter") {
+    event.preventDefault();
+    if (boxOpen) selectPriceFieldSuggestion(field, priceFieldSuggestActive >= 0 ? priceFieldSuggestActive : 0);
+    if (config?.next) focusPriceElement(config.next);
+    return;
+  }
+  if (event.key === "Escape") hidePriceFieldSuggestions(field);
+};
+
+window.selectPriceFieldSuggestion = function(field, index) {
+  const name = priceFieldSuggestNames[field]?.[index];
+  if (!name) return;
+  hidePriceFieldSuggestions(field);
+  const input = document.getElementById(PRICE_FIELD_SUGGESTS[field].inputId);
+  if (input) input.value = name;
+  priceState.draft[field] = name;
+  if (field === "product") schedulePricePreview(0);
+};
+
+// Invio sui campi numerici: salta al campo successivo (o al pulsante di
+// salvataggio) senza costringere a tappare ogni campo su mobile.
+window.priceEnterNext = function(event, nextId) {
+  if (event.key !== "Enter") return;
+  event.preventDefault();
+  focusPriceElement(nextId);
+};
+
+function focusPriceElement(id) {
+  const element = document.getElementById(id);
+  if (!element) return;
+  try { element.focus(); } catch (_) {}
+  priceSelectValue(element);
+}
+
+// Seleziona il contenuto quando l'elemento lo consente: su iOS Safari
+// select() sui campi number è un no-op silenzioso, per questo il try/catch.
+window.priceSelectValue = function(input) {
+  try {
+    if (input && typeof input.select === "function") input.select();
+  } catch (_) {}
 };
 
 window.setPriceUnit = function(unit) {
@@ -2928,7 +3055,6 @@ window.setPriceUnit = function(unit) {
 // ---- Anteprima prezzo normalizzato + giudizio rispetto allo storico ----
 
 window.schedulePricePreview = function(delay = 350) {
-  renderPriceSuggestions(document.getElementById("price-product")?.value || "");
   renderPricePreviewNow();
   clearTimeout(priceHistoryTimer);
   priceHistoryTimer = setTimeout(loadPriceHistoryForDraft, delay);
@@ -2995,40 +3121,6 @@ function renderPricePreviewNow() {
     else hint.textContent = "";
   }
 }
-
-// Suggerisce i nomi prodotto già presenti nella rubrica condivisa quando
-// quello digitato (o scannerizzato) sembra una variante più lunga o diversa:
-// mantenere un unico nome per prodotto è ciò che fa funzionare i confronti.
-// I pulsanti passano un indice invece del nome: nomi con apostrofi ("L'altro
-// burro") non devono finire dentro attributi onclick.
-let priceSuggestionNames = [];
-
-function renderPriceSuggestions(value) {
-  const box = document.getElementById("price-suggestions");
-  if (!box || !window.PriceDomain) return;
-  const trimmed = String(value || "").trim();
-  priceSuggestionNames = [];
-  if (!trimmed) {
-    box.innerHTML = "";
-    return;
-  }
-  const { exact } = PriceDomain.matchProducts(trimmed, priceState.meta.products);
-  const suggestions = exact ? [] : PriceDomain.similarProducts(trimmed, priceState.meta.products);
-  priceSuggestionNames = suggestions;
-  box.innerHTML = suggestions.length
-    ? `<div class="price-suggestions-box"><small>Forse intendevi:</small>${suggestions.map((candidate, index) => `<button type="button" class="price-filter-pill" onclick="applyPriceSuggestion(${index})">${escapeHtml(candidate)}</button>`).join("")}</div>`
-    : "";
-}
-
-window.applyPriceSuggestion = function(index) {
-  const name = priceSuggestionNames[index];
-  if (!name) return;
-  const input = document.getElementById("price-product");
-  if (input) input.value = name;
-  priceState.draft.product = name;
-  renderPriceSuggestions(name);
-  schedulePricePreview(0);
-};
 
 // ---- Salvataggio / modifica voce ----
 
@@ -3842,7 +3934,8 @@ function setupPriceModals() {
         </div>
         <label class="prices-label" for="price-barcode-manual">Oppure digita il codice a barre</label>
         <div class="price-barcode-manual-row">
-          <input id="price-barcode-manual" inputmode="numeric" placeholder="es. 8000500310403">
+          <input id="price-barcode-manual" inputmode="numeric" enterkeyhint="search" placeholder="es. 8000500310403"
+            onkeydown="priceBarcodeKeydown(event)">
           <button class="btn btn-outline" onclick="lookupPriceBarcodeManual()">Cerca</button>
         </div>
         <p class="text-muted price-save-note">Nome e marca arrivano da Open Food Facts / Beauty Facts / Products Facts.</p>
@@ -3893,11 +3986,15 @@ window.startPriceCameraScan = async function() {
   await stopPriceScanner();
   const region = document.getElementById("price-scan-region");
   region.innerHTML = "";
+  // Il riquadro di scansione non deve superare la larghezza del video: su
+  // schermi stretti un qrbox fisso di 260px rende la lettura impossibile.
+  const scanWidth = Math.max(180, Math.min(260, Math.floor((region.clientWidth || 300) * 0.85)));
+  const scanHeight = Math.round(scanWidth * 0.62);
   priceScanner = new Html5Qrcode("price-scan-region");
   try {
     await priceScanner.start(
       { facingMode: "environment" },
-      { fps: 10, qrbox: { width: 260, height: 160 } },
+      { fps: 10, qrbox: { width: scanWidth, height: scanHeight } },
       async code => {
         await stopPriceScanner();
         closePriceScanModal();
@@ -3937,6 +4034,14 @@ window.lookupPriceBarcodeManual = function() {
   handlePriceBarcode(code);
 };
 
+// Invio nel campo barcode manuale = Cerca (il tasto "vai" della tastiera
+// mobile non deve costringere a un tap in più sul pulsante).
+window.priceBarcodeKeydown = function(event) {
+  if (event.key !== "Enter") return;
+  event.preventDefault();
+  lookupPriceBarcodeManual();
+};
+
 async function lookupOpenFacts(barcode) {
   const databases = ["food", "beauty", "products"];
   for (const name of databases) {
@@ -3967,6 +4072,11 @@ async function handlePriceBarcode(barcode) {
     const brand = String(product.brands || "").split(",")[0].trim();
     if (name) document.getElementById("price-product").value = name;
     if (brand) document.getElementById("price-brand").value = brand;
+    // Se Open Food Facts restituisce un nome lungo ma in archivio esiste già
+    // il nome semplice ("Cereali di grano duro" → "Cereali"), il menu dei
+    // suggerimenti si apre da solo: mantenere un unico nome per prodotto è
+    // ciò che fa funzionare i confronti.
+    if (name) renderPriceFieldSuggestions("product", name, { skipExact: true });
     // Se Open Food Facts indica la confezione (es. "500 g"), precostruisce la quantità.
     const quantity = window.PriceDomain ? PriceDomain.parseWeightToken(product.quantity || "") : null;
     if (quantity) {

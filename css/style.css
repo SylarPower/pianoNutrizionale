@@ -1286,8 +1286,8 @@ body.dark-mode .meller-modal-note { background: #0d0d0d; border: 1px solid #2323
   border-color: var(--primary);
   color: #fff;
 }
-/* Campo di ricerca Confronta: cancella + menu suggerimenti live */
-.price-compare-input-wrap { position: relative; }
+/* Campo di ricerca Confronta e campi Registra: cancella + menu suggerimenti live */
+.price-compare-input-wrap, .price-field-wrap { position: relative; }
 .price-compare-input-wrap input { padding-right: 46px; }
 .price-compare-clear {
   position: absolute;
@@ -1495,21 +1495,6 @@ body.dark-mode .price-compare-suggest-item:hover,
 body.dark-mode .price-compare-suggest-item.active { background: #161616; }
 body.dark-mode .price-compare-clear:hover { background: #161616; color: var(--text); }
 body.dark-mode .price-compare-row { border-color: #1d1d1d; }
-
-/* Suggerimenti nome prodotto (nomi scannerizzati troppo lunghi) */
-.price-suggestions-box {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  gap: 6px;
-  margin: -8px 0 14px 4px;
-}
-.price-suggestions-box small {
-  color: var(--text-muted);
-  font-weight: 700;
-  font-size: .74rem;
-}
-.price-suggestions-box .price-filter-pill { margin-bottom: 0; }
 
 /* ---- Pagina negozio ---- */
 .store-list { display: flex; flex-direction: column; gap: 10px; }
