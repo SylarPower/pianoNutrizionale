@@ -23,7 +23,7 @@ WebApp PWA privata per gestire colazioni, spuntini, pranzi, cene, batch cooking 
 - lista della spesa aggregata per `ingredientId` con profili Uomo, Donna IPO e Coppia;
 - PWA offline con shell versionata, aggiornamento one-tap e fallback offline comprensibile;
 - alternative alimentari di Meller sempre consultabili nelle Impostazioni;
-- **registro prezzi condiviso** (scheda Prezzi): un unico database tra tutti gli utenti per registrare i prezzi nei negozi (con barcode Open Food Facts o incollando il testo di un volantino), confrontare il prezzo normalizzato €/kg tra negozi con indicazione del migliore, giudizio rispetto allo storico (minimo storico / affare / caro), suggerimento del nome prodotto già in archivio quando quello scannerizzato è una variante più lunga ("Cereali di grano duro" → "Cereali"), archivio con modifica delle proprie voci e importazione/esportazione di backup JSON (incluso il vecchio formato "Spesa Smart");
+- **registro prezzi condiviso** (scheda Prezzi): un unico database tra tutti gli utenti per registrare i prezzi nei negozi (con barcode Open Food Facts), confrontare il prezzo normalizzato €/kg tra negozi con indicazione del migliore, giudizio rispetto allo storico (minimo storico / affare / caro), suggerimento del nome prodotto già in archivio quando quello scannerizzato è una variante più lunga ("Cereali di grano duro" → "Cereali"), archivio con modifica delle proprie voci e importazione/esportazione di backup JSON (incluso il vecchio formato "Spesa Smart");
 - **pagina negozio** (Prezzi → Negozi): per ogni negozio l'ultimo prezzo registrato di ogni prodotto, con indicazione di dove quel prodotto costa meno (🏆 miglior prezzo, scostamento % rispetto al migliore, "solo qui");
 - nessuna funzionalità di notifica (né push né locali).
 
@@ -96,12 +96,11 @@ Operazioni indicative (catalogo medio ~60 ricette):
 Il registro prezzi (scheda Prezzi) è progettato per costare poco:
 
 - apertura della scheda: 1 lettura della rubrica `priceMeta/global` (poi resta in cache locale);
-- registrazione di un prezzo: 1 scrittura della voce + 0-1 scritture della rubrica (solo se il negozio/prodotto/marca non era mai stato usato da nessuno);
-- confronto di un prodotto: una sola query `where productKey` (tante letture quante sono le voci registrate per quel prodotto, normalmente poche);
-- archivio: una sola query con limite 150, ricaricata al massimo una volta al minuto;
-- incolla da volantino: un'unica scrittura in batch per tutte le righe + al massimo 1 scrittura della rubrica;
+- registrazione di un prezzo: 1 scrittura della voce + 0-1 scritture della rubrica (solo se il negozio/prodotto/marca non era mai stato usato da nessuno); dopo il salvataggio l'archivio e la rubrica vengono aggiornati in memoria senza nuove letture, e la cache delle query viene invalidata solo per il prodotto/negozio toccato;
+- confronto di un prodotto: una sola query `where productKey` (tante letture quante sono le voci registrate per quel prodotto, normalmente poche), in cache per l'intera sessione;
+- archivio: una sola query con limite 150, ricaricata al massimo una volta al minuto; l'elenco già in cache viene mostrato subito a ogni ingresso nella scheda e non viene mai svuotato durante l'aggiornamento;
 - importazione backup JSON: qualche lettura di controllo (una ogni 30 voci, per riconoscere le voci già importate e non duplicarle) + scritture in batch da massimo 450 voci + al massimo 1 scrittura della rubrica;
-- pagina negozio: una query per il negozio + una query per prodotto (in cache se già letto), solo quando si apre il dettaglio del negozio.
+- pagina negozio: una query per il negozio (in cache per la sessione) + una query per prodotto (in cache se già letto), solo quando si apre il dettaglio del negozio.
 
 La cache offline Firestore è abilitata. Tema, profilo porzioni e metadati del backup restano in `localStorage`.
 

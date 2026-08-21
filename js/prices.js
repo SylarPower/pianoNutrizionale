@@ -194,127 +194,6 @@
     return { weight, unit };
   }
 
-  // ---- Importazione da testo (volantino / NotebookLM) ----
-
-  function cleanPasteLine(line) {
-    return String(line || '')
-      .replace(/\[\d+\]/g, ' ')        // citazioni NotebookLM [1]
-      .replace(/^[\s\-*•·>]+/, '')     // elenchi puntati
-      .replace(/€\s*$/, '')
-      .trim();
-  }
-
-  function parsePasteLine(rawLine, defaultStore) {
-    const line = cleanPasteLine(rawLine);
-    if (!line) return null;
-
-    let brand = DEFAULT_BRAND;
-    let product = null;
-    let weight = null;
-    let unit = 'gr';
-    let isWeightEstimated = false;
-    let price = null;
-
-    if (line.includes('|')) {
-      // Formato tabellare: MARCA | PRODOTTO | PESO | PREZZO
-      const parts = line.split('|').map(part => part.trim());
-      if (parts.length >= 4) [brand, product, weight, price] = parts;
-      else if (parts.length === 3) [product, weight, price] = parts;
-      else if (parts.length === 2) [product, price] = parts;
-      else return null;
-      if (!brand) brand = DEFAULT_BRAND;
-
-      const weightToken = parseWeightToken(weight);
-      if (weightToken) {
-        weight = weightToken.weight;
-        unit = weightToken.unit;
-      } else {
-        const numericWeight = parseItalianNumber(weight);
-        if (numericWeight && numericWeight > 0) {
-          weight = numericWeight;
-          unit = 'gr';
-        } else {
-          weight = 1000;
-          unit = 'gr';
-          isWeightEstimated = true;
-        }
-      }
-      price = parseItalianNumber(price);
-    } else {
-      // Formato libero: "Pasta Barilla 500g 0,89" oppure "Latte Zymil 1,50".
-      // L'ultimo numero della riga è il prezzo; un eventuale token peso/unità
-      // precedente viene riconosciuto automaticamente.
-      const priceMatch = line.match(/^(.*?)(\d+(?:[.,]\d{1,2})?)\s*(?:€|eur)?\s*$/i);
-      if (!priceMatch) return null;
-      price = parseItalianNumber(priceMatch[2]);
-      const head = cleanPasteLine(priceMatch[1]);
-      const weightToken = parseWeightToken(head);
-      if (weightToken) {
-        weight = weightToken.weight;
-        unit = weightToken.unit;
-        product = cleanPasteLine(head.replace(WEIGHT_TOKEN, ' '));
-      } else {
-        product = head;
-        weight = 1000;
-        unit = 'gr';
-        isWeightEstimated = true;
-      }
-    }
-
-    product = cleanPasteLine(product);
-    if (!product || !priceKey(product)) return null;
-    if (!price || price <= 0) return null;
-    if (!weight || weight <= 0) {
-      weight = 1000;
-      unit = 'gr';
-      isWeightEstimated = true;
-    }
-
-    const computed = computeNormPrice(price, weight, unit);
-    if (!computed) return null;
-    return {
-      store: defaultStore,
-      product,
-      brand: String(brand || '').trim() || DEFAULT_BRAND,
-      price: computed.price,
-      weight: computed.weight,
-      unit: computed.unit,
-      normPrice: computed.normPrice,
-      normUnit: computed.normUnit,
-      isWeightEstimated
-    };
-  }
-
-  // Trasforma un testo incollato in voci pronte per il salvataggio.
-  // `store` è il negozio indicato nel campo principale del registro.
-  function parseSmartPaste(text, store) {
-    const items = [];
-    const seen = new Set();
-    let skipped = 0;
-    String(text || '').split('\n').forEach(rawLine => {
-      if (!String(rawLine || '').trim()) return;
-      const parsed = parsePasteLine(rawLine, store);
-      if (!parsed) {
-        skipped += 1;
-        return;
-      }
-      const dedupeKey = [
-        priceKey(parsed.product),
-        priceKey(parsed.brand),
-        parsed.weight,
-        parsed.unit,
-        parsed.price
-      ].join('|');
-      if (seen.has(dedupeKey)) {
-        skipped += 1;
-        return;
-      }
-      seen.add(dedupeKey);
-      items.push(parsed);
-    });
-    return { items, skipped };
-  }
-
   // ---- Importazione backup (formato legacy "Spesa Smart" e formato nuovo) ----
 
   // dd/mm/yyyy → yyyy-mm-dd; le date ISO restano invariate.
@@ -493,7 +372,6 @@
     dealBadge,
     parseItalianNumber,
     parseWeightToken,
-    parseSmartPaste,
     parseLegacyDate,
     preparePriceImport,
     similarProducts,

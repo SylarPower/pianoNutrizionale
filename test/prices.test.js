@@ -116,63 +116,6 @@ test('dealBadge: minimo storico, affare, caro', () => {
   assert.equal(p.dealBadge(1.5, []), null);
 });
 
-// ---- Importazione da testo ----
-
-test('parseSmartPaste: formato tabellare marca|prodotto|peso|prezzo', () => {
-  const { items, skipped } = p.parseSmartPaste(
-    'Barilla | Pasta spaghetti | 500 | 0,89\nZymil | Latte scremato | 1000 | 1,50',
-    'Conad'
-  );
-  assert.equal(skipped, 0);
-  assert.equal(items.length, 2);
-  assert.equal(items[0].brand, 'Barilla');
-  assert.equal(items[0].product, 'Pasta spaghetti');
-  assert.equal(items[0].weight, 500);
-  assert.equal(items[0].unit, 'gr');
-  assert.equal(items[0].normPrice, 1.78);
-  assert.equal(items[0].store, 'Conad');
-  assert.equal(items[1].normPrice, 1.5);
-});
-
-test('parseSmartPaste: peso con unità nel formato tabellare', () => {
-  const { items } = p.parseSmartPaste('Coca Cola | 1,5 l | 1,80', 'Lidl');
-  assert.equal(items.length, 1);
-  assert.equal(items[0].product, 'Coca Cola');
-  assert.equal(items[0].weight, 1.5);
-  assert.equal(items[0].unit, 'l');
-  assert.equal(items[0].normPrice, 1.2);
-});
-
-test('parseSmartPaste: peso mancante → stimato 1000g con asterisco', () => {
-  const { items } = p.parseSmartPaste('Mulino | Biscotti | — | 2,40', 'Coop');
-  assert.equal(items.length, 1);
-  assert.equal(items[0].weight, 1000);
-  assert.equal(items[0].isWeightEstimated, true);
-});
-
-test('parseSmartPaste: formato libero con e senza peso', () => {
-  const { items, skipped } = p.parseSmartPaste(
-    'Pasta Barilla 500g 0,89\nLatte Zymil 1,50\nRiga senza prezzo\n[1] Riso Scotti 1kg 2,10 €',
-    'Conad'
-  );
-  assert.equal(items.length, 3);
-  assert.equal(skipped, 1);
-  assert.equal(items[0].product, 'Pasta Barilla');
-  assert.equal(items[0].weight, 500);
-  assert.equal(items[0].unit, 'gr');
-  assert.equal(items[1].product, 'Latte Zymil');
-  assert.equal(items[1].isWeightEstimated, true);
-  assert.equal(items[2].product, 'Riso Scotti');
-  assert.equal(items[2].weight, 1);
-  assert.equal(items[2].unit, 'kg');
-});
-
-test('parseSmartPaste: duplicati interni scartati', () => {
-  const { items, skipped } = p.parseSmartPaste('Latte 1,50\nLatte 1,50', 'Conad');
-  assert.equal(items.length, 1);
-  assert.equal(skipped, 1);
-});
-
 // ---- Numeri italiani e token peso ----
 
 test('parseItalianNumber: virgola, punto migliaia e simbolo euro', () => {

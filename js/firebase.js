@@ -939,18 +939,8 @@ async function savePriceEntry(entry) {
   return ref.id;
 }
 
-// Importazione multipla (incolla da volantino): UNA scrittura in batch per
-// tutte le voci + al massimo una scrittura della rubrica.
-async function savePriceEntries(entries) {
-  requireUser();
-  if (!Array.isArray(entries) || !entries.length) return 0;
-  const batch = db.batch();
-  entries.forEach(entry => batch.set(priceEntriesRef().doc(), priceEntryPayload(entry)));
-  await batch.commit();
-  await mergePriceMetaFromEntries(entries).catch(error => console.warn("Rubrica prezzi non aggiornata", error));
-  return entries.length;
-}
-
+// Importazione multipla (backup JSON): UNA scrittura in batch per tutte le
+// voci + al massimo una scrittura della rubrica (vedi savePriceImport).
 async function updatePriceEntry(entryId, entry) {
   requireUser();
   await priceEntriesRef().doc(entryId).update({

@@ -339,8 +339,14 @@ switchPriceTab('archive');
 assert.match(document.getElementById('view-prices').innerHTML, /price-archive-content/);
 assert.match(document.getElementById('view-prices').innerHTML, /preparePriceBackupImport/, 'import backup presente in archivio');
 assert.match(document.getElementById('view-prices').innerHTML, /exportPriceBackup/, 'export backup presente in archivio');
+// Regressione archivio: rientrare nella scheda con dati freschi in cache deve
+// mostrare SUBITO l'elenco (prima il contenitore ricreato vuoto restava tale
+// perché loadPriceArchive usciva senza ridisegnare).
 priceState.archive.entries = [...priceState.compare.entries];
+priceState.archive.loadedAt = Date.now();
 priceState.archive.loading = false;
+switchPriceTab('archive');
+assert.match(document.getElementById('price-archive-content').innerHTML, /price-archive-row/, 'archivio in cache mostrato subito al rientro');
 renderPriceArchiveList();
 assert.match(document.getElementById('price-archive-content').innerHTML, /price-archive-row/);
 // Solo le voci proprie mostrano i pulsanti modifica/elimina.
@@ -349,12 +355,16 @@ assert.match(document.getElementById('price-archive-content').innerHTML, /startP
 switchPriceTab('log');
 setupPriceModals();
 assert.ok(document.getElementById('price-scan-modal'));
+// Regressione: la funzionalità "incolla da volantino" è stata rimossa.
+assert.equal(typeof runPriceSmartPasteImport, 'undefined', 'import da volantino rimosso');
+assert.equal(typeof togglePriceSmartPaste, 'undefined', 'toggle volantino rimosso');
+assert.doesNotMatch(document.getElementById('view-prices').innerHTML, /volantino/i);
 // Suggerimenti: nome scannerizzato lungo → nome semplice già in archivio.
 priceState.meta.products = ['Cereali', 'Latte'];
 renderPriceSuggestions('Cereali di grano duro');
 assert.match(document.getElementById('price-suggestions').innerHTML, /Forse intendevi/);
 assert.match(document.getElementById('price-suggestions').innerHTML, /Cereali/);
-applyPriceSuggestion('Cereali');
+applyPriceSuggestion(0);
 assert.equal(priceState.draft.product, 'Cereali');
 assert.doesNotMatch(document.getElementById('price-suggestions').innerHTML, /Forse intendevi/, 'match esatto: nessun suggerimento');
 
@@ -363,7 +373,7 @@ switchPriceTab('stores');
 priceState.meta.stores = ['Conad', 'Lidl'];
 renderPrices();
 assert.match(document.getElementById('view-prices').innerHTML, /store-card/);
-assert.match(document.getElementById('view-prices').innerHTML, /openStoreDetail\('conad'/);
+assert.match(document.getElementById('view-prices').innerHTML, /openStoreDetail\(0\)/, 'click negozio via indice (nomi con apostrofi sicuri)');
 priceState.stores = {
   view: 'detail', storeKey: 'conad', storeName: 'Conad', loading: false,
   rows: [{ entry: { product: 'Uova', brand: 'Eurovo', store: 'Conad', storeKey: 'conad', price: 2.29, weight: 12, unit: 'pz', normPrice: 0.19, normUnit: 'pz', date: '2026-07-27' }, status: 'best', best: null, deltaPct: null, options: 2 }],

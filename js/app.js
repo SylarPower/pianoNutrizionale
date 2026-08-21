@@ -2674,6 +2674,9 @@ const PRICE_UNIT_OPTIONS = [
   { id: "l", label: "L" }, { id: "pz", label: "PZ" }
 ];
 const PRICE_ARCHIVE_LIMIT = 150;
+// L'archivio non viene riscaricato se è fresco di questo tempo; l'elenco in
+// cache viene comunque mostrato subito a ogni ingresso nella scheda.
+const PRICE_ARCHIVE_TTL_MS = 60000;
 
 let priceState = {
   loaded: false,
@@ -2681,19 +2684,22 @@ let priceState = {
   tab: "log",
   unit: "gr",
   editingId: null,
-  smartPasteOpen: false,
+  editingDate: null,
   draft: { store: "", product: "", brand: "", price: "", weight: "1000" },
   history: { key: null, entries: [], loading: false },
-  compare: { query: "", productKey: null, productName: null, brandKey: null, entries: [], candidates: [], loading: false },
+  compare: { query: "", productKey: null, productName: null, brandKey: null, entries: [], candidates: [], brandChips: [], loading: false },
   stores: { view: "list", storeKey: null, storeName: "", loading: false, rows: [], summary: null },
-  archive: { entries: [], storeFilter: null, loading: false, loadedAt: 0 }
+  archive: { entries: [], storeFilter: null, storeChips: [], loading: false, loadedAt: 0, error: false }
 };
 let priceHistoryTimer = null;
 let priceCompareTimer = null;
 let priceScanner = null;
 
-// Cache delle query per prodotto (condivisa da confronto, badge, pagina
-// negozio e lista spesa): lo stesso prodotto viene letto UNA volta a sessione.
+// Cache delle query Firestore (condivisa da confronto, badge, pagina negozio
+// e lista spesa): lo stesso prodotto o negozio viene letto UNA volta a
+// sessione. Le chiavi negozio usano il prefisso "store:" per non collidere
+// con le chiavi prodotto normalizzate.
+const PRICE_STORE_CACHE_PREFIX = "store:";
 const priceEntriesCache = new Map();
 
 async function getCachedPriceEntries(productKey) {
@@ -2703,8 +2709,45 @@ async function getCachedPriceEntries(productKey) {
   return entries;
 }
 
+async function getCachedPriceEntriesForStore(storeKey) {
+  const cacheKey = PRICE_STORE_CACHE_PREFIX + storeKey;
+  if (priceEntriesCache.has(cacheKey)) return priceEntriesCache.get(cacheKey);
+  const entries = await getPriceEntriesForStore(storeKey);
+  priceEntriesCache.set(cacheKey, entries);
+  return entries;
+}
+
 function invalidatePriceEntriesCache() {
   priceEntriesCache.clear();
+}
+
+// Invalidazione mirata dopo una scrittura: si ripulisce SOLO il prodotto e il
+// negozio toccati, tutte le altre voci in cache restano valide (meno letture
+// Firestore a ogni registrazione).
+function invalidatePriceCachesForEntry(entry) {
+  if (!entry) return;
+  if (entry.productKey) priceEntriesCache.delete(entry.productKey);
+  if (entry.storeKey) priceEntriesCache.delete(PRICE_STORE_CACHE_PREFIX + entry.storeKey);
+}
+
+// Aggiorna in memoria la rubrica negozi/prodotti/marche dopo un salvataggio:
+// i datalist e i suggerimenti vedono subito i nomi nuovi senza rileggere il
+// documento priceMeta/global da Firestore.
+function mergePriceMetaInMemory(entry) {
+  if (!entry) return;
+  const mergeList = (listName, value) => {
+    const clean = String(value || "").trim();
+    if (!clean) return;
+    const list = priceState.meta[listName];
+    const exists = list.some(name => PriceDomain.priceKey(name) === PriceDomain.priceKey(clean));
+    if (!exists) {
+      list.push(clean);
+      list.sort((a, b) => a.localeCompare(b, "it"));
+    }
+  };
+  mergeList("stores", entry.store);
+  mergeList("products", entry.product);
+  mergeList("brands", entry.brand);
 }
 
 
@@ -2725,11 +2768,13 @@ async function ensurePriceData(force = false) {
 
 window.refreshPricesData = async function() {
   priceState.archive.loadedAt = 0;
+  priceState.archive.error = false;
   priceState.history = { key: null, entries: [], loading: false };
   invalidatePriceEntriesCache();
   await ensurePriceData(true);
   if (priceState.tab === "archive") loadPriceArchive(true);
   else if (priceState.tab === "compare" && priceState.compare.productKey) loadPriceComparison(priceState.compare.productKey);
+  else if (priceState.tab === "stores" && priceState.stores.view === "detail") openStoreDetail(priceState.stores.storeKey, priceState.stores.storeName);
   else renderPrices();
   showToast("Prezzi aggiornati ✅");
 };
@@ -2739,7 +2784,6 @@ window.switchPriceTab = function(tab) {
   capturePriceDraft();
   priceState.tab = tab;
   renderPrices();
-  if (tab === "archive") loadPriceArchive();
 };
 
 function capturePriceDraft() {
@@ -2773,6 +2817,14 @@ function renderPrices() {
     ${tab === "log" ? renderPriceLogTab() : tab === "compare" ? renderPriceCompareTab() : tab === "stores" ? renderPriceStoresTab() : renderPriceArchiveTab()}
   `;
   if (tab === "log") restorePriceDraft();
+  // Il contenitore delle altre schede viene ricreato vuoto a ogni render:
+  // si ripristina subito il contenuto già in stato (elenco archivio in cache,
+  // esito del confronto precedente) senza rilanciare query per forza.
+  if (tab === "compare") renderPriceCompareResults();
+  if (tab === "archive") {
+    renderPriceArchiveList();
+    loadPriceArchive();
+  }
 }
 
 function priceDatalistHtml(id, values) {
@@ -2783,17 +2835,9 @@ function renderPriceLogTab() {
   const draft = priceState.draft;
   const editing = Boolean(priceState.editingId);
   return `
-    <div class="prices-actions-row">
+    <div class="prices-actions-row prices-actions-row-single">
       <button class="btn btn-outline price-action-btn" onclick="openPriceScanModal()">📷 Scansiona barcode</button>
-      <button class="btn btn-outline price-action-btn" onclick="togglePriceSmartPaste()">📋 Incolla da volantino</button>
     </div>
-
-    ${priceState.smartPasteOpen ? `
-      <section class="prices-card">
-        <label class="prices-label" for="price-paste-input">Incolla qui il testo (volantino, NotebookLM…)</label>
-        <textarea id="price-paste-input" rows="6" placeholder="Formati supportati, uno per riga:&#10;Marca | Prodotto | 500 g | 0,89&#10;Pasta Barilla 500g 0,89&#10;Latte Zymil 1,50&#10;&#10;Il negozio viene letto dal campo qui sotto."></textarea>
-        <button class="btn btn-primary full-width" onclick="runPriceSmartPasteImport()">Importa lista</button>
-      </section>` : ""}
 
     <section class="prices-card">
       <label class="prices-label" for="price-store">Negozio</label>
@@ -2955,22 +2999,30 @@ function renderPricePreviewNow() {
 // Suggerisce i nomi prodotto già presenti nella rubrica condivisa quando
 // quello digitato (o scannerizzato) sembra una variante più lunga o diversa:
 // mantenere un unico nome per prodotto è ciò che fa funzionare i confronti.
+// I pulsanti passano un indice invece del nome: nomi con apostrofi ("L'altro
+// burro") non devono finire dentro attributi onclick.
+let priceSuggestionNames = [];
+
 function renderPriceSuggestions(value) {
   const box = document.getElementById("price-suggestions");
   if (!box || !window.PriceDomain) return;
   const trimmed = String(value || "").trim();
+  priceSuggestionNames = [];
   if (!trimmed) {
     box.innerHTML = "";
     return;
   }
   const { exact } = PriceDomain.matchProducts(trimmed, priceState.meta.products);
   const suggestions = exact ? [] : PriceDomain.similarProducts(trimmed, priceState.meta.products);
+  priceSuggestionNames = suggestions;
   box.innerHTML = suggestions.length
-    ? `<div class="price-suggestions-box"><small>Forse intendevi:</small>${suggestions.map(candidate => `<button type="button" class="price-filter-pill" onclick="applyPriceSuggestion('${escapeAttr(candidate)}')">${escapeHtml(candidate)}</button>`).join("")}</div>`
+    ? `<div class="price-suggestions-box"><small>Forse intendevi:</small>${suggestions.map((candidate, index) => `<button type="button" class="price-filter-pill" onclick="applyPriceSuggestion(${index})">${escapeHtml(candidate)}</button>`).join("")}</div>`
     : "";
 }
 
-window.applyPriceSuggestion = function(name) {
+window.applyPriceSuggestion = function(index) {
+  const name = priceSuggestionNames[index];
+  if (!name) return;
   const input = document.getElementById("price-product");
   if (input) input.value = name;
   priceState.draft.product = name;
@@ -3010,26 +3062,40 @@ window.savePriceForm = async function() {
   const editingId = priceState.editingId;
   setLoading(editingId ? "Aggiornamento del prezzo…" : "Registrazione del prezzo…");
   try {
+    let savedId = editingId;
     if (editingId) {
       await updatePriceEntry(editingId, entry);
       showToast("Prezzo aggiornato ✅");
     } else {
-      await savePriceEntry(entry);
+      savedId = await savePriceEntry(entry);
       showToast("Prezzo registrato ✅");
     }
     const store = document.getElementById("price-store")?.value || "";
     priceState.editingId = null;
     priceState.editingDate = null;
-    priceState.archive.loadedAt = 0;
-    invalidatePriceEntriesCache();
+    // Aggiornamento locale, senza nuove letture Firestore: si ripulisce solo
+    // la cache del prodotto/negozio toccato, la voce entra in cima all'archivio
+    // e la rubrica dei nomi viene aggiornata in memoria.
+    invalidatePriceCachesForEntry(entry);
+    mergePriceMetaInMemory(entry);
+    const savedEntry = { ...entry, ...(savedId ? { id: savedId } : {}), createdAtMs: Date.now() };
+    if (editingId) {
+      const index = priceState.archive.entries.findIndex(item => item.id === editingId);
+      if (index >= 0) priceState.archive.entries[index] = { ...priceState.archive.entries[index], ...savedEntry };
+    } else {
+      priceState.archive.entries.unshift(savedEntry);
+      priceState.archive.entries = priceState.archive.entries.slice(0, PRICE_ARCHIVE_LIMIT);
+    }
+    priceState.archive.loadedAt = Date.now();
+    priceState.archive.error = false;
+    priceState.history = { key: null, entries: [], loading: false };
     resetPriceForm(true);
     priceState.draft.store = store;
-    priceState.compare.query = "";
-    priceState.compare.productKey = null;
-    priceState.compare.productName = null;
-    priceState.compare.entries = [];
-    priceState.compare.candidates = [];
     renderPrices();
+    // Se il prodotto appena registrato è quello aperto in Confronta, il
+    // confronto viene ricaricato con i dati freschi; altrimenti il contesto
+    // di ricerca dell'utente resta indisturbato.
+    if (priceState.compare.productKey === entry.productKey) loadPriceComparison(entry.productKey);
   } catch (error) {
     console.error(error);
     showToast("Salvataggio non riuscito: controlla la connessione", true);
@@ -3051,7 +3117,9 @@ window.startPriceEdit = function(entryId) {
   priceState.draft = { store: entry.store, product: entry.product, brand: entry.brand, price: String(entry.price), weight: String(entry.weight) };
   priceState.unit = entry.unit || "gr";
   priceState.tab = "log";
-  priceState.history = { key: entry.productKey, entries: [], loading: false };
+  // key: null forza il ricaricamento dello storico per il prodotto in edit
+  // (con la chiave già impostata loadPriceHistoryForDraft salterebbe la query).
+  priceState.history = { key: null, entries: [], loading: false };
   renderPrices();
   loadPriceHistoryForDraft();
   showToast("✏️ Modifica in corso");
@@ -3071,7 +3139,7 @@ window.deletePriceEntryClick = async function(entryId) {
   try {
     await deletePriceEntry(entryId);
     priceState.archive.entries = priceState.archive.entries.filter(item => item.id !== entryId);
-    invalidatePriceEntriesCache();
+    invalidatePriceCachesForEntry(entry);
     priceState.history = { key: null, entries: [], loading: false };
     renderPrices();
     showToast("Voce eliminata");
@@ -3105,7 +3173,9 @@ async function runPriceCompareSearch(query) {
   renderPriceCompareResults();
 }
 
-window.selectPriceCompareCandidate = function(productName) {
+window.selectPriceCompareCandidate = function(index) {
+  const productName = priceState.compare.candidates[index];
+  if (!productName) return;
   const input = document.getElementById("price-compare-search");
   if (input) input.value = productName;
   priceState.compare.query = productName;
@@ -3116,10 +3186,17 @@ async function loadPriceComparison(productKey, productName = null) {
   priceState.compare.loading = true;
   priceState.compare.productKey = productKey;
   if (productName) priceState.compare.productName = productName;
+  // Il filtro marca del prodotto precedente non ha senso per quello nuovo.
+  priceState.compare.brandKey = null;
   renderPriceCompareResults();
   try {
-    priceState.compare.entries = await getCachedPriceEntries(productKey);
+    const entries = await getCachedPriceEntries(productKey);
+    // Una nuova ricerca può essere partita mentre la query era in volo: il
+    // risultato va applicato solo se è ancora il prodotto corrente.
+    if (priceState.compare.productKey !== productKey) return;
+    priceState.compare.entries = entries;
   } catch (error) {
+    if (priceState.compare.productKey !== productKey) return;
     console.error(error);
     showToast("Impossibile caricare i prezzi del prodotto", true);
   }
@@ -3127,8 +3204,15 @@ async function loadPriceComparison(productKey, productName = null) {
   renderPriceCompareResults();
 }
 
-window.selectPriceBrand = function(brandKey) {
-  priceState.compare.brandKey = brandKey === "all" ? null : brandKey;
+// Indice nella lista marche del prodotto corrente, oppure "all".
+window.selectPriceBrand = function(selection) {
+  if (selection === "all") {
+    priceState.compare.brandKey = null;
+  } else {
+    const brand = priceState.compare.brandChips[Number(selection)];
+    if (!brand) return;
+    priceState.compare.brandKey = brand[0];
+  }
   renderPriceCompareResults();
 };
 
@@ -3144,7 +3228,7 @@ function renderPriceCompareResults() {
 
   if (!productKey) {
     results.innerHTML = candidates.length
-      ? `<div class="prices-card"><label class="prices-label">Prodotti simili</label><div class="price-filter-pills">${candidates.map(candidate => `<button class="price-filter-pill" onclick="selectPriceCompareCandidate('${escapeAttr(candidate)}')">${escapeHtml(candidate)}</button>`).join("")}</div></div>`
+      ? `<div class="prices-card"><label class="prices-label">Prodotti simili</label><div class="price-filter-pills">${candidates.map((candidate, index) => `<button class="price-filter-pill" onclick="selectPriceCompareCandidate(${index})">${escapeHtml(candidate)}</button>`).join("")}</div></div>`
       : `<div class="empty-state"><span>🔍</span><h3>Cerca un prodotto</h3><p>Scrivi il nome di un prodotto registrato per scoprire in quale negozio conviene acquistarlo.</p></div>`;
     return;
   }
@@ -3158,6 +3242,10 @@ function renderPriceCompareResults() {
   }
 
   const brands = [...new Map(entries.map(entry => [entry.brandKey, entry.brand])).entries()];
+  priceState.compare.brandChips = brands;
+  if (priceState.compare.brandKey && !brands.some(([key]) => key === priceState.compare.brandKey)) {
+    priceState.compare.brandKey = null;
+  }
   const filtered = priceCompareFilteredEntries();
   const { best, others } = PriceDomain.compareStores(filtered);
   const stats = PriceDomain.priceStats(filtered);
@@ -3169,7 +3257,7 @@ function renderPriceCompareResults() {
   const brandChips = brands.length > 1
     ? `<div class="price-filter-pills">
         <button class="price-filter-pill ${!priceState.compare.brandKey ? "active" : ""}" onclick="selectPriceBrand('all')">Tutte le marche</button>
-        ${brands.map(([key, name]) => `<button class="price-filter-pill ${priceState.compare.brandKey === key ? "active" : ""}" onclick="selectPriceBrand('${escapeAttr(key)}')">${escapeHtml(name)}</button>`).join("")}
+        ${brands.map(([key, name], index) => `<button class="price-filter-pill ${priceState.compare.brandKey === key ? "active" : ""}" onclick="selectPriceBrand(${index})">${escapeHtml(name)}</button>`).join("")}
       </div>`
     : "";
 
@@ -3233,8 +3321,8 @@ function renderPriceStoresTab() {
   }
   return `
     <div class="store-list">
-      ${stores.map(store => `
-        <button class="store-card" onclick="openStoreDetail('${escapeAttr(PriceDomain.priceKey(store))}', '${escapeAttr(store)}')">
+      ${stores.map((store, index) => `
+        <button class="store-card" onclick="openStoreDetail(${index})">
           <span class="store-card-icon">🏪</span>
           <span class="store-card-info"><strong>${escapeHtml(store)}</strong><small>Prezzi registrati e confronto con gli altri negozi</small></span>
           <b class="store-card-arrow">›</b>
@@ -3249,19 +3337,34 @@ window.closeStoreDetail = function() {
   renderPrices();
 };
 
-window.openStoreDetail = async function(storeKey, storeName) {
+window.openStoreDetail = async function(indexOrKey, optionalName) {
   if (!window.PriceDomain) return;
+  // Accetta l'indice nell'elenco negozi (click utente) oppure la coppia
+  // chiave+nome usata internamente dal refresh manuale.
+  let storeKey = optionalName !== undefined ? indexOrKey : null;
+  let storeName = optionalName !== undefined ? optionalName : null;
+  if (storeKey === null) {
+    const store = priceState.meta.stores[Number(indexOrKey)];
+    if (!store) return;
+    storeKey = PriceDomain.priceKey(store);
+    storeName = store;
+  }
   priceState.stores = { view: "detail", storeKey, storeName, loading: true, rows: [], summary: null };
   renderPrices();
+  // Se l'utente torna indietro mentre i dati sono in volo, i risultati non
+  // devono riaprire la pagina negozio chiusa.
+  const stillActive = () => priceState.stores.view === "detail" && priceState.stores.storeKey === storeKey;
   let storeEntries;
   try {
-    storeEntries = await getPriceEntriesForStore(storeKey);
+    storeEntries = await getCachedPriceEntriesForStore(storeKey);
   } catch (error) {
     console.error(error);
+    if (!stillActive()) return;
     showToast("Prezzi del negozio non disponibili", true);
     closeStoreDetail();
     return;
   }
+  if (!stillActive()) return;
   // Ultimo prezzo registrato per ogni prodotto del negozio.
   const latestByProduct = new Map();
   PriceDomain.sortEntriesDesc(storeEntries).forEach(entry => {
@@ -3291,6 +3394,7 @@ window.openStoreDetail = async function(storeKey, storeName) {
       row.status = "unknown";
     }
   }));
+  if (!stillActive()) return;
   const compared = rows.filter(row => row.options > 1).length;
   priceState.stores.summary = {
     total: rows.length,
@@ -3329,24 +3433,43 @@ function renderStoreDetail() {
 
 // ---- Archivio condiviso ----
 
+// L'elenco già caricato viene mostrato SUBITO a ogni ingresso nella scheda (il
+// contenitore viene ricreato vuoto a ogni render). Se i dati sono freschi non
+// si rilancia nessuna query; se sono stantii si fa un aggiornamento in fondo
+// senza mai svuotare l'elenco (stale-while-revalidate).
 async function loadPriceArchive(force = false) {
   const now = Date.now();
-  if (!force && priceState.archive.loadedAt && now - priceState.archive.loadedAt < 60000) return;
+  if (!force && priceState.archive.loadedAt && now - priceState.archive.loadedAt < PRICE_ARCHIVE_TTL_MS) {
+    renderPriceArchiveList();
+    return;
+  }
+  if (priceState.archive.loading) return; // un aggiornamento è già in volo
   priceState.archive.loading = true;
+  priceState.archive.error = false;
   renderPriceArchiveList();
   try {
     priceState.archive.entries = await getRecentPriceEntries(PRICE_ARCHIVE_LIMIT);
     priceState.archive.loadedAt = Date.now();
   } catch (error) {
     console.error(error);
-    showToast("Archivio non caricato: controlla la connessione", true);
+    priceState.archive.error = true;
+    showToast(priceState.archive.entries.length
+      ? "Archivio non aggiornato: mostro l'ultima versione caricata"
+      : "Archivio non caricato: controlla la connessione", true);
   }
   priceState.archive.loading = false;
   renderPriceArchiveList();
 }
 
-window.filterPriceArchive = function(storeKey) {
-  priceState.archive.storeFilter = storeKey === "all" ? null : storeKey;
+// Indice nell'elenco negozi presenti in archivio, oppure "all".
+window.filterPriceArchive = function(selection) {
+  if (selection === "all") {
+    priceState.archive.storeFilter = null;
+  } else {
+    const store = priceState.archive.storeChips[Number(selection)];
+    if (!store) return;
+    priceState.archive.storeFilter = store[0];
+  }
   renderPriceArchiveList();
 };
 
@@ -3366,24 +3489,31 @@ function renderPriceArchiveList() {
   if (!container || !window.PriceDomain) return;
   const { entries, storeFilter, loading } = priceState.archive;
 
-  if (loading) {
+  if (loading && !entries.length) {
     container.innerHTML = `<div class="empty-state"><div class="loading-spinner"></div><p>Caricamento archivio…</p></div>`;
     return;
   }
   if (!entries.length) {
-    container.innerHTML = `<div class="empty-state"><span>🛒</span><h3>Archivio vuoto</h3><p>Nessuno ha ancora registrato prezzi: inizia tu dalla scheda Registra.</p></div>`;
+    container.innerHTML = priceState.archive.error
+      ? `<div class="empty-state"><span>📡</span><h3>Archivio non raggiungibile</h3><p>Controlla la connessione e riprova con il pulsante Aggiorna.</p></div>`
+      : `<div class="empty-state"><span>🛒</span><h3>Archivio vuoto</h3><p>Nessuno ha ancora registrato prezzi: inizia tu dalla scheda Registra.</p></div>`;
     return;
   }
 
   const stores = [...new Map(entries.map(entry => [entry.storeKey, entry.store])).entries()];
-  const filtered = storeFilter ? entries.filter(entry => entry.storeKey === storeFilter) : entries;
+  priceState.archive.storeChips = stores;
+  if (storeFilter && !stores.some(([key]) => key === storeFilter)) {
+    priceState.archive.storeFilter = null;
+  }
+  const filtered = priceState.archive.storeFilter ? entries.filter(entry => entry.storeKey === priceState.archive.storeFilter) : entries;
   const ownUid = appState.user?.uid;
 
   container.innerHTML = `
     <div class="price-filter-pills">
-      <button class="price-filter-pill ${!storeFilter ? "active" : ""}" onclick="filterPriceArchive('all')">Tutti i negozi</button>
-      ${stores.map(([key, name]) => `<button class="price-filter-pill ${storeFilter === key ? "active" : ""}" onclick="filterPriceArchive('${escapeAttr(key)}')">${escapeHtml(name)}</button>`).join("")}
+      <button class="price-filter-pill ${!priceState.archive.storeFilter ? "active" : ""}" onclick="filterPriceArchive('all')">Tutti i negozi</button>
+      ${stores.map(([key, name], index) => `<button class="price-filter-pill ${priceState.archive.storeFilter === key ? "active" : ""}" onclick="filterPriceArchive(${index})">${escapeHtml(name)}</button>`).join("")}
     </div>
+    ${loading ? `<p class="text-muted price-history-hint">Aggiornamento archivio…</p>` : ""}
     ${filtered.map(entry => {
       const own = entry.createdBy && entry.createdBy === ownUid;
       return `
@@ -3396,55 +3526,11 @@ function renderPriceArchiveList() {
             <strong>${escapeHtml(PriceDomain.formatEuro(entry.price))}</strong>
             <small>${escapeHtml(String(entry.weight))} ${escapeHtml(entry.unit)} → ${escapeHtml(PriceDomain.formatNormPrice(entry))}</small>
           </div>
-          ${own ? `<div class="price-archive-actions"><button class="btn-icon" title="Modifica" onclick="startPriceEdit('${escapeAttr(entry.id)}')">✎</button><button class="btn-icon price-delete-icon" title="Elimina" onclick="deletePriceEntryClick('${escapeAttr(entry.id)}')">×</button></div>` : ""}
+          ${own ? `<div class="price-archive-actions"><button class="btn-icon" title="Modifica" aria-label="Modifica" onclick="startPriceEdit('${escapeAttr(entry.id)}')">✎</button><button class="btn-icon price-delete-icon" title="Elimina" aria-label="Elimina" onclick="deletePriceEntryClick('${escapeAttr(entry.id)}')">×</button></div>` : ""}
         </div>`;
     }).join("")}
   `;
 }
-
-// ---- Incolla da volantino / NotebookLM ----
-
-window.togglePriceSmartPaste = function() {
-  capturePriceDraft();
-  priceState.smartPasteOpen = !priceState.smartPasteOpen;
-  renderPrices();
-};
-
-window.runPriceSmartPasteImport = async function() {
-  if (!window.PriceDomain) return;
-  const store = document.getElementById("price-store")?.value.trim() || priceState.draft.store.trim();
-  const text = document.getElementById("price-paste-input")?.value || "";
-  if (!store) {
-    showToast("⚠️ Scrivi prima il NEGOZIO nel campo qui sotto", true);
-    priceState.smartPasteOpen = false;
-    renderPrices();
-    document.getElementById("price-store")?.focus();
-    return;
-  }
-  if (!text.trim()) {
-    showToast("⚠️ Incolla prima il testo da importare", true);
-    return;
-  }
-  const { items, skipped } = PriceDomain.parseSmartPaste(text, store);
-  if (!items.length) {
-    showToast("Nessun prezzo riconoscibile nel testo", true);
-    return;
-  }
-  setLoading(`Importazione di ${items.length} prezzi…`);
-  try {
-    const entries = items.map(item => PriceDomain.buildPriceEntry({ ...item, store }, priceUserMeta()));
-    await savePriceEntries(entries);
-    priceState.archive.loadedAt = 0;
-    priceState.smartPasteOpen = false;
-    renderPrices();
-    showToast(`✅ Importati ${entries.length} prodotti in ${store}${skipped ? ` (${skipped} righe scartate)` : ""}`);
-  } catch (error) {
-    console.error(error);
-    showToast(error.message || "Importazione non riuscita", true);
-  } finally {
-    clearLoading();
-  }
-};
 
 // ---- Backup prezzi: importazione e esportazione ----
 
@@ -3488,9 +3574,12 @@ window.applyPriceBackupImport = async function() {
     closePriceImportModal();
     invalidatePriceEntriesCache();
     priceState.archive.loadedAt = 0;
+    priceState.archive.error = false;
     priceState.history = { key: null, entries: [], loading: false };
     priceState.compare.productKey = null;
     priceState.compare.entries = [];
+    priceState.compare.candidates = [];
+    priceState.compare.brandKey = null;
     renderPrices();
     showToast(`✅ Importati ${result.imported} prezzi${result.skippedDuplicates ? ` (${result.skippedDuplicates} già presenti)` : ""}`);
   } catch (error) {
@@ -3634,7 +3723,12 @@ async function lookupOpenFacts(barcode) {
   const databases = ["food", "beauty", "products"];
   for (const name of databases) {
     try {
-      const response = await fetch(`https://world.open${name}facts.org/api/v2/product/${encodeURIComponent(barcode)}.json`);
+      // Timeout esplicito: su rete lenta tre fetch appese bloccerebbero la
+      // ricerca del prodotto per decine di secondi.
+      const controller = new AbortController();
+      const timeout = setTimeout(() => controller.abort(), 8000);
+      const response = await fetch(`https://world.open${name}facts.org/api/v2/product/${encodeURIComponent(barcode)}.json`, { signal: controller.signal });
+      clearTimeout(timeout);
       if (!response.ok) continue;
       const data = await response.json();
       if (data?.status === 1 && data.product) return data.product;
