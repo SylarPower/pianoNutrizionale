@@ -335,6 +335,23 @@ priceState.compare.entries = [
 renderPriceCompareResults();
 assert.match(document.getElementById('price-compare-results').innerHTML, /price-winner-card/);
 assert.match(document.getElementById('price-compare-results').innerHTML, /Lidl/);
+// Selezione articolo in Confronta: suggerimenti live mentre si digita,
+// selezione dal menu e prodotti recenti a un tocco dopo la cancellazione.
+priceState.meta.products = ['Latte'];
+renderPriceCompareSuggestions('latt');
+assert.equal(document.getElementById('price-compare-suggest').classList.contains('hidden'), false, 'menu suggerimenti aperto');
+assert.match(document.getElementById('price-compare-suggest').innerHTML, /Latte/);
+selectPriceSuggestion(0);
+assert.equal(priceState.compare.query, 'Latte', 'selezione dal menu applicata');
+assert.equal(readCompareRecents()[0], 'Latte', 'prodotto ricordato nei recenti');
+clearPriceCompareSearch();
+assert.match(document.getElementById('price-compare-results').innerHTML, /selectPriceQuickPick\(0\)/, 'prodotti rapidi proposti dopo la cancellazione');
+assert.match(document.getElementById('price-compare-results').innerHTML, /Latte/);
+// Testo senza corrispondenze: feedback esplicito invece dello stato generico.
+priceCompareInput('xyzinesistente');
+runPriceCompareSearch('xyzinesistente');
+assert.match(document.getElementById('price-compare-results').innerHTML, /Nessun prodotto trovato/);
+priceState.compare.query = '';
 switchPriceTab('archive');
 assert.match(document.getElementById('view-prices').innerHTML, /price-archive-content/);
 assert.match(document.getElementById('view-prices').innerHTML, /preparePriceBackupImport/, 'import backup presente in archivio');
@@ -342,7 +359,9 @@ assert.match(document.getElementById('view-prices').innerHTML, /exportPriceBacku
 // Regressione archivio: rientrare nella scheda con dati freschi in cache deve
 // mostrare SUBITO l'elenco (prima il contenitore ricreato vuoto restava tale
 // perché loadPriceArchive usciva senza ridisegnare).
-priceState.archive.entries = [...priceState.compare.entries];
+priceState.archive.entries = [
+  { id: 'p1', store: 'Conad', storeKey: 'conad', brand: 'Zymil', brandKey: 'zymil', product: 'Latte', productKey: 'latte', price: 1.5, weight: 1, unit: 'l', normPrice: 1.5, normUnit: 'l', date: '2026-08-20', createdBy: 'u1', createdByUsername: 'mario', createdAtMs: 200 }
+];
 priceState.archive.loadedAt = Date.now();
 priceState.archive.loading = false;
 switchPriceTab('archive');

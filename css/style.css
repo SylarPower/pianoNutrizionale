@@ -1286,6 +1286,79 @@ body.dark-mode .meller-modal-note { background: #0d0d0d; border: 1px solid #2323
   border-color: var(--primary);
   color: #fff;
 }
+/* Campo di ricerca Confronta: cancella + menu suggerimenti live */
+.price-compare-input-wrap { position: relative; }
+.price-compare-input-wrap input { padding-right: 46px; }
+.price-compare-clear {
+  position: absolute;
+  top: 7px;
+  right: 8px;
+  width: 36px;
+  height: 36px;
+  display: grid;
+  place-items: center;
+  border: 0;
+  border-radius: 10px;
+  background: transparent;
+  color: var(--text-muted);
+  font-size: 1.35rem;
+  line-height: 1;
+  cursor: pointer;
+  touch-action: manipulation;
+  -webkit-tap-highlight-color: transparent;
+}
+.price-compare-clear:hover { background: var(--surface-alt); color: var(--text); }
+.price-compare-clear.hidden { display: none; }
+.price-compare-suggest {
+  position: absolute;
+  top: 100%;
+  left: 0;
+  right: 0;
+  z-index: 30;
+  background: var(--surface);
+  border: 1px solid var(--line);
+  border-radius: 14px;
+  box-shadow: 0 16px 38px rgba(15, 30, 25, .18);
+  max-height: 320px;
+  overflow-y: auto;
+  -webkit-overflow-scrolling: touch;
+}
+.price-compare-suggest.hidden { display: none; }
+.price-compare-suggest-label {
+  position: sticky;
+  top: 0;
+  padding: 9px 14px 7px;
+  background: var(--surface);
+  font-size: .66rem;
+  font-weight: 800;
+  letter-spacing: .07em;
+  text-transform: uppercase;
+  color: var(--text-muted);
+  border-bottom: 1px solid var(--line);
+}
+.price-compare-suggest-item {
+  display: block;
+  width: 100%;
+  text-align: left;
+  min-height: 44px;
+  padding: 11px 14px;
+  border: 0;
+  background: transparent;
+  color: var(--text);
+  font-size: .95rem;
+  font-weight: 600;
+  cursor: pointer;
+  touch-action: manipulation;
+  -webkit-tap-highlight-color: transparent;
+}
+.price-compare-suggest-item:hover,
+.price-compare-suggest-item.active {
+  background: var(--surface-alt);
+  color: var(--primary);
+}
+.price-compare-suggest-empty { padding: 12px 14px; font-size: .85rem; color: var(--text-muted); }
+.price-quick-card { padding-top: 16px; }
+.price-quick-card .price-filter-pills { flex-wrap: wrap; margin-bottom: 0; }
 .price-winner-card {
   background: linear-gradient(135deg, var(--primary), var(--primary-strong));
   color: #fff;
@@ -1412,6 +1485,15 @@ body.dark-mode .price-barcode-manual-row input:focus {
 body.dark-mode .price-badge.min { background: #10281c; color: #6fd39a; }
 body.dark-mode .price-badge.good { background: #0e2417; color: #63c48e; }
 body.dark-mode .price-badge.high { background: #2b1214; color: #ff8a90; }
+body.dark-mode .price-compare-suggest {
+  background: #0d0d0d;
+  border-color: #242424;
+  box-shadow: 0 16px 38px rgba(0, 0, 0, .55);
+}
+body.dark-mode .price-compare-suggest-label { background: #0d0d0d; color: #9a9a9a; border-color: #1d1d1d; }
+body.dark-mode .price-compare-suggest-item:hover,
+body.dark-mode .price-compare-suggest-item.active { background: #161616; }
+body.dark-mode .price-compare-clear:hover { background: #161616; color: var(--text); }
 body.dark-mode .price-compare-row { border-color: #1d1d1d; }
 
 /* Suggerimenti nome prodotto (nomi scannerizzati troppo lunghi) */

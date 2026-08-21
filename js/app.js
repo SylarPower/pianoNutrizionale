@@ -2687,7 +2687,7 @@ let priceState = {
   editingDate: null,
   draft: { store: "", product: "", brand: "", price: "", weight: "1000" },
   history: { key: null, entries: [], loading: false },
-  compare: { query: "", productKey: null, productName: null, brandKey: null, entries: [], candidates: [], brandChips: [], loading: false },
+  compare: { query: "", productKey: null, productName: null, brandKey: null, entries: [], candidates: [], brandChips: [], quickPicks: [], loading: false },
   stores: { view: "list", storeKey: null, storeName: "", loading: false, rows: [], summary: null },
   archive: { entries: [], storeFilter: null, storeChips: [], loading: false, loadedAt: 0, error: false }
 };
@@ -3153,32 +3153,54 @@ window.deletePriceEntryClick = async function(entryId) {
 
 window.priceCompareInput = function(value) {
   priceState.compare.query = value;
+  // Suggerimenti immediati (calcolo locale, nessuna query) e ricerca con un
+  // piccolo debounce per il caricamento automatico del match esatto.
+  renderPriceCompareSuggestions(value);
   clearTimeout(priceCompareTimer);
-  priceCompareTimer = setTimeout(() => runPriceCompareSearch(value), 350);
+  priceCompareTimer = setTimeout(() => runPriceCompareSearch(value), 250);
 };
 
 async function runPriceCompareSearch(query) {
   if (!window.PriceDomain) return;
-  const { exact, candidates } = PriceDomain.matchProducts(query, priceState.meta.products);
+  const trimmed = String(query || "").trim();
+  if (!trimmed) {
+    priceState.compare.productKey = null;
+    priceState.compare.productName = null;
+    priceState.compare.brandKey = null;
+    priceState.compare.entries = [];
+    priceState.compare.candidates = [];
+    renderPriceCompareResults();
+    return;
+  }
+  const { exact, candidates } = PriceDomain.matchProducts(trimmed, priceState.meta.products);
   if (exact) {
+    rememberCompareProduct(exact);
     priceState.compare.candidates = [];
     await loadPriceComparison(PriceDomain.priceKey(exact), exact);
     return;
   }
+  // Candidati più ricchi: oltre alle corrispondenze per sottostringa
+  // ("latte" → "Latte fresco") anche i prodotti con parole significative in
+  // comune, così errori di battitura o nomi parziali trovano comunque algo.
+  const similar = PriceDomain.similarProducts(trimmed, priceState.meta.products, 5);
+  const merged = [...similar];
+  candidates.forEach(name => { if (!merged.includes(name)) merged.push(name); });
   priceState.compare.productKey = null;
   priceState.compare.productName = null;
   priceState.compare.brandKey = null;
   priceState.compare.entries = [];
-  priceState.compare.candidates = candidates;
+  priceState.compare.candidates = merged.slice(0, 8);
   renderPriceCompareResults();
 }
 
 window.selectPriceCompareCandidate = function(index) {
   const productName = priceState.compare.candidates[index];
   if (!productName) return;
+  hidePriceCompareSuggestions();
   const input = document.getElementById("price-compare-search");
   if (input) input.value = productName;
   priceState.compare.query = productName;
+  rememberCompareProduct(productName);
   runPriceCompareSearch(productName);
 };
 
@@ -3227,9 +3249,26 @@ function renderPriceCompareResults() {
   const { productKey, entries, candidates, loading } = priceState.compare;
 
   if (!productKey) {
-    results.innerHTML = candidates.length
-      ? `<div class="prices-card"><label class="prices-label">Prodotti simili</label><div class="price-filter-pills">${candidates.map((candidate, index) => `<button class="price-filter-pill" onclick="selectPriceCompareCandidate(${index})">${escapeHtml(candidate)}</button>`).join("")}</div></div>`
-      : `<div class="empty-state"><span>🔍</span><h3>Cerca un prodotto</h3><p>Scrivi il nome di un prodotto registrato per scoprire in quale negozio conviene acquistarlo.</p></div>`;
+    if (candidates.length) {
+      results.innerHTML = `<div class="prices-card"><label class="prices-label">Prodotti simili</label><div class="price-filter-pills">${candidates.map((candidate, index) => `<button class="price-filter-pill" onclick="selectPriceCompareCandidate(${index})">${escapeHtml(candidate)}</button>`).join("")}</div></div>`;
+      return;
+    }
+    const typed = String(priceState.compare.query || "").trim();
+    const quickPicks = getCompareQuickPicks();
+    priceState.compare.quickPicks = quickPicks;
+    results.innerHTML = `
+      <div class="empty-state">
+        <span>${typed ? "🤔" : "🔍"}</span>
+        <h3>${typed ? "Nessun prodotto trovato" : "Cerca un prodotto"}</h3>
+        <p>${typed
+          ? `Nessuna corrispondenza per «${escapeHtml(typed)}»: prova con una parte del nome (es. «latte»).`
+          : "Scrivi il nome di un prodotto registrato per scoprire in quale negozio conviene acquistarlo."}</p>
+      </div>
+      ${quickPicks.length ? `
+        <section class="prices-card price-quick-card">
+          <label class="prices-label">Un tocco e via</label>
+          <div class="price-filter-pills">${quickPicks.map((name, index) => `<button class="price-filter-pill" onclick="selectPriceQuickPick(${index})">${escapeHtml(name)}</button>`).join("")}</div>
+        </section>` : ""}`;
     return;
   }
   if (loading) {
@@ -3299,16 +3338,195 @@ function renderPriceCompareResults() {
 
 function renderPriceCompareTab() {
   const query = priceState.compare.query;
+  const clearVisible = Boolean(String(query || "").trim() || priceState.compare.productKey);
   return `
     <section class="prices-card">
       <label class="prices-label" for="price-compare-search">Prodotto</label>
-      <input id="price-compare-search" list="list-price-products-compare" placeholder="Quale prodotto cerchi?" autocomplete="off"
-        value="${escapeAttr(query)}" oninput="priceCompareInput(this.value)" onclick="priceFieldFocus(this)">
-      ${priceDatalistHtml("list-price-products-compare", priceState.meta.products)}
+      <div class="price-compare-input-wrap">
+        <input id="price-compare-search" placeholder="Es. latte, pasta, uova…" autocomplete="off" enterkeyhint="search"
+          value="${escapeAttr(query)}"
+          oninput="priceCompareInput(this.value)"
+          onkeydown="priceCompareKeydown(event)"
+          onfocus="priceCompareFocus(this)"
+          onblur="priceCompareBlur()">
+        <button type="button" id="price-compare-clear" class="price-compare-clear ${clearVisible ? "" : "hidden"}"
+          aria-label="Cancella ricerca" title="Cancella ricerca" onclick="clearPriceCompareSearch()">×</button>
+        <div id="price-compare-suggest" class="price-compare-suggest hidden" role="listbox" aria-label="Suggerimenti prodotto"></div>
+      </div>
+      <p class="text-muted price-save-note">Digita il nome: i suggerimenti compaiono mentre scrivi. Tocca un prodotto per confrontare i negozi.</p>
     </section>
     <div id="price-compare-results"></div>
   `;
 }
+
+// ---- Selezione prodotto: suggerimenti live + prodotti recenti ----
+// Campo di ricerca con menu a discesa proprio (le datalist native si
+// comportano in modo diverso su ogni browser mobile). Nessuna chiamata
+// Firebase: i suggerimenti nascono dalla rubrica già in memoria e i "recenti"
+// da localStorage + archivio già caricato.
+
+const PRICE_COMPARE_RECENTS_KEY = "pn_price_compare_recent";
+let priceCompareSuggestionNames = [];
+let priceCompareSuggestActive = -1;
+
+function readCompareRecents() {
+  try {
+    const list = JSON.parse(localStorage.getItem(PRICE_COMPARE_RECENTS_KEY) || "[]");
+    return Array.isArray(list) ? list.filter(name => typeof name === "string" && name.trim()) : [];
+  } catch (_) { return []; }
+}
+
+function rememberCompareProduct(name) {
+  const clean = String(name || "").trim();
+  if (!clean || !window.PriceDomain) return;
+  const list = readCompareRecents().filter(item => PriceDomain.priceKey(item) !== PriceDomain.priceKey(clean));
+  list.unshift(clean);
+  try { localStorage.setItem(PRICE_COMPARE_RECENTS_KEY, JSON.stringify(list.slice(0, 8))); } catch (_) {}
+}
+
+// Prodotti a un tocco: i recenti (confrontati di recente) e gli ultimi
+// registrati in archivio, deduplicati e ancora presenti nella rubrica.
+function getCompareQuickPicks() {
+  if (!window.PriceDomain) return [];
+  const picks = [];
+  const seen = new Set();
+  const known = priceState.meta.products.length
+    ? new Set(priceState.meta.products.map(name => PriceDomain.priceKey(name)))
+    : null;
+  [...readCompareRecents(), ...priceState.archive.entries.map(entry => entry.product)].forEach(name => {
+    const clean = String(name || "").trim();
+    const key = PriceDomain.priceKey(clean);
+    if (!key || seen.has(key)) return;
+    if (known && !known.has(key)) return;
+    seen.add(key);
+    picks.push(clean);
+  });
+  return picks.slice(0, 8);
+}
+
+// Corrispondenze per il menu: prima il match esatto, poi i prodotti con
+// parole in comune (simili), poi quelli che contengono il testo digitato.
+function priceCompareSuggestionList(query) {
+  if (!window.PriceDomain) return [];
+  const trimmed = String(query || "").trim();
+  if (!trimmed) return getCompareQuickPicks();
+  const { exact, candidates } = PriceDomain.matchProducts(trimmed, priceState.meta.products);
+  const similar = PriceDomain.similarProducts(trimmed, priceState.meta.products, 5);
+  const merged = [];
+  const seen = new Set();
+  [exact, ...similar, ...candidates].forEach(name => {
+    if (!name) return;
+    const key = PriceDomain.priceKey(name);
+    if (seen.has(key)) return;
+    seen.add(key);
+    merged.push(name);
+  });
+  return merged.slice(0, 8);
+}
+
+function renderPriceCompareSuggestions(query) {
+  const box = document.getElementById("price-compare-suggest");
+  if (!box) return;
+  const list = priceCompareSuggestionList(query);
+  priceCompareSuggestionNames = list;
+  priceCompareSuggestActive = -1;
+  const trimmed = String(query || "").trim();
+  if (!trimmed && !list.length) {
+    hidePriceCompareSuggestions();
+    return;
+  }
+  if (trimmed && !list.length) {
+    box.innerHTML = `<div class="price-compare-suggest-empty">Nessun prodotto per «${escapeHtml(trimmed)}»</div>`;
+    box.classList.remove("hidden");
+    return;
+  }
+  box.innerHTML = `
+    <div class="price-compare-suggest-label">${trimmed ? "Prodotti" : "Recenti"}</div>
+    ${list.map((name, index) => `<button type="button" class="price-compare-suggest-item" role="option" data-idx="${index}" onmousedown="event.preventDefault()" onclick="selectPriceSuggestion(${index})">${escapeHtml(name)}</button>`).join("")}`;
+  box.classList.remove("hidden");
+}
+
+function hidePriceCompareSuggestions() {
+  const box = document.getElementById("price-compare-suggest");
+  priceCompareSuggestActive = -1;
+  if (!box) return;
+  box.classList.add("hidden");
+  box.innerHTML = "";
+}
+
+function updatePriceSuggestActive() {
+  document.querySelectorAll(".price-compare-suggest-item").forEach(item => {
+    const active = Number(item.dataset?.idx) === priceCompareSuggestActive;
+    item.classList.toggle("active", active);
+    if (active && typeof item.scrollIntoView === "function") item.scrollIntoView({ block: "nearest" });
+  });
+}
+
+window.priceCompareFocus = function(input) {
+  renderPriceCompareSuggestions(input?.value || "");
+};
+
+window.priceCompareBlur = function() {
+  // Un attimo di ritardo: il click su un suggerimento deve fare in tempo a
+  // partire prima che il menu scompaia insieme al focus.
+  setTimeout(hidePriceCompareSuggestions, 180);
+};
+
+window.priceCompareKeydown = function(event) {
+  if (event.key === "ArrowDown" || event.key === "ArrowUp") {
+    if (!priceCompareSuggestionNames.length) return;
+    event.preventDefault();
+    const delta = event.key === "ArrowDown" ? 1 : -1;
+    priceCompareSuggestActive = (priceCompareSuggestActive + delta + priceCompareSuggestionNames.length) % priceCompareSuggestionNames.length;
+    updatePriceSuggestActive();
+    return;
+  }
+  if (event.key === "Enter") {
+    event.preventDefault();
+    const index = priceCompareSuggestActive >= 0 ? priceCompareSuggestActive : 0;
+    if (priceCompareSuggestionNames.length) {
+      selectPriceSuggestion(index);
+    } else {
+      runPriceCompareSearch(event.target?.value || priceState.compare.query);
+    }
+    return;
+  }
+  if (event.key === "Escape") hidePriceCompareSuggestions();
+};
+
+window.selectPriceSuggestion = function(index) {
+  const name = priceCompareSuggestionNames[index];
+  if (!name) return;
+  hidePriceCompareSuggestions();
+  const input = document.getElementById("price-compare-search");
+  if (input) input.value = name;
+  priceState.compare.query = name;
+  rememberCompareProduct(name);
+  runPriceCompareSearch(name);
+};
+
+window.selectPriceQuickPick = function(index) {
+  const name = priceState.compare.quickPicks[index];
+  if (!name) return;
+  const input = document.getElementById("price-compare-search");
+  if (input) input.value = name;
+  priceState.compare.query = name;
+  rememberCompareProduct(name);
+  runPriceCompareSearch(name);
+};
+
+window.clearPriceCompareSearch = function() {
+  const input = document.getElementById("price-compare-search");
+  if (input) { input.value = ""; input.focus(); }
+  priceState.compare.query = "";
+  priceState.compare.productKey = null;
+  priceState.compare.productName = null;
+  priceState.compare.brandKey = null;
+  priceState.compare.entries = [];
+  priceState.compare.candidates = [];
+  renderPriceCompareResults();
+  renderPriceCompareSuggestions("");
+};
 
 // ---- Pagina negozio ----
 
