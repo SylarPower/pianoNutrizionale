@@ -1,4 +1,4 @@
-/* Piano Nutrizionale — dominio puro (schema 4).
+/* Piano Nutrizionale — dominio puro (schema 5).
  *
  * Questo file contiene SOLO funzioni pure: nessun DOM, nessuna chiamata
  * Firebase, nessuna ricetta, nessun dosaggio. I dati personali arrivano da
@@ -11,7 +11,7 @@
 })(typeof globalThis !== 'undefined' ? globalThis : window, () => {
   'use strict';
 
-  const VERSION = 4;
+  const VERSION = 5;
   const DAYS = ['monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday', 'sunday'];
   const SLOTS = ['breakfast', 'snack1', 'lunch', 'snack2', 'dinner'];
   const EMPTY_PORTION = '—';
@@ -107,7 +107,9 @@ const DEFAULT_CONSTRAINTS = {
     };
   }
 
-  // Migrazione idempotente di una singola ricetta allo schema 4.
+  // Migrazione idempotente di una singola ricetta allo schema corrente (5).
+  // Schema 4 → 5: rimuove il campo legacy `frequency` (sostituito dalle
+  // frequenze proteiche calcolate dal generatore sui pasti principali).
   function migrateRecipe(recipe) {
     if (!recipe || typeof recipe !== 'object') return recipe;
     const ingredients = (recipe.ingredients || []).map(ingredient => ({
@@ -115,10 +117,11 @@ const DEFAULT_CONSTRAINTS = {
       ingredientId: ingredientIdFor(ingredient.name, ingredient.ingredientId),
       portions: normalizePortions(ingredient.portions)
     }));
-    return { ...recipe, ingredients };
+    const { frequency, ...rest } = recipe;
+    return { ...rest, ingredients };
   }
 
-  // Migrazione idempotente del documento catalogo (schema 3 → 4).
+  // Migrazione idempotente del documento catalogo (schema 3/4 → 5).
   function migrateCatalog(doc = {}) {
     const recipes = (doc.recipes || []).map(migrateRecipe);
     return {
@@ -825,16 +828,29 @@ const PROTEIN_CATEGORY_LABELS = {
   function classifyProtein(recipe) {
     const inferred = inferProteinCategoryFromIngredients(recipe);
     if (inferred) return inferred;
-    const category = String(recipe?.proteinCategory || '').toLowerCase();
-if (/pollame/i.test(category)) return 'poultry';
-if (/affettati|affettato|prosciutto|bresaola|speck|salame|mortadella|wurstel|salsic|carni miste|carne mista/i.test(category)) return 'curedMeats';
-if (/manzo|vitello|maiale|suino|pork/i.test(category)) return 'beef';
-    if (/omega-3/i.test(category)) return 'omega';
-    if (/pesce|salmone|sgombro|tonno|merluzzo|mollusch|crostace/i.test(category)) return 'otherFish';
-    if (/latticini|formaggi/i.test(category)) return 'dairy';
-    if (/uova/i.test(category)) return 'eggs';
-    if (/legumi/i.test(category)) return 'legumes';
+    const raw = recipe?.proteinCategory;
+    if (!raw) return null;
+    const category = String(raw).trim();
+    // Chiave tecnica diretta (poultry, beef, curedMeats, omega, ecc.): usata
+    // così com'è quando appartiene all'insieme delle categorie riconosciute.
+    if (PROTEIN_CATEGORIES.includes(category)) return category;
+    const normalized = category.toLowerCase();
+    if (/pollame/i.test(normalized)) return 'poultry';
+    if (/affettati|affettato|prosciutto|bresaola|speck|salame|mortadella|wurstel|salsic|carni miste|carne mista/i.test(normalized)) return 'curedMeats';
+    if (/manzo|vitello|maiale|suino|pork/i.test(normalized)) return 'beef';
+    if (/omega-3/i.test(normalized)) return 'omega';
+    if (/pesce|salmone|sgombro|tonno|merluzzo|mollusch|crostace/i.test(normalized)) return 'otherFish';
+    if (/latticini|formaggi/i.test(normalized)) return 'dairy';
+    if (/uova/i.test(normalized)) return 'eggs';
+    if (/legumi/i.test(normalized)) return 'legumes';
     return null;
+  }
+
+  // Rileva se un catalogo contiene ricette con il campo legacy `frequency`
+  // (schema < 5). Usato dall'app per decidere se salvare il catalogo migrato
+  // una sola volta al caricamento.
+  function catalogHasLegacyFrequency(recipes) {
+    return Array.isArray(recipes) && recipes.some(recipe => recipe && Object.prototype.hasOwnProperty.call(recipe, 'frequency'));
   }
 
   function isFishRecipe(recipe) {
@@ -936,7 +952,7 @@ if (/manzo|vitello|maiale|suino|pork/i.test(category)) return 'beef';
       return base.concat(opposite);
     };
 
-    const counts = { poultry: 0, beef: 0, omega: 0, otherFish: 0, dairy: 0, eggs: 0, legumes: 0 };
+    const counts = { poultry: 0, beef: 0, curedMeats: 0, omega: 0, otherFish: 0, dairy: 0, eggs: 0, legumes: 0 };
     const fishToday = {};
     const usage = {};
     const chosen = {};
@@ -1316,6 +1332,7 @@ if (/manzo|vitello|maiale|suino|pork/i.test(category)) return 'beef';
     PROTEIN_CATEGORY_LABELS,
     classifyProtein,
     inferProteinCategoryFromIngredients,
+    catalogHasLegacyFrequency,
     isFishRecipe,
     mulberry32,
     hashString,

@@ -344,10 +344,17 @@ async function loadUserData(user, { silent = false } = {}) {
 }
 
 function applyState(recipes, plan, shopping) {
+  // Migrazione schema 4 → 5: se il catalogo caricato contiene ancora il campo
+  // legacy `frequency`, il catalogo normalizzato viene salvato una sola volta
+  // per rimuoverlo definitivamente dai dati persistiti.
+  const needsCatalogMigration = window.PianoDomain && PianoDomain.catalogHasLegacyFrequency(recipes);
   setRecipes(recipes);
   appState.plan = window.PianoDomain ? PianoDomain.migratePlan(plan) : plan;
   appState.shopping = shopping;
   appState.deviceSettings = getLocalDeviceSettings();
+  if (needsCatalogMigration) {
+    saveRecipeCatalog(appState.recipes).catch(error => console.warn("Migrazione schema 5: salvataggio catalogo non riuscito", error));
+  }
 
   const today = getTodayKey();
   const dateKey = new Date().toLocaleDateString("sv-SE");
@@ -725,6 +732,20 @@ function recipeProteinCategory(recipe) {
   return window.PianoDomain?.classifyProtein(recipe) || null;
 }
 
+// Etichetta leggibile per la categoria proteica di una ricetta: prima il
+// dominio (ingredienti → fallback proteinCategory), poi l'eventuale valore
+// testuale legacy come estrema ratio. Usata dalla libreria ricette e dalle
+// modali di sostituzione per non mostrare chiavi tecniche ("curedMeats").
+function recipeProteinLabel(recipe) {
+  if (!recipe) return "";
+  const key = window.PianoDomain?.classifyProtein(recipe);
+  if (key && window.PianoDomain?.PROTEIN_CATEGORY_LABELS?.[key]) {
+    return PianoDomain.PROTEIN_CATEGORY_LABELS[key];
+  }
+  const raw = recipe.proteinCategory;
+  return raw ? String(raw) : "";
+}
+
 function recipeIsFish(recipe) {
   const category = recipeProteinCategory(recipe);
   return category === "omega" || category === "otherFish";
@@ -886,7 +907,7 @@ window.openSwapModal = function(dayKey, slot) {
     const selected = recipe.id === currentId;
     const hint = crossSlot
       ? `Da ${escapeHtml(oppositeLabel)} · carboidrati adattati`
-      : escapeHtml(recipe.proteinCategory || "");
+      : escapeHtml(recipeProteinLabel(recipe));
     const badge = crossSlot ? ` <span class="swap-cross-badge" title="Carboidrati adattati">↻</span>` : "";
     return `<button class="swap-item ${selected ? "selected" : ""}" onclick="confirmSwap('${dayKey}', '${slot}', '${escapeAttr(recipe.id)}')"><span class="swap-code">${escapeHtml(recipe.id)}</span><span><strong>${escapeHtml(recipe.emoji || "🍲")} ${escapeHtml(getRecipeDisplayName(recipe, getDayType(dayKey)))}${badge}</strong><small>${hint}</small></span>${selected ? "<b>✓</b>" : ""}</button>`;
   };
@@ -1062,7 +1083,7 @@ function recipeSectionHtml(title, recipes, slot) {
       </button>
       <div id="${sectionId}" class="recipe-section-body hidden">
         <div class="recipe-grid">
-          ${recipes.map(recipe => `<button class="recipe-library-card" data-search="${escapeAttr(`${recipe.id} ${recipe.name} ${recipe.namesByDayType?.training || ""} ${recipe.namesByDayType?.rest || ""} ${recipe.proteinCategory} ${(recipe.ingredients || []).map(i => i.name).join(" ")}`.toLowerCase())}" onclick="openRecipeModal('${escapeAttr(recipe.id)}')"><span class="recipe-code">${escapeHtml(recipe.id)}</span><span class="recipe-card-emoji">${escapeHtml(recipe.emoji || "🍲")}</span><strong>${escapeHtml(recipe.name)}</strong><small>${escapeHtml(recipe.proteinCategory || "")}</small></button>`).join("")}
+          ${recipes.map(recipe => `<button class="recipe-library-card" data-search="${escapeAttr(`${recipe.id} ${recipe.name} ${recipe.namesByDayType?.training || ""} ${recipe.namesByDayType?.rest || ""} ${recipeProteinLabel(recipe)} ${(recipe.ingredients || []).map(i => i.name).join(" ")}`.toLowerCase())}" onclick="openRecipeModal('${escapeAttr(recipe.id)}')"><span class="recipe-code">${escapeHtml(recipe.id)}</span><span class="recipe-card-emoji">${escapeHtml(recipe.emoji || "🍲")}</span><strong>${escapeHtml(recipe.name)}</strong><small>${escapeHtml(recipeProteinLabel(recipe))}</small></button>`).join("")}
         </div>
       </div>
     </section>`;
@@ -1108,7 +1129,7 @@ window.createNewRecipe = function(slot = "lunch", assignDay = null) {
   const selectedSlot = MEAL_SLOTS.some(item => item.id === slot) ? slot : "lunch";
   const id = `U${Date.now()}`;
   const recipe = {
-    id, slot: selectedSlot, name: "Nuova ricetta", emoji: getSlotMeta(selectedSlot).emoji, proteinCategory: "", frequency: "",
+    id, slot: selectedSlot, name: "Nuova ricetta", emoji: getSlotMeta(selectedSlot).emoji, proteinCategory: "",
     ingredients: [], steps: [], notes: [], specialNote: ""
   };
   currentModal = { recipe, original: null, dayKey: DAY_ORDER.includes(assignDay) ? assignDay : null, dayType: DAY_ORDER.includes(assignDay) ? getDayType(assignDay) : getRecipePreviewDayType(), assignAfterSave: DAY_ORDER.includes(assignDay) ? { day: assignDay, slot: selectedSlot } : null, isNew: true };
@@ -2271,18 +2292,54 @@ constraints: {
 }
 };
 
+// Versione della struttura delle preferenze del generatore: serve per
+// migrare una sola volta i valori salvati in locale (es. legumesMax da 4 a 14,
+// aggiunta delle nuove chiavi beef/curedMeats) senza sovrascrivere ogni volta
+// le personalizzazioni dell'utente.
+const GENERATOR_PREFS_VERSION = 2;
+
 let generatorState = { seed: null, blocks: {}, proposal: null };
+
+function migrateGeneratorPrefs(saved) {
+  if (!saved || typeof saved !== 'object') return null;
+  const version = Number(saved.version) || 0;
+  if (version >= GENERATOR_PREFS_VERSION) return null;
+  const next = {
+    ...GENERATOR_PREFS_DEFAULTS,
+    ...saved,
+    slots: { ...GENERATOR_PREFS_DEFAULTS.slots, ...(saved.slots || {}) },
+    constraints: { ...GENERATOR_PREFS_DEFAULTS.constraints, ...(saved.constraints || {}) },
+    version: GENERATOR_PREFS_VERSION
+  };
+  // Migrazione v0 → v1/v2: il vecchio default legumesMax (4 o simile) viene
+  // riconosciuto e aggiornato al nuovo default 14. Valori chiaramente
+  // personalizzati (> 4 e <= 14) vengono preservati.
+  const savedConstraints = saved.constraints || {};
+  const oldLegumesMax = savedConstraints.legumesMax;
+  if (version < 2 && Number.isFinite(Number(oldLegumesMax)) && Number(oldLegumesMax) >= 3 && Number(oldLegumesMax) <= 7) {
+    next.constraints.legumesMax = GENERATOR_PREFS_DEFAULTS.constraints.legumesMax;
+  }
+  return next;
+}
 
 function getGeneratorPrefs() {
   const saved = appState.deviceSettings?.generatorPrefs || {};
+  const migrated = migrateGeneratorPrefs(saved);
+  if (migrated) {
+    appState.deviceSettings = appState.deviceSettings || {};
+    appState.deviceSettings.generatorPrefs = migrated;
+    saveLocalDeviceSettings(appState.deviceSettings);
+  }
+  const source = migrated || saved;
   const number = (value, fallback, min, max) =>
     Number.isFinite(Number(value)) ? Math.max(min, Math.min(max, Math.floor(Number(value)))) : fallback;
   return {
-    batchPairs: number(saved.batchPairs, GENERATOR_PREFS_DEFAULTS.batchPairs, 0, 7),
-    maxRepeats: number(saved.maxRepeats, GENERATOR_PREFS_DEFAULTS.maxRepeats, 1, 7),
-    allowCrossSlot: Boolean(saved.allowCrossSlot ?? GENERATOR_PREFS_DEFAULTS.allowCrossSlot),
-    slots: { ...GENERATOR_PREFS_DEFAULTS.slots, ...(saved.slots || {}) },
-    constraints: { ...GENERATOR_PREFS_DEFAULTS.constraints, ...(saved.constraints || {}) }
+    batchPairs: number(source.batchPairs, GENERATOR_PREFS_DEFAULTS.batchPairs, 0, 7),
+    maxRepeats: number(source.maxRepeats, GENERATOR_PREFS_DEFAULTS.maxRepeats, 1, 7),
+    allowCrossSlot: Boolean(source.allowCrossSlot ?? GENERATOR_PREFS_DEFAULTS.allowCrossSlot),
+    slots: { ...GENERATOR_PREFS_DEFAULTS.slots, ...(source.slots || {}) },
+    constraints: { ...GENERATOR_PREFS_DEFAULTS.constraints, ...(source.constraints || {}) },
+    version: GENERATOR_PREFS_VERSION
   };
 }
 
@@ -2291,6 +2348,7 @@ function saveGeneratorPrefs(updater) {
 
   const current = getGeneratorPrefs();
   const next = typeof updater === "function" ? updater(current) : { ...current, ...updater };
+  next.version = GENERATOR_PREFS_VERSION;
   appState.deviceSettings = appState.deviceSettings || {};
   appState.deviceSettings.generatorPrefs = next;
   saveLocalDeviceSettings(appState.deviceSettings);
@@ -2298,7 +2356,8 @@ function saveGeneratorPrefs(updater) {
   renderGeneratorModal();
 
   if (advancedWasOpen) {
-    document.getElementById("generator-advanced").open = true;
+    const details = document.getElementById("generator-advanced");
+    if (details) details.open = true;
   }
 }
 

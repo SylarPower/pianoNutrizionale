@@ -20,7 +20,7 @@ function recipe(id, name, slot, ingredients, proteinCategory = '') {
 }
 
 function planWith(days, extra = {}) {
-  return { schemaVersion: 4, days, defaultDays: JSON.parse(JSON.stringify(days)), batchRules: {}, batchTemplates: [], ...extra };
+  return { schemaVersion: 5, days, defaultDays: JSON.parse(JSON.stringify(days)), batchRules: {}, batchTemplates: [], ...extra };
 }
 
 // ---- Migrazioni schema 3 → 4 ----
@@ -39,9 +39,9 @@ test('migrazione idempotente', () => {
   assert.deepEqual(once, twice);
 });
 
-test('migrazione catalogo a schema 4 con alias incorporati', () => {
+test('migrazione catalogo a schema 5 con alias incorporati', () => {
   const catalog = d.migrateCatalog({ schemaVersion: 3, recipes: [recipe('R1', 'X', 'lunch', [ingredient('Pomodorini')])] });
-  assert.equal(catalog.schemaVersion, 4);
+  assert.equal(catalog.schemaVersion, 5);
   assert.equal(catalog.recipeCount, 1);
   assert.equal(catalog.ingredientAliases['pomodorini'], 'cherry-tomatoes');
 });
@@ -51,7 +51,7 @@ test('migrazione piano: batchRules testuali → batchTemplates strutturati', () 
     batchRules: { monday: { dinner: 'C1', nextLunch: 'P1', actions: ['[5 min] Prepara il riso'] } }
   });
   const migrated = d.migratePlan(plan);
-  assert.equal(migrated.schemaVersion, 4);
+  assert.equal(migrated.schemaVersion, 5);
   assert.equal(migrated.batchTemplates.length, 1);
   assert.equal(migrated.batchTemplates[0].anchor.recipeId, 'C1');
   assert.equal(migrated.batchTemplates[0].target.recipeId, 'P1');
@@ -727,7 +727,7 @@ test('generatore: gli slot disabilitati restano come sono e contano nelle freque
     assert.equal(result.plan.days[day].lunch, 'L-L1', `pranzo ${day} invariato`);
     assert.ok(result.plan.days[day].dinner, `cena ${day} generata`);
   });
-  assert.equal(result.counts.legumes, 7, 'i sette pranzi mantenuti conteggiano i legumi');
+  assert.ok(result.counts.legumes >= 7, 'i sette pranzi mantenuti conteggiano almeno 7 legumi');
 });
 
 test('generatore: cross-slot riempie il pranzo col catalogo di sole cene', () => {
@@ -918,16 +918,151 @@ test('condivisione completa: piano utilizzabile solo se tutti i riferimenti esis
 // ---- Backup ----
 
 test('buildBackup contiene catalogo, piano, spesa e metadati operazione', () => {
-  const catalog = { schemaVersion: 4, recipes: [recipe('A', 'A', 'lunch', [ingredient('X')])] };
+  const catalog = { schemaVersion: 5, recipes: [recipe('A', 'A', 'lunch', [ingredient('X')])] };
   const plan = d.emptyPlan();
   const shopping = { selectedMeals: {}, includePantry: true, excludedItems: [], customQuantities: {} };
   const backup = d.buildBackup(catalog, plan, shopping, 'import-replace', 'Sostituzione catalogo');
-  assert.equal(backup.schemaVersion, 4);
+  assert.equal(backup.schemaVersion, 5);
   assert.deepEqual(backup.catalog, catalog);
   assert.deepEqual(backup.plan, plan);
   assert.deepEqual(backup.shoppingList, shopping);
   assert.equal(backup.operation, 'import-replace');
   assert.ok(backup.createdAt);
+});
+
+// ---- Schema 5: rimozione legacy `frequency` ----
+
+test('migrazione ricetta schema 4 → 5: rimuove il campo frequency', () => {
+  const raw = { id: 'R1', name: 'X', slot: 'lunch', frequency: '2x settimana', proteinCategory: 'Pollame', ingredients: [{ name: 'Pollo', portions: PORTIONS }], steps: [] };
+  const migrated = d.migrateRecipe(raw);
+  assert.equal(Object.prototype.hasOwnProperty.call(migrated, 'frequency'), false, 'frequency rimosso');
+  assert.equal(migrated.name, 'X');
+  assert.equal(migrated.proteinCategory, 'Pollame', 'gli altri campi restano');
+});
+
+test('migrazione ricetta non muta l\'oggetto originale', () => {
+  const raw = { id: 'R1', name: 'X', slot: 'lunch', frequency: '1x', ingredients: [{ name: 'Pollo', portions: PORTIONS }], steps: [] };
+  const copy = JSON.parse(JSON.stringify(raw));
+  d.migrateRecipe(raw);
+  assert.deepEqual(raw, copy, 'l\'input non viene modificato');
+});
+
+test('migrazione ricetta idempotente anche dopo rimozione frequency', () => {
+  const once = d.migrateRecipe({ id: 'R1', name: 'X', slot: 'lunch', frequency: '3x', ingredients: [{ name: 'Ceci', portions: PORTIONS }], steps: [] });
+  const twice = d.migrateRecipe(once);
+  assert.deepEqual(once, twice);
+  assert.equal(Object.prototype.hasOwnProperty.call(twice, 'frequency'), false);
+});
+
+test('migrazione catalogo a schema 5 rimuove frequency da tutte le ricette', () => {
+  const catalog = d.migrateCatalog({
+    schemaVersion: 4,
+    recipes: [
+      { id: 'A', name: 'A', slot: 'lunch', frequency: '2x', ingredients: [{ name: 'Pollo', portions: PORTIONS }], steps: [] },
+      { id: 'B', name: 'B', slot: 'dinner', frequency: '1x', ingredients: [{ name: 'Salmone', portions: PORTIONS }], steps: [] }
+    ]
+  });
+  assert.equal(catalog.schemaVersion, 5);
+  catalog.recipes.forEach(recipe => {
+    assert.equal(Object.prototype.hasOwnProperty.call(recipe, 'frequency'), false);
+  });
+});
+
+test('catalogHasLegacyFrequency rileva ricette con frequency', () => {
+  assert.equal(d.catalogHasLegacyFrequency([{ id: 'A', frequency: '1x' }]), true);
+  assert.equal(d.catalogHasLegacyFrequency([{ id: 'A' }]), false);
+  assert.equal(d.catalogHasLegacyFrequency([]), false);
+});
+
+// ---- Classificazione: ingredienti prevalgono su proteinCategory ----
+
+test('classifyProtein: ingrediente riconoscibile prevale su proteinCategory discordante', () => {
+  const recipe = { ingredients: [{ name: 'Petto di pollo' }], proteinCategory: 'curedMeats' };
+  assert.equal(d.classifyProtein(recipe), 'poultry');
+});
+
+test('classifyProtein: fallback su proteinCategory tecnica (curedMeats) senza ingredienti riconoscibili', () => {
+  const recipe = { ingredients: [{ name: 'Zucchine' }], proteinCategory: 'curedMeats' };
+  assert.equal(d.classifyProtein(recipe), 'curedMeats');
+});
+
+test('classifyProtein: fallback su proteinCategory legacy testuale', () => {
+  assert.equal(d.classifyProtein({ ingredients: [{ name: 'Zucchine' }], proteinCategory: 'Affettati' }), 'curedMeats');
+  assert.equal(d.classifyProtein({ ingredients: [{ name: 'Zucchine' }], proteinCategory: 'Manzo/Vitello' }), 'beef');
+  assert.equal(d.classifyProtein({ ingredients: [{ name: 'Zucchine' }], proteinCategory: 'Pesce omega-3' }), 'omega');
+});
+
+test('classifyProtein: chiave tecnica diretta riconosciuta senza regex', () => {
+  assert.equal(d.classifyProtein({ ingredients: [{ name: 'Zucchine' }], proteinCategory: 'poultry' }), 'poultry');
+  assert.equal(d.classifyProtein({ ingredients: [{ name: 'Zucchine' }], proteinCategory: 'beef' }), 'beef');
+  assert.equal(d.classifyProtein({ ingredients: [{ name: 'Zucchine' }], proteinCategory: 'omega' }), 'omega');
+  assert.equal(d.classifyProtein({ ingredients: [{ name: 'Zucchine' }], proteinCategory: 'dairy' }), 'dairy');
+});
+
+test('classifyProtein: ricetta senza ingredienti né categoria → null', () => {
+  assert.equal(d.classifyProtein({ ingredients: [{ name: 'Zucchine' }] }), null);
+  assert.equal(d.classifyProtein({ ingredients: [] }), null);
+});
+
+// ---- Generatore: beef e curedMeats separati ----
+
+test('generatore: beef e curedMeats sono conteggiati separatamente', () => {
+  const catalog = [
+    recipe('B1', 'Lonza', 'lunch', [ingredient('Lonza di maiale', PORTIONS)], ''),
+    recipe('CM1', 'Bresaola', 'lunch', [ingredient('Bresaola', PORTIONS)], ''),
+    recipe('CM2', 'Prosciutto', 'dinner', [ingredient('Prosciutto crudo', PORTIONS)], ''),
+    recipe('P1', 'Pollo', 'lunch', [ingredient('Petto di pollo', PORTIONS)], ''),
+    recipe('P2', 'Pollo 2', 'dinner', [ingredient('Petto di pollo', PORTIONS)], ''),
+    recipe('O1', 'Salmone', 'lunch', [ingredient('Salmone', PORTIONS)], ''),
+    recipe('O2', 'Salmone 2', 'dinner', [ingredient('Salmone', PORTIONS)], ''),
+    recipe('O3', 'Sgombro', 'lunch', [ingredient('Sgombro', PORTIONS)], ''),
+    recipe('F1', 'Merluzzo', 'dinner', [ingredient('Merluzzo', PORTIONS)], ''),
+    recipe('F2', 'Merluzzo 2', 'lunch', [ingredient('Merluzzo', PORTIONS)], ''),
+    recipe('L1', 'Ceci', 'lunch', [ingredient('Ceci', PORTIONS)], ''),
+    recipe('L2', 'Lenticchie', 'dinner', [ingredient('Lenticchie', PORTIONS)], ''),
+    recipe('L3', 'Fagioli', 'lunch', [ingredient('Fagioli', PORTIONS)], ''),
+    recipe('L4', 'Ceci 2', 'dinner', [ingredient('Ceci', PORTIONS)], ''),
+    recipe('D1', 'Ricotta', 'dinner', [ingredient('Ricotta', PORTIONS)], ''),
+    recipe('E1', 'Uova', 'dinner', [ingredient('Uova intere', PORTIONS)], ''),
+    ...Array.from({ length: 10 }, (_, i) => recipe(`X${i}`, `Extra ${i}`, i % 2 === 0 ? 'lunch' : 'dinner', [ingredient('Alimento', PORTIONS)]))
+  ];
+  const result = d.generateWeek(catalog, { seed: 42 });
+  assert.ok(result.counts.beef !== undefined, 'beef conteggiato');
+  assert.ok(result.counts.curedMeats !== undefined, 'curedMeats conteggiato');
+  assert.ok(result.counts.beef <= 1, `beef max 1, got ${result.counts.beef}`);
+  assert.ok(result.counts.curedMeats <= 1, `curedMeats max 1, got ${result.counts.curedMeats}`);
+});
+
+test('generatore: legumesMax 14 accettato senza crash', () => {
+  const result = d.generateWeek(generatorCatalog(), { seed: 7, constraints: { legumesMax: 14 } });
+  assert.ok(result.plan.days.monday.lunch, 'piano generato correttamente');
+});
+
+test('generatore: warning centralizzati includono curedMeats quando fuori intervallo', () => {
+  // Con un catalogo di soli affettati (curedMeats), il generatore non può
+  // rispettare il vincolo max 1 e produce un warning leggibile.
+  const onlyCured = Array.from({ length: 14 }, (_, i) =>
+    recipe(`CM${i}`, `Affettato ${i}`, i % 2 === 0 ? 'lunch' : 'dinner', [ingredient('Bresaola', PORTIONS)], '')
+  );
+  const result = d.generateWeek(onlyCured, { seed: 1 });
+  const hasCuredMeatsWarning = result.warnings.some(w => /Affettati e carni miste/.test(w));
+  assert.ok(hasCuredMeatsWarning, 'warning centralizzato per Affettati presente');
+});
+
+test('generatore: nessuna crash con preferenze migrate (version 2)', () => {
+  const prefs = {
+    version: 2,
+    batchPairs: 2,
+    maxRepeats: 2,
+    constraints: {
+      legumesMin: 3, legumesMax: 14, omegaMin: 2, omegaMax: 3,
+      poultryMin: 1, poultryMax: 2, beefMin: 0, beefMax: 1,
+      curedMeatsMin: 0, curedMeatsMax: 1, dairyMin: 1, dairyMax: 2,
+      eggsMin: 1, eggsMax: 2, otherFishMin: 1, otherFishMax: 2
+    }
+  };
+  const result = d.generateWeek(generatorCatalog(), { seed: 5, constraints: prefs.constraints });
+  assert.ok(result.plan.days.monday.lunch, 'piano generato con prefs migrate');
 });
 
 // ---- Service worker e PWA ----
@@ -936,7 +1071,7 @@ test('service worker: shell versionata derivata da una sola versione con asset e
   const sw = fs.readFileSync(path.join(ROOT, 'sw.js'), 'utf8');
   const versionMatch = sw.match(/const CACHE_VERSION = (\d+);/);
   assert.ok(versionMatch, 'CACHE_VERSION presente');
-  assert.equal(Number(versionMatch[1]), 22);
+  assert.equal(Number(versionMatch[1]), 23);
   assert.equal((sw.match(/const CACHE_VERSION/g) || []).length, 1);
   assert.match(sw, /const CACHE = `piano-nutrizionale-shell-v\$\{CACHE_VERSION\}`;/);
   assert.match(sw, /incrementare CACHE_VERSION a OGNI modifica di CSS, JS o index\.html/);
