@@ -144,7 +144,7 @@ window.PianoDomain.DAYS.forEach(day => {
   days[day] = { type: ['monday', 'wednesday', 'friday', 'sunday'].includes(day) ? 'training' : 'rest', breakfast: 'B1', snack1: 'S1', lunch: 'L1', snack2: 'M1', dinner: 'D1' };
 });
 const plan = {
-  schemaVersion: 4,
+  schemaVersion: 5,
   days,
   defaultDays: JSON.parse(JSON.stringify(days)),
   batchRules: {},
@@ -454,9 +454,30 @@ openGeneratorModal();
   generatorParamChanged('batchPairs', 9);
   assert.equal(getGeneratorPrefs().batchPairs, 7, 'batch limitato a sette giorni');
   generatorConstraintChanged('legumesMin', '9');
-  assert.equal(getGeneratorPrefs().constraints.legumesMin, 7, 'frequenze limitate a 0-7 pasti');
+  assert.equal(getGeneratorPrefs().constraints.legumesMin, 9, 'frequenze limitate a 0-14 pasti');
+  generatorConstraintChanged('legumesMax', '20');
+  assert.equal(getGeneratorPrefs().constraints.legumesMax, 14, 'massimo frequenze limitato a 14');
+  // Riga Affettati e carni miste presente nel pannello frequenze avanzate.
+  assert.match(paramsHtml, /Affettati e carni miste/, 'riga Affettati e carni miste nelle frequenze');
+  assert.match(paramsHtml, /generatorConstraintChanged\('curedMeatsMin'/, 'controllo min curedMeats presente');
+  assert.match(paramsHtml, /generatorConstraintChanged\('curedMeatsMax'/, 'controllo max curedMeats presente');
+  // Limite 14 degli input frequenze (non 7 come in precedenza).
+  assert.match(paramsHtml, /max="14"/, 'input frequenze con max 14');
   generatorPrefsReset();
   assert.equal(getGeneratorPrefs().batchPairs, GENERATOR_PREFS_DEFAULTS.batchPairs, 'ripristino valori predefiniti');
+  // Migrazione preferenze: vecchio legumesMax (4) → nuovo default (14).
+  appState.deviceSettings.generatorPrefs = { constraints: { legumesMax: 4 }, slots: {} };
+  assert.equal(getGeneratorPrefs().constraints.legumesMax, 14, 'migrazione: legumesMax vecchio default 4 → 14');
+  assert.equal(getGeneratorPrefs().version, 2, 'versione assegnata dopo migrazione');
+  // La migrazione non si riesegue su preferenze già migrate.
+  appState.deviceSettings.generatorPrefs = { version: 2, constraints: { legumesMax: 10 }, slots: {} };
+  assert.equal(getGeneratorPrefs().constraints.legumesMax, 10, 'preferenze personalizzate preservate dopo migrazione');
+  generatorPrefsReset();
+  // Pannello avanzato resta aperto dopo una modifica delle frequenze.
+  const advDetails = document.getElementById('generator-advanced');
+  if (advDetails) advDetails.open = true;
+  generatorConstraintChanged('legumesMin', '4');
+  assert.equal(document.getElementById('generator-advanced')?.open, true, 'pannello avanzato resta aperto dopo modifica');
   generatorSlotToggled('breakfast', true);
 }
 // I blocchi sono espliciti: badge sul singolo pasto e pill sull'intera giornata.
@@ -472,9 +493,28 @@ assert.match(document.getElementById('generator-preview')._innerHTML, /generator
 openShareDialog();
 openShareConflictPreview({ id: 'sh1', senderUsername: 'anna', recipes: [R('L9', 'Nuova', 'lunch', 'Uova')], includesPlan: false, plan: null }, 'recipes');
 
-// Modalità modifica ricetta
+// Modalità modifica ricetta: select categoria proteica, niente input frequenza
 openRecipeModal('L1', 'monday');
-document.getElementById('modal-edit-btn')._fire('click');
+editMode = true;
+currentModal.recipe = clone(currentModal.recipe);
+renderModalContent();
+{
+  const editHtml = document.getElementById('modal-ingredients-list')._innerHTML;
+  const timeHtml = document.getElementById('modal-time')._innerHTML;
+  // Select per proteinCategory con opzione "Automatica dagli ingredienti"
+  assert.match(timeHtml, /id="edit-recipe-category"/, 'select categoria presente nell\'editor');
+  assert.match(timeHtml, /Automatica dagli ingredienti/, 'opzione fallback automatico presente');
+  assert.match(timeHtml, /title="Opzionale: il generatore riconosce prima la proteina dagli ingredienti/, 'tooltip fallback presente');
+  // Assenza del vecchio input Frequenza
+  assert.doesNotMatch(timeHtml, /edit-recipe-frequency/, 'input frequenza rimosso dall\'editor');
+  assert.doesNotMatch(editHtml, /edit-recipe-frequency/, 'nessun campo frequenza negli ingredienti');
+}
+// Libreria ricette: niente chip frequenza, etichetta leggibile per categoria
+{
+  renderRecipes();
+  const libraryHtml = document.getElementById('view-recipes')._innerHTML;
+  assert.doesNotMatch(libraryHtml, /frequency-chip.*recipe/i, 'nessun chip frequenza nella libreria ricette');
+}
 addIngredient();
 removeIngredient(0);
 addStep();

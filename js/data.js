@@ -1,7 +1,7 @@
 // Configurazione dell'interfaccia. Le ricette, gli ingredienti e il piano
 // settimanale NON sono presenti nel codice: vengono caricati da Firebase.
-const CATALOG_SCHEMA_VERSION = 4;
-const DOMAIN_SCHEMA_VERSION = 4;
+const CATALOG_SCHEMA_VERSION = 5;
+const DOMAIN_SCHEMA_VERSION = 5;
 
 function createEmptyWeeklyPlan() {
   const types = {

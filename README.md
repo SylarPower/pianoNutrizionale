@@ -7,7 +7,7 @@ WebApp PWA privata per gestire colazioni, spuntini, pranzi, cene, batch cooking 
 - accesso personale con username e password, senza email mostrata nell'interfaccia;
 - account utilizzabile anche con ricettario completamente vuoto;
 - creazione manuale di ricette con dosi Donna IPO A/R e Uomo A/R;
-- importazione ed esportazione JSON di una ricetta o dell'intero catalogo (schema 4);
+- importazione ed esportazione JSON di una ricetta o dell'intero catalogo (schema 5);
 - condivisione di ricette **e/o della struttura della settimana** con un altro username, con anteprima dei conflitti e scelta della modalità di sostituzione;
 - collegamento di due o più account in una **household**: piano, catalogo, batch cooking e spesa condivisi in tempo reale, con profilo porzioni locale per ogni persona;
 - invito al collegamento per username, scelta della settimana base, backup automatico di entrambi gli account e scollegamento con copia indipendente;
@@ -93,7 +93,7 @@ Operazioni indicative (catalogo medio ~60 ricette):
 - rifiuto: una cancellazione della richiesta;
 - **Annulla ultima modifica**: una **transazione atomica** (legge backup, riscrive catalogo/piano/spesa, elimina il backup);
 - generatore: solo letture locali; l'applicazione scrive il piano (1) preceduta dal backup (1);
-- migrazione schema 3 → 4: una sola scrittura per documento, al primo avvio che rileva la versione precedente.
+- migrazione schema 3/4 → 5: una sola scrittura per documento, al primo avvio che rileva la versione precedente (rimuove `frequency` dalle ricette).
 
 Il registro prezzi (scheda Prezzi) è progettato per costare poco:
 
@@ -401,11 +401,11 @@ Se la condivisione restituisce “utente non trovato”, fai accedere il destina
 
 ---
 
-# Schema 4 e servizi di dominio
+# Schema 5 e servizi di dominio
 
-## Schema ricette v4
+## Schema ricette v5
 
-Il catalogo usa `schemaVersion: 4`. Ogni ingrediente ha una struttura stabile:
+Il catalogo usa `schemaVersion: 5`. Ogni ingrediente ha una struttura stabile:
 
 ```javascript
 {
@@ -440,12 +440,32 @@ Zucchina / Zucchine → zucchini
 
 Gli alias sono estendibili in `js/domain.js` (`INGREDIENT_ALIASES`) e nel documento catalogo. I nomi non in elenco ricevono uno slug stabile (es. `Riso venere` → `riso-venere`).
 
+### Rimozione di `frequency` (schema 4 → 5)
+
+Lo schema 5 rimuove il campo legacy `frequency` dalle ricette: le frequenze proteiche sono ora calcolate dal generatore e dalla vista Settimana direttamente sui pasti principali (pranzo e cena), senza bisogno di un campo per ricetta. La migrazione:
+
+- rimuove `frequency` da ogni ricetta senza alterare gli altri campi;
+- non muta l'oggetto originale;
+- è idempotente;
+- viene eseguita al caricamento e il catalogo aggiornato viene salvato una sola volta.
+
+### Classificazione proteica
+
+La categoria proteica di una ricetta viene determinata in questo ordine:
+
+1. **Ingredienti effettivi** della ricetta (es. "Petto di pollo" → Pollame, "Bresaola" → Affettati e carni miste);
+2. **`proteinCategory`** come fallback manuale/legacy (supporta sia chiavi tecniche come `poultry`, `beef`, `curedMeats` sia etichette testuali come "Manzo/Vitello");
+3. `null` se nessuna delle due fonti è riconoscibile.
+
+Il valore selezionato manualmente nell'editor ricette **non sovrascrive** un ingrediente già riconosciuto: serve solo come fallback per ricette con ingredienti non riconoscibili.
+
 ## Migrazioni retrocompatibili
 
 Vengono gestite senza perdita di dati:
 
 - porzioni schema precedente (`ipo`/`training`/`rest`);
 - ricette senza `ingredientId`;
+- campo legacy `frequency` rimosso (schema 4 → 5);
 - `batchRules` testuali → `batchTemplates` strutturati;
 - piani schema 3 (aggiunta di `batchTemplates`);
 - catalogo vuoto (primo avvio);
@@ -555,21 +575,38 @@ Nella UI (vista Settimana → **Genera settimana**) il primo passo è il pannell
 - **🍳 Batch cena → pranzo** (0-7 giorni): quante cene vengono **pianificate in coppia** col pranzo del giorno dopo (doppia porzione automatica). Le coppie vengono piazzate per prime e contano due volte la proteina: aumentando le coppie crescono le ripetizioni e possono comparire avvisi per i vincoli su manzo, uova o pollame;
 - **🔁 Stessa ricetta al massimo** (1-4 volte): tetto alle ripetizioni in settimana;
 - **↻ Solo varietà: includi anche ricette dell'altro pasto**: il motore può pescare anche dal pasto opposto e adatta i carboidrati alle dosi del pasto scelto (come per lo scambio manuale). Non crea doppie porzioni: per cucinare una volta per cena e pranzo va usato Batch cena → pranzo;
-- **Frequenze proteiche min–max** (pannello avanzato): intervallo settimanale per legumi, pesce omega-3, altro pesce/molluschi, pollame, manzo/vitello, latticini/formaggi, uova. "Valori predefiniti" ripristina quelli del manuale;
+- **Frequenze proteiche min–max** (pannello avanzato): intervallo settimanale per legumi, pesce omega-3, altro pesce e prodotti ittici, pollame, manzo e maiale, affettati e carni miste, latticini e formaggi, uova. "Valori predefiniti" ripristina quelli del manuale;
 - **blocco di un singolo pasto** e **blocco dell'intera giornata**: la legenda in modale distingue chiaramente 🔒 bloccato (resta identico e conta nelle frequenze) da 🔓 sbloccato (il generatore può cambiarlo). I pasti bloccati non sono mai sovrascritti e, soprattutto, **contano nelle frequenze**;
 - **seed** opzionale: risultato riproducibile con lo stesso seed; "Rigenera" pesca un seed nuovo.
 
 ## Come lavora il motore
 
+Il generatore conta esclusivamente i **pasti principali** (pranzo e cena), per un massimo teorico di 14 pasti settimanali. Le categorie proteiche e gli intervalli finali sono:
+
+| Categoria | Min | Max |
+|---|---|---|
+| Pollame | 1 | 2 |
+| Manzo e maiale | 0 | 1 |
+| Affettati e carni miste | 0 | 1 |
+| Pesce ricco di omega-3 | 2 | 3 |
+| Altro pesce e prodotti ittici | 1 | 2 |
+| Latticini e formaggi | 1 | 2 |
+| Uova | 1 | 2 |
+| Legumi e derivati | 3 | 14 |
+
+- "Legumi max 14" significa semplicemente che non c'è un tetto nutrizionale più basso del massimo fisico dei 14 pasti principali;
+- una coppia batch cena → pranzo conta come due pasti, quindi due utilizzi della fonte proteica;
+- manzo/maiale e affettati/carni miste sono **due categorie distinte**: possono comparire una volta ciascuna nella stessa settimana.
+
 Vincoli rispettati:
 
 - rispetta i tipi A/R del piano e **non modifica mai i dosaggi**;
-- calcola le frequenze dalle proteine riconosciute negli **ingredienti delle ricette effettivamente scelte**; `proteinCategory` è solo il fallback di compatibilità per ricette legacy senza ingredienti riconoscibili;
+- la classificazione si basa **prima sugli ingredienti effettivi** della ricetta; `proteinCategory` è un **fallback opzionale** usato solo se nessun ingrediente è riconoscibile;
 - massimo un pasto di pesce al giorno (considerando anche i pasti bloccati/mantenuti);
 - insegue **sia i minimi sia i massimi** delle frequenze proteiche: riempimento con punteggio (categorie sotto il minimo premiate) e **riparazione mirata** finale che scambia pasti generati per chiudere i minimi mancanti, senza violare massimi, pesce/giorno né spingere altre categorie sotto il proprio minimo;
 - evita ripetizioni **immediate e settimanali** (`maxRepeats`);
 - favorisce le combinazioni batch strutturali (`batchTemplates` cena anchor ↔ pranzo target) e pianifica le coppie **doppia porzione** richieste;
-- ricette senza `proteinCategory`: la categoria viene **dedotta dagli ingredienti** (es. petto di pollo → pollame) invece di sfuggire a tutti i vincoli;
+- ricette senza ingredienti riconoscibili né `proteinCategory`: la categoria resta `null` e la ricetta non pesa sui vincoli;
 - gestisce catalogo vuoto/insufficiente con avvisi; quando i vincoli non sono soddisfabili li rilassa **a gradini**, con un unico avviso per pasto, anziché lasciare pasti vuoti.
 
 Nella UI: anteprima con diff attuale → proposto, chip verdi/rossi delle frequenze rispetto all'intervallo scelto, elenco delle coppie batch programmate, applica (con backup) e annulla.
@@ -601,7 +638,7 @@ Anteprima prima dell'accettazione con: mittente, numero di ricette, ricette nuov
 
 # PWA offline
 
-`sw.js` (cache versionata `piano-nutrizionale-shell-v8`):
+`sw.js` (cache versionata `piano-nutrizionale-shell-v23`):
 
 - shell dell'app: `index.html`, CSS, JS, manifest, icone, `offline.html`;
 - navigazione **network-first** con fallback in cache (e pagina offline comprensibile);
@@ -657,7 +694,7 @@ node test/smoke-app.js
 git diff --check
 ```
 
-I test (`test/domain.test.js`) coprono: migrazioni schema 3→4 e idempotenza, alias ingredienti, ingredienti senza ID, porzioni legacy, lista spesa per `ingredientId`, profili Uomo/Donna IPO/Coppia, crackers A/R, **adattamento carboidrati pranzo↔cena** (riconoscimento carboidrati, conversione dosi A/R, fallback configurabile pranzo→cena, propagazione alla lista spesa), batch indipendente da A/R, batch cena→pranzo futuro, attraversamento domenica→lunedì, batch parziale, `maxDays` diversi, quantità target A/R, copia/scambio pasti, blocchi, generatore e vincoli (frequenze su molti seed, **accoppiate batch cena → pranzo fino a 7 giorni**, tetto ripetizioni, blocchi che contano nelle frequenze e nel pesce/giorno, slot disabilitati, cross-slot, inferenza della categoria dagli ingredienti, vincoli personalizzati), cataloghi vuoto/insufficiente, riferimenti piano mancanti, import Aggiungi/Sostituisci, conflitti condivisione (solo ricette/solo settimana/completa), backup, service worker (shell, cache, fallback offline, aggiornamento).
+I test (`test/domain.test.js`) coprono: migrazioni schema 3→5 e idempotenza (inclusa rimozione `frequency`), alias ingredienti, ingredienti senza ID, porzioni legacy, lista spesa per `ingredientId`, profili Uomo/Donna IPO/Coppia, crackers A/R, **adattamento carboidrati pranzo↔cena** (riconoscimento carboidrati, conversione dosi A/R, fallback configurabile pranzo→cena, propagazione alla lista spesa), batch indipendente da A/R, batch cena→pranzo futuro, attraversamento domenica→lunedì, batch parziale, `maxDays` diversi, quantità target A/R, copia/scambio pasti, blocchi, generatore e vincoli (frequenze su molti seed, **accoppiate batch cena → pranzo fino a 7 giorni**, tetto ripetizioni, blocchi che contano nelle frequenze e nel pesce/giorno, slot disabilitati, cross-slot, inferenza della categoria dagli ingredienti, vincoli personalizzati, beef e curedMeats conteggiati separatamente, warning centralizzati), classificazione proteica (ingredienti prevalgono su `proteinCategory`, fallback su chiavi tecniche e testuali legacy), cataloghi vuoto/insufficiente, riferimenti piano mancanti, import Aggiungi/Sostituisci, conflitti condivisione (solo ricette/solo settimana/completa), backup, service worker (shell, cache, fallback offline, aggiornamento).
 
 Smoke test locale:
 
