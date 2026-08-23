@@ -619,6 +619,112 @@ test('generatore: non modifica mai i dosaggi', () => {
   assert.equal(JSON.stringify(catalog.map(r => r.ingredients.map(i => i.portions))), before);
 });
 
+test('generatore: le frequenze reggono su molti seed diversi', () => {
+  const catalog = generatorCatalog();
+  [1, 2, 3, 5, 8, 13, 21, 34, 55, 89].forEach(seed => {
+    const result = d.generateWeek(catalog, { seed });
+    assertConstraints(result);
+    assert.equal(result.warnings.filter(w => w.startsWith('Vincoli rilassati')).length, 0, `seed ${seed}: nessun vincolo rilassato`);
+  });
+});
+
+test('generatore: batchPairs accoppia cena di oggi → pranzo di domani', () => {
+  const result = d.generateWeek(generatorCatalog(), { seed: 11, batchPairs: 3 });
+  assert.ok(result.pairs.length >= 1 && result.pairs.length <= 3, `attese 1-3 accoppiate, trovate ${result.pairs.length}`);
+  result.pairs.forEach(pair => {
+    const targetIndex = (d.DAYS.indexOf(pair.anchorDay) + 1) % 7;
+    const targetDay = d.DAYS[targetIndex];
+    assert.equal(result.plan.days[pair.anchorDay].dinner, pair.recipeId, `cena ${pair.anchorDay} = ricetta della coppia`);
+    assert.equal(result.plan.days[targetDay].lunch, pair.recipeId, `pranzo ${targetDay} = ricetta della coppia`);
+  });
+  // La ricetta della coppia conta due pasti della sua categoria.
+  const first = result.pairs[0];
+  const recipe = generatorCatalog().find(r => r.id === first.recipeId);
+  const cat = d.classifyProtein(recipe);
+  assert.ok(!cat || result.counts[cat] >= 2, 'la coppia contribuisce per intero alle frequenze');
+});
+
+test('generatore: nessuna coppia batch quando batchPairs = 0', () => {
+  const result = d.generateWeek(generatorCatalog(), { seed: 11, batchPairs: 0 });
+  assert.equal(result.pairs.length, 0);
+});
+
+test('generatore: batchPairs ripiega su un catalogo di soli pranzi', () => {
+  const onlyLunch = generatorCatalog().filter(r => r.slot === 'lunch');
+  const result = d.generateWeek(onlyLunch, { seed: 3, batchPairs: 2, allowCrossSlot: true });
+  assert.ok(result.pairs.length >= 1, 'almeno una accoppiata anche senza ricette di cena');
+});
+
+test('generatore: maxRepeats limita le ripetizioni settimanali', () => {
+  [4, 17, 42, 101].forEach(seed => {
+    const result = d.generateWeek(generatorCatalog(), { seed, maxRepeats: 2 });
+    const tally = {};
+    d.DAYS.forEach(day => ['lunch', 'dinner'].forEach(slot => {
+      const value = result.plan.days[day][slot];
+      if (value) tally[value] = (tally[value] || 0) + 1;
+    }));
+    Object.entries(tally).forEach(([id, times]) => {
+      assert.ok(times <= 2, `seed ${seed}: ricetta ${id} ripetuta ${times} volte`);
+    });
+  });
+});
+
+test('generatore: i pasti bloccati contano nelle frequenze e nel limite pesce/giorno', () => {
+  const plan = d.emptyPlan();
+  plan.days.monday.lunch = 'L-O1'; // pesce omega-3 bloccato a pranzo
+  const result = d.generateWeek(generatorCatalog(), {
+    seed: 7,
+    plan,
+    blocks: { monday: { lunch: true } }
+  });
+  assert.equal(result.plan.days.monday.lunch, 'L-O1');
+  const fishIds = new Set(['L-O1', 'L-O2', 'D-O3', 'D-F1', 'D-F2']);
+  const mondayFish = [result.plan.days.monday.lunch, result.plan.days.monday.dinner].filter(id => fishIds.has(id)).length;
+  assert.ok(mondayFish <= 1, `lunedì con pesce bloccato: niente secondo pesce a cena (${result.plan.days.monday.dinner})`);
+  assert.ok(result.counts.omega >= 1, 'il pasto bloccato entra nei conteggi');
+});
+
+test('generatore: gli slot disabilitati restano come sono e contano nelle frequenze', () => {
+  const plan = d.emptyPlan();
+  d.DAYS.forEach(day => { plan.days[day].lunch = 'L-L1'; });
+  const result = d.generateWeek(generatorCatalog(), {
+    seed: 9,
+    plan,
+    slots: { lunch: false, breakfast: false, snack1: false, snack2: false }
+  });
+  d.DAYS.forEach(day => {
+    assert.equal(result.plan.days[day].lunch, 'L-L1', `pranzo ${day} invariato`);
+    assert.ok(result.plan.days[day].dinner, `cena ${day} generata`);
+  });
+  assert.equal(result.counts.legumes, 7, 'i sette pranzi mantenuti conteggiano i legumi');
+});
+
+test('generatore: cross-slot riempie il pranzo col catalogo di sole cene', () => {
+  const onlyDinner = generatorCatalog().filter(r => r.slot === 'dinner');
+  const without = d.generateWeek(onlyDinner, { seed: 5 });
+  assert.equal(without.plan.days.monday.lunch, null, 'senza cross-slot il pranzo resta vuoto');
+  const withCross = d.generateWeek(onlyDinner, { seed: 5, allowCrossSlot: true });
+  assert.ok(withCross.plan.days.monday.lunch, 'con cross-slot il pranzo viene riempito');
+  assert.ok(d.DAYS.every(day => withCross.plan.days[day].lunch && withCross.plan.days[day].dinner), 'tutti i pasti principali riempiti');
+});
+
+test('generatore: inferenza della categoria dagli ingredienti senza proteinCategory', () => {
+  assert.equal(d.classifyProtein({ id: 'X', slot: 'dinner', proteinCategory: '', ingredients: [{ name: 'Petto di pollo', portions: {} }] }), 'poultry');
+  assert.equal(d.classifyProtein({ id: 'Y', slot: 'dinner', proteinCategory: '', ingredients: [{ name: 'Salmone', portions: {} }] }), 'omega');
+  assert.equal(d.classifyProtein({ id: 'Z', slot: 'dinner', proteinCategory: '', ingredients: [{ name: 'Lenticchie', portions: {} }, { name: 'Zucchine', portions: {} }] }), 'legumes');
+  // La categoria testuale continua a vincere sul fallback.
+  assert.equal(d.classifyProtein({ id: 'W', slot: 'dinner', proteinCategory: 'Pesce omega-3', ingredients: [{ name: 'Petto di pollo', portions: {} }] }), 'omega');
+});
+
+test('generatore: vincoli personalizzati vengono inseguiti (legumi 4-5)', () => {
+  const result = d.generateWeek(generatorCatalog(), {
+    seed: 6,
+    constraints: { legumesMin: 4, legumesMax: 5 }
+  });
+  assert.ok(result.counts.legumes >= 4, `legumi almeno 4, trovati ${result.counts.legumes}`);
+  assert.ok(result.counts.legumes <= 5, `legumi al massimo 5, trovati ${result.counts.legumes}`);
+});
+
 // ---- Riferimenti piano mancanti ----
 
 test('sanitizePlanForCatalog rimuove i riferimenti a ricette mancanti', () => {
@@ -763,7 +869,7 @@ test('service worker: shell versionata derivata da una sola versione con asset e
   const sw = fs.readFileSync(path.join(ROOT, 'sw.js'), 'utf8');
   const versionMatch = sw.match(/const CACHE_VERSION = (\d+);/);
   assert.ok(versionMatch, 'CACHE_VERSION presente');
-  assert.equal(Number(versionMatch[1]), 19);
+  assert.equal(Number(versionMatch[1]), 21);
   assert.equal((sw.match(/const CACHE_VERSION/g) || []).length, 1);
   assert.match(sw, /const CACHE = `piano-nutrizionale-shell-v\$\{CACHE_VERSION\}`;/);
   assert.match(sw, /incrementare CACHE_VERSION a OGNI modifica di CSS, JS o index\.html/);
