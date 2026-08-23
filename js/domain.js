@@ -954,6 +954,7 @@ const PROTEIN_CATEGORY_LABELS = {
 
     const counts = { poultry: 0, beef: 0, curedMeats: 0, omega: 0, otherFish: 0, dairy: 0, eggs: 0, legumes: 0 };
     const fishToday = {};
+    const omegaToday = {};
     const usage = {};
     const chosen = {};
     const pairs = [];
@@ -975,6 +976,7 @@ const PROTEIN_CATEGORY_LABELS = {
       const category = classifyProtein(recipe);
       if (category && counts[category] !== undefined) counts[category] += 1;
       if (isFishy(recipe)) fishToday[day] = fishCountOn(day) + 1;
+      if (category === 'omega') omegaToday[day] = (omegaToday[day] || 0) + 1;
     };
     const unregisterMeal = (day, slot, recipe) => {
       if (!recipe) return;
@@ -983,6 +985,7 @@ const PROTEIN_CATEGORY_LABELS = {
       const category = classifyProtein(recipe);
       if (category && counts[category] !== undefined) counts[category] = Math.max(0, counts[category] - 1);
       if (isFishy(recipe)) fishToday[day] = Math.max(0, fishCountOn(day) - 1);
+      if (category === 'omega') omegaToday[day] = Math.max(0, (omegaToday[day] || 0) - 1);
     };
 
     const isBlocked = (day, slot) => {
@@ -1084,12 +1087,16 @@ const PROTEIN_CATEGORY_LABELS = {
       if (chosen[targetDay]?.dinner === recipe.id || previousSlotValue(targetDay, 'lunch') === recipe.id) return false;
       return true;
     };
-    const pairScore = recipe => {
+    const pairScore = (recipe, anchorDay) =>
       const category = classifyProtein(recipe);
       let score = rand() * 2;
       if (category && counts[category] < minFor(category)) score += 7;
       if (!category) score -= 1;
       score -= (usage[recipe.id] || 0) * 3;
+      if (category === 'omega') {
+        if (omegaToday[prevDayOf(anchorDay)]) score -= 6;
+        if (omegaToday[nextDayOf(targetDay)]) score -= 6;
+      }
       return score;
     };
     const pairDays = shuffle(
@@ -1102,7 +1109,7 @@ const PROTEIN_CATEGORY_LABELS = {
       const candidates = pairPool().filter(recipe => pairCandidateOk(recipe, anchorDay, targetDay));
       if (!candidates.length) return;
       const best = candidates
-        .map(recipe => ({ recipe, score: pairScore(recipe) }))
+        .map(recipe => ({ recipe, score: pairScore(recipe, anchorDay) }))
         .sort((a, b) => b.score - a.score)[0].recipe;
       chosen[anchorDay].dinner = best.id;
       chosen[targetDay].lunch = best.id;
@@ -1137,6 +1144,10 @@ const PROTEIN_CATEGORY_LABELS = {
       if (!category) score -= 1;
       score -= 3 * (usage[recipe.id] || 0);
       if (previousSlotValue(day, slot) === recipe.id) score -= 5;
+      if (category === 'omega') {
+        if (omegaToday[prevDayOf(day)]) score -= 6;
+        if (omegaToday[nextDayOf(day)]) score -= 6;
+      }
       return score;
     };
     const pickProtein = (day, slot) => {
@@ -1264,6 +1275,13 @@ const PROTEIN_CATEGORY_LABELS = {
         );
       }
     });
+    const adjacentOmegaDays = DAYS.filter(day => {
+      const next = DAYS[(DAYS.indexOf(day) + 1) % 7];
+      return (omegaToday[day] || 0) > 0 && (omegaToday[next] || 0) > 0;
+    });
+    if (adjacentOmegaDays.length) {
+      warnings.push(`Omega-3 in giorni consecutivi: ${adjacentOmegaDays.map(d => DAY_LABELS[d]).join(', ')}.`);
+    }
     const doubleFishDays = DAYS.filter(day => fishCountOn(day) > 1);
     if (doubleFishDays.length) warnings.push(`Due pasti di pesce nello stesso giorno: ${doubleFishDays.map(day => DAY_LABELS[day]).join(', ')}.`);
 
