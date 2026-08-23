@@ -293,6 +293,108 @@
     return result.filter(batch => batch.active);
   }
 
+  // Somma due stringhe-dose (es. "200g" + "200g" = "400g"). Per valori non
+  // numerici (q.b., dosi opache) mostra entrambi separati da "+".
+  function sumPortionStrings(a, b) {
+    const pa = parseSimpleAmount(a);
+    const pb = parseSimpleAmount(b);
+    if (pa.skip && pb.skip) return EMPTY_PORTION;
+    if (pa.free || pb.free) return 'q.b.';
+    const fmt = (value, unit) => {
+      const rounded = Math.round(value * 100) / 100;
+      const num = Number.isInteger(rounded) ? String(rounded) : String(rounded).replace('.', ',');
+      return unit === 'pz' ? `${num} pz` : `${num}${unit}`;
+    };
+    if (!pa.skip && !pb.skip && pa.value !== undefined && pb.value !== undefined) {
+      if (pa.unit === pb.unit) return fmt(pa.value + pb.value, pa.unit);
+      return `${fmt(pa.value, pa.unit)} + ${fmt(pb.value, pb.unit)}`;
+    }
+    if (pa.skip) return String(b ?? EMPTY_PORTION);
+    if (pb.skip) return String(a ?? EMPTY_PORTION);
+    const left = pa.opaque ?? (pa.value !== undefined ? fmt(pa.value, pa.unit) : EMPTY_PORTION);
+    const right = pb.opaque ?? (pb.value !== undefined ? fmt(pb.value, pb.unit) : EMPTY_PORTION);
+    return `${left} + ${right}`;
+  }
+
+  // Combina le dosi di cena e pranzo per un ingrediente, gestendo il profilo
+  // Coppia (somma separata uomo/donna IPO).
+  function combineTaskQuantities(cenaPortion, pranzoPortion, profile) {
+    if (profile === 'couple') {
+      const c = cenaPortion && typeof cenaPortion === 'object' ? cenaPortion : { man: cenaPortion, ipo: cenaPortion };
+      const p = pranzoPortion && typeof pranzoPortion === 'object' ? pranzoPortion : { man: pranzoPortion, ipo: pranzoPortion };
+      return { man: sumPortionStrings(c.man, p.man), ipo: sumPortionStrings(c.ipo, p.ipo) };
+    }
+    return sumPortionStrings(cenaPortion, pranzoPortion);
+  }
+
+  // Batch automatico "doppia porzione": quando la stessa ricetta è a cena oggi e
+  // a pranzo in un giorno successivo (ora possibile anche col cross-slot), le
+  // dosi da preparare sono la somma della porzione di cena + quella del pranzo
+  // (carboidrati adattati al pasto). Attivo solo se il pranzo è al massimo a 1
+  // giorno (conservazione in frigo); oltre non è sicuro e non viene suggerito.
+  function commonRecipeBatch(anchorDay, plan, recipesById = {}, profile = 'man', options = {}) {
+    const dinnerId = plan?.days?.[anchorDay]?.dinner;
+    if (!dinnerId) return null;
+    const recipe = recipesById?.[dinnerId];
+    if (!recipe) return null;
+    const target = futureTarget(anchorDay, plan, 'lunch', dinnerId, options.maxLookAhead || 3);
+    if (!target) return null;
+    const dinnerDayType = plan?.days?.[anchorDay]?.type || 'rest';
+    const lunchDayType = plan?.days?.[target.day]?.type || 'rest';
+    const cenaFallbackKey = options.cenaFallbackKey;
+    const storageMaxDays = 1;
+    const tasks = (recipe.ingredients || []).map(ingredient => {
+      const cenaAdapted = adaptIngredientForSlot(ingredient, recipe.slot, 'dinner', { cenaFallbackKey });
+      const cenaName = cenaAdapted ? cenaAdapted.name : ingredient.name;
+      const cenaId = cenaAdapted ? cenaAdapted.ingredientId : (ingredient.ingredientId || slug(ingredient.name));
+      const cenaIng = cenaAdapted ? { ...ingredient, portions: cenaAdapted.portions } : ingredient;
+      const cenaPortion = portionFor(cenaIng, profile, dinnerDayType);
+      const pranzoAdapted = adaptIngredientForSlot(ingredient, recipe.slot, 'lunch', { cenaFallbackKey });
+      const pranzoName = pranzoAdapted ? pranzoAdapted.name : ingredient.name;
+      const pranzoId = pranzoAdapted ? pranzoAdapted.ingredientId : (ingredient.ingredientId || slug(ingredient.name));
+      const pranzoIng = pranzoAdapted ? { ...ingredient, portions: pranzoAdapted.portions } : ingredient;
+      const pranzoPortion = portionFor(pranzoIng, profile, lunchDayType);
+      // Se cena e pranzo risolvono lo stesso ingrediente (es. Pane a cena e Pane
+      // adattato a pranzo) le dosi si sommano. Se il carboidrato diverge (es.
+      // ricetta di pranzo a cena: pasta->pane a cena, pasta a pranzo) si
+      // mostrano entrambe le quantità senza sommare ingredienti diversi.
+      const sameIngredient = cenaId === pranzoId;
+      let quantityStr;
+      if (sameIngredient) {
+        quantityStr = formatPortion(combineTaskQuantities(cenaPortion, pranzoPortion, profile), profile);
+      } else {
+        quantityStr = `${formatPortion(cenaPortion, profile)} + ${formatPortion(pranzoPortion, profile)}`;
+      }
+      return {
+        id: `common-${ingredient.ingredientId || slug(ingredient.name)}`,
+        actionType: 'cook',
+        label: sameIngredient ? cenaName : `${cenaName} + ${pranzoName}`,
+        storage: { method: 'fridge', maxDays: storageMaxDays, instructions: 'Conserva in frigo la porzione per il pranzo.' },
+        status: batchTaskStatus({ storage: { maxDays: storageMaxDays } }, target.days),
+        quantity: quantityStr
+      };
+    }).filter(task => {
+      const value = String(task.quantity ?? '').trim();
+      return value && value !== EMPTY_PORTION;
+    });
+    const validCount = tasks.filter(task => task.status === 'today' || task.status === 'fresh').length;
+    if (!validCount) return null;
+    return {
+      template: {
+        id: `common-recipe-${dinnerId}`,
+        title: `Doppia porzione · ${recipe.name}`,
+        anchor: { slot: 'dinner', recipeId: dinnerId },
+        target: { slot: 'lunch', recipeId: dinnerId }
+      },
+      targetDay: target.day,
+      daysUntilTarget: target.days,
+      tasks,
+      validCount,
+      active: true,
+      commonRecipe: true
+    };
+  }
+
   // ----- Lista della spesa -----
 
   const CATEGORY_RULES = [
@@ -919,6 +1021,9 @@
     formatPortion,
     quantityForTask,
     activeBatch,
+    sumPortionStrings,
+    combineTaskQuantities,
+    commonRecipeBatch,
     categoryForIngredient,
     isEmptyPortion,
     parseSimpleAmount,

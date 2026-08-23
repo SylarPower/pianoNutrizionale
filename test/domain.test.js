@@ -409,6 +409,88 @@ test('task duplicati con lo stesso ID non vengono raddoppiati', () => {
   assert.equal(active[0].tasks.length, 1);
 });
 
+// ---- Batch cooking "doppia porzione" (ricetta comune cena + pranzo) ----
+
+function commonBatchFixture() {
+  const days = {
+    monday: { type: 'training', breakfast: null, snack1: null, lunch: 'ALTRO', snack2: null, dinner: 'C1' },
+    tuesday: { type: 'training', breakfast: null, snack1: null, lunch: 'C1', snack2: null, dinner: null },
+    wednesday: { type: 'rest', breakfast: null, snack1: null, lunch: 'C2', snack2: null, dinner: null }
+  };
+  const recipesById = {
+    C1: recipe('C1', 'Pollo e pane', 'dinner', [
+      ingredient('Petto di pollo', { ipoTraining: '200g', ipoRest: '180g', manTraining: '200g', manRest: '180g' }),
+      ingredient('Pane', { ipoTraining: '60g', ipoRest: '60g', manTraining: '60g', manRest: '60g' }, 'bread'),
+      ingredient('Verdura', { ipoTraining: '—', ipoRest: '—', manTraining: '—', manRest: '—' })
+    ], 'Pollame'),
+    C2: recipe('C2', 'Pasta', 'lunch', [
+      ingredient('Pasta', { ipoTraining: '90g', ipoRest: '70g', manTraining: '90g', manRest: '70g' })
+    ], 'Legumi')
+  };
+  return { days, recipesById };
+}
+
+test('batch doppia porzione: stessa ricetta a cena e al pranzo successivo', () => {
+  const { days, recipesById } = commonBatchFixture();
+  const batch = d.commonRecipeBatch('monday', planWith(days), recipesById, 'man', { cenaFallbackKey: 'pane' });
+  assert.ok(batch, 'batch generato');
+  assert.equal(batch.targetDay, 'tuesday');
+  assert.equal(batch.daysUntilTarget, 1);
+  assert.equal(batch.commonRecipe, true);
+  // Pollo: 200g cena + 200g pranzo = 400g
+  const pollo = batch.tasks.find(t => /pollo/i.test(t.label));
+  assert.equal(pollo.quantity, '400g');
+  // Pane: 60g cena (nativa) + 120g pranzo (cross-slot, training) = 180g
+  const pane = batch.tasks.find(t => t.label === 'Pane');
+  assert.equal(pane.quantity, '180g');
+  // Verdura "—" esclusa dal batch
+  assert.ok(!batch.tasks.find(t => /verdura/i.test(t.label)));
+});
+
+test('batch doppia porzione attivo solo per il pranzo del giorno dopo', () => {
+  const { recipesById } = commonBatchFixture();
+  // La stessa ricetta è a cena lunedì e a pranzo mercoledì (2 giorni): oltre la
+  // conservazione in frigo (1 giorno), non deve essere suggerito.
+  const days = {
+    monday: { type: 'training', dinner: 'C1' },
+    wednesday: { type: 'training', lunch: 'C1' }
+  };
+  const batch = d.commonRecipeBatch('monday', planWith(days), recipesById, 'man', { cenaFallbackKey: 'pane' });
+  assert.equal(batch, null);
+});
+
+test('batch doppia porzione: niente pranzo futuro con la stessa ricetta', () => {
+  const { days, recipesById } = commonBatchFixture();
+  days.tuesday.lunch = 'DIVERSA';
+  const batch = d.commonRecipeBatch('monday', planWith(days), recipesById, 'man', { cenaFallbackKey: 'pane' });
+  assert.equal(batch, null);
+});
+
+test('sumPortionStrings: numeriche sommate, opache concatenate', () => {
+  assert.equal(d.sumPortionStrings('200g', '200g'), '400g');
+  assert.equal(d.sumPortionStrings('60g', '120g'), '180g');
+  assert.equal(d.sumPortionStrings('3', '3'), '6 pz');
+  assert.equal(d.sumPortionStrings('—', '—'), '—');
+  assert.equal(d.sumPortionStrings('q.b.', '10g'), 'q.b.');
+  assert.equal(d.sumPortionStrings('1 mazzetto', '1 mazzetto'), '1 mazzetto + 1 mazzetto');
+});
+
+test('batch doppia porzione con ricetta di pranzo spostata a cena (cross-slot)', () => {
+  // Una ricetta di PRANZO (pasta) messa anche a cena: la dose di cena adatta
+  // i carboidrati (pasta non prevista a cena -> pane 60g), la dose di pranzo
+  // resta nativa (pasta 90g). La somma combina i due carboidrati.
+  const days = {
+    monday: { type: 'training', dinner: 'C2', lunch: 'ALTRO' },
+    tuesday: { type: 'training', lunch: 'C2' }
+  };
+  const { recipesById } = commonBatchFixture();
+  const batch = d.commonRecipeBatch('monday', planWith(days), recipesById, 'man', { cenaFallbackKey: 'pane' });
+  assert.ok(batch);
+  // cena: pasta -> pane 60g; pranzo: pasta 90g. Diversi carboidrati -> "60g + 90g"
+  const carb = batch.tasks.find(t => /pane|pasta/i.test(t.label));
+  assert.ok(/60g \+ 90g|90g \+ 60g/.test(carb.quantity), `quantità inattesa: ${carb.quantity}`);
+});
+
 // ---- Copia e scambio pasti ----
 
 test('scambio bidirezionale tra giorni dello stesso slot', () => {
@@ -665,7 +747,7 @@ test('service worker: shell versionata derivata da una sola versione con asset e
   const sw = fs.readFileSync(path.join(ROOT, 'sw.js'), 'utf8');
   const versionMatch = sw.match(/const CACHE_VERSION = (\d+);/);
   assert.ok(versionMatch, 'CACHE_VERSION presente');
-  assert.equal(Number(versionMatch[1]), 17);
+  assert.equal(Number(versionMatch[1]), 18);
   assert.equal((sw.match(/const CACHE_VERSION/g) || []).length, 1);
   assert.match(sw, /const CACHE = `piano-nutrizionale-shell-v\$\{CACHE_VERSION\}`;/);
   assert.match(sw, /incrementare CACHE_VERSION a OGNI modifica di CSS, JS o index\.html/);

@@ -162,13 +162,23 @@ function setRecipes(recipes) {
 // il tipo A/R del giorno target per le quantità.
 function getActiveBatch(dayKey) {
   if (!window.PianoDomain || !appState.plan?.days?.[dayKey]) return [];
-  return PianoDomain.activeBatch(
+  const templates = appState.plan.batchTemplates || [];
+  const batches = PianoDomain.activeBatch(
     dayKey,
     appState.plan,
-    appState.plan.batchTemplates || [],
+    templates,
     appState.recipesById,
     getPortionProfile()
   );
+  // Batch automatico "doppia porzione": stessa ricetta a cena e al pranzo
+  // successivo (anche via cross-slot). Le dosi sono la somma cena + pranzo.
+  const dinnerId = appState.plan.days[dayKey]?.dinner;
+  const common = PianoDomain.commonRecipeBatch(dayKey, appState.plan, appState.recipesById, getPortionProfile(), { cenaFallbackKey: getCrossSlotCenaCarb() });
+  if (common && dinnerId) {
+    const alreadyCovered = batches.some(batch => batch.targetDay === common.targetDay && batch.template?.target?.recipeId === dinnerId);
+    if (!alreadyCovered) batches.push(common);
+  }
+  return batches;
 }
 
 // Retrocompatibilità: primo batch attivo (usato dal vecchio flusso).
