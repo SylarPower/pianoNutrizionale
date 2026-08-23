@@ -1275,12 +1275,29 @@ const PROTEIN_CATEGORY_LABELS = {
         );
       }
     });
-    const adjacentOmegaDays = DAYS.filter(day => {
-      const next = DAYS[(DAYS.indexOf(day) + 1) % 7];
-      return (omegaToday[day] || 0) > 0 && (omegaToday[next] || 0) > 0;
+    // Blocchi di giorni omega consecutivi, mostrati come intervalli completi
+    // ("Mercoledì–Giovedì") anziché come solo primo giorno di ogni coppia.
+    // La settimana è circolare: domenica e lunedì sono adiacenti.
+    const omegaDaySet = new Set(DAYS.filter(day => (omegaToday[day] || 0) > 0));
+    const omegaSegments = [];
+    let omegaRun = [];
+    DAYS.forEach(day => {
+      if (!omegaDaySet.has(day)) {
+        if (omegaRun.length) omegaSegments.push(omegaRun);
+        omegaRun = [];
+      } else {
+        omegaRun.push(day);
+      }
     });
-    if (adjacentOmegaDays.length) {
-      warnings.push(`Omega-3 in giorni consecutivi: ${adjacentOmegaDays.map(d => DAY_LABELS[d]).join(', ')}.`);
+    if (omegaRun.length) omegaSegments.push(omegaRun);
+    if (omegaSegments.length > 1 && omegaDaySet.has('sunday') && omegaDaySet.has('monday')) {
+      // Il blocco che finisce di domenica continua in quello che inizia di lunedì.
+      const tail = omegaSegments.pop();
+      omegaSegments[0] = tail.concat(omegaSegments[0]);
+    }
+    const adjacentOmegaRuns = omegaSegments.filter(segment => segment.length > 1);
+    if (adjacentOmegaRuns.length) {
+      warnings.push(`Omega-3 in giorni consecutivi: ${adjacentOmegaRuns.map(segment => `${DAY_LABELS[segment[0]]}–${DAY_LABELS[segment[segment.length - 1]]}`).join(', ')}.`);
     }
     const doubleFishDays = DAYS.filter(day => fishCountOn(day) > 1);
     if (doubleFishDays.length) warnings.push(`Due pasti di pesce nello stesso giorno: ${doubleFishDays.map(day => DAY_LABELS[day]).join(', ')}.`);
