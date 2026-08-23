@@ -582,7 +582,23 @@ function assertConstraints(result) {
     assert.ok(result.plan.days[day].dinner, `cena ${day} assegnata`);
   });
 }
-
+test('generatore: omega-3 distribuiti (non in giorni consecutivi)', () => {
+  [1, 2, 3, 5, 8, 13, 21, 34, 55].forEach(seed => {
+    const result = d.generateWeek(generatorCatalog(), { seed });
+    const omegaDays = d.DAYS.filter(day =>
+      [result.plan.days[day].lunch, result.plan.days[day].dinner]
+        .some(id => {
+          const r = generatorCatalog().find(x => x.id === id);
+          return r && d.classifyProtein(r) === 'omega';
+        })
+    );
+    omegaDays.forEach(day => {
+      const next = d.DAYS[(d.DAYS.indexOf(day) + 1) % 7];
+      assert.ok(!omegaDays.includes(next),
+        `seed ${seed}: omega adiacenti ${day}-${next}`);
+    });
+  });
+});
 test('generatore: vincoli rispettati con catalogo sufficiente', () => {
   const result = d.generateWeek(generatorCatalog(), { seed: 42 });
   assertConstraints(result);
