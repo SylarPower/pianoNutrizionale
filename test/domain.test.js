@@ -220,7 +220,9 @@ test('carbSourceForName riconosce i carboidrati (gnocchi prima di patate)', () =
   assert.equal(d.carbSourceForName('Polenta cotta').key, 'polenta');
   assert.equal(d.carbSourceForName('Crackers').key, 'crackers');
   assert.equal(d.carbSourceForName('Quinoa').key, 'pseudo');
+  assert.equal(d.carbSourceForName('Cous cous').key, 'couscous');
   assert.equal(d.carbSourceForName('Farro').key, 'farroorzo');
+  assert.equal(d.carbSourceForName('Trofie secche').key, 'trofie');
   assert.equal(d.carbSourceForName('Uova intere'), null);
   assert.equal(d.carbSourceForName('Petto di pollo'), null);
 });
@@ -263,6 +265,20 @@ test('pranzo -> cena: il carboidrato di default è configurabile (patate)', () =
   const adapted = d.adaptIngredientForSlot(pasta, 'lunch', 'dinner', { cenaFallbackKey: 'patate' });
   assert.equal(adapted.name, 'Patate');
   assert.equal(adapted.portions.manTraining, '230g');
+});
+
+test('pranzo -> cena: trofie e cous cous diventano il carboidrato cena di default', () => {
+  // Entrambi sono carboidrati solo del pranzo (cena: null): spostati a cena si
+  // convertono nel carboidrato cena scelto nelle impostazioni (pane 60g default).
+  const trofie = ingredient('Trofie secche', { ipoTraining: '90g', ipoRest: '70g', manTraining: '90g', manRest: '70g' });
+  const adaptedT = d.adaptIngredientForSlot(trofie, 'lunch', 'dinner', { cenaFallbackKey: 'pane' });
+  assert.equal(adaptedT.name, 'Pane');
+  assert.equal(adaptedT.portions.manTraining, '60g');
+
+  const couscous = ingredient('Cous cous', { ipoTraining: '80g', ipoRest: '60g', manTraining: '80g', manRest: '60g' });
+  const adaptedC = d.adaptIngredientForSlot(couscous, 'lunch', 'dinner', { cenaFallbackKey: 'pane' });
+  assert.equal(adaptedC.name, 'Pane');
+  assert.equal(adaptedC.portions.manTraining, '60g');
 });
 
 test('ingredienti non carboidrati non vengono adattati', () => {
@@ -747,7 +763,7 @@ test('service worker: shell versionata derivata da una sola versione con asset e
   const sw = fs.readFileSync(path.join(ROOT, 'sw.js'), 'utf8');
   const versionMatch = sw.match(/const CACHE_VERSION = (\d+);/);
   assert.ok(versionMatch, 'CACHE_VERSION presente');
-  assert.equal(Number(versionMatch[1]), 18);
+  assert.equal(Number(versionMatch[1]), 19);
   assert.equal((sw.match(/const CACHE_VERSION/g) || []).length, 1);
   assert.match(sw, /const CACHE = `piano-nutrizionale-shell-v\$\{CACHE_VERSION\}`;/);
   assert.match(sw, /incrementare CACHE_VERSION a OGNI modifica di CSS, JS o index\.html/);
