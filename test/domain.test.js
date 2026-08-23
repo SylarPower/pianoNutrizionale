@@ -1087,7 +1087,9 @@ test('service worker: shell versionata derivata da una sola versione con asset e
   const sw = fs.readFileSync(path.join(ROOT, 'sw.js'), 'utf8');
   const versionMatch = sw.match(/const CACHE_VERSION = (\d+);/);
   assert.ok(versionMatch, 'CACHE_VERSION presente');
-  assert.equal(Number(versionMatch[1]), 23);
+  // La policy di sw.js chiede di incrementare la versione a ogni modifica:
+  // il test verifica solo che sia un intero positivo, senza pinnarla.
+  assert.ok(Number.isInteger(Number(versionMatch[1])) && Number(versionMatch[1]) > 0, 'CACHE_VERSION è un intero positivo');
   assert.equal((sw.match(/const CACHE_VERSION/g) || []).length, 1);
   assert.match(sw, /const CACHE = `piano-nutrizionale-shell-v\$\{CACHE_VERSION\}`;/);
   assert.match(sw, /incrementare CACHE_VERSION a OGNI modifica di CSS, JS o index\.html/);
