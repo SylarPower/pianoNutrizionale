@@ -61,15 +61,16 @@
     'zucchini': 'Zucchine'
   };
 
-  const DEFAULT_CONSTRAINTS = {
-    legumesMin: 3, legumesMax: 14,
-    omegaMin: 2, omegaMax: 7,
-    poultryMin: 1, poultryMax: 2,
-    beefMin: 0, beefMax: 1,
-    dairyMin: 2, dairyMax: 4,
-    eggsMin: 2, eggsMax: 4,
-    otherFishMin: 1, otherFishMax: 2
-  };
+const DEFAULT_CONSTRAINTS = {
+  legumesMin: 3, legumesMax: 14,
+  omegaMin: 2, omegaMax: 3,
+  poultryMin: 1, poultryMax: 2,
+  beefMin: 0, beefMax: 1,
+  curedMeatsMin: 0, curedMeatsMax: 1,
+  dairyMin: 1, dairyMax: 2,
+  eggsMin: 1, eggsMax: 2,
+  otherFishMin: 1, otherFishMax: 2
+};
 
   function deepClone(value) {
     return value === undefined ? undefined : JSON.parse(JSON.stringify(value));
@@ -774,25 +775,27 @@
   // ----- Generatore settimanale (funzioni pure, nessun DOM) -----
 
   // Categorie proteiche riconosciute dal generatore, con le chiavi min/max
-  const PROTEIN_CATEGORIES = ['legumes', 'omega', 'otherFish', 'poultry', 'beef', 'dairy', 'eggs'];
-  const PROTEIN_CONSTRAINT_KEYS = {
-    legumes: { min: 'legumesMin', max: 'legumesMax' },
-    omega: { min: 'omegaMin', max: 'omegaMax' },
-    otherFish: { min: 'otherFishMin', max: 'otherFishMax' },
-    poultry: { min: 'poultryMin', max: 'poultryMax' },
-    beef: { min: 'beefMin', max: 'beefMax' },
-    dairy: { min: 'dairyMin', max: 'dairyMax' },
-    eggs: { min: 'eggsMin', max: 'eggsMax' }
-  };
-  const PROTEIN_CATEGORY_LABELS = {
-    legumes: 'Legumi',
-    omega: 'Pesce omega-3',
-    otherFish: 'Altro pesce/molluschi',
-    poultry: 'Pollame',
-    beef: 'Manzo/Vitello',
-    dairy: 'Latticini/Formaggi',
-    eggs: 'Uova'
-  };
+  const PROTEIN_CATEGORIES = ['legumes', 'omega', 'otherFish', 'poultry', 'beef', 'curedMeats', 'dairy', 'eggs'];
+const PROTEIN_CONSTRAINT_KEYS = {
+  legumes: { min: 'legumesMin', max: 'legumesMax' },
+  omega: { min: 'omegaMin', max: 'omegaMax' },
+  otherFish: { min: 'otherFishMin', max: 'otherFishMax' },
+  poultry: { min: 'poultryMin', max: 'poultryMax' },
+  beef: { min: 'beefMin', max: 'beefMax' },
+  curedMeats: { min: 'curedMeatsMin', max: 'curedMeatsMax' },
+  dairy: { min: 'dairyMin', max: 'dairyMax' },
+  eggs: { min: 'eggsMin', max: 'eggsMax' }
+};
+const PROTEIN_CATEGORY_LABELS = {
+  legumes: 'Legumi e derivati',
+  omega: 'Pesce ricco di omega-3',
+  otherFish: 'Altro pesce e prodotti ittici',
+  poultry: 'Pollame',
+  beef: 'Manzo e maiale',
+  curedMeats: 'Affettati e carni miste',
+  dairy: 'Latticini e formaggi',
+  eggs: 'Uova'
+};
 
   // Le frequenze del generatore si basano prima sugli alimenti effettivi
   // della ricetta, nell'ordine in cui compaiono. `proteinCategory` resta un
@@ -800,8 +803,9 @@
   const PROTEIN_INGREDIENT_HINTS = [
     { category: 'omega', match: /salmone|sgombro|sardine?|aringa|alice|acciug/ },
     { category: 'otherFish', match: /merluzzo|nasello|sogliola|orata|branzino|spigola|tonno|calamar|polpo|seppi|spada|trota|platessa|cozze|vongole|gamber|crostace|mollusch|pesce/ },
-    { category: 'poultry', match: /pollo|tacchin/ },
-    { category: 'beef', match: /manzo|vitello|carne/ },
+{ category: 'poultry', match: /pollo|tacchin/ },
+{ category: 'curedMeats', match: /affettat|prosciutto|bresaola|speck|salame|mortadella|wurstel|salsic|carne mista|carni miste|macinato misto/ },
+{ category: 'beef', match: /manzo|vitello|maiale|suino|pork/ },
     { category: 'legumes', match: /ceci|lenticch|fagiol|edamame|pisell|tofu|tempeh|legumott/ },
     { category: 'dairy', match: /ricotta|mozzarella|caprino|crescenza|robiola|feta|montasio|parmigiano|grana|fiocchi di latte/ },
     { category: 'eggs', match: /\buov|albume/ }
@@ -822,8 +826,9 @@
     const inferred = inferProteinCategoryFromIngredients(recipe);
     if (inferred) return inferred;
     const category = String(recipe?.proteinCategory || '').toLowerCase();
-    if (/pollame/i.test(category)) return 'poultry';
-    if (/manzo|vitello/i.test(category)) return 'beef';
+if (/pollame/i.test(category)) return 'poultry';
+if (/affettati|affettato|prosciutto|bresaola|speck|salame|mortadella|wurstel|salsic|carni miste|carne mista/i.test(category)) return 'curedMeats';
+if (/manzo|vitello|maiale|suino|pork/i.test(category)) return 'beef';
     if (/omega-3/i.test(category)) return 'omega';
     if (/pesce|salmone|sgombro|tonno|merluzzo|mollusch|crostace/i.test(category)) return 'otherFish';
     if (/latticini|formaggi/i.test(category)) return 'dairy';
@@ -1232,14 +1237,17 @@
 
     // Avvisi finali sulle frequenze: calcolati sul piano COMPLETO (generati +
     // bloccati + mantenuti), coerenti col controllo mostrato nella Settimana.
-    if (counts.legumes < minFor('legumes')) warnings.push(`Legumi: ${counts.legumes} pasti (obiettivo ${minFor('legumes')}-${maxFor('legumes')}).`);
-    if (counts.omega < minFor('omega')) warnings.push(`Pesce omega-3: ${counts.omega} pasti (obiettivo ${minFor('omega')}-${maxFor('omega')}).`);
-    if (counts.omega > maxFor('omega')) warnings.push(`Pesce omega-3: ${counts.omega} pasti (massimo ${maxFor('omega')}).`);
-    if (counts.poultry > maxFor('poultry')) warnings.push(`Pollame: ${counts.poultry} pasti (massimo ${maxFor('poultry')}).`);
-    if (counts.beef > maxFor('beef')) warnings.push(`Manzo/Vitello: ${counts.beef} pasti (massimo ${maxFor('beef')}).`);
-    if (counts.dairy < minFor('dairy') || counts.dairy > maxFor('dairy')) warnings.push(`Latticini/Formaggi: ${counts.dairy} pasti (obiettivo ${minFor('dairy')}-${maxFor('dairy')}).`);
-    if (counts.eggs < minFor('eggs') || counts.eggs > maxFor('eggs')) warnings.push(`Uova: ${counts.eggs} pasti (obiettivo ${minFor('eggs')}-${maxFor('eggs')}).`);
-    if (counts.otherFish < minFor('otherFish') || counts.otherFish > maxFor('otherFish')) warnings.push(`Altro pesce/molluschi: ${counts.otherFish} pasti (obiettivo ${minFor('otherFish')}-${maxFor('otherFish')}).`);
+    PROTEIN_CATEGORIES.forEach(category => {
+      const count = counts[category];
+      const min = minFor(category);
+      const max = maxFor(category);
+    
+      if (count < min || count > max) {
+        warnings.push(
+          `${PROTEIN_CATEGORY_LABELS[category]}: ${count} pasti (obiettivo ${min}-${max}).`
+        );
+      }
+    });
     const doubleFishDays = DAYS.filter(day => fishCountOn(day) > 1);
     if (doubleFishDays.length) warnings.push(`Due pasti di pesce nello stesso giorno: ${doubleFishDays.map(day => DAY_LABELS[day]).join(', ')}.`);
 
