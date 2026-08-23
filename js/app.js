@@ -1062,7 +1062,7 @@ function recipeSectionHtml(title, recipes, slot) {
       </button>
       <div id="${sectionId}" class="recipe-section-body hidden">
         <div class="recipe-grid">
-          ${recipes.map(recipe => `<button class="recipe-library-card" data-search="${escapeAttr(`${recipe.id} ${recipe.name} ${recipe.namesByDayType?.training || ""} ${recipe.namesByDayType?.rest || ""} ${recipe.proteinCategory} ${(recipe.ingredients || []).map(i => i.name).join(" ")}`.toLowerCase())}" onclick="openRecipeModal('${escapeAttr(recipe.id)}')"><span class="recipe-code">${escapeHtml(recipe.id)}</span><span class="recipe-card-emoji">${escapeHtml(recipe.emoji || "🍲")}</span><strong>${escapeHtml(recipe.name)}</strong><small>${escapeHtml(recipe.proteinCategory || "")}</small><span class="frequency-chip">${escapeHtml(recipe.frequency || "")}</span></button>`).join("")}
+          ${recipes.map(recipe => `<button class="recipe-library-card" data-search="${escapeAttr(`${recipe.id} ${recipe.name} ${recipe.namesByDayType?.training || ""} ${recipe.namesByDayType?.rest || ""} ${recipe.proteinCategory} ${(recipe.ingredients || []).map(i => i.name).join(" ")}`.toLowerCase())}" onclick="openRecipeModal('${escapeAttr(recipe.id)}')"><span class="recipe-code">${escapeHtml(recipe.id)}</span><span class="recipe-card-emoji">${escapeHtml(recipe.emoji || "🍲")}</span><strong>${escapeHtml(recipe.name)}</strong><small>${escapeHtml(recipe.proteinCategory || "")}</small></button>`).join("")}
         </div>
       </div>
     </section>`;
@@ -2712,7 +2712,28 @@ function renderModalContent() {
       <button class="type-option rest ${dayType === "rest" ? "active" : ""}" onclick="setModalDayType('rest')" title="Riposo">R</button>
     </span>` : "";
   document.getElementById("modal-time").innerHTML = editMode
-    ? `<div class="edit-meta-grid"><label>Emoji<input id="edit-recipe-emoji" value="${escapeAttr(recipe.emoji || "🍲")}"></label><label>Tipo<select id="edit-recipe-slot">${MEAL_SLOTS.map(slot => `<option value="${slot.id}" ${recipe.slot === slot.id ? "selected" : ""}>${escapeHtml(slot.label)}</option>`).join("")}</select></label><label>Categoria<input id="edit-recipe-category" value="${escapeAttr(recipe.proteinCategory || "")}"></label><label>Frequenza<input id="edit-recipe-frequency" value="${escapeAttr(recipe.frequency || "")}"></label></div>`
+    ? `<div class="edit-meta-grid"><label>Emoji<input id="edit-recipe-emoji" value="${escapeAttr(recipe.emoji || "🍲")}"></label><label>Tipo<select id="edit-recipe-slot">${MEAL_SLOTS.map(slot => `<option value="${slot.id}" ${recipe.slot === slot.id ? "selected" : ""}>${escapeHtml(slot.label)}</option>`).join("")}</select></label><label>
+  Categoria proteica
+<select
+  id="edit-recipe-category"
+  title="Opzionale: il generatore riconosce prima la proteina dagli ingredienti. Questa scelta viene usata solo se nessun ingrediente è riconoscibile."
+>
+  ${recipe.proteinCategory && !Object.prototype.hasOwnProperty.call(window.PianoDomain?.PROTEIN_CATEGORY_LABELS || {}, recipe.proteinCategory) ? `
+    <option value="${escapeAttr(recipe.proteinCategory)}" selected>
+      Valore precedente: ${escapeHtml(recipe.proteinCategory)}
+    </option>
+  ` : ""}
+  <option value="">Automatica dagli ingredienti</option>
+  ${Object.entries(window.PianoDomain?.PROTEIN_CATEGORY_LABELS || {}).map(([key, label]) => `
+    <option value="${escapeAttr(key)}" ${recipe.proteinCategory === key ? "selected" : ""}>
+      ${escapeHtml(label)}
+    </option>
+  `).join("")}
+</select>
+  <small>
+    Opzionale: serve solo come fallback per ricette con ingredienti non riconoscibili.
+  </small>
+</label></div>`
     : `${escapeHtml(getSlotMeta(currentModal.slot || recipe.slot).label)} · ${dayTypeLabel} · ${escapeHtml(getProfileLabel())}${toggleHtml}${recipeIsCrossSlot(recipe, currentModal.slot) ? `<div class="modal-adapted-note">↻ Carboidrati adattati alle quantità del ${escapeHtml(getSlotMeta(currentModal.slot).label.toLowerCase())}</div>` : ""}`;
 
   const ingredientList = document.getElementById("modal-ingredients-list");
@@ -2783,7 +2804,6 @@ function captureEditState() {
   recipe.emoji = document.getElementById("edit-recipe-emoji")?.value.trim() || "🍲";
   recipe.slot = document.getElementById("edit-recipe-slot")?.value || "lunch";
   recipe.proteinCategory = document.getElementById("edit-recipe-category")?.value.trim() || "";
-  recipe.frequency = document.getElementById("edit-recipe-frequency")?.value.trim() || "";
   recipe.ingredients.forEach((ingredient, index) => {
     ingredient.name = document.getElementById(`edit-ing-name-${index}`)?.value.trim() || "Ingrediente";
     ingredient.portions = {
