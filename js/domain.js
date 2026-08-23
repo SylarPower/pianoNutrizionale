@@ -293,6 +293,108 @@
     return result.filter(batch => batch.active);
   }
 
+  // Somma due stringhe-dose (es. "200g" + "200g" = "400g"). Per valori non
+  // numerici (q.b., dosi opache) mostra entrambi separati da "+".
+  function sumPortionStrings(a, b) {
+    const pa = parseSimpleAmount(a);
+    const pb = parseSimpleAmount(b);
+    if (pa.skip && pb.skip) return EMPTY_PORTION;
+    if (pa.free || pb.free) return 'q.b.';
+    const fmt = (value, unit) => {
+      const rounded = Math.round(value * 100) / 100;
+      const num = Number.isInteger(rounded) ? String(rounded) : String(rounded).replace('.', ',');
+      return unit === 'pz' ? `${num} pz` : `${num}${unit}`;
+    };
+    if (!pa.skip && !pb.skip && pa.value !== undefined && pb.value !== undefined) {
+      if (pa.unit === pb.unit) return fmt(pa.value + pb.value, pa.unit);
+      return `${fmt(pa.value, pa.unit)} + ${fmt(pb.value, pb.unit)}`;
+    }
+    if (pa.skip) return String(b ?? EMPTY_PORTION);
+    if (pb.skip) return String(a ?? EMPTY_PORTION);
+    const left = pa.opaque ?? (pa.value !== undefined ? fmt(pa.value, pa.unit) : EMPTY_PORTION);
+    const right = pb.opaque ?? (pb.value !== undefined ? fmt(pb.value, pb.unit) : EMPTY_PORTION);
+    return `${left} + ${right}`;
+  }
+
+  // Combina le dosi di cena e pranzo per un ingrediente, gestendo il profilo
+  // Coppia (somma separata uomo/donna IPO).
+  function combineTaskQuantities(cenaPortion, pranzoPortion, profile) {
+    if (profile === 'couple') {
+      const c = cenaPortion && typeof cenaPortion === 'object' ? cenaPortion : { man: cenaPortion, ipo: cenaPortion };
+      const p = pranzoPortion && typeof pranzoPortion === 'object' ? pranzoPortion : { man: pranzoPortion, ipo: pranzoPortion };
+      return { man: sumPortionStrings(c.man, p.man), ipo: sumPortionStrings(c.ipo, p.ipo) };
+    }
+    return sumPortionStrings(cenaPortion, pranzoPortion);
+  }
+
+  // Batch automatico "doppia porzione": quando la stessa ricetta è a cena oggi e
+  // a pranzo in un giorno successivo (ora possibile anche col cross-slot), le
+  // dosi da preparare sono la somma della porzione di cena + quella del pranzo
+  // (carboidrati adattati al pasto). Attivo solo se il pranzo è al massimo a 1
+  // giorno (conservazione in frigo); oltre non è sicuro e non viene suggerito.
+  function commonRecipeBatch(anchorDay, plan, recipesById = {}, profile = 'man', options = {}) {
+    const dinnerId = plan?.days?.[anchorDay]?.dinner;
+    if (!dinnerId) return null;
+    const recipe = recipesById?.[dinnerId];
+    if (!recipe) return null;
+    const target = futureTarget(anchorDay, plan, 'lunch', dinnerId, options.maxLookAhead || 3);
+    if (!target) return null;
+    const dinnerDayType = plan?.days?.[anchorDay]?.type || 'rest';
+    const lunchDayType = plan?.days?.[target.day]?.type || 'rest';
+    const cenaFallbackKey = options.cenaFallbackKey;
+    const storageMaxDays = 1;
+    const tasks = (recipe.ingredients || []).map(ingredient => {
+      const cenaAdapted = adaptIngredientForSlot(ingredient, recipe.slot, 'dinner', { cenaFallbackKey });
+      const cenaName = cenaAdapted ? cenaAdapted.name : ingredient.name;
+      const cenaId = cenaAdapted ? cenaAdapted.ingredientId : (ingredient.ingredientId || slug(ingredient.name));
+      const cenaIng = cenaAdapted ? { ...ingredient, portions: cenaAdapted.portions } : ingredient;
+      const cenaPortion = portionFor(cenaIng, profile, dinnerDayType);
+      const pranzoAdapted = adaptIngredientForSlot(ingredient, recipe.slot, 'lunch', { cenaFallbackKey });
+      const pranzoName = pranzoAdapted ? pranzoAdapted.name : ingredient.name;
+      const pranzoId = pranzoAdapted ? pranzoAdapted.ingredientId : (ingredient.ingredientId || slug(ingredient.name));
+      const pranzoIng = pranzoAdapted ? { ...ingredient, portions: pranzoAdapted.portions } : ingredient;
+      const pranzoPortion = portionFor(pranzoIng, profile, lunchDayType);
+      // Se cena e pranzo risolvono lo stesso ingrediente (es. Pane a cena e Pane
+      // adattato a pranzo) le dosi si sommano. Se il carboidrato diverge (es.
+      // ricetta di pranzo a cena: pasta->pane a cena, pasta a pranzo) si
+      // mostrano entrambe le quantità senza sommare ingredienti diversi.
+      const sameIngredient = cenaId === pranzoId;
+      let quantityStr;
+      if (sameIngredient) {
+        quantityStr = formatPortion(combineTaskQuantities(cenaPortion, pranzoPortion, profile), profile);
+      } else {
+        quantityStr = `${formatPortion(cenaPortion, profile)} + ${formatPortion(pranzoPortion, profile)}`;
+      }
+      return {
+        id: `common-${ingredient.ingredientId || slug(ingredient.name)}`,
+        actionType: 'cook',
+        label: sameIngredient ? cenaName : `${cenaName} + ${pranzoName}`,
+        storage: { method: 'fridge', maxDays: storageMaxDays, instructions: 'Conserva in frigo la porzione per il pranzo.' },
+        status: batchTaskStatus({ storage: { maxDays: storageMaxDays } }, target.days),
+        quantity: quantityStr
+      };
+    }).filter(task => {
+      const value = String(task.quantity ?? '').trim();
+      return value && value !== EMPTY_PORTION;
+    });
+    const validCount = tasks.filter(task => task.status === 'today' || task.status === 'fresh').length;
+    if (!validCount) return null;
+    return {
+      template: {
+        id: `common-recipe-${dinnerId}`,
+        title: `Doppia porzione · ${recipe.name}`,
+        anchor: { slot: 'dinner', recipeId: dinnerId },
+        target: { slot: 'lunch', recipeId: dinnerId }
+      },
+      targetDay: target.day,
+      daysUntilTarget: target.days,
+      tasks,
+      validCount,
+      active: true,
+      commonRecipe: true
+    };
+  }
+
   // ----- Lista della spesa -----
 
   const CATEGORY_RULES = [
@@ -341,8 +443,91 @@
     return { value, unit };
   }
 
+  // ----- Adattamento carboidrati pranzo <-> cena -----
+
+  // Tabella di riferimento delle quantità di carboidrato (in grammi) per pasto
+  // e tipo di giornata, secondo le linee guida del nutrizionista. La cena ha
+  // gli stessi valori in Allenamento e Riposo; solo il pranzo differisce.
+  // L'ordine conta per il riconoscimento: le voci più specifiche vengono prima
+  // (gnocchi di patate prima di patate).
+  const CARB_REFERENCE = [
+    { key: 'gnocchi', match: /gnocch/, label: 'Gnocchi di patate', pranzo: { training: 250, rest: 190 }, cena: null },
+    { key: 'polenta', match: /polenta/, label: 'Polenta cotta', pranzo: { training: 430, rest: 340 }, cena: { training: 220, rest: 220 } },
+    { key: 'piadina', match: /piadina/, label: 'Piadina', pranzo: { training: 110, rest: 80 }, cena: null },
+    { key: 'pseudo', match: /quinoa|grano saraceno|amaranto/, label: 'Quinoa/Grano saraceno/Amaranto', pranzo: { training: 80, rest: 60 }, cena: null },
+    { key: 'couscous', match: /cous.?cous/, label: 'Cous cous', pranzo: { training: 80, rest: 60 }, cena: null },
+    { key: 'farroorzo', match: /\b(farro|orzo)\b/, label: 'Farro/Orzo', pranzo: { training: 90, rest: 70 }, cena: null },
+    { key: 'trofie', match: /\btrofie\b/, label: 'Trofie', pranzo: { training: 90, rest: 70 }, cena: null },
+    { key: 'pasta', match: /pasta/, label: 'Pasta', pranzo: { training: 90, rest: 70 }, cena: null },
+    { key: 'riso', match: /\briso\b|risotto/, label: 'Riso', pranzo: { training: 90, rest: 70 }, cena: null },
+    { key: 'crackers', match: /cracker|grissin|crostin/, label: 'Crackers/Grissini/Crostini', pranzo: { training: 70, rest: 60 }, cena: { training: 40, rest: 40 } },
+    { key: 'patate', match: /patat/, label: 'Patate', pranzo: { training: 450, rest: 350 }, cena: { training: 230, rest: 230 } },
+    { key: 'pane', match: /\bpane\b/, label: 'Pane', pranzo: { training: 120, rest: 90 }, cena: { training: 60, rest: 60 } }
+  ];
+
+  // Carboidrati ammessi a cena: il fallback "pranzo -> cena" usa quello scelto
+  // nelle impostazioni quando il carboidrato originale non è previsto a cena
+  // (pasta, riso, gnocchi, quinoa, piadina, farro, orzo).
+  const CENA_CARB_OPTIONS = [
+    { key: 'pane', label: 'Pane', amounts: { training: 60, rest: 60 } },
+    { key: 'crackers', label: 'Crackers / Grissini / Crostini', amounts: { training: 40, rest: 40 } },
+    { key: 'patate', label: 'Patate', amounts: { training: 230, rest: 230 } },
+    { key: 'polenta', label: 'Polenta cotta', amounts: { training: 220, rest: 220 } }
+  ];
+  const DEFAULT_CENA_CARB_KEY = 'pane';
+
+  function cenaCarbOption(key) {
+    const fallback = CENA_CARB_OPTIONS.find(option => option.key === DEFAULT_CENA_CARB_KEY);
+    return CENA_CARB_OPTIONS.find(option => option.key === key) || fallback;
+  }
+
+  function carbSourceForName(name) {
+    const value = aliasKey(name);
+    if (!value) return null;
+    return CARB_REFERENCE.find(source => source.match.test(value)) || null;
+  }
+
+  function isPranzoCenaCross(nativeSlot, assignedSlot) {
+    return (nativeSlot === 'lunch' && assignedSlot === 'dinner') ||
+      (nativeSlot === 'dinner' && assignedSlot === 'lunch');
+  }
+
+  // Adatta un ingrediente carboidrato quando la sua ricetta viene collocata nel
+  // pasto opposto (pranzo <-> cena). Restituisce { name, ingredientId, portions }
+  // solo per i carboidrati da adattare, altrimenti null (ingrediente invariato).
+  // Solo i carboidrati cambiano: proteine, uova, verdura e condimenti restano
+  // uguali. options.cenaFallbackKey sceglie il carboidrato cena di default per
+  // la conversione pranzo -> cena dei carboidrati non previsti a cena.
+  function adaptIngredientForSlot(ingredient, nativeSlot, assignedSlot, options = {}) {
+    if (!ingredient || !isPranzoCenaCross(nativeSlot, assignedSlot)) return null;
+    const source = carbSourceForName(ingredient.name);
+    if (!source) return null;
+    const isCena = assignedSlot === 'dinner';
+    let amounts = isCena ? source.cena : source.pranzo;
+    let name = ingredient.name;
+    let ingredientId = ingredient.ingredientId || ingredientIdFor(ingredient.name);
+    if (!amounts) {
+      const fallback = cenaCarbOption(options.cenaFallbackKey);
+      amounts = fallback.amounts;
+      name = fallback.label;
+      ingredientId = ingredientIdFor(name);
+    }
+    return {
+      name,
+      ingredientId,
+      portions: {
+        ipoTraining: `${amounts.training}g`,
+        ipoRest: `${amounts.rest}g`,
+        manTraining: `${amounts.training}g`,
+        manRest: `${amounts.rest}g`
+      }
+    };
+  }
+
   // Aggrega la lista della spesa per ingredientId. Le dosi "—" vengono saltate.
-  function aggregateShopping(plan, recipesById, selectedMeals, profile = 'man', canonicalLabels = {}) {
+  // options.cenaFallbackKey propaga il carboidrato cena di default scelto nelle
+  // impostazioni per l'adattamento dei carboidrati nei pasti incrociati.
+  function aggregateShopping(plan, recipesById, selectedMeals, profile = 'man', canonicalLabels = {}, options = {}) {
     const out = {};
     DAYS.forEach(day => {
       const dayType = plan?.days?.[day]?.type || 'rest';
@@ -350,15 +535,19 @@
         const recipe = recipesById?.[plan?.days?.[day]?.[slot]];
         if (!recipe) return;
         (recipe.ingredients || []).forEach(ingredient => {
-          const amount = portionFor(ingredient, profile, dayType);
+          const adapted = adaptIngredientForSlot(ingredient, recipe.slot, slot, { cenaFallbackKey: options.cenaFallbackKey });
+          const effective = adapted
+            ? { ...ingredient, name: adapted.name, ingredientId: adapted.ingredientId, portions: adapted.portions }
+            : ingredient;
+          const amount = portionFor(effective, profile, dayType);
           const entries = profile === 'couple' && amount && typeof amount === 'object'
             ? [{ role: 'Uomo', raw: amount.man }, { role: 'Donna IPO', raw: amount.ipo }]
             : [{ role: profile === 'ipo' ? 'Donna IPO' : 'Uomo', raw: amount }];
-          const id = ingredientIdFor(ingredient.name, ingredient.ingredientId);
+          const id = ingredientIdFor(effective.name, effective.ingredientId);
           const entry = out[id] || (out[id] = {
             ingredientId: id,
-            name: canonicalLabels[id] || ingredient.name,
-            category: categoryForIngredient(ingredient.name),
+            name: canonicalLabels[id] || effective.name,
+            category: categoryForIngredient(effective.name),
             totals: {},
             opaque: {},
             free: false,
@@ -834,9 +1023,19 @@
     formatPortion,
     quantityForTask,
     activeBatch,
+    sumPortionStrings,
+    combineTaskQuantities,
+    commonRecipeBatch,
     categoryForIngredient,
     isEmptyPortion,
     parseSimpleAmount,
+    CARB_REFERENCE,
+    CENA_CARB_OPTIONS,
+    DEFAULT_CENA_CARB_KEY,
+    cenaCarbOption,
+    carbSourceForName,
+    isPranzoCenaCross,
+    adaptIngredientForSlot,
     aggregateShopping,
     swapMeals,
     copyMeal,
