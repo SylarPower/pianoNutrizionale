@@ -828,11 +828,43 @@ window.openSwapModal = function(dayKey, slot) {
   document.getElementById("swap-title").textContent = `${DAY_NAMES[dayKey]} · ${slotMeta.label}`;
   const currentId = appState.plan.days[dayKey][slot];
   const defaultId = appState.plan.defaultDays?.[dayKey]?.[slot];
-  const sameSlotRecipes = appState.recipes.filter(recipe => recipe.slot === slot);
+
+  // Suggerimento batch cooking "doppia porzione": sostituendo un pranzo con
+  // la cena del giorno prima (o una cena con il pranzo del giorno dopo) si
+  // accende il batch automatico dell'app — si cucina una volta per due pasti.
+  // La ricorrenza settimanale vale anche domenica cena → lunedì pranzo.
+  const dayIndex = DAY_ORDER.indexOf(dayKey);
+  const batchNeighbor = (() => {
+    if (slot === "lunch") {
+      const prevDay = DAY_ORDER[(dayIndex + DAY_ORDER.length - 1) % DAY_ORDER.length];
+      return { recipeId: appState.plan.days?.[prevDay]?.dinner, day: prevDay, label: `Come la cena di ${DAY_NAMES[prevDay]}` };
+    }
+    if (slot === "dinner") {
+      const nextDay = DAY_ORDER[(dayIndex + 1) % DAY_ORDER.length];
+      return { recipeId: appState.plan.days?.[nextDay]?.lunch, day: nextDay, label: `Come il pranzo di ${DAY_NAMES[nextDay]}` };
+    }
+    return null;
+  })();
+  const batchRecipe = batchNeighbor?.recipeId ? getRecipe(batchNeighbor.recipeId) : null;
+  const batchSuggestionHtml = (() => {
+    if (!batchRecipe) return "";
+    const selected = batchRecipe.id === currentId;
+    const crossBadge = recipeIsCrossSlot(batchRecipe, slot) ? ` <span class="swap-cross-badge" title="Carboidrati adattati">↻</span>` : "";
+    return `<div class="batch-suggestion">
+      <div class="batch-suggestion-title">🍳 Consiglio batch cooking</div>
+      <button class="swap-item batch-suggestion-item ${selected ? "selected" : ""}" onclick="confirmSwap('${dayKey}', '${slot}', '${escapeAttr(batchRecipe.id)}')">
+        <span class="swap-code">${escapeHtml(batchRecipe.id)}</span>
+        <span><strong>${escapeHtml(batchRecipe.emoji || "🍲")} ${escapeHtml(getRecipeDisplayName(batchRecipe, getDayType(dayKey)))}${crossBadge}</strong><small>${escapeHtml(batchNeighbor.label)} · doppia porzione: cucini una volta per due pasti</small></span>
+        ${selected ? "<b>✓</b>" : ""}
+      </button>
+    </div>`;
+  })();
+
+  const sameSlotRecipes = appState.recipes.filter(recipe => recipe.slot === slot && recipe.id !== batchRecipe?.id);
   // Pranzo <-> cena: mostra anche le ricette del pasto opposto; i carboidrati
   // verranno adattati alle quantità del pasto scelto.
   const oppositeSlot = slot === "lunch" ? "dinner" : slot === "dinner" ? "lunch" : null;
-  const oppositeSlotRecipes = oppositeSlot ? appState.recipes.filter(recipe => recipe.slot === oppositeSlot) : [];
+  const oppositeSlotRecipes = oppositeSlot ? appState.recipes.filter(recipe => recipe.slot === oppositeSlot && recipe.id !== batchRecipe?.id) : [];
   const oppositeLabel = oppositeSlot ? getSlotMeta(oppositeSlot).label.toLowerCase() : "";
   const resetButton = defaultId && defaultId !== currentId ? `
     <button class="swap-item reset" onclick="confirmSwap('${dayKey}', '${slot}', '${escapeAttr(defaultId)}')">
@@ -849,6 +881,7 @@ window.openSwapModal = function(dayKey, slot) {
   };
 
   document.getElementById("swap-options-list").innerHTML = `
+    ${batchSuggestionHtml}
     ${resetButton}
     ${sameSlotRecipes.map(recipe => swapItemHtml(recipe, false)).join("")}
     ${oppositeSlotRecipes.length ? `<div class="swap-section-label">Dal pasto opposto (carboidrati adattati al ${escapeHtml(slotMeta.label.toLowerCase())})</div>${oppositeSlotRecipes.map(recipe => swapItemHtml(recipe, true)).join("")}` : ""}

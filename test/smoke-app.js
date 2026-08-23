@@ -414,6 +414,23 @@ openRecipeModal('L1', 'monday');
 renderModalContent();
 openMealActions('monday', 'lunch');
 renderMealSwapList();
+// Suggerimento batch cooking nel modale di sostituzione: sostituendo un
+// pranzo viene evidenziata la cena del giorno prima (doppia porzione);
+// sostituendo una cena viene evidenziato il pranzo del giorno dopo.
+openSwapModal('monday', 'lunch');
+{
+  const swapHtml = document.getElementById('swap-options-list')._innerHTML;
+  assert.match(swapHtml, /batch-suggestion-item/, 'suggerimento batch presente nella sostituzione del pranzo');
+  assert.match(swapHtml, /cena di Domenica/i, 'evidenziata la cena del giorno prima');
+  assert.match(swapHtml, /confirmSwap\('monday', 'lunch', 'D1'\)/, 'suggerimento applicabile con un tocco');
+  openSwapModal('tuesday', 'dinner');
+  const dinnerSwapHtml = document.getElementById('swap-options-list')._innerHTML;
+  assert.match(dinnerSwapHtml, /batch-suggestion-item/, 'suggerimento batch presente nella sostituzione della cena');
+  assert.match(dinnerSwapHtml, /pranzo di Mercoledì/i, 'evidenziato il pranzo del giorno dopo');
+  openSwapModal('monday', 'breakfast');
+  assert.doesNotMatch(document.getElementById('swap-options-list')._innerHTML, /batch-suggestion-item/, 'nessun suggerimento per colazione e spuntini');
+  closeSwapModal();
+}
 openGeneratorModal();
 // Pannello parametri: i controlli sono presenti e le preferenze persistono
 // nelle impostazioni dispositivo (mai su Firestore).
