@@ -721,37 +721,48 @@ function renderChef() {
   `;
 }
 
+function recipeProteinCategory(recipe) {
+  return window.PianoDomain?.classifyProtein(recipe) || null;
+}
+
 function recipeIsFish(recipe) {
-  return /(pesce|salmone|sgombro|mollusch|crostace|tonno|merluzzo)/i.test(recipe?.proteinCategory || "");
+  const category = recipeProteinCategory(recipe);
+  return category === "omega" || category === "otherFish";
 }
 
 function analyzeWeeklyPlan() {
-  const counts = { poultry: 0, beef: 0, omega: 0, otherFish: 0, dairy: 0, eggs: 0, legumes: 0 };
+  const counts = {
+  poultry: 0,
+  beef: 0,
+  curedMeats: 0,
+  omega: 0,
+  otherFish: 0,
+  dairy: 0,
+  eggs: 0,
+  legumes: 0
+};
   const doubleFishDays = [];
   DAY_ORDER.forEach(day => {
     const recipes = [getPlannedRecipe(day, "lunch"), getPlannedRecipe(day, "dinner")].filter(Boolean);
     if (recipes.filter(recipeIsFish).length > 1) doubleFishDays.push(DAY_NAMES[day]);
     recipes.forEach(recipe => {
-      const category = recipe.proteinCategory || "";
-      if (/pollame/i.test(category)) counts.poultry++;
-      if (/manzo|vitello/i.test(category)) counts.beef++;
-      if (/omega-3/i.test(category)) counts.omega++;
-      else if (recipeIsFish(recipe)) counts.otherFish++;
-      if (/latticini/i.test(category)) counts.dairy++;
-      if (/uova/i.test(category)) counts.eggs++;
-      if (/legumi/i.test(category)) counts.legumes++;
+      const category = recipeProteinCategory(recipe);
+      if (category && counts[category] !== undefined) {
+        counts[category]++;
+      }
     });
   });
 
-  const checks = [
-    { label: "Pollame", value: counts.poultry, target: "1-2", ok: counts.poultry >= 1 && counts.poultry <= 2 },
-    { label: "Manzo/Vitello", value: counts.beef, target: "max 1", ok: counts.beef <= 1 },
-    { label: "Pesce omega-3", value: counts.omega, target: "2-3", ok: counts.omega >= 2 && counts.omega <= 3 },
-    { label: "Altro pesce/molluschi", value: counts.otherFish, target: "1-2", ok: counts.otherFish >= 1 && counts.otherFish <= 2 },
-    { label: "Latticini/Formaggi", value: counts.dairy, target: "1-2", ok: counts.dairy >= 1 && counts.dairy <= 2 },
-    { label: "Uova", value: counts.eggs, target: "1-2", ok: counts.eggs >= 1 && counts.eggs <= 2 },
-    { label: "Legumi", value: counts.legumes, target: "almeno 3", ok: counts.legumes >= 3 }
-  ];
+const checks = [
+  { label: "Pollame", value: counts.poultry, target: "1-2", ok: counts.poultry >= 1 && counts.poultry <= 2 },
+  { label: "Manzo e maiale", value: counts.beef, target: "0-1", ok: counts.beef >= 0 && counts.beef <= 1 },
+  { label: "Affettati e carni miste", value: counts.curedMeats, target: "0-1", ok: counts.curedMeats >= 0 && counts.curedMeats <= 1 },
+  { label: "Pesce ricco di omega-3", value: counts.omega, target: "2-3", ok: counts.omega >= 2 && counts.omega <= 3 },
+  { label: "Altro pesce e prodotti ittici", value: counts.otherFish, target: "1-2", ok: counts.otherFish >= 1 && counts.otherFish <= 2 },
+  { label: "Latticini e formaggi", value: counts.dairy, target: "1-2", ok: counts.dairy >= 1 && counts.dairy <= 2 },
+  { label: "Uova", value: counts.eggs, target: "1-2", ok: counts.eggs >= 1 && counts.eggs <= 2 },
+  { label: "Legumi e derivati", value: counts.legumes, target: "almeno 3", ok: counts.legumes >= 3 }
+];
   return { checks, doubleFishDays, allOk: checks.every(check => check.ok) && !doubleFishDays.length };
 }
 
@@ -2231,12 +2242,13 @@ window.rejectSharedRecipes = async function(shareId) {
 
 const GENERATOR_COUNT_LABELS = {
   poultry: "Pollame",
-  beef: "Manzo/Vitello",
-  omega: "Pesce omega-3",
-  otherFish: "Altro pesce",
-  dairy: "Latticini",
+  beef: "Manzo e maiale",
+  curedMeats: "Affettati e carni miste",
+  omega: "Pesce ricco di omega-3",
+  otherFish: "Altro pesce e prodotti ittici",
+  dairy: "Latticini e formaggi",
   eggs: "Uova",
-  legumes: "Legumi"
+  legumes: "Legumi e derivati"
 };
 
 // Parametri strutturali del generatore: i valori predefiniti sono coerenti con
@@ -2247,15 +2259,16 @@ const GENERATOR_PREFS_DEFAULTS = {
   maxRepeats: 2,
   allowCrossSlot: false,
   slots: { breakfast: true, snack1: true, lunch: true, snack2: true, dinner: true },
-  constraints: {
-    legumesMin: 3, legumesMax: 4,
-    omegaMin: 2, omegaMax: 3,
-    poultryMin: 1, poultryMax: 2,
-    beefMin: 0, beefMax: 1,
-    dairyMin: 1, dairyMax: 2,
-    eggsMin: 1, eggsMax: 2,
-    otherFishMin: 1, otherFishMax: 2
-  }
+constraints: {
+  legumesMin: 3, legumesMax: 14,
+  omegaMin: 2, omegaMax: 3,
+  poultryMin: 1, poultryMax: 2,
+  beefMin: 0, beefMax: 1,
+  curedMeatsMin: 0, curedMeatsMax: 1,
+  dairyMin: 1, dairyMax: 2,
+  eggsMin: 1, eggsMax: 2,
+  otherFishMin: 1, otherFishMax: 2
+}
 };
 
 let generatorState = { seed: null, blocks: {}, proposal: null };
@@ -2363,7 +2376,7 @@ window.generatorParamChanged = function(key, value) {
 
 window.generatorConstraintChanged = function(key, value) {
   if (!(key in GENERATOR_PREFS_DEFAULTS.constraints)) return;
-  const num = Math.max(0, Math.min(7, Math.floor(Number(value) || 0)));
+  const num = Math.max(0, Math.min(14, Math.floor(Number(value) || 0)));
   saveGeneratorPrefs(prefs => {
     const constraints = { ...prefs.constraints, [key]: num };
     // Il minimo non deve mai superare il massimo della stessa categoria.
@@ -2391,13 +2404,13 @@ function renderGeneratorParams() {
   const constraintRows = Object.entries(PianoDomain.PROTEIN_CONSTRAINT_KEYS || {}).map(([category, keys]) => {
     const label = PianoDomain.PROTEIN_CATEGORY_LABELS?.[category] || GENERATOR_COUNT_LABELS[category] || category;
     const minInput = keys.min
-      ? `<input type="number" min="0" max="7" inputmode="numeric" aria-label="Minimo ${escapeAttr(label)}" value="${prefs.constraints[keys.min] ?? 0}" onchange="generatorConstraintChanged('${keys.min}', this.value)">`
+      ? `<input type="number" min="0" max="14" inputmode="numeric" aria-label="Minimo ${escapeAttr(label)}" value="${prefs.constraints[keys.min] ?? 0}" onchange="generatorConstraintChanged('${keys.min}', this.value)">`
       : `<span class="generator-constraint-na">—</span>`;
     return `<div class="generator-constraint-row">
       <strong>${escapeHtml(label)}</strong>
       ${minInput}
       <span class="generator-constraint-sep">–</span>
-      <input type="number" min="0" max="7" inputmode="numeric" aria-label="Massimo ${escapeAttr(label)}" value="${prefs.constraints[keys.max] ?? 0}" onchange="generatorConstraintChanged('${keys.max}', this.value)">
+      <input type="number" min="0" max="14" inputmode="numeric" aria-label="Massimo ${escapeAttr(label)}" value="${prefs.constraints[keys.max] ?? 0}" onchange="generatorConstraintChanged('${keys.max}', this.value)">
     </div>`;
   }).join("");
   return `
@@ -2484,6 +2497,7 @@ function generatorCountStatus(key, value) {
   const ranges = {
     poultry: [constraints.poultryMin, constraints.poultryMax],
     beef: [constraints.beefMin, constraints.beefMax],
+    curedMeats: [constraints.curedMeatsMin, constraints.curedMeatsMax],
     omega: [constraints.omegaMin, constraints.omegaMax],
     otherFish: [constraints.otherFishMin, constraints.otherFishMax],
     dairy: [constraints.dairyMin, constraints.dairyMax],
