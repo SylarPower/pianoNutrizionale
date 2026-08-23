@@ -1087,7 +1087,7 @@ const PROTEIN_CATEGORY_LABELS = {
       if (chosen[targetDay]?.dinner === recipe.id || previousSlotValue(targetDay, 'lunch') === recipe.id) return false;
       return true;
     };
-    const pairScore = (recipe, anchorDay) =>
+    const pairScore = (recipe, anchorDay) => {
       const category = classifyProtein(recipe);
       let score = rand() * 2;
       if (category && counts[category] < minFor(category)) score += 7;
