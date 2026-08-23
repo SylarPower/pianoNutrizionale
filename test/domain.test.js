@@ -209,6 +209,114 @@ test('crackers dinamici A/R: presenti nei giorni A solo via piano', () => {
   assert.equal(fruit.totals.g, 250); // solo martedì (R)
 });
 
+// ---- Adattamento carboidrati pranzo <-> cena ----
+
+test('carbSourceForName riconosce i carboidrati (gnocchi prima di patate)', () => {
+  assert.equal(d.carbSourceForName('Gnocchi di patate').key, 'gnocchi');
+  assert.equal(d.carbSourceForName('Patate').key, 'patate');
+  assert.equal(d.carbSourceForName('Pasta integrale').key, 'pasta');
+  assert.equal(d.carbSourceForName('Riso venere').key, 'riso');
+  assert.equal(d.carbSourceForName('Pane integrale').key, 'pane');
+  assert.equal(d.carbSourceForName('Polenta cotta').key, 'polenta');
+  assert.equal(d.carbSourceForName('Crackers').key, 'crackers');
+  assert.equal(d.carbSourceForName('Quinoa').key, 'pseudo');
+  assert.equal(d.carbSourceForName('Farro').key, 'farroorzo');
+  assert.equal(d.carbSourceForName('Uova intere'), null);
+  assert.equal(d.carbSourceForName('Petto di pollo'), null);
+});
+
+test('isPranzoCenaCross solo tra pranzo e cena', () => {
+  assert.equal(d.isPranzoCenaCross('dinner', 'lunch'), true);
+  assert.equal(d.isPranzoCenaCross('lunch', 'dinner'), true);
+  assert.equal(d.isPranzoCenaCross('lunch', 'lunch'), false);
+  assert.equal(d.isPranzoCenaCross('dinner', 'dinner'), false);
+  assert.equal(d.isPranzoCenaCross('breakfast', 'lunch'), false);
+});
+
+test('adatta carboidrato cena -> pranzo (A: 60g -> 120g, R: 60g -> 90g)', () => {
+  const pane = ingredient('Pane', { ipoTraining: '60g', ipoRest: '60g', manTraining: '60g', manRest: '60g' }, 'bread');
+  const adapted = d.adaptIngredientForSlot(pane, 'dinner', 'lunch');
+  assert.equal(adapted.portions.manTraining, '120g');
+  assert.equal(adapted.portions.manRest, '90g');
+  assert.equal(adapted.portions.ipoTraining, '120g');
+  assert.equal(adapted.name, 'Pane');
+  assert.equal(adapted.ingredientId, 'bread');
+});
+
+test('adatta carboidrato pranzo -> cena (pane 120g -> 60g)', () => {
+  const pane = ingredient('Pane', { ipoTraining: '120g', ipoRest: '90g', manTraining: '120g', manRest: '90g' }, 'bread');
+  const adapted = d.adaptIngredientForSlot(pane, 'lunch', 'dinner');
+  assert.equal(adapted.portions.manTraining, '60g');
+  assert.equal(adapted.portions.manRest, '60g');
+});
+
+test('pranzo -> cena: carboidrato non previsto (pasta) diventa pane 60g di default', () => {
+  const pasta = ingredient('Pasta di semola', { ipoTraining: '90g', ipoRest: '70g', manTraining: '90g', manRest: '70g' });
+  const adapted = d.adaptIngredientForSlot(pasta, 'lunch', 'dinner');
+  assert.equal(adapted.name, 'Pane');
+  assert.equal(adapted.portions.manTraining, '60g');
+  assert.equal(adapted.portions.manRest, '60g');
+});
+
+test('pranzo -> cena: il carboidrato di default è configurabile (patate)', () => {
+  const pasta = ingredient('Pasta', { ipoTraining: '90g', ipoRest: '70g', manTraining: '90g', manRest: '70g' });
+  const adapted = d.adaptIngredientForSlot(pasta, 'lunch', 'dinner', { cenaFallbackKey: 'patate' });
+  assert.equal(adapted.name, 'Patate');
+  assert.equal(adapted.portions.manTraining, '230g');
+});
+
+test('ingredienti non carboidrati non vengono adattati', () => {
+  const eggs = ingredient('Uova intere', { ipoTraining: '3', ipoRest: '3', manTraining: '3', manRest: '3' }, 'whole-eggs');
+  assert.equal(d.adaptIngredientForSlot(eggs, 'dinner', 'lunch'), null);
+  assert.equal(d.adaptIngredientForSlot(eggs, 'lunch', 'dinner'), null);
+});
+
+test('nessun adattamento nello slot nativo o in pasti non incrociati', () => {
+  const pane = ingredient('Pane', { ipoTraining: '60g', ipoRest: '60g', manTraining: '60g', manRest: '60g' }, 'bread');
+  assert.equal(d.adaptIngredientForSlot(pane, 'dinner', 'dinner'), null);
+  assert.equal(d.adaptIngredientForSlot(pane, 'lunch', 'lunch'), null);
+  assert.equal(d.adaptIngredientForSlot(pane, 'breakfast', 'lunch'), null);
+});
+
+test('lista spesa adatta i carboidrati di una cena spostata a pranzo', () => {
+  const days = { monday: { type: 'training', lunch: 'C15' } };
+  const recipesById = {
+    C15: recipe('C15', 'Frittata ai peperoni', 'dinner', [
+      ingredient('Uova intere', { ipoTraining: '3', ipoRest: '3', manTraining: '3', manRest: '3' }, 'whole-eggs'),
+      ingredient('Peperone', { ipoTraining: '1', ipoRest: '1', manTraining: '1', manRest: '1' }),
+      ingredient('Pane', { ipoTraining: '60g', ipoRest: '60g', manTraining: '60g', manRest: '60g' }, 'bread')
+    ], 'Uova')
+  };
+  const list = d.aggregateShopping(planWith(days), recipesById, { monday: ['lunch'] }, 'man', {}, { cenaFallbackKey: 'pane' });
+  assert.equal(list.find(e => e.ingredientId === 'bread').totals.g, 120); // 60g -> 120g (pranzo A)
+  assert.equal(list.find(e => e.ingredientId === 'whole-eggs').totals.pz, 3); // uova invariate
+});
+
+test('lista spesa converte pasta di un pranzo spostato a cena in pane 60g', () => {
+  const days = { monday: { type: 'training', dinner: 'P1' } };
+  const recipesById = {
+    P1: recipe('P1', 'Pasta al tonno', 'lunch', [
+      ingredient('Pasta', { ipoTraining: '90g', ipoRest: '70g', manTraining: '90g', manRest: '70g' }),
+      ingredient('Tonno al naturale', { ipoTraining: '150g', ipoRest: '150g', manTraining: '150g', manRest: '150g' }, 'tuna')
+    ], 'Altro pesce e molluschi')
+  };
+  const list = d.aggregateShopping(planWith(days), recipesById, { monday: ['dinner'] }, 'man', {}, { cenaFallbackKey: 'pane' });
+  assert.equal(list.find(e => e.ingredientId === 'bread').totals.g, 60); // pasta -> pane 60g
+  assert.equal(list.find(e => e.ingredientId === 'tuna').totals.g, 150); // proteina invariata
+  assert.ok(!list.find(e => e.ingredientId === 'pasta'), 'la pasta non resta come voce separata');
+});
+
+test('lista spesa non adatta le ricette nel loro slot nativo', () => {
+  const days = { monday: { type: 'training', dinner: 'D1' } };
+  const recipesById = {
+    D1: recipe('D1', 'Cena con pane', 'dinner', [
+      ingredient('Pane', { ipoTraining: '60g', ipoRest: '60g', manTraining: '60g', manRest: '60g' }, 'bread')
+    ], 'Pollame')
+  };
+  const list = d.aggregateShopping(planWith(days), recipesById, { monday: ['dinner'] }, 'man', {}, { cenaFallbackKey: 'pane' });
+  assert.equal(list.find(e => e.ingredientId === 'bread').totals.g, 60); // dose nativa, non adattata
+});
+
 // ---- Batch cooking ----
 
 function batchFixture() {
@@ -553,11 +661,11 @@ test('buildBackup contiene catalogo, piano, spesa e metadati operazione', () => 
 
 // ---- Service worker e PWA ----
 
-test('service worker: shell v16 derivata da una sola versione con asset esistenti', () => {
+test('service worker: shell versionata derivata da una sola versione con asset esistenti', () => {
   const sw = fs.readFileSync(path.join(ROOT, 'sw.js'), 'utf8');
   const versionMatch = sw.match(/const CACHE_VERSION = (\d+);/);
   assert.ok(versionMatch, 'CACHE_VERSION presente');
-  assert.equal(Number(versionMatch[1]), 16);
+  assert.equal(Number(versionMatch[1]), 17);
   assert.equal((sw.match(/const CACHE_VERSION/g) || []).length, 1);
   assert.match(sw, /const CACHE = `piano-nutrizionale-shell-v\$\{CACHE_VERSION\}`;/);
   assert.match(sw, /incrementare CACHE_VERSION a OGNI modifica di CSS, JS o index\.html/);

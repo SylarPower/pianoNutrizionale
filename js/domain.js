@@ -341,8 +341,89 @@
     return { value, unit };
   }
 
+  // ----- Adattamento carboidrati pranzo <-> cena -----
+
+  // Tabella di riferimento delle quantità di carboidrato (in grammi) per pasto
+  // e tipo di giornata, secondo le linee guida del nutrizionista. La cena ha
+  // gli stessi valori in Allenamento e Riposo; solo il pranzo differisce.
+  // L'ordine conta per il riconoscimento: le voci più specifiche vengono prima
+  // (gnocchi di patate prima di patate).
+  const CARB_REFERENCE = [
+    { key: 'gnocchi', match: /gnocch/, label: 'Gnocchi di patate', pranzo: { training: 250, rest: 190 }, cena: null },
+    { key: 'polenta', match: /polenta/, label: 'Polenta cotta', pranzo: { training: 430, rest: 340 }, cena: { training: 220, rest: 220 } },
+    { key: 'piadina', match: /piadina/, label: 'Piadina', pranzo: { training: 110, rest: 80 }, cena: null },
+    { key: 'pseudo', match: /quinoa|grano saraceno|amaranto/, label: 'Quinoa/Grano saraceno/Amaranto', pranzo: { training: 80, rest: 60 }, cena: null },
+    { key: 'farroorzo', match: /\b(farro|orzo)\b/, label: 'Farro/Orzo', pranzo: { training: 90, rest: 70 }, cena: null },
+    { key: 'pasta', match: /pasta/, label: 'Pasta', pranzo: { training: 90, rest: 70 }, cena: null },
+    { key: 'riso', match: /\briso\b|risotto/, label: 'Riso', pranzo: { training: 90, rest: 70 }, cena: null },
+    { key: 'crackers', match: /cracker|grissin|crostin/, label: 'Crackers/Grissini/Crostini', pranzo: { training: 70, rest: 60 }, cena: { training: 40, rest: 40 } },
+    { key: 'patate', match: /patat/, label: 'Patate', pranzo: { training: 450, rest: 350 }, cena: { training: 230, rest: 230 } },
+    { key: 'pane', match: /\bpane\b/, label: 'Pane', pranzo: { training: 120, rest: 90 }, cena: { training: 60, rest: 60 } }
+  ];
+
+  // Carboidrati ammessi a cena: il fallback "pranzo -> cena" usa quello scelto
+  // nelle impostazioni quando il carboidrato originale non è previsto a cena
+  // (pasta, riso, gnocchi, quinoa, piadina, farro, orzo).
+  const CENA_CARB_OPTIONS = [
+    { key: 'pane', label: 'Pane', amounts: { training: 60, rest: 60 } },
+    { key: 'crackers', label: 'Crackers / Grissini / Crostini', amounts: { training: 40, rest: 40 } },
+    { key: 'patate', label: 'Patate', amounts: { training: 230, rest: 230 } },
+    { key: 'polenta', label: 'Polenta cotta', amounts: { training: 220, rest: 220 } }
+  ];
+  const DEFAULT_CENA_CARB_KEY = 'pane';
+
+  function cenaCarbOption(key) {
+    const fallback = CENA_CARB_OPTIONS.find(option => option.key === DEFAULT_CENA_CARB_KEY);
+    return CENA_CARB_OPTIONS.find(option => option.key === key) || fallback;
+  }
+
+  function carbSourceForName(name) {
+    const value = aliasKey(name);
+    if (!value) return null;
+    return CARB_REFERENCE.find(source => source.match.test(value)) || null;
+  }
+
+  function isPranzoCenaCross(nativeSlot, assignedSlot) {
+    return (nativeSlot === 'lunch' && assignedSlot === 'dinner') ||
+      (nativeSlot === 'dinner' && assignedSlot === 'lunch');
+  }
+
+  // Adatta un ingrediente carboidrato quando la sua ricetta viene collocata nel
+  // pasto opposto (pranzo <-> cena). Restituisce { name, ingredientId, portions }
+  // solo per i carboidrati da adattare, altrimenti null (ingrediente invariato).
+  // Solo i carboidrati cambiano: proteine, uova, verdura e condimenti restano
+  // uguali. options.cenaFallbackKey sceglie il carboidrato cena di default per
+  // la conversione pranzo -> cena dei carboidrati non previsti a cena.
+  function adaptIngredientForSlot(ingredient, nativeSlot, assignedSlot, options = {}) {
+    if (!ingredient || !isPranzoCenaCross(nativeSlot, assignedSlot)) return null;
+    const source = carbSourceForName(ingredient.name);
+    if (!source) return null;
+    const isCena = assignedSlot === 'dinner';
+    let amounts = isCena ? source.cena : source.pranzo;
+    let name = ingredient.name;
+    let ingredientId = ingredient.ingredientId || ingredientIdFor(ingredient.name);
+    if (!amounts) {
+      const fallback = cenaCarbOption(options.cenaFallbackKey);
+      amounts = fallback.amounts;
+      name = fallback.label;
+      ingredientId = ingredientIdFor(name);
+    }
+    return {
+      name,
+      ingredientId,
+      portions: {
+        ipoTraining: `${amounts.training}g`,
+        ipoRest: `${amounts.rest}g`,
+        manTraining: `${amounts.training}g`,
+        manRest: `${amounts.rest}g`
+      }
+    };
+  }
+
   // Aggrega la lista della spesa per ingredientId. Le dosi "—" vengono saltate.
-  function aggregateShopping(plan, recipesById, selectedMeals, profile = 'man', canonicalLabels = {}) {
+  // options.cenaFallbackKey propaga il carboidrato cena di default scelto nelle
+  // impostazioni per l'adattamento dei carboidrati nei pasti incrociati.
+  function aggregateShopping(plan, recipesById, selectedMeals, profile = 'man', canonicalLabels = {}, options = {}) {
     const out = {};
     DAYS.forEach(day => {
       const dayType = plan?.days?.[day]?.type || 'rest';
@@ -350,15 +431,19 @@
         const recipe = recipesById?.[plan?.days?.[day]?.[slot]];
         if (!recipe) return;
         (recipe.ingredients || []).forEach(ingredient => {
-          const amount = portionFor(ingredient, profile, dayType);
+          const adapted = adaptIngredientForSlot(ingredient, recipe.slot, slot, { cenaFallbackKey: options.cenaFallbackKey });
+          const effective = adapted
+            ? { ...ingredient, name: adapted.name, ingredientId: adapted.ingredientId, portions: adapted.portions }
+            : ingredient;
+          const amount = portionFor(effective, profile, dayType);
           const entries = profile === 'couple' && amount && typeof amount === 'object'
             ? [{ role: 'Uomo', raw: amount.man }, { role: 'Donna IPO', raw: amount.ipo }]
             : [{ role: profile === 'ipo' ? 'Donna IPO' : 'Uomo', raw: amount }];
-          const id = ingredientIdFor(ingredient.name, ingredient.ingredientId);
+          const id = ingredientIdFor(effective.name, effective.ingredientId);
           const entry = out[id] || (out[id] = {
             ingredientId: id,
-            name: canonicalLabels[id] || ingredient.name,
-            category: categoryForIngredient(ingredient.name),
+            name: canonicalLabels[id] || effective.name,
+            category: categoryForIngredient(effective.name),
             totals: {},
             opaque: {},
             free: false,
@@ -837,6 +922,13 @@
     categoryForIngredient,
     isEmptyPortion,
     parseSimpleAmount,
+    CARB_REFERENCE,
+    CENA_CARB_OPTIONS,
+    DEFAULT_CENA_CARB_KEY,
+    cenaCarbOption,
+    carbSourceForName,
+    isPranzoCenaCross,
+    adaptIngredientForSlot,
     aggregateShopping,
     swapMeals,
     copyMeal,

@@ -17,6 +17,7 @@ WebApp PWA privata per gestire colazioni, spuntini, pranzi, cene, batch cooking 
 - crackers dello spuntino mattutino aggiunti nei giorni A e rimossi nei giorni R (dinamici, derivati dal piano);
 - vista ricetta completa in una singola schermata (ingredienti, quantità, preparazione, note e batch cooking);
 - operazioni sui pasti: sostituisci con una ricetta, scambia con un altro giorno, copia in un altro giorno, ripristina scelta iniziale;
+- **sostituzione pranzo ↔ cena** con adattamento automatico dei carboidrati alle dosi del pasto (es. frittata di cena a pranzo con pane da 120g invece di 60g);
 - generatore automatico della settimana con vincoli nutrizionali, blocchi pasto/giornata, seed riproducibile, anteprima e diff;
 - batch cooking dinamico basato su `batchTemplates` strutturati (cena di oggi → pranzo futuro), con stato “Prepara oggi / Prepara al momento / Non ancora preparabile” e quantità calcolate da profilo, ricetta target e tipo A/R del giorno target;
 - backup precedente (`users/{uid}/backups/previous`) e **Annulla ultima modifica** prima delle operazioni distruttive;
@@ -514,12 +515,32 @@ Nelle **Impostazioni** è disponibile **Annulla ultima modifica**, con conferma,
 
 Nella vista **Settimana** ogni pasto ha un menu operazioni:
 
-- **Sostituisci con una ricetta** (stesso tipo pasto);
+- **Sostituisci con una ricetta** (stesso tipo pasto). Per pranzo e cena sono mostrate anche le ricette del **pasto opposto**: i carboidrati vengono adattati alle quantità del pasto di destinazione (vedi sotto);
 - **Scambia con altro pasto** (bidirezionale, solo stesso tipo: `breakfast ↔ breakfast`, `snack1 ↔ snack1`, `lunch ↔ lunch`, `snack2 ↔ snack2`, `dinner ↔ dinner`);
 - **Copia in altro giorno** (il sorgente resta invariato);
 - **Ripristina scelta iniziale** (torna a `defaultDays`).
 
 Ogni operazione chiede conferma, salva il piano una sola volta e aggiorna batch, lista spesa, frequenze e feedback. Il piano resta coerente con le ricette mancanti.
+
+## Adattamento carboidrati pranzo ↔ cena
+
+Quando una ricetta di cena viene collocata a pranzo (o viceversa), **solo il carboidrato** viene ricalcolato alle quantità del pasto di destinazione; proteine, uova, verdura e condimenti restano invariati. Le quantità seguono le linee guida del nutrizionista e distinguono giorno di Allenamento e Riposo per il pranzo (la cena è uguale in A e R):
+
+| Carboidrato | Pranzo (A / R) | Cena |
+|---|---|---|
+| Pasta, Riso | 90 / 70g | non previsto |
+| Gnocchi di patate | 250 / 190g | non previsto |
+| Quinoa, Grano saraceno, Amaranto | 80 / 60g | non previsto |
+| Piadina | 110 / 80g | non previsto |
+| Farro, Orzo | 90 / 70g | non previsto |
+| Pane | 120 / 90g | 60g |
+| Crackers, Grissini, Crostini | 70 / 60g | 40g |
+| Patate | 450 / 350g | 230g |
+| Polenta cotta | 430 / 340g | 220g |
+
+Andando **pranzo → cena**, i carboidrati non previsti a cena (pasta, riso, gnocchi, quinoa, piadina, farro, orzo) vengono **convertiti nel carboidrato cena di default** (Pane 60g), scelto nelle **Impostazioni → Sostituzioni pranzo ↔ cena**. Andando **cena → pranzo** non ci sono conversioni: pane, crackers, patate e polenta esistono in entrambi i pasti e cambia solo la quantità. I valori sono uguali per tutti i profili porzioni (Uomo, Donna IPO, Coppia).
+
+L'adattamento è applicato ovunque le dosi vengono mostrate o sommate: vista **Oggi**, modale ricetta (con avviso e marcatore ↻ sugli ingredienti adattati), vista **Settimana** (piccolo ↻ sul pasto) e **Lista della spesa** (le quantità tengono conto del pasto in cui la ricetta è collocata). Le funzioni pure sono in `js/domain.js` (`adaptIngredientForSlot`, `carbSourceForName`, `isPranzoCenaCross`).
 
 # Generatore automatico della settimana
 
@@ -620,7 +641,7 @@ npm run syntax
 git diff --check
 ```
 
-I test (`test/domain.test.js`) coprono: migrazioni schema 3→4 e idempotenza, alias ingredienti, ingredienti senza ID, porzioni legacy, lista spesa per `ingredientId`, profili Uomo/Donna IPO/Coppia, crackers A/R, batch indipendente da A/R, batch cena→pranzo futuro, attraversamento domenica→lunedì, batch parziale, `maxDays` diversi, quantità target A/R, copia/scambio pasti, blocchi, generatore e vincoli, cataloghi vuoto/insufficiente, riferimenti piano mancanti, import Aggiungi/Sostituisci, conflitti condivisione (solo ricette/solo settimana/completa), backup, service worker (shell, cache, fallback offline, aggiornamento).
+I test (`test/domain.test.js`) coprono: migrazioni schema 3→4 e idempotenza, alias ingredienti, ingredienti senza ID, porzioni legacy, lista spesa per `ingredientId`, profili Uomo/Donna IPO/Coppia, crackers A/R, **adattamento carboidrati pranzo↔cena** (riconoscimento carboidrati, conversione dosi A/R, fallback configurabile pranzo→cena, propagazione alla lista spesa), batch indipendente da A/R, batch cena→pranzo futuro, attraversamento domenica→lunedì, batch parziale, `maxDays` diversi, quantità target A/R, copia/scambio pasti, blocchi, generatore e vincoli, cataloghi vuoto/insufficiente, riferimenti piano mancanti, import Aggiungi/Sostituisci, conflitti condivisione (solo ricette/solo settimana/completa), backup, service worker (shell, cache, fallback offline, aggiornamento).
 
 Smoke test locale:
 

@@ -262,7 +262,10 @@ function getDefaultDeviceSettings() {
     lastOpenDate: null,
     // Tipo giornata (A/R) scelto nell'anteprima del ricettario: resta finché
     // l'utente non lo cambia di nuovo manualmente.
-    recipePreviewDayType: "training"
+    recipePreviewDayType: "training",
+    // Carboidrato di default usato quando una ricetta di pranzo viene spostata
+    // a cena e il suo carboidrato non è previsto a cena (pasta, riso, ecc.).
+    crossSlotCenaCarb: "pane"
   };
 }
 
