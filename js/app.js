@@ -2251,7 +2251,7 @@ const GENERATOR_PREFS_DEFAULTS = {
     legumesMin: 3, legumesMax: 4,
     omegaMin: 2, omegaMax: 3,
     poultryMin: 1, poultryMax: 2,
-    beefMax: 1,
+    beefMin: 0, beefMax: 1,
     dairyMin: 1, dairyMax: 2,
     eggsMin: 1, eggsMax: 2,
     otherFishMin: 1, otherFishMax: 2
@@ -2483,7 +2483,7 @@ function generatorCountStatus(key, value) {
   const constraints = getGeneratorPrefs().constraints;
   const ranges = {
     poultry: [constraints.poultryMin, constraints.poultryMax],
-    beef: [0, constraints.beefMax],
+    beef: [constraints.beefMin, constraints.beefMax],
     omega: [constraints.omegaMin, constraints.omegaMax],
     otherFish: [constraints.otherFishMin, constraints.otherFishMax],
     dairy: [constraints.dairyMin, constraints.dairyMax],
