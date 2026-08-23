@@ -830,6 +830,40 @@ test('analyzeShare: nuove, identiche, conflitti e ingredienti migrati', () => {
   assert.equal(analysis.migratedIngredients, 1);
 });
 
+test('classifica manzo-maiale e affettati-carnI miste in categorie distinte', () => {
+  assert.equal(
+    d.classifyProtein({ ingredients: [{ name: 'Lonza di maiale' }] }),
+    'beef'
+  );
+
+  assert.equal(
+    d.classifyProtein({ ingredients: [{ name: 'Bresaola' }] }),
+    'curedMeats'
+  );
+
+  assert.equal(
+    d.classifyProtein({ ingredients: [{ name: 'Macinato misto' }] }),
+    'curedMeats'
+  );
+});
+
+test('vincoli nutrizionali di default aggiornati', () => {
+  assert.equal(d.DEFAULT_CONSTRAINTS.legumesMin, 3);
+  assert.equal(d.DEFAULT_CONSTRAINTS.legumesMax, 14);
+
+  assert.equal(d.DEFAULT_CONSTRAINTS.beefMin, 0);
+  assert.equal(d.DEFAULT_CONSTRAINTS.beefMax, 1);
+
+  assert.equal(d.DEFAULT_CONSTRAINTS.curedMeatsMin, 0);
+  assert.equal(d.DEFAULT_CONSTRAINTS.curedMeatsMax, 1);
+
+  assert.equal(d.DEFAULT_CONSTRAINTS.dairyMin, 1);
+  assert.equal(d.DEFAULT_CONSTRAINTS.dairyMax, 2);
+
+  assert.equal(d.DEFAULT_CONSTRAINTS.eggsMin, 1);
+  assert.equal(d.DEFAULT_CONSTRAINTS.eggsMax, 2);
+});
+
 test('risoluzione conflitti: mantieni la mia', () => {
   const { current, incoming } = shareFixture();
   const resolved = d.resolveRecipeConflicts(current, incoming, { A: 'mine' });
