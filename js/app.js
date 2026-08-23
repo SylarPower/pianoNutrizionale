@@ -2274,6 +2274,8 @@ function getGeneratorPrefs() {
 }
 
 function saveGeneratorPrefs(updater) {
+  const advancedWasOpen = document.getElementById("generator-advanced")?.open;
+
   const current = getGeneratorPrefs();
   const next = typeof updater === "function" ? updater(current) : { ...current, ...updater };
   appState.deviceSettings = appState.deviceSettings || {};
@@ -2281,6 +2283,10 @@ function saveGeneratorPrefs(updater) {
   saveLocalDeviceSettings(appState.deviceSettings);
   generatorState.proposal = null;
   renderGeneratorModal();
+
+  if (advancedWasOpen) {
+    document.getElementById("generator-advanced").open = true;
+  }
 }
 
 function setupGeneratorModal() {
@@ -2418,8 +2424,8 @@ function renderGeneratorParams() {
         </select>
       </label>
     </div>
-    <details class="generator-advanced">
-      <summary>Frequenze proteiche min–max <small>(impostazioni avanzate)</small></summary>
+  <details id="generator-advanced" class="generator-advanced">
+<summary>Frequenze proteiche min–max <small>(impostazioni avanzate)</small></summary>
       <p class="text-muted">Quanti pasti a settimana per ogni categoria. Il generatore cerca di restare nell'intervallo e avvisa quando non è possibile.</p>
       <div class="generator-constraints-grid">${constraintRows}</div>
     </details>`;
