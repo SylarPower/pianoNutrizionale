@@ -1087,7 +1087,7 @@ const PROTEIN_CATEGORY_LABELS = {
       if (chosen[targetDay]?.dinner === recipe.id || previousSlotValue(targetDay, 'lunch') === recipe.id) return false;
       return true;
     };
-    const pairScore = (recipe, anchorDay) => {
+    const pairScore = (recipe, anchorDay, targetDay) => {
       const category = classifyProtein(recipe);
       let score = rand() * 2;
       if (category && counts[category] < minFor(category)) score += 7;
@@ -1109,7 +1109,7 @@ const PROTEIN_CATEGORY_LABELS = {
       const candidates = pairPool().filter(recipe => pairCandidateOk(recipe, anchorDay, targetDay));
       if (!candidates.length) return;
       const best = candidates
-        .map(recipe => ({ recipe, score: pairScore(recipe, anchorDay) }))
+        .map(recipe => ({ recipe, score: pairScore(recipe, anchorDay, targetDay) }))
         .sort((a, b) => b.score - a.score)[0].recipe;
       chosen[anchorDay].dinner = best.id;
       chosen[targetDay].lunch = best.id;
