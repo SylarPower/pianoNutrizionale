@@ -62,12 +62,12 @@
   };
 
   const DEFAULT_CONSTRAINTS = {
-    legumesMin: 3, legumesMax: 4,
-    omegaMin: 2, omegaMax: 3,
+    legumesMin: 3, legumesMax: 14,
+    omegaMin: 2, omegaMax: 7,
     poultryMin: 1, poultryMax: 2,
-    beefMax: 1,
-    dairyMin: 1, dairyMax: 2,
-    eggsMin: 1, eggsMax: 2,
+    beefMin: 0, beefMax: 1,
+    dairyMin: 2, dairyMax: 4,
+    eggsMin: 2, eggsMax: 4,
     otherFishMin: 1, otherFishMax: 2
   };
 
@@ -774,14 +774,13 @@
   // ----- Generatore settimanale (funzioni pure, nessun DOM) -----
 
   // Categorie proteiche riconosciute dal generatore, con le chiavi min/max
-  // dentro `constraints`. Manzo/vitello ha solo il massimo (nessun obbligo).
   const PROTEIN_CATEGORIES = ['legumes', 'omega', 'otherFish', 'poultry', 'beef', 'dairy', 'eggs'];
   const PROTEIN_CONSTRAINT_KEYS = {
     legumes: { min: 'legumesMin', max: 'legumesMax' },
     omega: { min: 'omegaMin', max: 'omegaMax' },
     otherFish: { min: 'otherFishMin', max: 'otherFishMax' },
     poultry: { min: 'poultryMin', max: 'poultryMax' },
-    beef: { min: null, max: 'beefMax' },
+    beef: { min: 'beefMin', max: 'beefMax' },
     dairy: { min: 'dairyMin', max: 'dairyMax' },
     eggs: { min: 'eggsMin', max: 'eggsMax' }
   };
