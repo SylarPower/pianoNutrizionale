@@ -773,6 +773,52 @@
 
   // ----- Generatore settimanale (funzioni pure, nessun DOM) -----
 
+  // Categorie proteiche riconosciute dal generatore, con le chiavi min/max
+  // dentro `constraints`. Manzo/vitello ha solo il massimo (nessun obbligo).
+  const PROTEIN_CATEGORIES = ['legumes', 'omega', 'otherFish', 'poultry', 'beef', 'dairy', 'eggs'];
+  const PROTEIN_CONSTRAINT_KEYS = {
+    legumes: { min: 'legumesMin', max: 'legumesMax' },
+    omega: { min: 'omegaMin', max: 'omegaMax' },
+    otherFish: { min: 'otherFishMin', max: 'otherFishMax' },
+    poultry: { min: 'poultryMin', max: 'poultryMax' },
+    beef: { min: null, max: 'beefMax' },
+    dairy: { min: 'dairyMin', max: 'dairyMax' },
+    eggs: { min: 'eggsMin', max: 'eggsMax' }
+  };
+  const PROTEIN_CATEGORY_LABELS = {
+    legumes: 'Legumi',
+    omega: 'Pesce omega-3',
+    otherFish: 'Altro pesce/molluschi',
+    poultry: 'Pollame',
+    beef: 'Manzo/Vitello',
+    dairy: 'Latticini/Formaggi',
+    eggs: 'Uova'
+  };
+
+  // Euristica di ripiego per ricette senza `proteinCategory` riconosciuto (es.
+  // ricette create a mano senza categoria): la categoria viene dedotta dagli
+  // ingredienti, nell'ordine in cui compaiono. Usata solo dal generatore.
+  const PROTEIN_INGREDIENT_HINTS = [
+    { category: 'omega', match: /salmone|sgombro|sardine?|aringa|alice|acciug/ },
+    { category: 'otherFish', match: /merluzzo|nasello|sogliola|orata|branzino|spigola|tonno|calamar|polpo|seppi|spada|trota|platessa|cozze|vongole|gamber|crostace|mollusch|pesce/ },
+    { category: 'poultry', match: /pollo|tacchin/ },
+    { category: 'beef', match: /manzo|vitello|carne/ },
+    { category: 'legumes', match: /ceci|lenticch|fagiol|edamame|pisell|tofu|tempeh|legumott/ },
+    { category: 'dairy', match: /ricotta|mozzarella|caprino|crescenza|robiola|feta|montasio|parmigiano|grana|fiocchi di latte/ },
+    { category: 'eggs', match: /\buov|albume/ }
+  ];
+
+  function inferProteinCategoryFromIngredients(recipe) {
+    const ingredients = recipe?.ingredients || [];
+    for (const ingredient of ingredients) {
+      const name = aliasKey(ingredient?.name);
+      if (!name) continue;
+      const hit = PROTEIN_INGREDIENT_HINTS.find(hint => hint.match.test(name));
+      if (hit) return hit.category;
+    }
+    return null;
+  }
+
   function classifyProtein(recipe) {
     const category = String(recipe?.proteinCategory || '').toLowerCase();
     if (/pollame/i.test(category)) return 'poultry';
@@ -782,7 +828,7 @@
     if (/latticini|formaggi/i.test(category)) return 'dairy';
     if (/uova/i.test(category)) return 'eggs';
     if (/legumi/i.test(category)) return 'legumes';
-    return null;
+    return inferProteinCategoryFromIngredients(recipe);
   }
 
   function isFishRecipe(recipe) {
@@ -824,98 +870,97 @@
     return copy;
   }
 
-  function countViolates(category, counts, constraints) {
-    if (category === 'poultry') return counts.poultry >= constraints.poultryMax;
-    if (category === 'beef') return counts.beef >= constraints.beefMax;
-    if (category === 'omega') return counts.omega >= constraints.omegaMax;
-    if (category === 'otherFish') return counts.otherFish >= constraints.otherFishMax;
-    if (category === 'dairy') return counts.dairy >= constraints.dairyMax;
-    if (category === 'eggs') return counts.eggs >= constraints.eggsMax;
-    if (category === 'legumes') return counts.legumes >= constraints.legumesMax;
-    return false;
-  }
-
-  // Genera una proposta di settimana rispettando A/R, frequenze proteiche e blocchi.
-  // Non modifica mai i dosaggi. Il risultato è riproducibile con lo stesso seed.
+  // Genera una proposta di settimana "solida e ottimizzata": rispetta i tipi
+  // A/R e i blocchi, insegue min E max delle frequenze proteiche, limita le
+  // ripetizioni della stessa ricetta e può programmare accoppiate cena →
+  // pranzo per il batch cooking "doppia porzione". Non modifica mai i dosaggi.
+  // Il risultato è riproducibile con lo stesso seed.
+  //
+  // Opzioni (tutte facoltative):
+  //   plan            piano attuale (tipi A/R, blocchi batch, pasti mantenuti)
+  //   seed            numero/stringa per la riproducibilità
+  //   blocks          come prima: blocco singolo pasto o intera giornata
+  //   constraints     min/max per categoria (uniti ai DEFAULT_CONSTRAINTS)
+  //   templates       batchTemplates strutturali (bonus accoppiata anchor/target)
+  //   batchPairs      n. di accoppiate cena → pranzo del giorno dopo (0-7)
+  //   maxRepeats      apparizioni massime della stessa ricetta (default 2)
+  //   allowCrossSlot  le ricette di pranzo/cena possono finire nell'altro pasto
+  //                   (carboidrati adattati automaticamente dal resto dell'app)
+  //   slots           quali slot rigenerare: { breakfast, snack1, lunch, snack2, dinner }
   function generateWeek(catalog = [], options = {}) {
-    const rand = seededRandom(options.seed ?? Date.now());
+    const seedUsed = options.seed ?? Date.now();
+    const rand = seededRandom(seedUsed);
     const currentPlan = options.plan && options.plan.days ? options.plan : emptyPlan();
     const blocks = options.blocks || {};
     const constraints = { ...DEFAULT_CONSTRAINTS, ...(options.constraints || {}) };
     const warnings = [];
     const recipes = (catalog || []).map(migrateRecipe);
+    const recipesById = Object.fromEntries(recipes.map(recipe => [recipe.id, recipe]));
+
+    const slotsEnabled = {
+      breakfast: true, snack1: true, lunch: true, snack2: true, dinner: true,
+      ...(options.slots || {})
+    };
+    const batchPairsWanted = Math.max(0, Math.min(7, Math.floor(Number(options.batchPairs) || 0)));
+    const maxRepeats = Math.max(1, Math.min(7, Math.floor(Number(options.maxRepeats) || 2)));
+    const allowCrossSlot = Boolean(options.allowCrossSlot);
+
+    const minFor = category => {
+      const key = PROTEIN_CONSTRAINT_KEYS[category]?.min;
+      const value = key ? Number(constraints[key]) : 0;
+      return Number.isFinite(value) ? Math.max(0, value) : 0;
+    };
+    const maxFor = category => {
+      const key = PROTEIN_CONSTRAINT_KEYS[category]?.max;
+      const value = key ? Number(constraints[key]) : NaN;
+      return Number.isFinite(value) ? Math.max(minFor(category), value) : Infinity;
+    };
 
     if (!recipes.length) warnings.push('Catalogo vuoto: nessuna settimana generabile.');
     else if (recipes.length < 14) warnings.push(`Catalogo ridotto (${recipes.length} ricette): potrebbe non essere possibile rispettare tutte le frequenze.`);
 
     const bySlot = {};
     SLOTS.forEach(slot => { bySlot[slot] = recipes.filter(recipe => recipe.slot === slot); });
+    // Col cross-slot pranzo e cena pescano da entrambe le fonti: nel resto
+    // dell'app i carboidrati vengono adattati alle dosi del pasto di destinazione.
+    const poolFor = slot => {
+      const base = bySlot[slot] || [];
+      if (!allowCrossSlot || (slot !== 'lunch' && slot !== 'dinner')) return base;
+      const opposite = bySlot[slot === 'lunch' ? 'dinner' : 'lunch'] || [];
+      return base.concat(opposite);
+    };
 
     const counts = { poultry: 0, beef: 0, omega: 0, otherFish: 0, dairy: 0, eggs: 0, legumes: 0 };
     const fishToday = {};
-    const lastUsed = {};
+    const usage = {};
+    const chosen = {};
+    const pairs = [];
 
-    const templates = (options.templates && Array.isArray(options.templates) ? options.templates : currentPlan.batchTemplates || []).slice();
-    const anchorTemplates = {};
-    const targetTemplates = {};
-    templates.forEach(template => {
-      const anchorId = template?.anchor?.recipeId;
-      const targetId = template?.target?.recipeId;
-      if (anchorId) (anchorTemplates[anchorId] ||= []).push(template);
-      if (targetId) (targetTemplates[targetId] ||= []).push(template);
-    });
-
-    const batchScore = (candidate, day, slot, chosen) => {
-      if (slot === 'dinner' && anchorTemplates[candidate.id]) {
-        for (const template of anchorTemplates[candidate.id]) {
-          const look = template.target?.lookAheadDays || 3;
-          for (let n = 1; n <= look; n++) {
-            const futureDay = DAYS[(DAYS.indexOf(day) + n) % 7];
-            if ((chosen[futureDay]?.lunch || currentPlan.days?.[futureDay]?.lunch) === template.target?.recipeId) return 1;
-          }
-        }
-      }
-      if (slot === 'lunch' && targetTemplates[candidate.id]) {
-        for (const template of targetTemplates[candidate.id]) {
-          const look = template.target?.lookAheadDays || 3;
-          for (let n = 1; n <= look; n++) {
-            const anchorDay = DAYS[(DAYS.indexOf(day) - n + 7) % 7];
-            if ((chosen[anchorDay]?.dinner || currentPlan.days?.[anchorDay]?.dinner) === template.anchor?.recipeId) return 1;
-          }
-        }
-      }
-      return 0;
+    const fishCountOn = day => (fishToday[day] || 0);
+    const isFishy = recipe => {
+      const category = classifyProtein(recipe);
+      return category === 'omega' || category === 'otherFish';
     };
+    const nextDayOf = day => DAYS[(DAYS.indexOf(day) + 1) % 7];
+    const prevDayOf = day => DAYS[(DAYS.indexOf(day) + 6) % 7];
 
-    const isProteinSlot = slot => slot === 'lunch' || slot === 'dinner';
-
-    const pickFor = (day, slot, candidates, chosen) => {
-      const available = candidates.filter(candidate => {
-        if (lastUsed[slot] === candidate.id) return false;
-        const category = classifyProtein(candidate);
-        if (isProteinSlot(slot)) {
-          if (countViolates(category, counts, constraints)) return false;
-          if ((category === 'omega' || category === 'otherFish') && (fishToday[day] || 0) >= 1) return false;
-        }
-        return true;
-      });
-      if (!available.length) {
-        const fallback = candidates.filter(candidate => {
-          if (!isProteinSlot(slot)) return true;
-          const category = classifyProtein(candidate);
-          return !((category === 'omega' || category === 'otherFish') && (fishToday[day] || 0) >= 1);
-        });
-        if (fallback.length) {
-          warnings.push(`Vincoli rilassati per ${DAY_LABELS[day]} ${SLOT_LABELS[slot]}: alcune frequenze potrebbero non essere rispettate.`);
-          return shuffle(fallback, rand)[0];
-        }
-        return null;
-      }
-      const shuffled = shuffle(available, rand);
-      const scored = shuffled
-        .map(candidate => ({ candidate, score: batchScore(candidate, day, slot, chosen) }))
-        .sort((a, b) => b.score - a.score);
-      return scored[0].candidate;
+    // Registra un pasto confermato: conta nel totale settimanale della sua
+    // categoria, nel limite "massimo un pesce al giorno" e nelle ripetizioni.
+    const registerMeal = (day, slot, recipe) => {
+      if (!recipe) return;
+      usage[recipe.id] = (usage[recipe.id] || 0) + 1;
+      if (slot !== 'lunch' && slot !== 'dinner') return;
+      const category = classifyProtein(recipe);
+      if (category && counts[category] !== undefined) counts[category] += 1;
+      if (isFishy(recipe)) fishToday[day] = fishCountOn(day) + 1;
+    };
+    const unregisterMeal = (day, slot, recipe) => {
+      if (!recipe) return;
+      usage[recipe.id] = Math.max(0, (usage[recipe.id] || 0) - 1);
+      if (slot !== 'lunch' && slot !== 'dinner') return;
+      const category = classifyProtein(recipe);
+      if (category && counts[category] !== undefined) counts[category] = Math.max(0, counts[category] - 1);
+      if (isFishy(recipe)) fishToday[day] = Math.max(0, fishCountOn(day) - 1);
     };
 
     const isBlocked = (day, slot) => {
@@ -925,35 +970,242 @@
       return Boolean(block[slot]);
     };
 
-    const chosen = {};
+    // Stato iniziale: pasti bloccati e slot esclusi dalla generazione restano
+    // come sono e — fondamentale — entrano nei conteggi. Così il totale
+    // settimanale (pesce/giorno compreso) riflette il piano finale completo.
     DAYS.forEach(day => {
       chosen[day] = {};
       SLOTS.forEach(slot => {
         if (isBlocked(day, slot)) {
-          chosen[day][slot] = blocks[day] === 'all' || blocks[day]?.all
-            ? (currentPlan.days?.[day]?.[slot] ?? null)
-            : (blocks[day][slot] ?? currentPlan.days?.[day]?.[slot] ?? null);
+          const block = blocks[day];
+          const explicit = block === 'all' || block.all ? null : block[slot];
+          const value = typeof explicit === 'string' && explicit ? explicit : (currentPlan.days?.[day]?.[slot] ?? null);
+          chosen[day][slot] = value;
+          if (recipesById[value]) registerMeal(day, slot, recipesById[value]);
+        } else if (!slotsEnabled[slot]) {
+          const value = currentPlan.days?.[day]?.[slot] ?? null;
+          chosen[day][slot] = value;
+          if (recipesById[value]) registerMeal(day, slot, recipesById[value]);
         }
       });
     });
 
+    const freeSlot = (day, slot) => chosen[day][slot] === undefined;
+    // Il pasto del giorno prima nello stesso slot (contro le ripetizioni
+    // ravvicinate): preferisce le scelte già decise, ripiega sul piano attuale.
+    const previousSlotValue = (day, slot) => {
+      const prev = prevDayOf(day);
+      return chosen[prev]?.[slot] ?? currentPlan.days?.[prev]?.[slot] ?? null;
+    };
+
+    const relaxedSlots = new Set();
+    const warnRelaxed = (day, slot) => {
+      const key = `${day}-${slot}`;
+      if (relaxedSlots.has(key)) return;
+      relaxedSlots.add(key);
+      warnings.push(`Vincoli rilassati per ${DAY_LABELS[day]} ${SLOT_LABELS[slot]}: alcune frequenze o ripetizioni potrebbero non essere rispettate.`);
+    };
+
+    // Bonus accoppiate dei batchTemplates strutturali (cena anchor, pranzo
+    // target entro lookAheadDays): premia chiudere la combinazione con un
+    // pasto già deciso, in entrambe le direzioni temporali.
+    const templates = (options.templates && Array.isArray(options.templates) ? options.templates : currentPlan.batchTemplates || []).slice();
+    const anchorTemplates = {};
+    const targetTemplates = {};
+    templates.forEach(template => {
+      const anchorId = template?.anchor?.recipeId;
+      const targetId = template?.target?.recipeId;
+      if (anchorId) (anchorTemplates[anchorId] ||= []).push(template);
+      if (targetId) (targetTemplates[targetId] ||= []).push(template);
+    });
+    const templatePairBonus = (candidate, day, slot) => {
+      if (slot === 'dinner' && anchorTemplates[candidate.id]) {
+        for (const template of anchorTemplates[candidate.id]) {
+          const look = template.target?.lookAheadDays || 3;
+          for (let n = 1; n <= look; n++) {
+            const futureDay = DAYS[(DAYS.indexOf(day) + n) % 7];
+            if ((chosen[futureDay]?.lunch ?? currentPlan.days?.[futureDay]?.lunch) === template.target?.recipeId) return 1;
+          }
+        }
+      }
+      if (slot === 'lunch' && targetTemplates[candidate.id]) {
+        for (const template of targetTemplates[candidate.id]) {
+          const look = template.target?.lookAheadDays || 3;
+          for (let n = 1; n <= look; n++) {
+            const anchorDay = DAYS[(DAYS.indexOf(day) - n + 7) % 7];
+            if ((chosen[anchorDay]?.dinner ?? currentPlan.days?.[anchorDay]?.dinner) === template.anchor?.recipeId) return 1;
+          }
+        }
+      }
+      return 0;
+    };
+
+    // --- Passo 1: batch "doppia porzione" (cena di oggi = pranzo di domani) ---
+    // Le accoppiate vengono pianificate PER PRIME: occupano posti nel piano e
+    // contano per intero nelle frequenze (il pasto si consuma due volte).
+    const pairPool = () => {
+      const pool = allowCrossSlot
+        ? recipes.filter(recipe => recipe.slot === 'lunch' || recipe.slot === 'dinner')
+        : (bySlot.dinner || []);
+      // Nessuna cena nativa disponibile: ripiega sulle ricette di pranzo
+      // (col cross-slot i carboidrati vengono comunque adattati a cena).
+      return pool.length ? pool : recipes.filter(recipe => recipe.slot === 'lunch' || recipe.slot === 'dinner');
+    };
+    const pairCandidateOk = (recipe, anchorDay, targetDay) => {
+      const category = classifyProtein(recipe);
+      // La stessa ricetta occupa due posti: deve starci nei suoi tetti.
+      if ((usage[recipe.id] || 0) + 2 > maxRepeats) return false;
+      if (category && counts[category] + 2 > maxFor(category)) return false;
+      if (isFishy(recipe) && (fishCountOn(anchorDay) >= 1 || fishCountOn(targetDay) >= 1)) return false;
+      // Niente stessa ricetta già affiancata (pranzo/cena dello stesso giorno o il giorno prima).
+      if (chosen[anchorDay]?.lunch === recipe.id || previousSlotValue(anchorDay, 'dinner') === recipe.id) return false;
+      if (chosen[targetDay]?.dinner === recipe.id || previousSlotValue(targetDay, 'lunch') === recipe.id) return false;
+      return true;
+    };
+    const pairScore = recipe => {
+      const category = classifyProtein(recipe);
+      let score = rand() * 2;
+      if (category && counts[category] < minFor(category)) score += 7;
+      if (!category) score -= 1;
+      score -= (usage[recipe.id] || 0) * 3;
+      return score;
+    };
+    const pairDays = shuffle(
+      DAYS.filter(day => freeSlot(day, 'dinner') && freeSlot(nextDayOf(day), 'lunch')),
+      rand
+    );
+    pairDays.forEach(anchorDay => {
+      if (pairs.length >= batchPairsWanted) return;
+      const targetDay = nextDayOf(anchorDay);
+      const candidates = pairPool().filter(recipe => pairCandidateOk(recipe, anchorDay, targetDay));
+      if (!candidates.length) return;
+      const best = candidates
+        .map(recipe => ({ recipe, score: pairScore(recipe) }))
+        .sort((a, b) => b.score - a.score)[0].recipe;
+      chosen[anchorDay].dinner = best.id;
+      chosen[targetDay].lunch = best.id;
+      registerMeal(anchorDay, 'dinner', best);
+      registerMeal(targetDay, 'lunch', best);
+      pairs.push({ anchorDay, targetDay, recipeId: best.id });
+    });
+    // Avvisa solo se gli slot necessari alle coppie erano effettivamente
+    // generabili (pranzo e cena abilitati): altrimenti l'utente li ha esclusi
+    // volontariamente e la mancanza non è un problema.
+    if (batchPairsWanted > pairs.length && slotsEnabled.lunch && slotsEnabled.dinner) {
+      warnings.push(`Batch cena → pranzo: programmate ${pairs.length} accoppiate su ${batchPairsWanted} richieste (giorni liberi o ricette adatte insufficienti).`);
+    }
+
+    // --- Passo 2: riempimento principale di pranzi e cene ---
+    // Vincoli duri: tetto settimanale per categoria, massimo un pesce al
+    // giorno, tetto ripetizioni. Se il pool si svuota si rilassano a gradini
+    // (con un unico avviso per pasto) anziché lasciare il pasto vuoto.
+    const candidateHardOk = (recipe, day, { relaxMax = false, relaxRepeats = false, relaxFish = false } = {}) => {
+      const category = classifyProtein(recipe);
+      if (!category) return true;
+      if (!relaxMax && counts[category] >= maxFor(category)) return false;
+      if (isFishy(recipe) && !relaxFish && fishCountOn(day) >= 1) return false;
+      if (!relaxRepeats && (usage[recipe.id] || 0) >= maxRepeats) return false;
+      return true;
+    };
+    const candidateScore = (recipe, day, slot) => {
+      const category = classifyProtein(recipe);
+      let score = rand() * 2;
+      if (category && counts[category] < minFor(category)) score += 8;
+      score += templatePairBonus(recipe, day, slot) * 4;
+      if (!category) score -= 1;
+      score -= 3 * (usage[recipe.id] || 0);
+      if (previousSlotValue(day, slot) === recipe.id) score -= 5;
+      return score;
+    };
+    const pickProtein = (day, slot) => {
+      const pool = poolFor(slot);
+      if (!pool.length) return null;
+      const levels = [
+        {}, // tutti i vincoli duri
+        { relaxMax: true },
+        { relaxMax: true, relaxRepeats: true },
+        { relaxMax: true, relaxRepeats: true, relaxFish: true }
+      ];
+      for (let index = 0; index < levels.length; index++) {
+        const candidates = pool.filter(recipe => candidateHardOk(recipe, day, levels[index]));
+        if (!candidates.length) continue;
+        if (index > 0) warnRelaxed(day, slot);
+        return candidates
+          .map(recipe => ({ recipe, score: candidateScore(recipe, day, slot) }))
+          .sort((a, b) => b.score - a.score)[0].recipe;
+      }
+      return null;
+    };
+
+    const generatedProteinSlots = [];
     DAYS.forEach(day => {
       ['lunch', 'dinner'].forEach(slot => {
-        if (chosen[day][slot] !== undefined) return;
-        const pick = pickFor(day, slot, bySlot[slot] || [], chosen);
-        chosen[day][slot] = pick?.id ?? null;
+        if (!freeSlot(day, slot)) return;
+        const pick = pickProtein(day, slot);
+        chosen[day][slot] = pick ? pick.id : null;
         if (pick) {
-          const category = classifyProtein(pick);
-          if (category && counts[category] !== undefined) counts[category] += 1;
-          if (category === 'omega' || category === 'otherFish') fishToday[day] = (fishToday[day] || 0) + 1;
-          lastUsed[slot] = pick.id;
+          registerMeal(day, slot, pick);
+          generatedProteinSlots.push({ day, slot });
         }
       });
+    });
+
+    // --- Passo 3: riparazione delle frequenze minime non raggiunte ---
+    // Scambia un pasto generato (mai bloccato, mai dentro una coppia batch)
+    // con una ricetta della categoria mancante, senza violare massimi, limite
+    // di pesce giornaliero né spingere l'altra categoria sotto il suo minimo.
+    PROTEIN_CATEGORIES.forEach(category => {
+      while (counts[category] < minFor(category)) {
+        let applied = false;
+        const slotsInRandomOrder = shuffle(generatedProteinSlots, rand);
+        for (const { day, slot } of slotsInRandomOrder) {
+          const currentRecipe = recipesById[chosen[day][slot]];
+          const currentCategory = currentRecipe ? classifyProtein(currentRecipe) : null;
+          if (!currentRecipe || currentCategory === category) continue;
+          if (currentCategory && minFor(currentCategory) > 0 && counts[currentCategory] <= minFor(currentCategory)) continue;
+          const pool = poolFor(slot).filter(recipe => classifyProtein(recipe) === category);
+          const replacementOk = recipe => {
+            if (!recipe || recipe.id === currentRecipe.id) return false;
+            if (counts[category] + 1 > maxFor(category)) return false;
+            if ((usage[recipe.id] || 0) >= maxRepeats) return false;
+            if (isFishy(recipe) && fishCountOn(day) - (isFishy(currentRecipe) ? 1 : 0) + 1 > 1) return false;
+            return true;
+          };
+          const replacement = pool.filter(replacementOk)
+            .map(recipe => ({ recipe, score: candidateScore(recipe, day, slot) }))
+            .sort((a, b) => b.score - a.score)[0]?.recipe;
+          if (replacement) {
+            unregisterMeal(day, slot, currentRecipe);
+            chosen[day][slot] = replacement.id;
+            registerMeal(day, slot, replacement);
+            applied = true;
+            break;
+          }
+        }
+        if (!applied) break;
+      }
+    });
+
+    // --- Passo 4: colazione e spuntini (rotazione varia; le frequenze
+    // proteiche sono definite su pranzo/cena, qui non si conteggiano) ---
+    const pickSimple = (day, slot) => {
+      const pool = poolFor(slot);
+      if (!pool.length) return null;
+      return pool
+        .map(recipe => ({
+          recipe,
+          score: rand() * 2
+            - 2 * (usage[recipe.id] || 0)
+            - (previousSlotValue(day, slot) === recipe.id ? 5 : 0)
+        }))
+        .sort((a, b) => b.score - a.score)[0].recipe;
+    };
+    DAYS.forEach(day => {
       ['breakfast', 'snack1', 'snack2'].forEach(slot => {
-        if (chosen[day][slot] !== undefined) return;
-        const pick = pickFor(day, slot, bySlot[slot] || [], chosen);
-        chosen[day][slot] = pick?.id ?? null;
-        if (pick) lastUsed[slot] = pick.id;
+        if (!freeSlot(day, slot)) return;
+        const pick = pickSimple(day, slot);
+        chosen[day][slot] = pick ? pick.id : null;
+        if (pick) usage[pick.id] = (usage[pick.id] || 0) + 1;
       });
     });
 
@@ -977,19 +1229,20 @@
       batchTemplates: templates
     };
 
-    // Avvisi sulle frequenze dopo la generazione.
-    if (counts.legumes < constraints.legumesMin) warnings.push(`Legumi: ${counts.legumes} pasti (obiettivo ${constraints.legumesMin}-${constraints.legumesMax}).`);
-    if (counts.omega < constraints.omegaMin) warnings.push(`Pesce omega-3: ${counts.omega} pasti (obiettivo ${constraints.omegaMin}-${constraints.omegaMax}).`);
-    if (counts.omega > constraints.omegaMax) warnings.push(`Pesce omega-3: ${counts.omega} pasti (massimo ${constraints.omegaMax}).`);
-    if (counts.poultry > constraints.poultryMax) warnings.push(`Pollame: ${counts.poultry} pasti (massimo ${constraints.poultryMax}).`);
-    if (counts.beef > constraints.beefMax) warnings.push(`Manzo/Vitello: ${counts.beef} pasti (massimo ${constraints.beefMax}).`);
-    if (counts.dairy < constraints.dairyMin || counts.dairy > constraints.dairyMax) warnings.push(`Latticini/Formaggi: ${counts.dairy} pasti (obiettivo ${constraints.dairyMin}-${constraints.dairyMax}).`);
-    if (counts.eggs < constraints.eggsMin || counts.eggs > constraints.eggsMax) warnings.push(`Uova: ${counts.eggs} pasti (obiettivo ${constraints.eggsMin}-${constraints.eggsMax}).`);
-    if (counts.otherFish < constraints.otherFishMin || counts.otherFish > constraints.otherFishMax) warnings.push(`Altro pesce/molluschi: ${counts.otherFish} pasti (obiettivo ${constraints.otherFishMin}-${constraints.otherFishMax}).`);
-    const doubleFishDays = DAYS.filter(day => (fishToday[day] || 0) > 1);
+    // Avvisi finali sulle frequenze: calcolati sul piano COMPLETO (generati +
+    // bloccati + mantenuti), coerenti col controllo mostrato nella Settimana.
+    if (counts.legumes < minFor('legumes')) warnings.push(`Legumi: ${counts.legumes} pasti (obiettivo ${minFor('legumes')}-${maxFor('legumes')}).`);
+    if (counts.omega < minFor('omega')) warnings.push(`Pesce omega-3: ${counts.omega} pasti (obiettivo ${minFor('omega')}-${maxFor('omega')}).`);
+    if (counts.omega > maxFor('omega')) warnings.push(`Pesce omega-3: ${counts.omega} pasti (massimo ${maxFor('omega')}).`);
+    if (counts.poultry > maxFor('poultry')) warnings.push(`Pollame: ${counts.poultry} pasti (massimo ${maxFor('poultry')}).`);
+    if (counts.beef > maxFor('beef')) warnings.push(`Manzo/Vitello: ${counts.beef} pasti (massimo ${maxFor('beef')}).`);
+    if (counts.dairy < minFor('dairy') || counts.dairy > maxFor('dairy')) warnings.push(`Latticini/Formaggi: ${counts.dairy} pasti (obiettivo ${minFor('dairy')}-${maxFor('dairy')}).`);
+    if (counts.eggs < minFor('eggs') || counts.eggs > maxFor('eggs')) warnings.push(`Uova: ${counts.eggs} pasti (obiettivo ${minFor('eggs')}-${maxFor('eggs')}).`);
+    if (counts.otherFish < minFor('otherFish') || counts.otherFish > maxFor('otherFish')) warnings.push(`Altro pesce/molluschi: ${counts.otherFish} pasti (obiettivo ${minFor('otherFish')}-${maxFor('otherFish')}).`);
+    const doubleFishDays = DAYS.filter(day => fishCountOn(day) > 1);
     if (doubleFishDays.length) warnings.push(`Due pasti di pesce nello stesso giorno: ${doubleFishDays.map(day => DAY_LABELS[day]).join(', ')}.`);
 
-    return { plan: nextPlan, counts, warnings, seed: options.seed ?? null };
+    return { plan: nextPlan, counts, warnings, seed: seedUsed, pairs };
   }
 
   return {
@@ -1049,7 +1302,11 @@
     planSlotsForRecipeRemoval,
     diffPlans,
     buildBackup,
+    PROTEIN_CATEGORIES,
+    PROTEIN_CONSTRAINT_KEYS,
+    PROTEIN_CATEGORY_LABELS,
     classifyProtein,
+    inferProteinCategoryFromIngredients,
     isFishRecipe,
     mulberry32,
     hashString,

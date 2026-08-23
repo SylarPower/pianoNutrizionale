@@ -2206,7 +2206,49 @@ const GENERATOR_COUNT_LABELS = {
   legumes: "Legumi"
 };
 
+// Parametri strutturali del generatore: i valori predefiniti sono coerenti con
+// le "Frequenze proteiche" del manuale. L'utente li regola nel pannello della
+// modale e restano salvati per dispositivo (mai su Firestore).
+const GENERATOR_PREFS_DEFAULTS = {
+  batchPairs: 2,
+  maxRepeats: 2,
+  allowCrossSlot: false,
+  slots: { breakfast: true, snack1: true, lunch: true, snack2: true, dinner: true },
+  constraints: {
+    legumesMin: 3, legumesMax: 4,
+    omegaMin: 2, omegaMax: 3,
+    poultryMin: 1, poultryMax: 2,
+    beefMax: 1,
+    dairyMin: 1, dairyMax: 2,
+    eggsMin: 1, eggsMax: 2,
+    otherFishMin: 1, otherFishMax: 2
+  }
+};
+
 let generatorState = { seed: null, blocks: {}, proposal: null };
+
+function getGeneratorPrefs() {
+  const saved = appState.deviceSettings?.generatorPrefs || {};
+  const number = (value, fallback, min, max) =>
+    Number.isFinite(Number(value)) ? Math.max(min, Math.min(max, Math.floor(Number(value)))) : fallback;
+  return {
+    batchPairs: number(saved.batchPairs, GENERATOR_PREFS_DEFAULTS.batchPairs, 0, 7),
+    maxRepeats: number(saved.maxRepeats, GENERATOR_PREFS_DEFAULTS.maxRepeats, 1, 7),
+    allowCrossSlot: Boolean(saved.allowCrossSlot ?? GENERATOR_PREFS_DEFAULTS.allowCrossSlot),
+    slots: { ...GENERATOR_PREFS_DEFAULTS.slots, ...(saved.slots || {}) },
+    constraints: { ...GENERATOR_PREFS_DEFAULTS.constraints, ...(saved.constraints || {}) }
+  };
+}
+
+function saveGeneratorPrefs(updater) {
+  const current = getGeneratorPrefs();
+  const next = typeof updater === "function" ? updater(current) : { ...current, ...updater };
+  appState.deviceSettings = appState.deviceSettings || {};
+  appState.deviceSettings.generatorPrefs = next;
+  saveLocalDeviceSettings(appState.deviceSettings);
+  generatorState.proposal = null;
+  renderGeneratorModal();
+}
 
 function setupGeneratorModal() {
   if (document.getElementById("generator-modal")) return;
@@ -2214,9 +2256,11 @@ function setupGeneratorModal() {
     <div id="generator-modal" class="modal hidden" role="dialog" aria-modal="true">
       <div class="modal-content generator-modal-content">
         <div class="modal-header"><div><p class="eyebrow">GENERATORE</p><h2>Genera settimana</h2></div><button class="btn-icon" onclick="closeGeneratorModal()">&times;</button></div>
-        <p class="text-muted">Proposta rispettosa di A/R e frequenze proteiche. Non modifica mai i dosaggi. Prima dell'applicazione viene creato un backup.</p>
+        <p class="text-muted">Proposta ottimizzata: rispetta i tipi A/R, insegue min e max delle frequenze proteiche, evita le ripetizioni e può accoppiare cene e pranzi per il batch cooking. I pasti bloccati non vengono toccati e contano nelle frequenze. Non modifica mai i dosaggi. Prima dell'applicazione viene creato un backup.</p>
+        <div id="generator-params" class="generator-params"></div>
         <div class="generator-controls">
           <label class="share-username-field">Seed (risultato riproducibile)<input id="generator-seed" type="text" inputmode="numeric" placeholder="es. 42" onchange="generatorSeedChanged(this.value)"></label>
+          <button class="btn btn-outline" onclick="generatorPrefsReset()">Valori predefiniti</button>
           <button class="btn btn-outline" onclick="computeGeneratorProposal(true)">Rigenera (nuovo seed)</button>
           <button class="btn btn-primary" onclick="computeGeneratorProposal(false)">Anteprima</button>
         </div>
@@ -2267,6 +2311,87 @@ window.toggleGeneratorSlotLock = function(day, slot, checked) {
   renderGeneratorModal();
 };
 
+window.generatorSlotToggled = function(slot, checked) {
+  if (!MEAL_SLOTS.some(item => item.id === slot)) return;
+  saveGeneratorPrefs(prefs => ({ ...prefs, slots: { ...prefs.slots, [slot]: Boolean(checked) } }));
+};
+
+window.generatorParamChanged = function(key, value) {
+  if (key === "batchPairs") saveGeneratorPrefs(prefs => ({ ...prefs, batchPairs: Math.max(0, Math.min(7, Math.floor(Number(value) || 0))) }));
+  else if (key === "maxRepeats") saveGeneratorPrefs(prefs => ({ ...prefs, maxRepeats: Math.max(1, Math.min(7, Math.floor(Number(value) || 2))) }));
+  else if (key === "allowCrossSlot") saveGeneratorPrefs(prefs => ({ ...prefs, allowCrossSlot: Boolean(value) }));
+};
+
+window.generatorConstraintChanged = function(key, value) {
+  if (!(key in GENERATOR_PREFS_DEFAULTS.constraints)) return;
+  const num = Math.max(0, Math.min(7, Math.floor(Number(value) || 0)));
+  saveGeneratorPrefs(prefs => {
+    const constraints = { ...prefs.constraints, [key]: num };
+    // Il minimo non deve mai superare il massimo della stessa categoria.
+    const pair = [key.replace(/Min$/, "Max"), key.replace(/Max$/, "Min")];
+    if (/Min$/.test(key) && constraints[pair[0]] !== undefined && num > constraints[pair[0]]) constraints[pair[0]] = num;
+    if (/Max$/.test(key) && constraints[pair[1]] !== undefined && num < constraints[pair[1]]) constraints[pair[1]] = num;
+    return { ...prefs, constraints };
+  });
+};
+
+window.generatorPrefsReset = function() {
+  appState.deviceSettings = appState.deviceSettings || {};
+  delete appState.deviceSettings.generatorPrefs;
+  saveLocalDeviceSettings(appState.deviceSettings);
+  generatorState.proposal = null;
+  renderGeneratorModal();
+  showToast("Parametri del generatore ripristinati");
+};
+
+function renderGeneratorParams() {
+  if (!window.PianoDomain) return "";
+  const prefs = getGeneratorPrefs();
+  const slotToggles = MEAL_SLOTS.map(slot => `
+    <label class="generator-slot-toggle"><input type="checkbox" ${prefs.slots[slot.id] ? "checked" : ""} onchange="generatorSlotToggled('${slot.id}', this.checked)"> ${escapeHtml(slot.emoji)} ${escapeHtml(slot.label)}</label>`).join("");
+  const constraintRows = Object.entries(PianoDomain.PROTEIN_CONSTRAINT_KEYS || {}).map(([category, keys]) => {
+    const label = PianoDomain.PROTEIN_CATEGORY_LABELS?.[category] || GENERATOR_COUNT_LABELS[category] || category;
+    const minInput = keys.min
+      ? `<input type="number" min="0" max="7" inputmode="numeric" aria-label="Minimo ${escapeAttr(label)}" value="${prefs.constraints[keys.min] ?? 0}" onchange="generatorConstraintChanged('${keys.min}', this.value)">`
+      : `<span class="generator-constraint-na">—</span>`;
+    return `<div class="generator-constraint-row">
+      <strong>${escapeHtml(label)}</strong>
+      ${minInput}
+      <span class="generator-constraint-sep">–</span>
+      <input type="number" min="0" max="7" inputmode="numeric" aria-label="Massimo ${escapeAttr(label)}" value="${prefs.constraints[keys.max] ?? 0}" onchange="generatorConstraintChanged('${keys.max}', this.value)">
+    </div>`;
+  }).join("");
+  return `
+    <div class="generator-params-block">
+      <strong>Cosa generare</strong>
+      <small>Gli slot esclusi (o bloccati sotto) restano com'erano e contano nelle frequenze.</small>
+      <div class="generator-slot-toggles">${slotToggles}</div>
+    </div>
+    <div class="generator-param-grid">
+      <label><span>🍳 Batch cena → pranzo</span><small>Cene raddoppiate per il pranzo del giorno dopo</small>
+        <select onchange="generatorParamChanged('batchPairs', Number(this.value))">
+          ${[0, 1, 2, 3, 4, 5].map(n => `<option value="${n}" ${prefs.batchPairs === n ? "selected" : ""}>${n === 0 ? "Nessuna" : `${n} ${n === 1 ? "giorno" : "giorni"}`}</option>`).join("")}
+        </select>
+      </label>
+      <label><span>🔁 Stessa ricetta al massimo</span><small>Ripetizioni in settimana (1 = mai ripetuta)</small>
+        <select onchange="generatorParamChanged('maxRepeats', Number(this.value))">
+          ${[1, 2, 3, 4].map(n => `<option value="${n}" ${prefs.maxRepeats === n ? "selected" : ""}>${n} ${n === 1 ? "volta" : "volte"}</option>`).join("")}
+        </select>
+      </label>
+      <label><span>↻ Cross-slot pranzo ↔ cena</span><small>Anche ricette del pasto opposto, carboidrati adattati</small>
+        <select onchange="generatorParamChanged('allowCrossSlot', this.value === '1')">
+          <option value="0" ${!prefs.allowCrossSlot ? "selected" : ""}>No</option>
+          <option value="1" ${prefs.allowCrossSlot ? "selected" : ""}>Sì</option>
+        </select>
+      </label>
+    </div>
+    <details class="generator-advanced">
+      <summary>Frequenze proteiche min–max <small>(impostazioni avanzate)</small></summary>
+      <p class="text-muted">Quanti pasti a settimana per ogni categoria. Il generatore cerca di restare nell'intervallo e avvisa quando non è possibile.</p>
+      <div class="generator-constraints-grid">${constraintRows}</div>
+    </details>`;
+}
+
 function renderGeneratorBlocks() {
   return `<div class="generator-blocks-title"><strong>Blocca / sblocca pasto</strong><small>Gli elementi bloccati non vengono sovrascritti dalla generazione.</small></div>
     <div class="generator-block-table">
@@ -2283,12 +2408,18 @@ function renderGeneratorBlocks() {
 
 window.computeGeneratorProposal = function(newSeed) {
   if (newSeed) generatorState.seed = Math.floor(Math.random() * 1000000);
+  const prefs = getGeneratorPrefs();
   const result = window.PianoDomain
     ? PianoDomain.generateWeek(appState.recipes, {
         plan: appState.plan,
         seed: generatorState.seed ?? Date.now(),
         blocks: generatorState.blocks,
-        templates: appState.plan.batchTemplates || []
+        templates: appState.plan.batchTemplates || [],
+        constraints: prefs.constraints,
+        batchPairs: prefs.batchPairs,
+        maxRepeats: prefs.maxRepeats,
+        allowCrossSlot: prefs.allowCrossSlot,
+        slots: prefs.slots
       })
     : null;
   if (!result) {
@@ -2305,6 +2436,22 @@ function generatorRecipeName(recipeId) {
   return recipe ? `${recipe.emoji || "🍲"} ${recipe.name}` : (recipeId || "—");
 }
 
+// Verde quando il conteggio rientra nell'intervallo scelto, rosso altrimenti.
+function generatorCountStatus(key, value) {
+  const constraints = getGeneratorPrefs().constraints;
+  const ranges = {
+    poultry: [constraints.poultryMin, constraints.poultryMax],
+    beef: [0, constraints.beefMax],
+    omega: [constraints.omegaMin, constraints.omegaMax],
+    otherFish: [constraints.otherFishMin, constraints.otherFishMax],
+    dairy: [constraints.dairyMin, constraints.dairyMax],
+    eggs: [constraints.eggsMin, constraints.eggsMax],
+    legumes: [constraints.legumesMin, constraints.legumesMax]
+  };
+  const [min, max] = ranges[key] || [0, Infinity];
+  return value >= min && value <= max ? "ok" : "warning";
+}
+
 function renderGeneratorPreview() {
   const preview = document.getElementById("generator-preview");
   const result = generatorState.proposal;
@@ -2318,10 +2465,18 @@ function renderGeneratorPreview() {
     if (!changesByDay[change.day]) changesByDay[change.day] = [];
     changesByDay[change.day].push(change);
   });
+  const pairs = result.pairs || [];
+  const pairsHtml = pairs.length
+    ? `<div class="generator-pairs">${pairs.map(pair => {
+        const targetDay = DAY_ORDER[(DAY_ORDER.indexOf(pair.anchorDay) + 1) % DAY_ORDER.length];
+        return `<span class="generator-pair-chip" title="Cena del ${DAY_NAMES[pair.anchorDay]} raddoppiata per il pranzo del giorno dopo">🍳 ${DAY_NAMES[pair.anchorDay].slice(0, 3)} cena → ${DAY_NAMES[targetDay].slice(0, 3)} pranzo · ${escapeHtml(generatorRecipeName(pair.recipeId))}</span>`;
+      }).join("")}</div>`
+    : "";
   preview.innerHTML = `
-    <div class="generator-preview-head"><strong>Anteprima proposta</strong><span>${changes.length} modifiche</span></div>
+    <div class="generator-preview-head"><strong>Anteprima proposta</strong><span>${changes.length} modifiche${pairs.length ? ` · ${pairs.length} batch` : ""}</span></div>
     ${result.warnings.length ? `<div class="generator-warnings">${result.warnings.map(warning => `<p>⚠️ ${escapeHtml(warning)}</p>`).join("")}</div>` : ""}
-    <div class="generator-counts">${Object.entries(result.counts).map(([key, value]) => `<span>${escapeHtml(GENERATOR_COUNT_LABELS[key] || key)}: ${value}</span>`).join("")}</div>
+    <div class="generator-counts">${Object.entries(result.counts).map(([key, value]) => `<span class="${generatorCountStatus(key, value)}" title="Intervallo scelto nel pannello avanzate">${escapeHtml(GENERATOR_COUNT_LABELS[key] || key)}: ${value}</span>`).join("")}</div>
+    ${pairsHtml}
     <div class="generator-diff">
       ${DAY_ORDER.map(day => {
         const dayChanges = changesByDay[day] || [];
@@ -2339,6 +2494,8 @@ function renderGeneratorPreview() {
 
 function renderGeneratorModal() {
   document.getElementById("generator-seed").value = generatorState.seed ?? "";
+  const params = document.getElementById("generator-params");
+  if (params) params.innerHTML = renderGeneratorParams();
   document.getElementById("generator-blocks").innerHTML = renderGeneratorBlocks();
   renderGeneratorPreview();
 }
@@ -2349,7 +2506,9 @@ window.applyGenerator = async function() {
     return;
   }
   const changes = window.PianoDomain ? PianoDomain.diffPlans(appState.plan, generatorState.proposal.plan).length : 0;
-  if (!confirm(`Applicare la settimana generata (${changes} modifiche)? Verrà creato un backup prima dell'applicazione.`)) return;
+  const pairsCount = generatorState.proposal.pairs?.length || 0;
+  const pairsNote = pairsCount ? `, ${pairsCount} accoppiate cena → pranzo` : "";
+  if (!confirm(`Applicare la settimana generata (${changes} modifiche${pairsNote})? Verrà creato un backup prima dell'applicazione.`)) return;
   try {
     await createBackup(appState.recipes, appState.plan, appState.shopping, "week-generator", `Generatore settimana (seed ${generatorState.proposal.seed ?? "—"})`);
   } catch (error) {

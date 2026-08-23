@@ -415,7 +415,27 @@ renderModalContent();
 openMealActions('monday', 'lunch');
 renderMealSwapList();
 openGeneratorModal();
+// Pannello parametri: i controlli sono presenti e le preferenze persistono
+// nelle impostazioni dispositivo (mai su Firestore).
+{
+  const paramsHtml = document.getElementById('generator-params')._innerHTML;
+  assert.match(paramsHtml, /generatorParamChanged\('batchPairs'/, 'controllo batch cena → pranzo presente');
+  assert.match(paramsHtml, /generatorParamChanged\('maxRepeats'/, 'controllo tetto ripetizioni presente');
+  assert.match(paramsHtml, /generatorParamChanged\('allowCrossSlot'/, 'controllo cross-slot presente');
+  assert.match(paramsHtml, /generatorSlotToggled\('lunch'/, 'toggle slot pranzo presente');
+  assert.match(paramsHtml, /generatorConstraintChanged\('legumesMin'/, 'input frequenze min/max presente');
+  generatorSlotToggled('breakfast', false);
+  assert.equal(getGeneratorPrefs().slots.breakfast, false, 'slot escluso salvato nelle preferenze');
+  generatorParamChanged('batchPairs', 3);
+  assert.equal(getGeneratorPrefs().batchPairs, 3, 'batch cena → pranzo salvato');
+  generatorConstraintChanged('legumesMin', '9');
+  assert.equal(getGeneratorPrefs().constraints.legumesMin, 7, 'frequenze limitate a 0-7 pasti');
+  generatorPrefsReset();
+  assert.equal(getGeneratorPrefs().batchPairs, GENERATOR_PREFS_DEFAULTS.batchPairs, 'ripristino valori predefiniti');
+  generatorSlotToggled('breakfast', true);
+}
 computeGeneratorProposal(false);
+assert.match(document.getElementById('generator-preview')._innerHTML, /generator-diff/, 'anteprima con diff renderizzata');
 openShareDialog();
 openShareConflictPreview({ id: 'sh1', senderUsername: 'anna', recipes: [R('L9', 'Nuova', 'lunch', 'Uova')], includesPlan: false, plan: null }, 'recipes');
 
