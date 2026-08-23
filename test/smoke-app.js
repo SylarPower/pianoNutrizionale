@@ -436,7 +436,13 @@ openGeneratorModal();
 // nelle impostazioni dispositivo (mai su Firestore).
 {
   const paramsHtml = document.getElementById('generator-params')._innerHTML;
+  assert.match(fs.readFileSync(path.join(ROOT, 'js/app.js'), 'utf8'), /id=\"generator-subtitle\"[^>]*>🔒 Bloccato = resta identico e conta nelle frequenze/, 'legenda blocchi chiara nella modale');
   assert.match(paramsHtml, /generatorParamChanged\('batchPairs'/, 'controllo batch cena → pranzo presente');
+  assert.match(paramsHtml, /value=\"7\"/, 'batch selezionabile fino a sette giorni');
+  assert.match(paramsHtml, /Pranzo successivo identico alla cena/, 'batch descritto come doppia porzione');
+  assert.match(paramsHtml, /Ogni coppia conta 2 volte la proteina/, 'trade-off proteico del batch esplicitato');
+  assert.match(paramsHtml, /Solo varietà: includi anche ricette dell'altro pasto/, 'cross-slot distinto dal batch');
+  assert.match(paramsHtml, /NON crea doppie porzioni/, 'cross-slot chiarisce che non crea batch');
   assert.match(paramsHtml, /generatorParamChanged\('maxRepeats'/, 'controllo tetto ripetizioni presente');
   assert.match(paramsHtml, /generatorParamChanged\('allowCrossSlot'/, 'controllo cross-slot presente');
   assert.match(paramsHtml, /generatorSlotToggled\('lunch'/, 'toggle slot pranzo presente');
@@ -445,12 +451,22 @@ openGeneratorModal();
   assert.equal(getGeneratorPrefs().slots.breakfast, false, 'slot escluso salvato nelle preferenze');
   generatorParamChanged('batchPairs', 3);
   assert.equal(getGeneratorPrefs().batchPairs, 3, 'batch cena → pranzo salvato');
+  generatorParamChanged('batchPairs', 9);
+  assert.equal(getGeneratorPrefs().batchPairs, 7, 'batch limitato a sette giorni');
   generatorConstraintChanged('legumesMin', '9');
   assert.equal(getGeneratorPrefs().constraints.legumesMin, 7, 'frequenze limitate a 0-7 pasti');
   generatorPrefsReset();
   assert.equal(getGeneratorPrefs().batchPairs, GENERATOR_PREFS_DEFAULTS.batchPairs, 'ripristino valori predefiniti');
   generatorSlotToggled('breakfast', true);
 }
+// I blocchi sono espliciti: badge sul singolo pasto e pill sull'intera giornata.
+toggleGeneratorSlotLock('monday', 'lunch', true);
+assert.match(document.getElementById('generator-blocks')._innerHTML, /🔒 mantenuto/, 'badge per il singolo pasto mantenuto');
+assert.match(document.getElementById('generator-blocks')._innerHTML, /Blocca questo pasto: resterà identico alla generazione/, 'tooltip del lucchetto del pasto');
+toggleGeneratorDayLock('tuesday', true);
+assert.match(document.getElementById('generator-blocks')._innerHTML, /Giorno mantenuto/, 'pill per l’intera giornata mantenuta');
+toggleGeneratorDayLock('tuesday', false);
+toggleGeneratorSlotLock('monday', 'lunch', false);
 computeGeneratorProposal(false);
 assert.match(document.getElementById('generator-preview')._innerHTML, /generator-diff/, 'anteprima con diff renderizzata');
 openShareDialog();

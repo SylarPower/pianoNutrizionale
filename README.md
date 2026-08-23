@@ -552,11 +552,11 @@ Funzioni pure in `js/domain.js` (`generateWeek`), nessun rendering DOM nel motor
 Nella UI (vista Settimana → **Genera settimana**) il primo passo è il pannello **parametri**:
 
 - **Cosa generare**: quali slot rigenerare (colazione, spuntino, pranzo, merenda, cena). Gli slot esclusi restano come sono e contano nelle frequenze;
-- **🍳 Batch cena → pranzo** (0-5 giorni): quante cene vengono **pianificate in coppia** col pranzo del giorno dopo (doppia porzione). Le coppie vengono piazzate per prime, contano per intero nelle frequenze e alimentano il batch cooking automatico;
+- **🍳 Batch cena → pranzo** (0-7 giorni): quante cene vengono **pianificate in coppia** col pranzo del giorno dopo (doppia porzione automatica). Le coppie vengono piazzate per prime e contano due volte la proteina: aumentando le coppie crescono le ripetizioni e possono comparire avvisi per i vincoli su manzo, uova o pollame;
 - **🔁 Stessa ricetta al massimo** (1-4 volte): tetto alle ripetizioni in settimana;
-- **↻ Cross-slot pranzo ↔ cena**: il motore può pescare anche dal pasto opposto; i carboidrati si adattano da soli alle dosi del pasto scelto (come per lo scambio manuale);
+- **↻ Solo varietà: includi anche ricette dell'altro pasto**: il motore può pescare anche dal pasto opposto e adatta i carboidrati alle dosi del pasto scelto (come per lo scambio manuale). Non crea doppie porzioni: per cucinare una volta per cena e pranzo va usato Batch cena → pranzo;
 - **Frequenze proteiche min–max** (pannello avanzato): intervallo settimanale per legumi, pesce omega-3, altro pesce/molluschi, pollame, manzo/vitello, latticini/formaggi, uova. "Valori predefiniti" ripristina quelli del manuale;
-- **blocco di un singolo pasto** e **blocco dell'intera giornata**: mai sovrascritti e, soprattutto, **contano nelle frequenze** (bug corretto: prima venivano ignorati);
+- **blocco di un singolo pasto** e **blocco dell'intera giornata**: la legenda in modale distingue chiaramente 🔒 bloccato (resta identico e conta nelle frequenze) da 🔓 sbloccato (il generatore può cambiarlo). I pasti bloccati non sono mai sovrascritti e, soprattutto, **contano nelle frequenze**;
 - **seed** opzionale: risultato riproducibile con lo stesso seed; "Rigenera" pesca un seed nuovo.
 
 ## Come lavora il motore
@@ -564,6 +564,7 @@ Nella UI (vista Settimana → **Genera settimana**) il primo passo è il pannell
 Vincoli rispettati:
 
 - rispetta i tipi A/R del piano e **non modifica mai i dosaggi**;
+- calcola le frequenze dalle proteine riconosciute negli **ingredienti delle ricette effettivamente scelte**; `proteinCategory` è solo il fallback di compatibilità per ricette legacy senza ingredienti riconoscibili;
 - massimo un pasto di pesce al giorno (considerando anche i pasti bloccati/mantenuti);
 - insegue **sia i minimi sia i massimi** delle frequenze proteiche: riempimento con punteggio (categorie sotto il minimo premiate) e **riparazione mirata** finale che scambia pasti generati per chiudere i minimi mancanti, senza violare massimi, pesce/giorno né spingere altre categorie sotto il proprio minimo;
 - evita ripetizioni **immediate e settimanali** (`maxRepeats`);
@@ -652,10 +653,11 @@ App Check **non sostituisce** Authentication né Firestore Rules: le regole in `
 ```bash
 npm test
 npm run syntax
+node test/smoke-app.js
 git diff --check
 ```
 
-I test (`test/domain.test.js`) coprono: migrazioni schema 3→4 e idempotenza, alias ingredienti, ingredienti senza ID, porzioni legacy, lista spesa per `ingredientId`, profili Uomo/Donna IPO/Coppia, crackers A/R, **adattamento carboidrati pranzo↔cena** (riconoscimento carboidrati, conversione dosi A/R, fallback configurabile pranzo→cena, propagazione alla lista spesa), batch indipendente da A/R, batch cena→pranzo futuro, attraversamento domenica→lunedì, batch parziale, `maxDays` diversi, quantità target A/R, copia/scambio pasti, blocchi, generatore e vincoli (frequenze su molti seed, **accoppiate batch cena → pranzo**, tetto ripetizioni, blocchi che contano nelle frequenze e nel pesce/giorno, slot disabilitati, cross-slot, inferenza della categoria dagli ingredienti, vincoli personalizzati), cataloghi vuoto/insufficiente, riferimenti piano mancanti, import Aggiungi/Sostituisci, conflitti condivisione (solo ricette/solo settimana/completa), backup, service worker (shell, cache, fallback offline, aggiornamento).
+I test (`test/domain.test.js`) coprono: migrazioni schema 3→4 e idempotenza, alias ingredienti, ingredienti senza ID, porzioni legacy, lista spesa per `ingredientId`, profili Uomo/Donna IPO/Coppia, crackers A/R, **adattamento carboidrati pranzo↔cena** (riconoscimento carboidrati, conversione dosi A/R, fallback configurabile pranzo→cena, propagazione alla lista spesa), batch indipendente da A/R, batch cena→pranzo futuro, attraversamento domenica→lunedì, batch parziale, `maxDays` diversi, quantità target A/R, copia/scambio pasti, blocchi, generatore e vincoli (frequenze su molti seed, **accoppiate batch cena → pranzo fino a 7 giorni**, tetto ripetizioni, blocchi che contano nelle frequenze e nel pesce/giorno, slot disabilitati, cross-slot, inferenza della categoria dagli ingredienti, vincoli personalizzati), cataloghi vuoto/insufficiente, riferimenti piano mancanti, import Aggiungi/Sostituisci, conflitti condivisione (solo ricette/solo settimana/completa), backup, service worker (shell, cache, fallback offline, aggiornamento).
 
 Smoke test locale:
 

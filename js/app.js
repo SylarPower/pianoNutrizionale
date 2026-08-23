@@ -2289,7 +2289,7 @@ function setupGeneratorModal() {
     <div id="generator-modal" class="modal hidden" role="dialog" aria-modal="true">
       <div class="modal-content generator-modal-content">
         <div class="modal-header"><div><p class="eyebrow">GENERATORE</p><h2>Genera settimana</h2></div><button class="btn-icon" onclick="closeGeneratorModal()">&times;</button></div>
-        <p class="text-muted">Proposta ottimizzata: rispetta i tipi A/R, insegue min e max delle frequenze proteiche, evita le ripetizioni e può accoppiare cene e pranzi per il batch cooking. I pasti bloccati non vengono toccati e contano nelle frequenze. Non modifica mai i dosaggi. Prima dell'applicazione viene creato un backup.</p>
+        <p id="generator-subtitle" class="text-muted">🔒 Bloccato = resta identico e conta nelle frequenze · 🔓 Sbloccato = il generatore può cambiarlo</p>
         <div id="generator-params" class="generator-params"></div>
         <div class="generator-controls">
           <label class="share-username-field">Seed (risultato riproducibile)<input id="generator-seed" type="text" inputmode="numeric" placeholder="es. 42" onchange="generatorSeedChanged(this.value)"></label>
@@ -2401,9 +2401,9 @@ function renderGeneratorParams() {
       <div class="generator-slot-toggles">${slotToggles}</div>
     </div>
     <div class="generator-param-grid">
-      <label><span>🍳 Batch cena → pranzo</span><small>Cene raddoppiate per il pranzo del giorno dopo</small>
+      <label><span>🍳 Batch cena → pranzo</span><small>Pranzo successivo identico alla cena (doppia porzione automatica). Ogni coppia conta 2 volte la proteina: più coppie aumentano ripetizioni e possibili avvisi su manzo, uova o pollame.</small>
         <select onchange="generatorParamChanged('batchPairs', Number(this.value))">
-          ${[0, 1, 2, 3, 4, 5].map(n => `<option value="${n}" ${prefs.batchPairs === n ? "selected" : ""}>${n === 0 ? "Nessuna" : `${n} ${n === 1 ? "giorno" : "giorni"}`}</option>`).join("")}
+          ${[0, 1, 2, 3, 4, 5, 6, 7].map(n => `<option value="${n}" ${prefs.batchPairs === n ? "selected" : ""}>${n === 0 ? "Nessuna" : `${n} ${n === 1 ? "giorno" : "giorni"}`}</option>`).join("")}
         </select>
       </label>
       <label><span>🔁 Stessa ricetta al massimo</span><small>Ripetizioni in settimana (1 = mai ripetuta)</small>
@@ -2411,7 +2411,7 @@ function renderGeneratorParams() {
           ${[1, 2, 3, 4].map(n => `<option value="${n}" ${prefs.maxRepeats === n ? "selected" : ""}>${n} ${n === 1 ? "volta" : "volte"}</option>`).join("")}
         </select>
       </label>
-      <label><span>↻ Cross-slot pranzo ↔ cena</span><small>Anche ricette del pasto opposto, carboidrati adattati</small>
+      <label><span>↻ Solo varietà: includi anche ricette dell'altro pasto</span><small>Carboidrati adattati. NON crea doppie porzioni: per cucinare una volta per due pasti usa il numero “Batch cena → pranzo del giorno dopo” qui sopra.</small>
         <select onchange="generatorParamChanged('allowCrossSlot', this.value === '1')">
           <option value="0" ${!prefs.allowCrossSlot ? "selected" : ""}>No</option>
           <option value="1" ${prefs.allowCrossSlot ? "selected" : ""}>Sì</option>
@@ -2432,8 +2432,11 @@ function renderGeneratorBlocks() {
         const block = generatorState.blocks[day];
         const dayLocked = Boolean(block?.all);
         return `<div class="generator-block-row">
-          <label class="generator-day-lock"><input type="checkbox" ${dayLocked ? "checked" : ""} onchange="toggleGeneratorDayLock('${day}', this.checked)"> ${DAY_NAMES[day]}</label>
-          <div class="generator-slot-locks">${MEAL_SLOTS.map(slot => `<label class="${dayLocked ? "locked" : ""}"><input type="checkbox" ${dayLocked || block?.[slot.id] ? "checked" : ""} ${dayLocked ? "disabled" : ""} onchange="toggleGeneratorSlotLock('${day}', '${slot.id}', this.checked)"> ${escapeHtml(slot.shortLabel)}</label>`).join("")}</div>
+          <label class="generator-day-lock"><input type="checkbox" title="Blocca questo giorno: tutti i pasti resteranno identici alla generazione" ${dayLocked ? "checked" : ""} onchange="toggleGeneratorDayLock('${day}', this.checked)"> ${DAY_NAMES[day]}${dayLocked ? ' <span class="generator-lock-pill">Giorno mantenuto</span>' : ""}</label>
+          <div class="generator-slot-locks">${MEAL_SLOTS.map(slot => {
+            const slotLocked = Boolean(block?.[slot.id]);
+            return `<label class="${dayLocked ? "locked" : ""}"><input type="checkbox" title="Blocca questo pasto: resterà identico alla generazione" ${dayLocked || slotLocked ? "checked" : ""} ${dayLocked ? "disabled" : ""} onchange="toggleGeneratorSlotLock('${day}', '${slot.id}', this.checked)"> ${escapeHtml(slot.shortLabel)}${slotLocked && !dayLocked ? ' <span class="generator-slot-lock-badge">🔒 mantenuto</span>' : ""}</label>`;
+          }).join("")}</div>
         </div>`;
       }).join("")}
     </div>`;
