@@ -81,14 +81,16 @@ const MELLER_GUIDE = {
       ]
     }
   },
-  proteinFrequencies: [
-    ["Pollame", "1-2 volte a settimana"],
-    ["Manzo, maiale, affettati", "Max 1 volta a settimana"],
-    ["Pesce ricco di omega-3", "Almeno 2-3 volte a settimana"],
-    ["Altro pesce e prodotti ittici", "1-2 volte a settimana"],
-    ["Latticini e uova a pranzo/cena", "1-2 volte a settimana"],
-    ["Legumi e derivati", "Almeno 3-4 volte a settimana"]
-  ],
+proteinFrequencies: [
+  ["Pollame", "1-2 volte a settimana"],
+  ["Manzo e maiale", "Massimo 1 volta a settimana"],
+  ["Affettati e carni miste", "Massimo 1 volta a settimana"],
+  ["Pesce ricco di omega-3 (salmone, sgombro, sardine/aringhe)", "2-3 volte a settimana"],
+  ["Altro pesce e prodotti ittici", "1-2 volte a settimana"],
+  ["Latticini e formaggi (a pranzo e cena)", "1-2 volte a settimana"],
+  ["Uova (a pranzo e cena)", "1-2 volte a settimana"],
+  ["Legumi e derivati", "Almeno 3 volte a settimana"]
+],
   faq: [
     "Punta a un consumo di almeno 2-2,5 litri di acqua al giorno.",
     "Usa solo sale iodato. Spezie, limone e aceto sono liberi.",
