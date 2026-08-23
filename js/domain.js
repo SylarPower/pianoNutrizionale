@@ -795,9 +795,9 @@
     eggs: 'Uova'
   };
 
-  // Euristica di ripiego per ricette senza `proteinCategory` riconosciuto (es.
-  // ricette create a mano senza categoria): la categoria viene dedotta dagli
-  // ingredienti, nell'ordine in cui compaiono. Usata solo dal generatore.
+  // Le frequenze del generatore si basano prima sugli alimenti effettivi
+  // della ricetta, nell'ordine in cui compaiono. `proteinCategory` resta un
+  // fallback per ricette legacy o senza ingredienti riconoscibili.
   const PROTEIN_INGREDIENT_HINTS = [
     { category: 'omega', match: /salmone|sgombro|sardine?|aringa|alice|acciug/ },
     { category: 'otherFish', match: /merluzzo|nasello|sogliola|orata|branzino|spigola|tonno|calamar|polpo|seppi|spada|trota|platessa|cozze|vongole|gamber|crostace|mollusch|pesce/ },
@@ -820,6 +820,8 @@
   }
 
   function classifyProtein(recipe) {
+    const inferred = inferProteinCategoryFromIngredients(recipe);
+    if (inferred) return inferred;
     const category = String(recipe?.proteinCategory || '').toLowerCase();
     if (/pollame/i.test(category)) return 'poultry';
     if (/manzo|vitello/i.test(category)) return 'beef';
@@ -828,7 +830,7 @@
     if (/latticini|formaggi/i.test(category)) return 'dairy';
     if (/uova/i.test(category)) return 'eggs';
     if (/legumi/i.test(category)) return 'legumes';
-    return inferProteinCategoryFromIngredients(recipe);
+    return null;
   }
 
   function isFishRecipe(recipe) {

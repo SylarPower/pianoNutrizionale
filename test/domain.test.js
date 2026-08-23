@@ -547,7 +547,14 @@ function generatorCatalog() {
     ['D-F1', 'Merluzzo 1', 'dinner', 'Altro pesce e molluschi'], ['D-F2', 'Merluzzo 2', 'dinner', 'Altro pesce e molluschi'],
     ['D-D1', 'Ricotta', 'dinner', 'Latticini e formaggi'], ['D-E1', 'Uova 1', 'dinner', 'Uova'], ['D-E2', 'Uova 2', 'dinner', 'Uova'],
     ['D-L3', 'Lenticchie', 'dinner', 'Legumi']
-  ].map(([id, name, slot, category]) => recipe(id, name, slot, [ingredient('Pollo', PORTIONS)], category));
+  ].map(([id, name, slot, category]) => {
+    const ingredientsByCategory = {
+      'Pollame': 'Pollo', 'Pesce omega-3': 'Salmone', 'Legumi': 'Ceci',
+      'Manzo/Vitello': 'Manzo', 'Altro pesce e molluschi': 'Merluzzo',
+      'Latticini e formaggi': 'Ricotta', 'Uova': 'Uova intere'
+    };
+    return recipe(id, name, slot, [ingredient(ingredientsByCategory[category], PORTIONS)], category);
+  });
   const extras = [
     ['K1', 'Avena', 'breakfast'], ['K2', 'Yogurt', 'breakfast'], ['K3', 'Pancake', 'breakfast'], ['K4', 'Latte', 'breakfast'],
     ['S1', 'Frutta', 'snack1'], ['S2', 'Crackers', 'snack1'], ['S3', 'Frutta 2', 'snack1'],
@@ -649,6 +656,30 @@ test('generatore: nessuna coppia batch quando batchPairs = 0', () => {
   assert.equal(result.pairs.length, 0);
 });
 
+test('generatore: batchPairs 6 e 7 programma tutte le coppie possibili senza crash', () => {
+  [6, 7].forEach(batchPairs => {
+    const result = d.generateWeek(generatorCatalog(), {
+      seed: 11,
+      batchPairs,
+      maxRepeats: 7,
+      constraints: { poultryMax: 7, omegaMax: 7, otherFishMax: 7, beefMax: 7, dairyMax: 7, eggsMax: 7, legumesMax: 7 }
+    });
+    assert.equal(result.pairs.length, batchPairs, `${batchPairs} accoppiate programmate`);
+    result.pairs.forEach(pair => {
+      const targetDay = d.DAYS[(d.DAYS.indexOf(pair.anchorDay) + 1) % d.DAYS.length];
+      assert.equal(result.plan.days[pair.anchorDay].dinner, pair.recipeId);
+      assert.equal(result.plan.days[targetDay].lunch, pair.recipeId);
+    });
+  });
+});
+
+test('generatore: batchPairs 7 avvisa senza crash se i vincoli rendono impossibili le coppie', () => {
+  const result = d.generateWeek(generatorCatalog(), { seed: 11, batchPairs: 7, maxRepeats: 1 });
+  assert.ok(result.pairs.length < 7, 'i vincoli possono lasciare alcune coppie non pianificate');
+  assert.ok(result.warnings.some(warning => /Batch cena → pranzo/.test(warning)), 'il vincolo impossibile è segnalato');
+});
+
+
 test('generatore: batchPairs ripiega su un catalogo di soli pranzi', () => {
   const onlyLunch = generatorCatalog().filter(r => r.slot === 'lunch');
   const result = d.generateWeek(onlyLunch, { seed: 3, batchPairs: 2, allowCrossSlot: true });
@@ -712,8 +743,10 @@ test('generatore: inferenza della categoria dagli ingredienti senza proteinCateg
   assert.equal(d.classifyProtein({ id: 'X', slot: 'dinner', proteinCategory: '', ingredients: [{ name: 'Petto di pollo', portions: {} }] }), 'poultry');
   assert.equal(d.classifyProtein({ id: 'Y', slot: 'dinner', proteinCategory: '', ingredients: [{ name: 'Salmone', portions: {} }] }), 'omega');
   assert.equal(d.classifyProtein({ id: 'Z', slot: 'dinner', proteinCategory: '', ingredients: [{ name: 'Lenticchie', portions: {} }, { name: 'Zucchine', portions: {} }] }), 'legumes');
-  // La categoria testuale continua a vincere sul fallback.
-  assert.equal(d.classifyProtein({ id: 'W', slot: 'dinner', proteinCategory: 'Pesce omega-3', ingredients: [{ name: 'Petto di pollo', portions: {} }] }), 'omega');
+  // Gli ingredienti effettivi hanno priorità sulla categoria salvata.
+  assert.equal(d.classifyProtein({ id: 'W', slot: 'dinner', proteinCategory: 'Pesce omega-3', ingredients: [{ name: 'Petto di pollo', portions: {} }] }), 'poultry');
+  // La categoria salvata resta compatibile per una ricetta legacy senza ingredienti riconoscibili.
+  assert.equal(d.classifyProtein({ id: 'V', slot: 'dinner', proteinCategory: 'Pesce omega-3', ingredients: [{ name: 'Zucchine', portions: {} }] }), 'omega');
 });
 
 test('generatore: vincoli personalizzati vengono inseguiti (legumi 4-5)', () => {
@@ -869,7 +902,7 @@ test('service worker: shell versionata derivata da una sola versione con asset e
   const sw = fs.readFileSync(path.join(ROOT, 'sw.js'), 'utf8');
   const versionMatch = sw.match(/const CACHE_VERSION = (\d+);/);
   assert.ok(versionMatch, 'CACHE_VERSION presente');
-  assert.equal(Number(versionMatch[1]), 21);
+  assert.equal(Number(versionMatch[1]), 22);
   assert.equal((sw.match(/const CACHE_VERSION/g) || []).length, 1);
   assert.match(sw, /const CACHE = `piano-nutrizionale-shell-v\$\{CACHE_VERSION\}`;/);
   assert.match(sw, /incrementare CACHE_VERSION a OGNI modifica di CSS, JS o index\.html/);

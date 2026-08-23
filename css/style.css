@@ -1711,3 +1711,29 @@ body.dark-mode .store-status-badge { background: #141414; color: #9a9a9a; }
 body.dark-mode .store-status-badge.best { background: #10281c; color: #6fd39a; }
 body.dark-mode .store-status-badge.worse { background: #2b1214; color: #ff8a90; }
 body.dark-mode .store-status-badge.only { background: #101c24; color: #7fa8c2; }
+
+/* Indicatori dei blocchi nel generatore */
+.generator-lock-pill,
+.generator-slot-lock-badge {
+  display: inline-block;
+  border-radius: 999px;
+  font-weight: 800;
+  line-height: 1.25;
+  white-space: nowrap;
+}
+.generator-lock-pill {
+  padding: 3px 7px;
+  background: var(--primary-soft);
+  color: var(--primary-strong);
+  font-size: .62rem;
+}
+.generator-slot-lock-badge {
+  padding: 2px 5px;
+  background: var(--surface-alt);
+  color: var(--text-muted);
+  font-size: .6rem;
+}
+
+/* Dark mode */
+body.dark-mode .generator-lock-pill { background: #10281c; color: #6fd39a; }
+body.dark-mode .generator-slot-lock-badge { background: #141414; color: #b8b8b8; }
