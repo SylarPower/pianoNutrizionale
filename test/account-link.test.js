@@ -224,6 +224,31 @@ test('getRecipeCatalog inizializza il catalogo vuoto SOLO in ambito personale', 
   assert.ok(!Array.from(store.keys()).some(key => key.startsWith('households/')), 'nessun documento household coinvolto');
 });
 
+test('saveBackup personale + restore in household: ripristina la copia personale senza sovrascrivere i dati condivisi', async () => {
+  reset();
+  const soloRecipes = [sampleRecipe('L9', 'Ricetta personale prima del collegamento')];
+  await saveBackup(soloRecipes, samplePlan, { selectedMeals: {}, includePantry: true, excludedItems: [], customQuantities: {} }, 'account-link-accept', 'Prima del collegamento');
+  const backupDoc = store.get('users/u2/backups/previous');
+  assert.equal(backupDoc.scope, 'personal', 'il backup salva il contesto originale');
+
+  store.set('households/hh-live', { ownerUid: 'u1', memberUids: ['u1', 'u2'], memberUsernames: ['mario', 'anna'] });
+  store.set('households/hh-live/content/recipeCatalog', {
+    schemaVersion: 5,
+    recipes: [sampleRecipe('L1', 'Ricetta condivisa')],
+    recipeCount: 1
+  });
+  await prepareDataScope();
+  assert.equal(getCurrentHousehold().id, 'hh-live');
+
+  const restored = await restoreBackupAtomic();
+  assert.equal(restored.catalog.recipes[0].id, 'L9');
+  assert.ok(!store.has('users/u2/backups/previous'), 'il backup one-shot viene consumato');
+  assert.equal(store.get('users/u2/content/recipeCatalog').recipes[0].id, 'L9', 'il catalogo personale viene ripristinato');
+  assert.equal(store.get('households/hh-live/content/recipeCatalog').recipes[0].id, 'L1', 'i dati condivisi attuali non vengono sovrascritti');
+  assert.ok(ops.some(op => op.type === 'update' && op.path === 'households/hh-live'), 'il restore esce dalla household corrente');
+  assert.equal(getCurrentHousehold(), null, 'dopo il restore l\'utente torna all\'ambito personale');
+});
+
 // ---- Casella condivisioni: query unica per ricette e collegamenti account ----
 
 test('getPendingIncomingRequests: una sola query server ripartisce ricette e collegamenti', async () => {

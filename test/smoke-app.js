@@ -171,10 +171,12 @@ renderWeek();
 renderRecipes();
 assert.match(document.getElementById('view-recipes').innerHTML, /recipe-section-toggle collapsed/);
 assert.match(document.getElementById('view-recipes').innerHTML, /recipe-section-body hidden/);
+assert.match(document.getElementById('view-recipes').innerHTML, /recipe-search-clear/, 'ricerca ricette con pulsante rapido di reset');
 
 // Ricettario: ricerca e sezioni aperte/chiuse persistono tra i render.
 filterRecipeCards('pollo');
 assert.equal(appState.deviceSettings.recipeLibraryState.searchQuery, 'pollo');
+assert.equal(document.getElementById('recipe-search-clear').classList.contains('hidden'), false, 'reset ricerca visibile quando il filtro è attivo');
 const lunchSectionBody = document.getElementById('recipe-section-lunch');
 const lunchToggleButton = makeElement('recipe-toggle-lunch');
 lunchSectionBody.classList.add('hidden');
@@ -355,6 +357,9 @@ const startupChecks = (async () => {
 })();
 renderSettings();
 assert.match(document.getElementById('view-settings').innerHTML, /Account collegati/);
+assert.match(document.getElementById('view-settings').innerHTML, /Backup e annullamento/);
+assert.match(document.getElementById('view-settings').innerHTML, /Importazioni che sostituiscono tutte le ricette/);
+assert.match(document.getElementById('view-settings').innerHTML, /Nessun backup/);
 
 // ---- Prezzi condivisi (Spesa Smart): rendering delle tre schede ----
 // Nello smoke non c'è un Firestore reale: la rubrica prezzi arriva da uno stub
@@ -472,6 +477,7 @@ openSwapModal('monday', 'lunch');
   closeSwapModal();
 }
 openGeneratorModal();
+assert.match(document.getElementById('generator-preview')._innerHTML, /Anteprima non ancora generata/, 'placeholder guida prima di lanciare il generatore');
 // Pannello parametri: i controlli sono presenti e le preferenze persistono
 // nelle impostazioni dispositivo (mai su Firestore).
 {

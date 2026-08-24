@@ -1144,7 +1144,7 @@ function renderRecipes() {
         <button class="btn btn-primary" onclick="createNewRecipe()">+ Nuova</button>
       </div>
     </div>
-    ${appState.recipes.length ? `<label class="search-box"><span>⌕</span><input id="recipe-search" type="search" value="${escapeAttr(recipeLibraryState.searchQuery)}" placeholder="Cerca ricetta, categoria o ingrediente…" oninput="filterRecipeCards(this.value)"></label>${MEAL_SLOTS.map(slot => recipeSectionHtml(slot.label, appState.recipes.filter(recipe => recipe.slot === slot.id), slot)).join("")}` : `<div class="empty-state recipe-empty-state"><span>🍲</span><h2>Il tuo ricettario è vuoto</h2><p>Puoi creare la prima ricetta manualmente, importare un file JSON o attendere una condivisione da un altro utente.</p><button class="btn btn-primary" onclick="createNewRecipe()">+ Crea la prima ricetta</button></div>`}
+    ${appState.recipes.length ? `<label class="search-box"><span>⌕</span><input id="recipe-search" type="search" value="${escapeAttr(recipeLibraryState.searchQuery)}" placeholder="Cerca ricetta, categoria o ingrediente…" oninput="filterRecipeCards(this.value)"><button type="button" id="recipe-search-clear" class="search-clear-btn ${recipeLibraryState.searchQuery ? "" : "hidden"}" onclick="clearRecipeSearch()" aria-label="Cancella ricerca" title="Cancella ricerca">×</button></label><p id="recipe-search-empty" class="text-muted recipe-search-empty hidden">Nessuna ricetta trovata. Prova con un altro nome, ingrediente o categoria.</p>${MEAL_SLOTS.map(slot => recipeSectionHtml(slot.label, appState.recipes.filter(recipe => recipe.slot === slot.id), slot)).join("")}` : `<div class="empty-state recipe-empty-state"><span>🍲</span><h2>Il tuo ricettario è vuoto</h2><p>Puoi creare la prima ricetta manualmente, importare un file JSON o attendere una condivisione da un altro utente.</p><button class="btn btn-primary" onclick="createNewRecipe()">+ Crea la prima ricetta</button></div>`}
   `;
   if (appState.recipes.length) filterRecipeCards(recipeLibraryState.searchQuery, { persist: false });
 }
@@ -1186,6 +1186,7 @@ window.filterRecipeCards = function(query, options = {}) {
   const state = persist
     ? updateRecipeLibraryState(current => ({ ...current, searchQuery: rawQuery }))
     : getRecipeLibraryState();
+  let totalMatches = 0;
   document.querySelectorAll(".recipe-library-section").forEach(section => {
     const cards = [...section.querySelectorAll(".recipe-library-card")];
     const slotId = section.dataset.slot;
@@ -1195,6 +1196,7 @@ window.filterRecipeCards = function(query, options = {}) {
       card.classList.toggle("hidden", !matches);
       if (matches) matchingCards += 1;
     });
+    totalMatches += matchingCards;
 
     const toggle = section.querySelector(".recipe-section-toggle");
     const body = section.querySelector(".recipe-section-body");
@@ -1213,6 +1215,19 @@ window.filterRecipeCards = function(query, options = {}) {
     toggle?.classList.toggle("collapsed", !hasMatches);
     toggle?.setAttribute("aria-expanded", String(hasMatches));
   });
+  const clearButton = document.getElementById("recipe-search-clear");
+  if (clearButton) clearButton.classList.toggle("hidden", !rawQuery);
+  const emptyState = document.getElementById("recipe-search-empty");
+  if (emptyState) emptyState.classList.toggle("hidden", !rawQuery || totalMatches > 0);
+};
+
+window.clearRecipeSearch = function() {
+  const input = document.getElementById("recipe-search");
+  if (input) {
+    input.value = "";
+    input.focus();
+  }
+  filterRecipeCards("");
 };
 
 window.createNewRecipe = function(slot = "lunch", assignDay = null) {
@@ -1747,9 +1762,18 @@ function renderSettings() {
 function renderBackupSection() {
   const meta = readLocalJson("backup_meta", null);
   const hasBackup = Boolean(meta?.operation || meta?.description || meta?.createdAt);
+  const protectedOperations = [
+    "Importazioni che sostituiscono tutte le ricette",
+    "Condivisioni che sovrascrivono ricette o settimana",
+    "Applicazione del generatore settimana",
+    "Eliminazione di una o più ricette",
+    "Collegamento o scollegamento account"
+  ];
   return `
     <section class="settings-section backup-section">
-      <div class="flex-between"><h2>Backup e annullamento</h2><span class="recipe-code">Copia di sicurezza automatica</span></div>
+      <div class="flex-between"><h2>Backup e annullamento</h2><span class="backup-status ${hasBackup ? "ready" : "idle"}">${hasBackup ? "Backup pronto" : "Nessun backup"}</span></div>
+      <p class="text-muted backup-note">Prima delle operazioni più pesanti salviamo automaticamente una copia di <strong>ricette, settimana e lista spesa</strong>. La copia più recente sostituisce quella precedente.</p>
+      <ul class="backup-covered-list">${protectedOperations.map(item => `<li>${escapeHtml(item)}</li>`).join("")}</ul>
       ${hasBackup ? `
         <div class="backup-meta">
           <div><small>Ultima operazione</small><strong>${escapeHtml(meta.operation || "—")}</strong></div>
@@ -1757,9 +1781,9 @@ function renderBackupSection() {
           <div><small>Data backup</small><strong>${escapeHtml(formatBackupDate(meta.createdAt) || "—")}</strong></div>
         </div>
         <button class="btn btn-danger full-width" onclick="undoLastModification()">↩ Annulla ultima modifica</button>
-        <p class="text-muted backup-note">Il ripristino è disponibile una sola volta: dopo il ripristino la copia di sicurezza viene eliminata.</p>
+        <p class="text-muted backup-note">Il ripristino è disponibile una sola volta: dopo l'annullamento la copia di sicurezza viene eliminata.</p>
       ` : `
-        <p class="text-muted backup-note">Nessun backup disponibile. Prima delle operazioni distruttive (importazione “Sostituisci tutte”, accettazione di una condivisione con sostituzione, applicazione del generatore settimana) viene salvata una copia di catalogo, piano e lista spesa.</p>
+        <p class="text-muted backup-note">Appena esegui una di queste operazioni, qui comparirà l'ultimo punto di ripristino disponibile.</p>
       `}
     </section>
   `;
@@ -1815,7 +1839,10 @@ window.undoLastModification = async function() {
     setRecipes(restored.catalog.recipes || []);
     appState.plan = restored.plan;
     appState.shopping = restored.shoppingList || getDefaultShoppingList();
+    appState.household = getCurrentHousehold();
     writeLocalJson("backup_meta", null);
+    renderGlobalHeader();
+    startAccountRealtimeSync();
     handleRoute();
     showToast("Ultima modifica annullata ✅");
   } catch (error) {
@@ -2003,7 +2030,7 @@ function setupTransferModals() {
       <div class="modal-content transfer-modal-content">
         <div class="modal-header"><div><p class="eyebrow">CONDIVISIONE</p><h2>Invia ricette a un utente</h2></div><button class="btn-icon" onclick="closeShareDialog()">&times;</button></div>
         <p id="share-send-summary" class="text-muted"></p>
-        <label class="share-username-field">Username destinatario<input id="share-recipient-username" autocomplete="off" autocapitalize="none" placeholder="es. mario"></label>
+        <label class="share-username-field">Username destinatario<input id="share-recipient-username" autocomplete="off" autocapitalize="none" spellcheck="false" placeholder="es. mario"></label>
         <label class="share-plan-option"><input id="share-include-plan" type="checkbox"> Invia anche la struttura della settimana</label>
         <p class="text-muted transfer-privacy-note">Il destinatario riceverà una richiesta e potrà importare solo le ricette, solo la settimana o tutto.</p>
         <button id="share-send-button" class="btn btn-primary full-width" onclick="submitRecipeShare()">Invia richiesta</button>
@@ -2029,7 +2056,7 @@ function setupTransferModals() {
       <div class="modal-content transfer-modal-content">
         <div class="modal-header"><div><p class="eyebrow">ACCOUNT COLLEGATI</p><h2>Collega un altro account</h2></div><button class="btn-icon" onclick="closeAccountLinkDialog()">&times;</button></div>
         <p class="text-muted">Invia una richiesta tramite username. Dopo l'accettazione condividerete piano, ricette, batch cooking e lista della spesa; ciascuno manterrà il proprio profilo porzioni locale.</p>
-        <label class="share-username-field">Username da collegare<input id="account-link-username" autocomplete="off" autocapitalize="none" placeholder="es. anna"></label>
+        <label class="share-username-field">Username da collegare<input id="account-link-username" autocomplete="off" autocapitalize="none" spellcheck="false" placeholder="es. anna"></label>
         <p class="text-muted transfer-privacy-note">Prima dell'invio verrà creato un backup del tuo stato corrente.</p>
         <button id="account-link-send-button" class="btn btn-primary full-width" onclick="submitAccountLink()">Invia richiesta di collegamento</button>
       </div>
@@ -2751,7 +2778,7 @@ function renderGeneratorPreview() {
   const preview = document.getElementById("generator-preview");
   const result = generatorState.proposal;
   if (!result) {
-    preview.innerHTML = "";
+    preview.innerHTML = `<div class="generator-empty"><span>✨</span><strong>Anteprima non ancora generata</strong><p>Tocca “Anteprima” per vedere la proposta prima di applicarla.</p></div>`;
     return;
   }
   const changes = window.PianoDomain ? PianoDomain.diffPlans(appState.plan, result.plan) : [];

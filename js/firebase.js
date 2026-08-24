@@ -480,7 +480,7 @@ async function saveShoppingListCloud(value) {
 // ---- Backup precedente (users/{uid}/backups/previous) ----
 
 async function saveBackup(catalog, plan, shopping, operation, description) {
-  requireUser();
+  const user = requireUser();
   const recipes = Array.isArray(catalog) ? catalog : (catalog?.recipes || []);
   const snapshot = {
     schemaVersion: CATALOG_SCHEMA_VERSION,
@@ -492,6 +492,9 @@ async function saveBackup(catalog, plan, shopping, operation, description) {
     shoppingList: cloneData(shopping),
     operation,
     description,
+    scope: currentHousehold ? "household" : "personal",
+    householdId: currentHousehold?.id || null,
+    createdByUid: user.uid,
     createdAt: new Date().toISOString()
   };
   await backupsRef().set({
@@ -513,35 +516,58 @@ async function deleteBackup() {
 }
 
 // Ripristino atomico: legge il backup, ripristina catalogo/piano/spesa e
-// cancella il backup in un'unica transazione. Utilizzabile una sola volta.
+// cancella il backup nello stesso batch. Se il backup era stato creato quando
+// l'utente era ancora in ambito personale ma ora si trova in una household,
+// il ripristino lo riporta prima alla copia personale per non sovrascrivere i
+// dati condivisi degli altri membri.
 async function restoreBackupAtomic() {
-  requireUser();
-  let restored = null;
-  await db.runTransaction(async transaction => {
-    const backupDoc = await transaction.get(backupsRef());
-    if (!backupDoc.exists) throw new Error("Non esiste un backup da ripristinare");
-    const backup = backupDoc.data();
-    const recipes = Array.isArray(backup?.catalog) ? backup.catalog : backup?.catalog?.recipes;
-    if (!Array.isArray(recipes) || !backup?.plan) throw new Error("Il backup non è valido");
-    backup.catalog = { schemaVersion: CATALOG_SCHEMA_VERSION, recipes };
-    transaction.set(recipeCatalogRef(), {
-      schemaVersion: CATALOG_SCHEMA_VERSION,
-      recipes: cloneData(recipes),
-      recipeCount: recipes.length,
-      restoredAt: firebase.firestore.FieldValue.serverTimestamp(),
+  const user = requireUser();
+  const backupDoc = await backupsRef().get();
+  if (!backupDoc.exists) throw new Error("Non esiste un backup da ripristinare");
+  const backup = backupDoc.data();
+  const recipes = Array.isArray(backup?.catalog) ? backup.catalog : backup?.catalog?.recipes;
+  if (!Array.isArray(recipes) || !backup?.plan) throw new Error("Il backup non è valido");
+  backup.catalog = { schemaVersion: CATALOG_SCHEMA_VERSION, recipes };
+
+  const restorePersonalState = backup.scope === "personal";
+  const leaveHousehold = restorePersonalState && Boolean(currentHousehold);
+  const targetCatalogRef = restorePersonalState || !currentHousehold
+    ? personalRecipeCatalogRef()
+    : recipeCatalogRef();
+  const targetPlanRef = restorePersonalState || !currentHousehold
+    ? personalWeeklyPlanRef()
+    : weeklyPlanRef();
+  const targetShoppingRef = restorePersonalState || !currentHousehold
+    ? personalShoppingListRef()
+    : shoppingListRef();
+
+  const batch = db.batch();
+  batch.set(targetCatalogRef, {
+    schemaVersion: CATALOG_SCHEMA_VERSION,
+    recipes: cloneData(recipes),
+    recipeCount: recipes.length,
+    restoredAt: firebase.firestore.FieldValue.serverTimestamp(),
+    updatedAt: firebase.firestore.FieldValue.serverTimestamp()
+  });
+  batch.set(targetPlanRef, cloneData(backup.plan));
+  batch.set(targetShoppingRef, cloneData(backup.shoppingList || getDefaultShoppingList()));
+  if (leaveHousehold) {
+    batch.update(householdRoot(currentHousehold.id), {
+      memberUids: firebase.firestore.FieldValue.arrayRemove(user.uid),
+      memberUsernames: firebase.firestore.FieldValue.arrayRemove(usernameFromUser(user)),
       updatedAt: firebase.firestore.FieldValue.serverTimestamp()
     });
-    transaction.set(weeklyPlanRef(), cloneData(backup.plan));
-    transaction.set(shoppingListRef(), cloneData(backup.shoppingList || getDefaultShoppingList()));
-    transaction.delete(backupsRef());
-    restored = backup;
-  });
+  }
+  batch.delete(backupsRef());
+  await batch.commit();
+
+  if (leaveHousehold) currentHousehold = null;
   // Aggiorna anche la cache locale e la UI.
-  writeLocalJson("recipe_catalog", restored.catalog.recipes);
-  writeLocalJson("weekly_plan", restored.plan);
-  writeLocalJson("shopping", restored.shoppingList || getDefaultShoppingList());
-  catalogMeta = restored.catalogMeta || catalogMeta;
-  return restored;
+  writeLocalJson("recipe_catalog", backup.catalog.recipes);
+  writeLocalJson("weekly_plan", backup.plan);
+  writeLocalJson("shopping", backup.shoppingList || getDefaultShoppingList());
+  catalogMeta = backup.catalogMeta || catalogMeta;
+  return backup;
 }
 
 async function importUserDataset(dataset) {
