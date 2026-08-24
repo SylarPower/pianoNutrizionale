@@ -413,6 +413,27 @@ const DEFAULT_CONSTRAINTS = {
   ];
   const FALLBACK_CATEGORY = '🌿 Spezie e aromi';
 
+  function uniqueStrings(values = []) {
+    const seen = new Set();
+    return (Array.isArray(values) ? values : []).filter(value => {
+      const clean = typeof value === 'string' ? value.trim() : '';
+      if (!clean || seen.has(clean)) return false;
+      seen.add(clean);
+      return true;
+    });
+  }
+
+  // Ordine configurabile delle categorie spesa: usa l'ordine salvato per le
+  // categorie note, completa le eventuali mancanti col default e mette in coda
+  // le categorie extra trovate nei dati (per robustezza futura).
+  function resolveShopCategoryOrder(savedOrder = [], defaultOrder = [], extraCategories = []) {
+    const defaults = uniqueStrings(defaultOrder);
+    const defaultSet = new Set(defaults);
+    const saved = uniqueStrings(savedOrder).filter(category => defaultSet.has(category));
+    const resolved = saved.concat(defaults.filter(category => !saved.includes(category)));
+    return resolved.concat(uniqueStrings(extraCategories).filter(category => !resolved.includes(category)));
+  }
+
   function categoryForIngredient(name) {
     const value = aliasKey(name);
     const hit = CATEGORY_RULES.find(rule => rule.terms.some(term => value.includes(term)));
@@ -1340,6 +1361,7 @@ const PROTEIN_CATEGORY_LABELS = {
     combineTaskQuantities,
     commonRecipeBatch,
     categoryForIngredient,
+    resolveShopCategoryOrder,
     isEmptyPortion,
     parseSimpleAmount,
     CARB_REFERENCE,

@@ -481,6 +481,22 @@ input[type="checkbox"], input[type="radio"] { accent-color: var(--primary); widt
 .excluded-list { margin-top: 12px; padding-top: 12px; border-top: 1px solid var(--line); }
 .excluded-list h3 { margin-bottom: 8px; }
 .excluded-list button { border: 0; cursor: pointer; }
+.shop-order-settings { margin-top: 16px; padding-top: 16px; border-top: 1px solid var(--line); }
+.shop-order-settings > p { margin: 8px 0 12px; font-size: .8rem; }
+.shop-category-order-list { display: grid; gap: 8px; }
+.shop-category-order-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  padding: 10px 12px;
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  background: var(--surface-alt);
+}
+.shop-category-order-row strong { font-size: .9rem; }
+.shop-category-order-actions { display: flex; gap: 6px; }
+.shop-category-order-actions .btn { min-width: 44px; }
 .shopping-summary { display: flex; justify-content: space-between; margin: 14px 0; color: var(--text-muted); font-size: .82rem; }
 .shopping-summary strong { color: var(--text); }
 .shop-category { margin: 21px 0; }
@@ -577,6 +593,8 @@ input[type="checkbox"], input[type="radio"] { accent-color: var(--primary); widt
 .recipe-notes li { margin: 5px 0; font-size: .85rem; }
 .modal-footer { display: flex; gap: 9px; margin-top: 20px; padding-top: 15px; border-top: 1px solid var(--line); flex-shrink: 0; }
 .modal-footer .btn { flex: 1; }
+#recipe-modal .modal-footer { flex-wrap: wrap; }
+#recipe-modal .modal-footer .btn { flex: 1 1 160px; }
 .batch-modal { padding: 16px; border-radius: 13px; background: var(--accent-soft); }
 .batch-modal ol { margin: 14px 0 14px 20px; }
 .batch-modal li { margin: 7px 0; }

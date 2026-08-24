@@ -12,6 +12,7 @@ const MEAL_SLOTS = [
   { id: "dinner", label: "Cena", shortLabel: "CENA", emoji: "🌙" }
 ];
 const SHOP_CATEGORY_ORDER = ["🥩 Carne", "🐟 Pesce", "🥚 Uova e latticini", "🫘 Legumi", "🍚 Carboidrati", "🥬 Verdura", "🍑 Frutta", "🥫 Dispensa", "🌿 Spezie e aromi"];
+const RECIPE_LIBRARY_SECTION_DEFAULTS = Object.fromEntries(MEAL_SLOTS.map(slot => [slot.id, false]));
 
 let appState = {
   user: null,
@@ -30,6 +31,7 @@ let toastTimeout = null;
 let stopHouseholdObserver = null;
 let stopSharedDataObserver = null;
 let activeHouseholdId = null;
+let recipeModalCloseStartedOutside = false;
 
 // ---- Session cache per avvio veloce ----
 function readSessionCache() {
@@ -136,6 +138,53 @@ function getProfileLabel() {
 // cena (pasta, riso, gnocchi, quinoa, piadina, farro, orzo) diventano questo.
 function getCrossSlotCenaCarb() {
   return appState.deviceSettings?.crossSlotCenaCarb || (window.PianoDomain?.DEFAULT_CENA_CARB_KEY || "pane");
+}
+
+function normalizeRecipeLibraryState(state = {}) {
+  const openSections = { ...RECIPE_LIBRARY_SECTION_DEFAULTS };
+  const savedSections = state?.openSections && typeof state.openSections === "object" ? state.openSections : {};
+  Object.keys(openSections).forEach(slotId => {
+    openSections[slotId] = Boolean(savedSections[slotId]);
+  });
+  return {
+    searchQuery: String(state?.searchQuery || "").trim(),
+    openSections
+  };
+}
+
+function getRecipeLibraryState() {
+  return normalizeRecipeLibraryState(appState.deviceSettings?.recipeLibraryState || {});
+}
+
+function saveRecipeLibraryState(nextState) {
+  const normalized = normalizeRecipeLibraryState(nextState);
+  appState.deviceSettings = appState.deviceSettings || getLocalDeviceSettings();
+  appState.deviceSettings.recipeLibraryState = normalized;
+  saveLocalDeviceSettings(appState.deviceSettings);
+  return normalized;
+}
+
+function updateRecipeLibraryState(updater) {
+  const current = getRecipeLibraryState();
+  const next = typeof updater === "function" ? updater(current) : { ...current, ...updater };
+  return saveRecipeLibraryState(next);
+}
+
+function resolveShopCategoryOrder(extraCategories = [], savedOrder = appState.deviceSettings?.shopCategoryOrder) {
+  if (window.PianoDomain?.resolveShopCategoryOrder) {
+    return PianoDomain.resolveShopCategoryOrder(savedOrder, SHOP_CATEGORY_ORDER, extraCategories);
+  }
+  const unique = values => [...new Set((Array.isArray(values) ? values : []).filter(Boolean))];
+  const saved = unique(savedOrder).filter(category => SHOP_CATEGORY_ORDER.includes(category));
+  const resolved = saved.concat(SHOP_CATEGORY_ORDER.filter(category => !saved.includes(category)));
+  return resolved.concat(unique(extraCategories).filter(category => !resolved.includes(category)));
+}
+
+function saveShopCategoryOrder(order) {
+  appState.deviceSettings = appState.deviceSettings || getLocalDeviceSettings();
+  appState.deviceSettings.shopCategoryOrder = resolveShopCategoryOrder([], order);
+  saveLocalDeviceSettings(appState.deviceSettings);
+  return appState.deviceSettings.shopCategoryOrder;
 }
 
 function recipeIsCrossSlot(recipe, assignedSlot) {
@@ -1056,6 +1105,7 @@ window.confirmRestoreMeal = async function() {
 
 function renderRecipes() {
   const container = document.getElementById("view-recipes");
+  const recipeLibraryState = getRecipeLibraryState();
   container.innerHTML = `
     <div class="page-heading recipes-heading">
       <div><p class="eyebrow">${appState.recipes.length} ricette · sincronizzate nel cloud</p><h1>Ricettario</h1><p>Puoi creare, esportare, importare e condividere le ricette del tuo account.</p></div>
@@ -1068,20 +1118,22 @@ function renderRecipes() {
         <button class="btn btn-primary" onclick="createNewRecipe()">+ Nuova</button>
       </div>
     </div>
-    ${appState.recipes.length ? `<label class="search-box"><span>⌕</span><input id="recipe-search" type="search" placeholder="Cerca ricetta, categoria o ingrediente…" oninput="filterRecipeCards(this.value)"></label>${MEAL_SLOTS.map(slot => recipeSectionHtml(slot.label, appState.recipes.filter(recipe => recipe.slot === slot.id), slot)).join("")}` : `<div class="empty-state recipe-empty-state"><span>🍲</span><h2>Il tuo ricettario è vuoto</h2><p>Puoi creare la prima ricetta manualmente, importare un file JSON o attendere una condivisione da un altro utente.</p><button class="btn btn-primary" onclick="createNewRecipe()">+ Crea la prima ricetta</button></div>`}
+    ${appState.recipes.length ? `<label class="search-box"><span>⌕</span><input id="recipe-search" type="search" value="${escapeAttr(recipeLibraryState.searchQuery)}" placeholder="Cerca ricetta, categoria o ingrediente…" oninput="filterRecipeCards(this.value)"></label>${MEAL_SLOTS.map(slot => recipeSectionHtml(slot.label, appState.recipes.filter(recipe => recipe.slot === slot.id), slot)).join("")}` : `<div class="empty-state recipe-empty-state"><span>🍲</span><h2>Il tuo ricettario è vuoto</h2><p>Puoi creare la prima ricetta manualmente, importare un file JSON o attendere una condivisione da un altro utente.</p><button class="btn btn-primary" onclick="createNewRecipe()">+ Crea la prima ricetta</button></div>`}
   `;
+  if (appState.recipes.length) filterRecipeCards(recipeLibraryState.searchQuery, { persist: false });
 }
 
 function recipeSectionHtml(title, recipes, slot) {
   if (!recipes.length) return "";
   const sectionId = `recipe-section-${slot.id}`;
+  const isOpen = getRecipeLibraryState().openSections[slot.id];
   return `
-    <section class="recipe-library-section">
-      <button class="recipe-section-toggle collapsed" onclick="toggleRecipeSection('${slot.id}', this)" aria-expanded="false">
+    <section class="recipe-library-section" data-slot="${slot.id}">
+      <button class="recipe-section-toggle ${isOpen ? "" : "collapsed"}" onclick="toggleRecipeSection('${slot.id}', this)" aria-expanded="${isOpen ? "true" : "false"}">
         <span class="section-title" style="margin:0"><span>${slot.emoji}</span><div><small>${recipes.length} proposte</small><h2>${escapeHtml(title)}</h2></div></span>
         <b class="recipe-section-chevron">⌄</b>
       </button>
-      <div id="${sectionId}" class="recipe-section-body hidden">
+      <div id="${sectionId}" class="recipe-section-body ${isOpen ? "" : "hidden"}">
         <div class="recipe-grid">
           ${recipes.map(recipe => `<button class="recipe-library-card" data-search="${escapeAttr(`${recipe.id} ${recipe.name} ${recipe.namesByDayType?.training || ""} ${recipe.namesByDayType?.rest || ""} ${recipeProteinLabel(recipe)} ${(recipe.ingredients || []).map(i => i.name).join(" ")}`.toLowerCase())}" onclick="openRecipeModal('${escapeAttr(recipe.id)}')"><span class="recipe-code">${escapeHtml(recipe.id)}</span><span class="recipe-card-emoji">${escapeHtml(recipe.emoji || "🍲")}</span><strong>${escapeHtml(recipe.name)}</strong><small>${escapeHtml(recipeProteinLabel(recipe))}</small></button>`).join("")}
         </div>
@@ -1095,12 +1147,22 @@ window.toggleRecipeSection = function(slotId, button) {
   const closed = body.classList.toggle("hidden");
   button.classList.toggle("collapsed", closed);
   button.setAttribute("aria-expanded", String(!closed));
+  updateRecipeLibraryState(state => ({
+    ...state,
+    openSections: { ...state.openSections, [slotId]: !closed }
+  }));
 };
 
-window.filterRecipeCards = function(query) {
-  const normalized = String(query || "").trim().toLowerCase();
+window.filterRecipeCards = function(query, options = {}) {
+  const rawQuery = String(query || "").trim();
+  const normalized = rawQuery.toLowerCase();
+  const persist = options.persist !== false;
+  const state = persist
+    ? updateRecipeLibraryState(current => ({ ...current, searchQuery: rawQuery }))
+    : getRecipeLibraryState();
   document.querySelectorAll(".recipe-library-section").forEach(section => {
     const cards = [...section.querySelectorAll(".recipe-library-card")];
+    const slotId = section.dataset.slot;
     let matchingCards = 0;
     cards.forEach(card => {
       const matches = !normalized || card.dataset.search.includes(normalized);
@@ -1111,17 +1173,19 @@ window.filterRecipeCards = function(query) {
     const toggle = section.querySelector(".recipe-section-toggle");
     const body = section.querySelector(".recipe-section-body");
     if (!normalized) {
+      const isOpen = Boolean(state.openSections[slotId]);
       section.classList.remove("hidden");
-      body?.classList.add("hidden");
-      toggle?.classList.add("collapsed");
-      toggle?.setAttribute("aria-expanded", "false");
+      body?.classList.toggle("hidden", !isOpen);
+      toggle?.classList.toggle("collapsed", !isOpen);
+      toggle?.setAttribute("aria-expanded", String(isOpen));
       return;
     }
 
-    section.classList.toggle("hidden", matchingCards === 0);
-    body?.classList.toggle("hidden", matchingCards === 0);
-    toggle?.classList.toggle("collapsed", matchingCards === 0);
-    toggle?.setAttribute("aria-expanded", String(matchingCards > 0));
+    const hasMatches = matchingCards > 0;
+    section.classList.toggle("hidden", !hasMatches);
+    body?.classList.toggle("hidden", !hasMatches);
+    toggle?.classList.toggle("collapsed", !hasMatches);
+    toggle?.setAttribute("aria-expanded", String(hasMatches));
   });
 };
 
@@ -1133,6 +1197,39 @@ window.createNewRecipe = function(slot = "lunch", assignDay = null) {
     ingredients: [], steps: [], notes: [], specialNote: ""
   };
   currentModal = { recipe, original: null, dayKey: DAY_ORDER.includes(assignDay) ? assignDay : null, dayType: DAY_ORDER.includes(assignDay) ? getDayType(assignDay) : getRecipePreviewDayType(), assignAfterSave: DAY_ORDER.includes(assignDay) ? { day: assignDay, slot: selectedSlot } : null, isNew: true };
+  editMode = true;
+  renderModalContent();
+  document.getElementById("recipe-modal").classList.remove("hidden");
+};
+
+function duplicatedRecipeFrom(sourceRecipe) {
+  const normalized = normalizeRecipeSchema(sourceRecipe);
+  const slot = normalized.slot || "lunch";
+  return {
+    id: `U${Date.now()}`,
+    slot,
+    name: `${normalized.name || "Ricetta"} (copia)`,
+    emoji: normalized.emoji || getSlotMeta(slot).emoji,
+    proteinCategory: normalized.proteinCategory || "",
+    ingredients: clone(normalized.ingredients || []),
+    steps: clone(normalized.steps || []),
+    notes: clone(normalized.notes || []),
+    specialNote: normalized.specialNote || "",
+    ...(normalized.namesByDayType ? { namesByDayType: clone(normalized.namesByDayType) } : {})
+  };
+}
+
+window.duplicateRecipe = function(recipeId = currentModal?.recipe?.id) {
+  const sourceRecipe = recipeId ? getRecipe(recipeId) : null;
+  if (!sourceRecipe) return;
+  currentModal = {
+    recipe: duplicatedRecipeFrom(sourceRecipe),
+    original: null,
+    dayKey: null,
+    dayType: getRecipePreviewDayType(),
+    slot: null,
+    isNew: true
+  };
   editMode = true;
   renderModalContent();
   document.getElementById("recipe-modal").classList.remove("hidden");
@@ -1289,13 +1386,18 @@ function getVisibleShoppingEntries() {
 function renderShop() {
   const container = document.getElementById("view-shop");
   const entries = getVisibleShoppingEntries();
-  const grouped = Object.fromEntries(SHOP_CATEGORY_ORDER.map(category => [category, entries.filter(entry => entry.category === category)]));
+  const categoryOrder = resolveShopCategoryOrder(entries.map(entry => entry.category));
+  const grouped = Object.fromEntries(categoryOrder.map(category => [category, []]));
+  entries.forEach(entry => {
+    if (!grouped[entry.category]) grouped[entry.category] = [];
+    grouped[entry.category].push(entry);
+  });
   const allSelected = DAY_ORDER.every(day => MEAL_SLOTS.every(slot => (appState.shopping.selectedMeals[day] || []).includes(slot.id)));
   container.innerHTML = `
     <div class="page-heading shop-heading"><div><p class="eyebrow">Dosi esatte · ${escapeHtml(getProfileLabel())}</p><h1>Lista della spesa</h1><p>Le quantità derivano solo dai pasti selezionati, senza fattori percentuali.</p></div><button class="btn btn-outline" onclick="toggleShopSettings()">${shopSettingsVisible ? "Chiudi" : "Seleziona"}</button></div>
     ${shopSettingsVisible ? renderShopSettings(allSelected) : ""}
     <div class="shopping-summary"><strong>${entries.length} alimenti</strong><span>${DAY_ORDER.reduce((sum, day) => sum + (appState.shopping.selectedMeals[day] || []).length, 0)} pasti selezionati</span></div>
-    ${SHOP_CATEGORY_ORDER.map(category => grouped[category].length ? `
+    ${categoryOrder.map(category => grouped[category]?.length ? `
       <section class="shop-category">
         <h2 class="shop-category-title">${category}</h2>
         ${grouped[category].map(entry => `<div class="shop-item"><div class="shop-item-details"><strong>${escapeHtml(entry.name)}</strong><small>${escapeHtml(entry.tags.join(" · "))}</small></div><input class="shop-amount-input" aria-label="Quantità ${escapeAttr(entry.name)}" value="${escapeAttr(shoppingAmountText(entry))}" onchange="updateShopItemQty('${escapeAttr(entry.id)}', this.value)"><button class="btn-icon remove-shop-item" title="Escludi" onclick="excludeShopItem('${escapeAttr(entry.id)}')">×</button></div>`).join("")}
@@ -1306,6 +1408,7 @@ function renderShop() {
 
 function renderShopSettings(allSelected) {
   const excludedCount = (appState.shopping.excludedItems || []).length;
+  const categoryOrder = resolveShopCategoryOrder();
   return `
     <section class="shop-settings card">
       <div class="flex-between"><h2>Pasti da includere</h2><button class="btn btn-small btn-outline" onclick="toggleShopAllWeek(${!allSelected})">${allSelected ? "Deseleziona tutto" : "Seleziona tutto"}</button></div>
@@ -1317,12 +1420,33 @@ function renderShopSettings(allSelected) {
         }).join("")}
       </div>
       <label class="settings-row"><span><strong>Dispensa e spezie</strong><small>Olio, frutta secca, aromi e condimenti</small></span><input type="checkbox" ${appState.shopping.includePantry ? "checked" : ""} onchange="toggleShopPantry(this.checked)"></label>
+      <div class="shop-order-settings">
+        <div class="flex-between"><h2>Ordine categorie</h2><button class="btn btn-small btn-outline" onclick="resetShopCategoryOrder()">Ripristina ordine predefinito</button></div>
+        <p class="text-muted">Questo ordine viene usato sia nella vista Spesa sia nella copia/condivisione testuale.</p>
+        <div class="shop-category-order-list">
+          ${categoryOrder.map((category, index) => `<div class="shop-category-order-row"><strong>${escapeHtml(category)}</strong><div class="shop-category-order-actions"><button class="btn btn-small btn-outline" aria-label="Sposta in alto ${escapeAttr(category)}" ${index === 0 ? "disabled" : ""} onclick="moveShopCategory(${index}, -1)">↑</button><button class="btn btn-small btn-outline" aria-label="Sposta in basso ${escapeAttr(category)}" ${index === categoryOrder.length - 1 ? "disabled" : ""} onclick="moveShopCategory(${index}, 1)">↓</button></div></div>`).join("")}
+        </div>
+      </div>
       ${excludedCount ? `<div class="excluded-list"><h3>Esclusi (${excludedCount})</h3>${appState.shopping.excludedItems.map(id => `<button class="frequency-chip" onclick="includeShopItem('${escapeAttr(id)}')">${escapeHtml(id.replaceAll("-", " "))} ×</button>`).join(" ")}</div>` : ""}
     </section>`;
 }
 
 window.toggleShopSettings = function() {
   shopSettingsVisible = !shopSettingsVisible;
+  renderShop();
+};
+
+window.moveShopCategory = function(index, delta) {
+  const order = resolveShopCategoryOrder();
+  const target = index + delta;
+  if (target < 0 || target >= order.length) return;
+  [order[index], order[target]] = [order[target], order[index]];
+  saveShopCategoryOrder(order);
+  renderShop();
+};
+
+window.resetShopCategoryOrder = function() {
+  saveShopCategoryOrder(SHOP_CATEGORY_ORDER);
   renderShop();
 };
 
@@ -1412,7 +1536,8 @@ window.includeShopItem = function(id) {
 
 function shoppingText() {
   const entries = getVisibleShoppingEntries();
-  const blocks = SHOP_CATEGORY_ORDER.map(category => {
+  const categoryOrder = resolveShopCategoryOrder(entries.map(entry => entry.category));
+  const blocks = categoryOrder.map(category => {
     const items = entries.filter(entry => entry.category === category);
     if (!items.length) return "";
     return `----- ${category}\n${items.map(entry => `${entry.name} - ${shoppingAmountText(entry)}`).join("\n")}`;
@@ -2648,9 +2773,16 @@ window.applyGenerator = async function() {
 };
 
 function setupModal() {
+  const modal = document.getElementById("recipe-modal");
   document.getElementById("modal-close").addEventListener("click", closeRecipeModal);
-  document.getElementById("recipe-modal").addEventListener("click", event => {
-    if (event.target.id === "recipe-modal") closeRecipeModal();
+  const armRecipeModalClose = event => {
+    recipeModalCloseStartedOutside = event.target.id === "recipe-modal";
+  };
+  modal.addEventListener("mousedown", armRecipeModalClose);
+  modal.addEventListener("touchstart", armRecipeModalClose);
+  modal.addEventListener("click", event => {
+    if (event.target.id === "recipe-modal" && recipeModalCloseStartedOutside) closeRecipeModal();
+    recipeModalCloseStartedOutside = false;
   });
   document.querySelectorAll(".tab-btn").forEach(button => {
     button.addEventListener("click", () => {
@@ -2665,6 +2797,7 @@ function setupModal() {
     currentModal.recipe = clone(currentModal.recipe);
     renderModalContent();
   });
+  document.getElementById("modal-duplicate-btn").addEventListener("click", () => duplicateRecipe(currentModal?.recipe?.id));
   document.getElementById("modal-save-btn").addEventListener("click", saveRecipeEdit);
   document.getElementById("modal-revert-btn").addEventListener("click", revertRecipe);
   document.getElementById("modal-export-btn").addEventListener("click", exportCurrentRecipe);
@@ -2723,6 +2856,7 @@ window.openRecipeModal = function(recipeId, dayKey = null, slot = null) {
 
 function closeRecipeModal() {
   document.getElementById("recipe-modal").classList.add("hidden");
+  recipeModalCloseStartedOutside = false;
   currentModal = null;
   editMode = false;
 }
@@ -2847,6 +2981,7 @@ function renderModalContent() {
   }
 
   document.getElementById("modal-edit-btn").classList.toggle("hidden", editMode);
+  document.getElementById("modal-duplicate-btn").classList.toggle("hidden", editMode || currentModal.isNew);
   document.getElementById("modal-save-btn").classList.toggle("hidden", !editMode);
   document.getElementById("modal-export-btn").classList.toggle("hidden", editMode || currentModal.isNew);
   document.getElementById("modal-share-btn").classList.toggle("hidden", editMode || currentModal.isNew);

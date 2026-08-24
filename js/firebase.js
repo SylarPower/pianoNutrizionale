@@ -265,7 +265,12 @@ function getDefaultDeviceSettings() {
     recipePreviewDayType: "training",
     // Carboidrato di default usato quando una ricetta di pranzo viene spostata
     // a cena e il suo carboidrato non è previsto a cena (pasta, riso, ecc.).
-    crossSlotCenaCarb: "pane"
+    crossSlotCenaCarb: "pane",
+    // Preferenze locali del ricettario: ricerca e sezioni aperte restano sul
+    // singolo dispositivo e non vengono mai condivise con la household.
+    recipeLibraryState: { searchQuery: "", openSections: {} },
+    // Ordine locale delle categorie nella lista della spesa.
+    shopCategoryOrder: []
   };
 }
 

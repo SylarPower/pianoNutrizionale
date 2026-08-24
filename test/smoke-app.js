@@ -171,15 +171,31 @@ renderWeek();
 renderRecipes();
 assert.match(document.getElementById('view-recipes').innerHTML, /recipe-section-toggle collapsed/);
 assert.match(document.getElementById('view-recipes').innerHTML, /recipe-section-body hidden/);
+
+// Ricettario: ricerca e sezioni aperte/chiuse persistono tra i render.
+filterRecipeCards('pollo');
+assert.equal(appState.deviceSettings.recipeLibraryState.searchQuery, 'pollo');
+const lunchSectionBody = document.getElementById('recipe-section-lunch');
+const lunchToggleButton = makeElement('recipe-toggle-lunch');
+lunchSectionBody.classList.add('hidden');
+toggleRecipeSection('lunch', lunchToggleButton);
+assert.equal(appState.deviceSettings.recipeLibraryState.openSections.lunch, true);
+renderRecipes();
+assert.match(document.getElementById('view-recipes').innerHTML, /id="recipe-search"[^>]*value="pollo"/);
+assert.match(document.getElementById('view-recipes').innerHTML, /id="recipe-section-lunch" class="recipe-section-body "/);
+
 renderShop();
 shopSettingsVisible = true;
 renderShop();
 assert.match(document.getElementById('view-shop').innerHTML, /toggleShopDay\('monday'\)/);
+appState.deviceSettings.shopCategoryOrder = ['🐟 Pesce', '🍚 Carboidrati', '🥚 Uova e latticini'];
+const exportedShopping = shoppingText();
+assert.ok(exportedShopping.indexOf('----- 🐟 Pesce') < exportedShopping.indexOf('----- 🍚 Carboidrati'));
+assert.ok(exportedShopping.indexOf('----- 🍚 Carboidrati') < exportedShopping.indexOf('----- 🥚 Uova e latticini'));
 assert.equal(shoppingAmountText({ id: 'opaque-a', legacyId: 'opaque-a', totals: { pz: 28 }, opaque: { 'Uomo: 8-10': 2, 'Donna IPO: 8-10': 1 }, free: false }), '28 pz');
 assert.equal(shoppingAmountText({ id: 'opaque-b', legacyId: 'opaque-b', totals: {}, opaque: { 'Uomo: 1 mazzetto': 1, 'Donna IPO: 1 mazzetto': 1 }, free: false }), '2 mazzetti');
 assert.equal(shoppingAmountText({ id: 'opaque-only', legacyId: 'opaque-only', totals: {}, opaque: { 'Uomo: una confezione piccola': 2 }, free: false }), 'Uomo: una confezione piccola');
 assert.equal(shoppingAmountText({ id: 'spoons', legacyId: 'spoons', totals: { g: 50 }, opaque: {}, free: false }), '50g');
-const exportedShopping = shoppingText();
 assert.match(exportedShopping, /Basilico - 7 pz/);
 assert.doesNotMatch(exportedShopping, /Basilico[^\n]*mazzetto/);
 
@@ -249,6 +265,30 @@ closeRecipeModal();
 createNewRecipe('lunch');
 assert.equal(currentModal.dayType, 'rest');
 closeRecipeModal();
+
+setupModal();
+
+// Duplicazione ricetta: crea una copia in modifica senza salvarla nel catalogo.
+openRecipeModal('L1', 'monday', 'lunch');
+const recipesBeforeDuplicate = appState.recipes.length;
+duplicateRecipe('L1');
+assert.equal(editMode, true);
+assert.equal(currentModal.isNew, true);
+assert.match(currentModal.recipe.name, /\(copia\)$/);
+assert.notEqual(currentModal.recipe.id, 'L1');
+assert.equal(appState.recipes.length, recipesBeforeDuplicate, 'la copia non entra nel catalogo finché non salvo');
+assert.equal(appState.plan.days.monday.lunch, 'L1', 'la ricetta duplicata non finisce nel piano settimanale');
+closeRecipeModal();
+
+// Il modal si chiude solo se il primo click parte fuori dal contenuto.
+openRecipeModal('L1');
+const recipeModal = document.getElementById('recipe-modal');
+recipeModal._fire('mousedown', { target: { id: 'modal-title' } });
+recipeModal._fire('click', { target: { id: 'recipe-modal' } });
+assert.equal(recipeModal.classList.contains('hidden'), false, 'drag/selection partita dentro al modal: non deve chiudersi');
+recipeModal._fire('mousedown', { target: { id: 'recipe-modal' } });
+recipeModal._fire('click', { target: { id: 'recipe-modal' } });
+assert.equal(recipeModal.classList.contains('hidden'), true, 'click iniziato fuori dal modal: deve chiudersi');
 
 // ---- Avvio senza letture duplicate in modalità household ----
 // In modalità household i listener onSnapshot rileggono comunque i tre
@@ -536,6 +576,9 @@ assert.equal(
   document.getElementById('loading-overlay').classList.contains('hidden'),
   true
 );
+
+clearTimeout(priceHistoryTimer);
+priceHistoryTimer = null;
 
 startupChecks.then(() => {
   console.log('SMOKE OK — tutti i percorsi di rendering eseguiti senza errori');
