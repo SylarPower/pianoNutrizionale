@@ -31,7 +31,7 @@ let toastTimeout = null;
 let stopHouseholdObserver = null;
 let stopSharedDataObserver = null;
 let activeHouseholdId = null;
-let recipeModalCloseStartedOutside = false;
+const modalOutsideCloseState = new Map();
 
 // ---- Session cache per avvio veloce ----
 function readSessionCache() {
@@ -260,6 +260,30 @@ function setLoading(message = "Caricamento…") {
 
 function clearLoading() {
   document.getElementById("loading-overlay")?.classList.add("hidden");
+}
+
+function modalOverlayTarget(target, modalId, modal) {
+  return target === modal || target?.id === modalId;
+}
+
+function bindModalOutsideClose(modalId, onClose) {
+  const modal = document.getElementById(modalId);
+  if (!modal || modal.dataset.outsideCloseBound === "true") return;
+  modal.dataset.outsideCloseBound = "true";
+  modalOutsideCloseState.set(modalId, false);
+  const armClose = event => {
+    modalOutsideCloseState.set(modalId, modalOverlayTarget(event.target, modalId, modal));
+  };
+  const resetClose = () => {
+    modalOutsideCloseState.set(modalId, false);
+  };
+  modal.addEventListener("mousedown", armClose);
+  modal.addEventListener("touchstart", armClose);
+  modal.addEventListener("click", event => {
+    if (modalOverlayTarget(event.target, modalId, modal) && modalOutsideCloseState.get(modalId)) onClose();
+    resetClose();
+  });
+  modal.addEventListener("touchcancel", resetClose);
 }
 
 function applyTheme(isDark) {
@@ -901,6 +925,7 @@ function setupSwapModal() {
         <div id="swap-options-list" class="swap-options"></div>
       </div>
     </div>`);
+  bindModalOutsideClose("swap-modal", () => window.closeSwapModal());
 }
 
 window.openSwapModal = function(dayKey, slot) {
@@ -1015,6 +1040,7 @@ function setupMealOperations() {
         <div id="meal-target-list" class="meal-target-list hidden"></div>
       </div>
     </div>`);
+  bindModalOutsideClose("meal-actions-modal", () => window.closeMealActions());
 }
 
 window.openMealActions = function(dayKey, slot) {
@@ -1620,9 +1646,7 @@ function setupMellerModal() {
         <div class="modal-footer"><button class="btn btn-primary full-width" onclick="closeMellerAlternatives()">Chiudi</button></div>
       </div>
     </div>`);
-  document.getElementById("meller-alternatives-modal").addEventListener("click", e => {
-    if (e.target.id === "meller-alternatives-modal") closeMellerAlternatives();
-  });
+  bindModalOutsideClose("meller-alternatives-modal", () => window.closeMellerAlternatives());
 }
 window.openMellerAlternatives = function(ingredientName) {
   const data = getMellerAlternativesForIngredient(ingredientName);
@@ -2010,6 +2034,11 @@ function setupTransferModals() {
         <button id="account-link-send-button" class="btn btn-primary full-width" onclick="submitAccountLink()">Invia richiesta di collegamento</button>
       </div>
     </div>`);
+  bindModalOutsideClose("recipe-import-modal", () => window.closeRecipeImportModal());
+  bindModalOutsideClose("share-send-modal", () => window.closeShareDialog());
+  bindModalOutsideClose("incoming-shares-modal", () => window.closeIncomingShares());
+  bindModalOutsideClose("share-conflict-modal", () => window.closeShareConflictModal());
+  bindModalOutsideClose("account-link-modal", () => window.closeAccountLinkDialog());
 }
 
 window.openAccountLinkDialog = function() {
@@ -2423,7 +2452,7 @@ constraints: {
 // le personalizzazioni dell'utente.
 const GENERATOR_PREFS_VERSION = 2;
 
-let generatorState = { seed: null, blocks: {}, proposal: null };
+let generatorState = { seed: null, blocks: {}, proposal: null, panels: { advanced: false, locks: false } };
 
 function migrateGeneratorPrefs(saved) {
   if (!saved || typeof saved !== 'object') return null;
@@ -2468,9 +2497,30 @@ function getGeneratorPrefs() {
   };
 }
 
-function saveGeneratorPrefs(updater) {
-  const advancedWasOpen = document.getElementById("generator-advanced")?.open;
+function getGeneratorPanelState() {
+  return {
+    advanced: document.getElementById("generator-advanced")?.open ?? Boolean(generatorState.panels?.advanced),
+    locks: document.getElementById("generator-locks")?.open ?? Boolean(generatorState.panels?.locks)
+  };
+}
 
+function restoreGeneratorPanelState(state) {
+  generatorState.panels = { ...state };
+  const advanced = document.getElementById("generator-advanced");
+  const locks = document.getElementById("generator-locks");
+  if (advanced) advanced.open = Boolean(state.advanced);
+  if (locks) locks.open = Boolean(state.locks);
+}
+
+function scrollGeneratorPreviewIntoView() {
+  const preview = document.getElementById("generator-preview");
+  if (!preview || typeof preview.scrollIntoView !== "function") return;
+  const scroll = () => preview.scrollIntoView({ behavior: "smooth", block: "start" });
+  if (typeof requestAnimationFrame === "function") requestAnimationFrame(scroll);
+  else setTimeout(scroll, 0);
+}
+
+function saveGeneratorPrefs(updater) {
   const current = getGeneratorPrefs();
   const next = typeof updater === "function" ? updater(current) : { ...current, ...updater };
   next.version = GENERATOR_PREFS_VERSION;
@@ -2479,11 +2529,6 @@ function saveGeneratorPrefs(updater) {
   saveLocalDeviceSettings(appState.deviceSettings);
   generatorState.proposal = null;
   renderGeneratorModal();
-
-  if (advancedWasOpen) {
-    const details = document.getElementById("generator-advanced");
-    if (details) details.open = true;
-  }
 }
 
 function setupGeneratorModal() {
@@ -2492,15 +2537,14 @@ function setupGeneratorModal() {
     <div id="generator-modal" class="modal hidden" role="dialog" aria-modal="true">
       <div class="modal-content generator-modal-content">
         <div class="modal-header"><div><p class="eyebrow">GENERATORE</p><h2>Genera settimana</h2></div><button class="btn-icon" onclick="closeGeneratorModal()">&times;</button></div>
-        <p id="generator-subtitle" class="text-muted">🔒 Bloccato = resta identico e conta nelle frequenze · 🔓 Sbloccato = il generatore può cambiarlo</p>
         <div id="generator-params" class="generator-params"></div>
+        <div id="generator-blocks" class="generator-blocks"></div>
         <div class="generator-controls">
-          <label class="share-username-field">Seed (risultato riproducibile)<input id="generator-seed" type="text" inputmode="numeric" placeholder="es. 42" onchange="generatorSeedChanged(this.value)"></label>
-          <button class="btn btn-outline" onclick="generatorPrefsReset()">Valori predefiniti</button>
-          <button class="btn btn-outline" onclick="computeGeneratorProposal(true)">Rigenera (nuovo seed)</button>
+          <label class="share-username-field">Numero prova (facoltativo)<input id="generator-seed" type="text" inputmode="numeric" placeholder="Lascia vuoto oppure scrivi un numero" onchange="generatorSeedChanged(this.value)"></label>
+          <button class="btn btn-outline" onclick="generatorPrefsReset()">Ripristina impostazioni</button>
+          <button class="btn btn-outline" onclick="computeGeneratorProposal(true)">Nuova proposta</button>
           <button class="btn btn-primary" onclick="computeGeneratorProposal(false)">Anteprima</button>
         </div>
-        <div id="generator-blocks" class="generator-blocks"></div>
         <div id="generator-preview" class="generator-preview"></div>
         <div class="modal-footer">
           <button class="btn btn-outline" onclick="closeGeneratorModal()">Annulla</button>
@@ -2508,16 +2552,23 @@ function setupGeneratorModal() {
         </div>
       </div>
     </div>`);
+  bindModalOutsideClose("generator-modal", () => window.closeGeneratorModal());
 }
 
 window.openGeneratorModal = function() {
-  generatorState = { seed: Math.floor(Math.random() * 1000000), blocks: {}, proposal: null };
+  generatorState = {
+    seed: Math.floor(Math.random() * 1000000),
+    blocks: {},
+    proposal: null,
+    panels: { advanced: false, locks: false }
+  };
   renderGeneratorModal();
   document.getElementById("generator-modal").classList.remove("hidden");
 };
 
 window.closeGeneratorModal = function() {
   document.getElementById("generator-modal")?.classList.add("hidden");
+  modalOutsideCloseState.set("generator-modal", false);
   generatorState.proposal = null;
 };
 
@@ -2599,50 +2650,53 @@ function renderGeneratorParams() {
   }).join("");
   return `
     <div class="generator-params-block">
-      <strong>Cosa generare</strong>
-      <small>Gli slot esclusi (o bloccati sotto) restano com'erano e contano nelle frequenze.</small>
+      <strong>Quali pasti vuoi aggiornare?</strong>
+      <small>Togli la spunta ai pasti che vuoi lasciare così come sono.</small>
       <div class="generator-slot-toggles">${slotToggles}</div>
     </div>
     <div class="generator-param-grid">
-      <label><span>🍳 Batch cena → pranzo</span><small>Pranzo successivo identico alla cena (doppia porzione automatica). Ogni coppia conta 2 volte la proteina: più coppie aumentano ripetizioni e possibili avvisi su manzo, uova o pollame.</small>
+      <label><span>🍳 Cucinare una volta e mangiare due volte</span><small>La cena diventa anche il pranzo del giorno dopo.</small>
         <select onchange="generatorParamChanged('batchPairs', Number(this.value))">
-          ${[0, 1, 2, 3, 4, 5, 6, 7].map(n => `<option value="${n}" ${prefs.batchPairs === n ? "selected" : ""}>${n === 0 ? "Nessuna" : `${n} ${n === 1 ? "giorno" : "giorni"}`}</option>`).join("")}
+          ${[0, 1, 2, 3, 4, 5, 6, 7].map(n => `<option value="${n}" ${prefs.batchPairs === n ? "selected" : ""}>${n === 0 ? "Mai" : `${n} ${n === 1 ? "volta" : "volte"}`}</option>`).join("")}
         </select>
       </label>
-      <label><span>🔁 Stessa ricetta al massimo</span><small>Ripetizioni in settimana (1 = mai ripetuta)</small>
+      <label><span>🔁 Quante volte può tornare la stessa ricetta?</span><small>1 = mai ripetuta. 2 = al massimo due volte nella settimana.</small>
         <select onchange="generatorParamChanged('maxRepeats', Number(this.value))">
           ${[1, 2, 3, 4].map(n => `<option value="${n}" ${prefs.maxRepeats === n ? "selected" : ""}>${n} ${n === 1 ? "volta" : "volte"}</option>`).join("")}
         </select>
       </label>
-      <label><span>↻ Solo varietà: includi anche ricette dell'altro pasto</span><small>Carboidrati adattati. NON crea doppie porzioni: per cucinare una volta per due pasti usa il numero “Batch cena → pranzo del giorno dopo” qui sopra.</small>
+      <label><span>↔ Vuoi più scelta tra pranzo e cena?</span><small>Se attivi questa opzione, il generatore può usare anche ricette di pranzo a cena e viceversa.</small>
         <select onchange="generatorParamChanged('allowCrossSlot', this.value === '1')">
           <option value="0" ${!prefs.allowCrossSlot ? "selected" : ""}>No</option>
           <option value="1" ${prefs.allowCrossSlot ? "selected" : ""}>Sì</option>
         </select>
       </label>
     </div>
-  <details id="generator-advanced" class="generator-advanced">
-<summary>Frequenze proteiche min–max <small>(impostazioni avanzate)</small></summary>
-      <p class="text-muted">Quanti pasti a settimana per ogni categoria. Il generatore cerca di restare nell'intervallo e avvisa quando non è possibile.</p>
+    <details id="generator-advanced" class="generator-advanced">
+      <summary>Proteine della settimana <small>(avanzate)</small></summary>
+      <p class="text-muted">Se vuoi, puoi decidere quante volte inserire carne, pesce, uova, latticini e legumi. Se non tocchi nulla, usiamo le impostazioni consigliate.</p>
       <div class="generator-constraints-grid">${constraintRows}</div>
     </details>`;
 }
 
 function renderGeneratorBlocks() {
-  return `<div class="generator-blocks-title"><strong>Blocca / sblocca pasto</strong><small>Gli elementi bloccati non vengono sovrascritti dalla generazione.</small></div>
-    <div class="generator-block-table">
-      ${DAY_ORDER.map(day => {
-        const block = generatorState.blocks[day];
-        const dayLocked = Boolean(block?.all);
-        return `<div class="generator-block-row">
-          <label class="generator-day-lock"><input type="checkbox" title="Blocca questo giorno: tutti i pasti resteranno identici alla generazione" ${dayLocked ? "checked" : ""} onchange="toggleGeneratorDayLock('${day}', this.checked)"> ${DAY_NAMES[day]}${dayLocked ? ' <span class="generator-lock-pill">Giorno mantenuto</span>' : ""}</label>
-          <div class="generator-slot-locks">${MEAL_SLOTS.map(slot => {
-            const slotLocked = Boolean(block?.[slot.id]);
-            return `<label class="${dayLocked ? "locked" : ""}"><input type="checkbox" title="Blocca questo pasto: resterà identico alla generazione" ${dayLocked || slotLocked ? "checked" : ""} ${dayLocked ? "disabled" : ""} onchange="toggleGeneratorSlotLock('${day}', '${slot.id}', this.checked)"> ${escapeHtml(slot.shortLabel)}${slotLocked && !dayLocked ? ' <span class="generator-slot-lock-badge">🔒 mantenuto</span>' : ""}</label>`;
-          }).join("")}</div>
-        </div>`;
-      }).join("")}
-    </div>`;
+  return `<details id="generator-locks" class="generator-advanced generator-locks-panel">
+      <summary>Lascia fissi alcuni pasti <small>(facoltativo)</small></summary>
+      <p class="text-muted">Spunta i giorni o i pasti che non vuoi far cambiare.</p>
+      <div class="generator-block-table">
+        ${DAY_ORDER.map(day => {
+          const block = generatorState.blocks[day];
+          const dayLocked = Boolean(block?.all);
+          return `<div class="generator-block-row">
+            <label class="generator-day-lock"><input type="checkbox" title="Lascia tutto il giorno uguale" ${dayLocked ? "checked" : ""} onchange="toggleGeneratorDayLock('${day}', this.checked)"> ${DAY_NAMES[day]}${dayLocked ? ' <span class="generator-lock-pill">Giorno fisso</span>' : ""}</label>
+            <div class="generator-slot-locks">${MEAL_SLOTS.map(slot => {
+              const slotLocked = Boolean(block?.[slot.id]);
+              return `<label class="${dayLocked ? "locked" : ""}"><input type="checkbox" title="Lascia questo pasto uguale" ${dayLocked || slotLocked ? "checked" : ""} ${dayLocked ? "disabled" : ""} onchange="toggleGeneratorSlotLock('${day}', '${slot.id}', this.checked)"> ${escapeHtml(slot.shortLabel)}${slotLocked && !dayLocked ? ' <span class="generator-slot-lock-badge">Fisso</span>' : ""}</label>`;
+            }).join("")}</div>
+          </div>`;
+        }).join("")}
+      </div>
+    </details>`;
 }
 
 window.computeGeneratorProposal = function(newSeed) {
@@ -2668,6 +2722,7 @@ window.computeGeneratorProposal = function(newSeed) {
   generatorState.proposal = result;
   document.getElementById("generator-seed").value = String(result.seed ?? generatorState.seed ?? "");
   renderGeneratorPreview();
+  scrollGeneratorPreviewIntoView();
 };
 
 function generatorRecipeName(recipeId) {
@@ -2709,11 +2764,11 @@ function renderGeneratorPreview() {
   const pairsHtml = pairs.length
     ? `<div class="generator-pairs">${pairs.map(pair => {
         const targetDay = DAY_ORDER[(DAY_ORDER.indexOf(pair.anchorDay) + 1) % DAY_ORDER.length];
-        return `<span class="generator-pair-chip" title="Cena del ${DAY_NAMES[pair.anchorDay]} raddoppiata per il pranzo del giorno dopo">🍳 ${DAY_NAMES[pair.anchorDay].slice(0, 3)} cena → ${DAY_NAMES[targetDay].slice(0, 3)} pranzo · ${escapeHtml(generatorRecipeName(pair.recipeId))}</span>`;
+        return `<span class="generator-pair-chip" title="Cena del ${DAY_NAMES[pair.anchorDay]} usata anche per il pranzo del giorno dopo">🍳 ${DAY_NAMES[pair.anchorDay].slice(0, 3)} cena + ${DAY_NAMES[targetDay].slice(0, 3)} pranzo</span>`;
       }).join("")}</div>`
     : "";
   preview.innerHTML = `
-    <div class="generator-preview-head"><strong>Anteprima proposta</strong><span>${changes.length} modifiche${pairs.length ? ` · ${pairs.length} batch` : ""}</span></div>
+    <div class="generator-preview-head"><strong>Anteprima</strong><span>${changes.length} cambi${pairs.length ? ` · ${pairs.length} doppi pasti` : ""}</span></div>
     ${result.warnings.length ? `<div class="generator-warnings">${result.warnings.map(warning => `<p>⚠️ ${escapeHtml(warning)}</p>`).join("")}</div>` : ""}
     <div class="generator-counts">${Object.entries(result.counts).map(([key, value]) => `<span class="${generatorCountStatus(key, value)}" title="Intervallo scelto nel pannello avanzate">${escapeHtml(GENERATOR_COUNT_LABELS[key] || key)}: ${value}</span>`).join("")}</div>
     ${pairsHtml}
@@ -2723,9 +2778,8 @@ function renderGeneratorPreview() {
         return `<div class="generator-diff-day"><strong>${DAY_NAMES[day]} ${result.plan.days[day].type === "training" ? "(A)" : "(R)"}</strong>
           ${MEAL_SLOTS.map(slot => {
             const change = dayChanges.find(item => item.slot === slot.id);
-            const from = change?.from ?? appState.plan.days[day][slot.id];
             const to = change?.to ?? result.plan.days[day][slot.id];
-            return `<div class="generator-diff-slot ${change ? "changed" : ""}"><small>${escapeHtml(slot.shortLabel)}</small><span>${change ? `↻ ${escapeHtml(generatorRecipeName(from))} → ${escapeHtml(generatorRecipeName(to))}` : escapeHtml(generatorRecipeName(to))}</span></div>`;
+            return `<div class="generator-diff-slot ${change ? "changed" : ""}"><small>${escapeHtml(slot.shortLabel)}</small><span>${escapeHtml(generatorRecipeName(to))}</span></div>`;
           }).join("")}
         </div>`;
       }).join("")}
@@ -2733,10 +2787,12 @@ function renderGeneratorPreview() {
 }
 
 function renderGeneratorModal() {
+  const panels = getGeneratorPanelState();
   document.getElementById("generator-seed").value = generatorState.seed ?? "";
   const params = document.getElementById("generator-params");
   if (params) params.innerHTML = renderGeneratorParams();
   document.getElementById("generator-blocks").innerHTML = renderGeneratorBlocks();
+  restoreGeneratorPanelState(panels);
   renderGeneratorPreview();
 }
 
@@ -2773,17 +2829,8 @@ window.applyGenerator = async function() {
 };
 
 function setupModal() {
-  const modal = document.getElementById("recipe-modal");
   document.getElementById("modal-close").addEventListener("click", closeRecipeModal);
-  const armRecipeModalClose = event => {
-    recipeModalCloseStartedOutside = event.target.id === "recipe-modal";
-  };
-  modal.addEventListener("mousedown", armRecipeModalClose);
-  modal.addEventListener("touchstart", armRecipeModalClose);
-  modal.addEventListener("click", event => {
-    if (event.target.id === "recipe-modal" && recipeModalCloseStartedOutside) closeRecipeModal();
-    recipeModalCloseStartedOutside = false;
-  });
+  bindModalOutsideClose("recipe-modal", () => closeRecipeModal());
   document.querySelectorAll(".tab-btn").forEach(button => {
     button.addEventListener("click", () => {
       document.querySelectorAll(".tab-btn").forEach(item => item.classList.remove("active"));
@@ -2856,7 +2903,7 @@ window.openRecipeModal = function(recipeId, dayKey = null, slot = null) {
 
 function closeRecipeModal() {
   document.getElementById("recipe-modal").classList.add("hidden");
-  recipeModalCloseStartedOutside = false;
+  modalOutsideCloseState.set("recipe-modal", false);
   currentModal = null;
   editMode = false;
 }
@@ -4455,9 +4502,8 @@ function setupPriceModals() {
         </div>
       </div>
     </div>`);
-  document.getElementById("price-scan-modal").addEventListener("click", event => {
-    if (event.target.id === "price-scan-modal") closePriceScanModal();
-  });
+  bindModalOutsideClose("price-scan-modal", () => window.closePriceScanModal());
+  bindModalOutsideClose("price-import-modal", () => window.closePriceImportModal());
 }
 
 window.openPriceScanModal = function() {

@@ -470,8 +470,18 @@ body.dark-mode .modal-adapted-note { color: #E6A976; }
 /* Spesa */
 .shop-heading { align-items: center; }
 .shop-settings { margin-bottom: 18px; padding: 18px; }
-.shop-day-grid { display: grid; grid-template-columns: repeat(2, 1fr); gap: 6px 16px; margin: 14px 0; }
-.shop-day-row { display: grid; grid-template-columns: 1fr auto auto; align-items: center; gap: 8px; padding: 9px 0; border-bottom: 1px solid var(--line); font-size: .83rem; }
+.shop-day-grid { display: grid; grid-template-columns: repeat(2, 1fr); gap: 14px 16px; margin: 14px 0; }
+.shop-day-row {
+  display: grid;
+  grid-template-columns: 1fr auto auto;
+  align-items: center;
+  gap: 8px;
+  padding: 12px 14px;
+  border: 1px solid var(--line);
+  border-radius: 14px;
+  background: var(--surface-alt);
+  font-size: .83rem;
+}
 .shop-day-row label { display: flex; align-items: center; gap: 4px; }
 input[type="checkbox"], input[type="radio"] { accent-color: var(--primary); width: 18px; height: 18px; }
 .settings-row { display: flex; align-items: center; justify-content: space-between; gap: 14px; min-height: 56px; padding: 10px 0; border-bottom: 1px solid var(--line); }
@@ -654,6 +664,7 @@ input[type="checkbox"], input[type="radio"] { accent-color: var(--primary); widt
 
 .shop-day-row { display: grid; grid-template-columns: 150px 1fr; gap: 12px; align-items: start; }
 .shop-day-head { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
+.shop-day-head strong { font-size: .92rem; }
 .shop-day-head .btn { min-width: 64px; min-height: 30px; padding: 3px 8px; font-size: .7rem; }
 .shop-meal-checks { display: flex; flex-wrap: wrap; gap: 8px 14px; }
 .shop-meal-checks label { display: flex; align-items: center; gap: 4px; white-space: nowrap; }
@@ -1079,9 +1090,7 @@ body.dark-mode .login-card {
 /* Generatore settimana */
 .generator-controls { display: flex; flex-wrap: wrap; gap: 10px; align-items: flex-end; margin-top: 12px; }
 .generator-controls .share-username-field { flex: 1 1 180px; margin: 0; }
-.generator-blocks { margin-top: 16px; }
-.generator-blocks-title strong { display: block; }
-.generator-blocks-title small { color: var(--text-muted); }
+.generator-blocks { margin-top: 0; }
 .generator-block-table { margin-top: 8px; }
 .generator-block-row {
   display: flex;

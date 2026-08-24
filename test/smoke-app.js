@@ -476,60 +476,59 @@ openGeneratorModal();
 // nelle impostazioni dispositivo (mai su Firestore).
 {
   const paramsHtml = document.getElementById('generator-params')._innerHTML;
-  assert.match(fs.readFileSync(path.join(ROOT, 'js/app.js'), 'utf8'), /id=\"generator-subtitle\"[^>]*>🔒 Bloccato = resta identico e conta nelle frequenze/, 'legenda blocchi chiara nella modale');
+  assert.doesNotMatch(fs.readFileSync(path.join(ROOT, 'js/app.js'), 'utf8'), /Bloccato = resta identico e conta nelle frequenze/, 'legenda tecnica rimossa dalla modale');
+  assert.match(paramsHtml, /Quali pasti vuoi aggiornare\?/, 'titolo semplificato per gli slot');
+  assert.match(paramsHtml, /Cucinare una volta e mangiare due volte/, 'titolo batch più semplice');
+  assert.match(paramsHtml, /Quante volte può tornare la stessa ricetta\?/, 'titolo ripetizioni più semplice');
+  assert.match(paramsHtml, /Vuoi più scelta tra pranzo e cena\?/, 'titolo cross-slot più semplice');
+  assert.match(paramsHtml, /Proteine della settimana/, 'sezione avanzata con titolo più semplice');
   assert.match(paramsHtml, /generatorParamChanged\('batchPairs'/, 'controllo batch cena → pranzo presente');
-  assert.match(paramsHtml, /value=\"7\"/, 'batch selezionabile fino a sette giorni');
-  assert.match(paramsHtml, /Pranzo successivo identico alla cena/, 'batch descritto come doppia porzione');
-  assert.match(paramsHtml, /Ogni coppia conta 2 volte la proteina/, 'trade-off proteico del batch esplicitato');
-  assert.match(paramsHtml, /Solo varietà: includi anche ricette dell'altro pasto/, 'cross-slot distinto dal batch');
-  assert.match(paramsHtml, /NON crea doppie porzioni/, 'cross-slot chiarisce che non crea batch');
+  assert.match(paramsHtml, /value=\"7\"/, 'batch selezionabile fino a sette volte');
   assert.match(paramsHtml, /generatorParamChanged\('maxRepeats'/, 'controllo tetto ripetizioni presente');
   assert.match(paramsHtml, /generatorParamChanged\('allowCrossSlot'/, 'controllo cross-slot presente');
   assert.match(paramsHtml, /generatorSlotToggled\('lunch'/, 'toggle slot pranzo presente');
-  assert.match(paramsHtml, /generatorConstraintChanged\('legumesMin'/, 'input frequenze min/max presente');
+  assert.match(paramsHtml, /generatorConstraintChanged\('legumesMin'/, 'input frequenze min\/max presente');
   generatorSlotToggled('breakfast', false);
   assert.equal(getGeneratorPrefs().slots.breakfast, false, 'slot escluso salvato nelle preferenze');
   generatorParamChanged('batchPairs', 3);
   assert.equal(getGeneratorPrefs().batchPairs, 3, 'batch cena → pranzo salvato');
   generatorParamChanged('batchPairs', 9);
-  assert.equal(getGeneratorPrefs().batchPairs, 7, 'batch limitato a sette giorni');
+  assert.equal(getGeneratorPrefs().batchPairs, 7, 'batch limitato a sette volte');
   generatorConstraintChanged('legumesMin', '9');
   assert.equal(getGeneratorPrefs().constraints.legumesMin, 9, 'frequenze limitate a 0-14 pasti');
   generatorConstraintChanged('legumesMax', '20');
   assert.equal(getGeneratorPrefs().constraints.legumesMax, 14, 'massimo frequenze limitato a 14');
-  // Riga Affettati e carni miste presente nel pannello frequenze avanzate.
   assert.match(paramsHtml, /Affettati e carni miste/, 'riga Affettati e carni miste nelle frequenze');
   assert.match(paramsHtml, /generatorConstraintChanged\('curedMeatsMin'/, 'controllo min curedMeats presente');
   assert.match(paramsHtml, /generatorConstraintChanged\('curedMeatsMax'/, 'controllo max curedMeats presente');
-  // Limite 14 degli input frequenze (non 7 come in precedenza).
   assert.match(paramsHtml, /max="14"/, 'input frequenze con max 14');
   generatorPrefsReset();
   assert.equal(getGeneratorPrefs().batchPairs, GENERATOR_PREFS_DEFAULTS.batchPairs, 'ripristino valori predefiniti');
-  // Migrazione preferenze: vecchio legumesMax (4) → nuovo default (14).
   appState.deviceSettings.generatorPrefs = { constraints: { legumesMax: 4 }, slots: {} };
   assert.equal(getGeneratorPrefs().constraints.legumesMax, 14, 'migrazione: legumesMax vecchio default 4 → 14');
   assert.equal(getGeneratorPrefs().version, 2, 'versione assegnata dopo migrazione');
-  // La migrazione non si riesegue su preferenze già migrate.
   appState.deviceSettings.generatorPrefs = { version: 2, constraints: { legumesMax: 10 }, slots: {} };
   assert.equal(getGeneratorPrefs().constraints.legumesMax, 10, 'preferenze personalizzate preservate dopo migrazione');
   generatorPrefsReset();
-  // Pannello avanzato resta aperto dopo una modifica delle frequenze.
   const advDetails = document.getElementById('generator-advanced');
   if (advDetails) advDetails.open = true;
   generatorConstraintChanged('legumesMin', '4');
   assert.equal(document.getElementById('generator-advanced')?.open, true, 'pannello avanzato resta aperto dopo modifica');
   generatorSlotToggled('breakfast', true);
 }
-// I blocchi sono espliciti: badge sul singolo pasto e pill sull'intera giornata.
+// I blocchi sono espliciti, vicini agli altri parametri e richiudibili.
+assert.match(document.getElementById('generator-blocks')._innerHTML, /generator-locks/, 'sezione blocchi richiudibile presente');
+assert.match(document.getElementById('generator-blocks')._innerHTML, /Lascia fissi alcuni pasti/, 'titolo semplice per i blocchi');
 toggleGeneratorSlotLock('monday', 'lunch', true);
-assert.match(document.getElementById('generator-blocks')._innerHTML, /🔒 mantenuto/, 'badge per il singolo pasto mantenuto');
-assert.match(document.getElementById('generator-blocks')._innerHTML, /Blocca questo pasto: resterà identico alla generazione/, 'tooltip del lucchetto del pasto');
+assert.match(document.getElementById('generator-blocks')._innerHTML, /Fisso/, 'badge per il singolo pasto mantenuto');
+assert.match(document.getElementById('generator-blocks')._innerHTML, /Lascia questo pasto uguale/, 'tooltip del lucchetto semplificato');
 toggleGeneratorDayLock('tuesday', true);
-assert.match(document.getElementById('generator-blocks')._innerHTML, /Giorno mantenuto/, 'pill per l’intera giornata mantenuta');
+assert.match(document.getElementById('generator-blocks')._innerHTML, /Giorno fisso/, 'pill per l’intera giornata mantenuta');
 toggleGeneratorDayLock('tuesday', false);
 toggleGeneratorSlotLock('monday', 'lunch', false);
 computeGeneratorProposal(false);
 assert.match(document.getElementById('generator-preview')._innerHTML, /generator-diff/, 'anteprima con diff renderizzata');
+assert.doesNotMatch(document.getElementById('generator-preview')._innerHTML, /↻ .*→/, 'anteprima semplificata senza confronto vecchio → nuovo');
 openShareDialog();
 openShareConflictPreview({ id: 'sh1', senderUsername: 'anna', recipes: [R('L9', 'Nuova', 'lunch', 'Uova')], includesPlan: false, plan: null }, 'recipes');
 
