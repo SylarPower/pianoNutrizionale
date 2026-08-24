@@ -171,15 +171,33 @@ renderWeek();
 renderRecipes();
 assert.match(document.getElementById('view-recipes').innerHTML, /recipe-section-toggle collapsed/);
 assert.match(document.getElementById('view-recipes').innerHTML, /recipe-section-body hidden/);
+assert.match(document.getElementById('view-recipes').innerHTML, /recipe-search-clear/, 'ricerca ricette con pulsante rapido di reset');
+
+// Ricettario: ricerca e sezioni aperte/chiuse persistono tra i render.
+filterRecipeCards('pollo');
+assert.equal(appState.deviceSettings.recipeLibraryState.searchQuery, 'pollo');
+assert.equal(document.getElementById('recipe-search-clear').classList.contains('hidden'), false, 'reset ricerca visibile quando il filtro è attivo');
+const lunchSectionBody = document.getElementById('recipe-section-lunch');
+const lunchToggleButton = makeElement('recipe-toggle-lunch');
+lunchSectionBody.classList.add('hidden');
+toggleRecipeSection('lunch', lunchToggleButton);
+assert.equal(appState.deviceSettings.recipeLibraryState.openSections.lunch, true);
+renderRecipes();
+assert.match(document.getElementById('view-recipes').innerHTML, /id="recipe-search"[^>]*value="pollo"/);
+assert.match(document.getElementById('view-recipes').innerHTML, /id="recipe-section-lunch" class="recipe-section-body "/);
+
 renderShop();
 shopSettingsVisible = true;
 renderShop();
 assert.match(document.getElementById('view-shop').innerHTML, /toggleShopDay\('monday'\)/);
+appState.deviceSettings.shopCategoryOrder = ['🐟 Pesce', '🍚 Carboidrati', '🥚 Uova e latticini'];
+const exportedShopping = shoppingText();
+assert.ok(exportedShopping.indexOf('----- 🐟 Pesce') < exportedShopping.indexOf('----- 🍚 Carboidrati'));
+assert.ok(exportedShopping.indexOf('----- 🍚 Carboidrati') < exportedShopping.indexOf('----- 🥚 Uova e latticini'));
 assert.equal(shoppingAmountText({ id: 'opaque-a', legacyId: 'opaque-a', totals: { pz: 28 }, opaque: { 'Uomo: 8-10': 2, 'Donna IPO: 8-10': 1 }, free: false }), '28 pz');
 assert.equal(shoppingAmountText({ id: 'opaque-b', legacyId: 'opaque-b', totals: {}, opaque: { 'Uomo: 1 mazzetto': 1, 'Donna IPO: 1 mazzetto': 1 }, free: false }), '2 mazzetti');
 assert.equal(shoppingAmountText({ id: 'opaque-only', legacyId: 'opaque-only', totals: {}, opaque: { 'Uomo: una confezione piccola': 2 }, free: false }), 'Uomo: una confezione piccola');
 assert.equal(shoppingAmountText({ id: 'spoons', legacyId: 'spoons', totals: { g: 50 }, opaque: {}, free: false }), '50g');
-const exportedShopping = shoppingText();
 assert.match(exportedShopping, /Basilico - 7 pz/);
 assert.doesNotMatch(exportedShopping, /Basilico[^\n]*mazzetto/);
 
@@ -250,6 +268,30 @@ createNewRecipe('lunch');
 assert.equal(currentModal.dayType, 'rest');
 closeRecipeModal();
 
+setupModal();
+
+// Duplicazione ricetta: crea una copia in modifica senza salvarla nel catalogo.
+openRecipeModal('L1', 'monday', 'lunch');
+const recipesBeforeDuplicate = appState.recipes.length;
+duplicateRecipe('L1');
+assert.equal(editMode, true);
+assert.equal(currentModal.isNew, true);
+assert.match(currentModal.recipe.name, /\(copia\)$/);
+assert.notEqual(currentModal.recipe.id, 'L1');
+assert.equal(appState.recipes.length, recipesBeforeDuplicate, 'la copia non entra nel catalogo finché non salvo');
+assert.equal(appState.plan.days.monday.lunch, 'L1', 'la ricetta duplicata non finisce nel piano settimanale');
+closeRecipeModal();
+
+// Il modal si chiude solo se il primo click parte fuori dal contenuto.
+openRecipeModal('L1');
+const recipeModal = document.getElementById('recipe-modal');
+recipeModal._fire('mousedown', { target: { id: 'modal-title' } });
+recipeModal._fire('click', { target: { id: 'recipe-modal' } });
+assert.equal(recipeModal.classList.contains('hidden'), false, 'drag/selection partita dentro al modal: non deve chiudersi');
+recipeModal._fire('mousedown', { target: { id: 'recipe-modal' } });
+recipeModal._fire('click', { target: { id: 'recipe-modal' } });
+assert.equal(recipeModal.classList.contains('hidden'), true, 'click iniziato fuori dal modal: deve chiudersi');
+
 // ---- Avvio senza letture duplicate in modalità household ----
 // In modalità household i listener onSnapshot rileggono comunque i tre
 // documenti: con una cache locale valida loadUserData NON deve eseguire anche
@@ -315,6 +357,9 @@ const startupChecks = (async () => {
 })();
 renderSettings();
 assert.match(document.getElementById('view-settings').innerHTML, /Account collegati/);
+assert.match(document.getElementById('view-settings').innerHTML, /Backup e annullamento/);
+assert.match(document.getElementById('view-settings').innerHTML, /Importazioni che sostituiscono tutte le ricette/);
+assert.match(document.getElementById('view-settings').innerHTML, /Nessun backup/);
 
 // ---- Prezzi condivisi (Spesa Smart): rendering delle tre schede ----
 // Nello smoke non c'è un Firestore reale: la rubrica prezzi arriva da uno stub
@@ -432,64 +477,64 @@ openSwapModal('monday', 'lunch');
   closeSwapModal();
 }
 openGeneratorModal();
+assert.match(document.getElementById('generator-preview')._innerHTML, /Anteprima non ancora generata/, 'placeholder guida prima di lanciare il generatore');
 // Pannello parametri: i controlli sono presenti e le preferenze persistono
 // nelle impostazioni dispositivo (mai su Firestore).
 {
   const paramsHtml = document.getElementById('generator-params')._innerHTML;
-  assert.match(fs.readFileSync(path.join(ROOT, 'js/app.js'), 'utf8'), /id=\"generator-subtitle\"[^>]*>🔒 Bloccato = resta identico e conta nelle frequenze/, 'legenda blocchi chiara nella modale');
+  assert.doesNotMatch(fs.readFileSync(path.join(ROOT, 'js/app.js'), 'utf8'), /Bloccato = resta identico e conta nelle frequenze/, 'legenda tecnica rimossa dalla modale');
+  assert.match(paramsHtml, /Quali pasti vuoi aggiornare\?/, 'titolo semplificato per gli slot');
+  assert.match(paramsHtml, /Cucinare una volta e mangiare due volte/, 'titolo batch più semplice');
+  assert.match(paramsHtml, /Quante volte può tornare la stessa ricetta\?/, 'titolo ripetizioni più semplice');
+  assert.match(paramsHtml, /Vuoi più scelta tra pranzo e cena\?/, 'titolo cross-slot più semplice');
+  assert.match(paramsHtml, /Proteine della settimana/, 'sezione avanzata con titolo più semplice');
   assert.match(paramsHtml, /generatorParamChanged\('batchPairs'/, 'controllo batch cena → pranzo presente');
-  assert.match(paramsHtml, /value=\"7\"/, 'batch selezionabile fino a sette giorni');
-  assert.match(paramsHtml, /Pranzo successivo identico alla cena/, 'batch descritto come doppia porzione');
-  assert.match(paramsHtml, /Ogni coppia conta 2 volte la proteina/, 'trade-off proteico del batch esplicitato');
-  assert.match(paramsHtml, /Solo varietà: includi anche ricette dell'altro pasto/, 'cross-slot distinto dal batch');
-  assert.match(paramsHtml, /NON crea doppie porzioni/, 'cross-slot chiarisce che non crea batch');
+  assert.match(paramsHtml, /value=\"7\"/, 'batch selezionabile fino a sette volte');
   assert.match(paramsHtml, /generatorParamChanged\('maxRepeats'/, 'controllo tetto ripetizioni presente');
   assert.match(paramsHtml, /generatorParamChanged\('allowCrossSlot'/, 'controllo cross-slot presente');
   assert.match(paramsHtml, /generatorSlotToggled\('lunch'/, 'toggle slot pranzo presente');
-  assert.match(paramsHtml, /generatorConstraintChanged\('legumesMin'/, 'input frequenze min/max presente');
+  assert.match(paramsHtml, /generatorConstraintChanged\('legumesMin'/, 'input frequenze min\/max presente');
   generatorSlotToggled('breakfast', false);
   assert.equal(getGeneratorPrefs().slots.breakfast, false, 'slot escluso salvato nelle preferenze');
   generatorParamChanged('batchPairs', 3);
   assert.equal(getGeneratorPrefs().batchPairs, 3, 'batch cena → pranzo salvato');
   generatorParamChanged('batchPairs', 9);
-  assert.equal(getGeneratorPrefs().batchPairs, 7, 'batch limitato a sette giorni');
+  assert.equal(getGeneratorPrefs().batchPairs, 7, 'batch limitato a sette volte');
   generatorConstraintChanged('legumesMin', '9');
   assert.equal(getGeneratorPrefs().constraints.legumesMin, 9, 'frequenze limitate a 0-14 pasti');
   generatorConstraintChanged('legumesMax', '20');
   assert.equal(getGeneratorPrefs().constraints.legumesMax, 14, 'massimo frequenze limitato a 14');
-  // Riga Affettati e carni miste presente nel pannello frequenze avanzate.
   assert.match(paramsHtml, /Affettati e carni miste/, 'riga Affettati e carni miste nelle frequenze');
   assert.match(paramsHtml, /generatorConstraintChanged\('curedMeatsMin'/, 'controllo min curedMeats presente');
   assert.match(paramsHtml, /generatorConstraintChanged\('curedMeatsMax'/, 'controllo max curedMeats presente');
-  // Limite 14 degli input frequenze (non 7 come in precedenza).
   assert.match(paramsHtml, /max="14"/, 'input frequenze con max 14');
   generatorPrefsReset();
   assert.equal(getGeneratorPrefs().batchPairs, GENERATOR_PREFS_DEFAULTS.batchPairs, 'ripristino valori predefiniti');
-  // Migrazione preferenze: vecchio legumesMax (4) → nuovo default (14).
   appState.deviceSettings.generatorPrefs = { constraints: { legumesMax: 4 }, slots: {} };
   assert.equal(getGeneratorPrefs().constraints.legumesMax, 14, 'migrazione: legumesMax vecchio default 4 → 14');
   assert.equal(getGeneratorPrefs().version, 2, 'versione assegnata dopo migrazione');
-  // La migrazione non si riesegue su preferenze già migrate.
   appState.deviceSettings.generatorPrefs = { version: 2, constraints: { legumesMax: 10 }, slots: {} };
   assert.equal(getGeneratorPrefs().constraints.legumesMax, 10, 'preferenze personalizzate preservate dopo migrazione');
   generatorPrefsReset();
-  // Pannello avanzato resta aperto dopo una modifica delle frequenze.
   const advDetails = document.getElementById('generator-advanced');
   if (advDetails) advDetails.open = true;
   generatorConstraintChanged('legumesMin', '4');
   assert.equal(document.getElementById('generator-advanced')?.open, true, 'pannello avanzato resta aperto dopo modifica');
   generatorSlotToggled('breakfast', true);
 }
-// I blocchi sono espliciti: badge sul singolo pasto e pill sull'intera giornata.
+// I blocchi sono espliciti, vicini agli altri parametri e richiudibili.
+assert.match(document.getElementById('generator-blocks')._innerHTML, /generator-locks/, 'sezione blocchi richiudibile presente');
+assert.match(document.getElementById('generator-blocks')._innerHTML, /Lascia fissi alcuni pasti/, 'titolo semplice per i blocchi');
 toggleGeneratorSlotLock('monday', 'lunch', true);
-assert.match(document.getElementById('generator-blocks')._innerHTML, /🔒 mantenuto/, 'badge per il singolo pasto mantenuto');
-assert.match(document.getElementById('generator-blocks')._innerHTML, /Blocca questo pasto: resterà identico alla generazione/, 'tooltip del lucchetto del pasto');
+assert.match(document.getElementById('generator-blocks')._innerHTML, /Fisso/, 'badge per il singolo pasto mantenuto');
+assert.match(document.getElementById('generator-blocks')._innerHTML, /Lascia questo pasto uguale/, 'tooltip del lucchetto semplificato');
 toggleGeneratorDayLock('tuesday', true);
-assert.match(document.getElementById('generator-blocks')._innerHTML, /Giorno mantenuto/, 'pill per l’intera giornata mantenuta');
+assert.match(document.getElementById('generator-blocks')._innerHTML, /Giorno fisso/, 'pill per l’intera giornata mantenuta');
 toggleGeneratorDayLock('tuesday', false);
 toggleGeneratorSlotLock('monday', 'lunch', false);
 computeGeneratorProposal(false);
 assert.match(document.getElementById('generator-preview')._innerHTML, /generator-diff/, 'anteprima con diff renderizzata');
+assert.doesNotMatch(document.getElementById('generator-preview')._innerHTML, /↻ .*→/, 'anteprima semplificata senza confronto vecchio → nuovo');
 openShareDialog();
 openShareConflictPreview({ id: 'sh1', senderUsername: 'anna', recipes: [R('L9', 'Nuova', 'lunch', 'Uova')], includesPlan: false, plan: null }, 'recipes');
 
@@ -536,6 +581,9 @@ assert.equal(
   document.getElementById('loading-overlay').classList.contains('hidden'),
   true
 );
+
+clearTimeout(priceHistoryTimer);
+priceHistoryTimer = null;
 
 startupChecks.then(() => {
   console.log('SMOKE OK — tutti i percorsi di rendering eseguiti senza errori');

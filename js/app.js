@@ -12,6 +12,7 @@ const MEAL_SLOTS = [
   { id: "dinner", label: "Cena", shortLabel: "CENA", emoji: "🌙" }
 ];
 const SHOP_CATEGORY_ORDER = ["🥩 Carne", "🐟 Pesce", "🥚 Uova e latticini", "🫘 Legumi", "🍚 Carboidrati", "🥬 Verdura", "🍑 Frutta", "🥫 Dispensa", "🌿 Spezie e aromi"];
+const RECIPE_LIBRARY_SECTION_DEFAULTS = Object.fromEntries(MEAL_SLOTS.map(slot => [slot.id, false]));
 
 let appState = {
   user: null,
@@ -30,6 +31,7 @@ let toastTimeout = null;
 let stopHouseholdObserver = null;
 let stopSharedDataObserver = null;
 let activeHouseholdId = null;
+const modalOutsideCloseState = new Map();
 
 // ---- Session cache per avvio veloce ----
 function readSessionCache() {
@@ -138,6 +140,53 @@ function getCrossSlotCenaCarb() {
   return appState.deviceSettings?.crossSlotCenaCarb || (window.PianoDomain?.DEFAULT_CENA_CARB_KEY || "pane");
 }
 
+function normalizeRecipeLibraryState(state = {}) {
+  const openSections = { ...RECIPE_LIBRARY_SECTION_DEFAULTS };
+  const savedSections = state?.openSections && typeof state.openSections === "object" ? state.openSections : {};
+  Object.keys(openSections).forEach(slotId => {
+    openSections[slotId] = Boolean(savedSections[slotId]);
+  });
+  return {
+    searchQuery: String(state?.searchQuery || "").trim(),
+    openSections
+  };
+}
+
+function getRecipeLibraryState() {
+  return normalizeRecipeLibraryState(appState.deviceSettings?.recipeLibraryState || {});
+}
+
+function saveRecipeLibraryState(nextState) {
+  const normalized = normalizeRecipeLibraryState(nextState);
+  appState.deviceSettings = appState.deviceSettings || getLocalDeviceSettings();
+  appState.deviceSettings.recipeLibraryState = normalized;
+  saveLocalDeviceSettings(appState.deviceSettings);
+  return normalized;
+}
+
+function updateRecipeLibraryState(updater) {
+  const current = getRecipeLibraryState();
+  const next = typeof updater === "function" ? updater(current) : { ...current, ...updater };
+  return saveRecipeLibraryState(next);
+}
+
+function resolveShopCategoryOrder(extraCategories = [], savedOrder = appState.deviceSettings?.shopCategoryOrder) {
+  if (window.PianoDomain?.resolveShopCategoryOrder) {
+    return PianoDomain.resolveShopCategoryOrder(savedOrder, SHOP_CATEGORY_ORDER, extraCategories);
+  }
+  const unique = values => [...new Set((Array.isArray(values) ? values : []).filter(Boolean))];
+  const saved = unique(savedOrder).filter(category => SHOP_CATEGORY_ORDER.includes(category));
+  const resolved = saved.concat(SHOP_CATEGORY_ORDER.filter(category => !saved.includes(category)));
+  return resolved.concat(unique(extraCategories).filter(category => !resolved.includes(category)));
+}
+
+function saveShopCategoryOrder(order) {
+  appState.deviceSettings = appState.deviceSettings || getLocalDeviceSettings();
+  appState.deviceSettings.shopCategoryOrder = resolveShopCategoryOrder([], order);
+  saveLocalDeviceSettings(appState.deviceSettings);
+  return appState.deviceSettings.shopCategoryOrder;
+}
+
 function recipeIsCrossSlot(recipe, assignedSlot) {
   return Boolean(recipe && window.PianoDomain && assignedSlot && PianoDomain.isPranzoCenaCross(recipe.slot, assignedSlot));
 }
@@ -211,6 +260,30 @@ function setLoading(message = "Caricamento…") {
 
 function clearLoading() {
   document.getElementById("loading-overlay")?.classList.add("hidden");
+}
+
+function modalOverlayTarget(target, modalId, modal) {
+  return target === modal || target?.id === modalId;
+}
+
+function bindModalOutsideClose(modalId, onClose) {
+  const modal = document.getElementById(modalId);
+  if (!modal || modal.dataset.outsideCloseBound === "true") return;
+  modal.dataset.outsideCloseBound = "true";
+  modalOutsideCloseState.set(modalId, false);
+  const armClose = event => {
+    modalOutsideCloseState.set(modalId, modalOverlayTarget(event.target, modalId, modal));
+  };
+  const resetClose = () => {
+    modalOutsideCloseState.set(modalId, false);
+  };
+  modal.addEventListener("mousedown", armClose);
+  modal.addEventListener("touchstart", armClose);
+  modal.addEventListener("click", event => {
+    if (modalOverlayTarget(event.target, modalId, modal) && modalOutsideCloseState.get(modalId)) onClose();
+    resetClose();
+  });
+  modal.addEventListener("touchcancel", resetClose);
 }
 
 function applyTheme(isDark) {
@@ -852,6 +925,7 @@ function setupSwapModal() {
         <div id="swap-options-list" class="swap-options"></div>
       </div>
     </div>`);
+  bindModalOutsideClose("swap-modal", () => window.closeSwapModal());
 }
 
 window.openSwapModal = function(dayKey, slot) {
@@ -966,6 +1040,7 @@ function setupMealOperations() {
         <div id="meal-target-list" class="meal-target-list hidden"></div>
       </div>
     </div>`);
+  bindModalOutsideClose("meal-actions-modal", () => window.closeMealActions());
 }
 
 window.openMealActions = function(dayKey, slot) {
@@ -1056,6 +1131,7 @@ window.confirmRestoreMeal = async function() {
 
 function renderRecipes() {
   const container = document.getElementById("view-recipes");
+  const recipeLibraryState = getRecipeLibraryState();
   container.innerHTML = `
     <div class="page-heading recipes-heading">
       <div><p class="eyebrow">${appState.recipes.length} ricette · sincronizzate nel cloud</p><h1>Ricettario</h1><p>Puoi creare, esportare, importare e condividere le ricette del tuo account.</p></div>
@@ -1068,20 +1144,22 @@ function renderRecipes() {
         <button class="btn btn-primary" onclick="createNewRecipe()">+ Nuova</button>
       </div>
     </div>
-    ${appState.recipes.length ? `<label class="search-box"><span>⌕</span><input id="recipe-search" type="search" placeholder="Cerca ricetta, categoria o ingrediente…" oninput="filterRecipeCards(this.value)"></label>${MEAL_SLOTS.map(slot => recipeSectionHtml(slot.label, appState.recipes.filter(recipe => recipe.slot === slot.id), slot)).join("")}` : `<div class="empty-state recipe-empty-state"><span>🍲</span><h2>Il tuo ricettario è vuoto</h2><p>Puoi creare la prima ricetta manualmente, importare un file JSON o attendere una condivisione da un altro utente.</p><button class="btn btn-primary" onclick="createNewRecipe()">+ Crea la prima ricetta</button></div>`}
+    ${appState.recipes.length ? `<label class="search-box"><span>⌕</span><input id="recipe-search" type="search" value="${escapeAttr(recipeLibraryState.searchQuery)}" placeholder="Cerca ricetta, categoria o ingrediente…" oninput="filterRecipeCards(this.value)"><button type="button" id="recipe-search-clear" class="search-clear-btn ${recipeLibraryState.searchQuery ? "" : "hidden"}" onclick="clearRecipeSearch()" aria-label="Cancella ricerca" title="Cancella ricerca">×</button></label><p id="recipe-search-empty" class="text-muted recipe-search-empty hidden">Nessuna ricetta trovata. Prova con un altro nome, ingrediente o categoria.</p>${MEAL_SLOTS.map(slot => recipeSectionHtml(slot.label, appState.recipes.filter(recipe => recipe.slot === slot.id), slot)).join("")}` : `<div class="empty-state recipe-empty-state"><span>🍲</span><h2>Il tuo ricettario è vuoto</h2><p>Puoi creare la prima ricetta manualmente, importare un file JSON o attendere una condivisione da un altro utente.</p><button class="btn btn-primary" onclick="createNewRecipe()">+ Crea la prima ricetta</button></div>`}
   `;
+  if (appState.recipes.length) filterRecipeCards(recipeLibraryState.searchQuery, { persist: false });
 }
 
 function recipeSectionHtml(title, recipes, slot) {
   if (!recipes.length) return "";
   const sectionId = `recipe-section-${slot.id}`;
+  const isOpen = getRecipeLibraryState().openSections[slot.id];
   return `
-    <section class="recipe-library-section">
-      <button class="recipe-section-toggle collapsed" onclick="toggleRecipeSection('${slot.id}', this)" aria-expanded="false">
+    <section class="recipe-library-section" data-slot="${slot.id}">
+      <button class="recipe-section-toggle ${isOpen ? "" : "collapsed"}" onclick="toggleRecipeSection('${slot.id}', this)" aria-expanded="${isOpen ? "true" : "false"}">
         <span class="section-title" style="margin:0"><span>${slot.emoji}</span><div><small>${recipes.length} proposte</small><h2>${escapeHtml(title)}</h2></div></span>
         <b class="recipe-section-chevron">⌄</b>
       </button>
-      <div id="${sectionId}" class="recipe-section-body hidden">
+      <div id="${sectionId}" class="recipe-section-body ${isOpen ? "" : "hidden"}">
         <div class="recipe-grid">
           ${recipes.map(recipe => `<button class="recipe-library-card" data-search="${escapeAttr(`${recipe.id} ${recipe.name} ${recipe.namesByDayType?.training || ""} ${recipe.namesByDayType?.rest || ""} ${recipeProteinLabel(recipe)} ${(recipe.ingredients || []).map(i => i.name).join(" ")}`.toLowerCase())}" onclick="openRecipeModal('${escapeAttr(recipe.id)}')"><span class="recipe-code">${escapeHtml(recipe.id)}</span><span class="recipe-card-emoji">${escapeHtml(recipe.emoji || "🍲")}</span><strong>${escapeHtml(recipe.name)}</strong><small>${escapeHtml(recipeProteinLabel(recipe))}</small></button>`).join("")}
         </div>
@@ -1095,34 +1173,61 @@ window.toggleRecipeSection = function(slotId, button) {
   const closed = body.classList.toggle("hidden");
   button.classList.toggle("collapsed", closed);
   button.setAttribute("aria-expanded", String(!closed));
+  updateRecipeLibraryState(state => ({
+    ...state,
+    openSections: { ...state.openSections, [slotId]: !closed }
+  }));
 };
 
-window.filterRecipeCards = function(query) {
-  const normalized = String(query || "").trim().toLowerCase();
+window.filterRecipeCards = function(query, options = {}) {
+  const rawQuery = String(query || "").trim();
+  const normalized = rawQuery.toLowerCase();
+  const persist = options.persist !== false;
+  const state = persist
+    ? updateRecipeLibraryState(current => ({ ...current, searchQuery: rawQuery }))
+    : getRecipeLibraryState();
+  let totalMatches = 0;
   document.querySelectorAll(".recipe-library-section").forEach(section => {
     const cards = [...section.querySelectorAll(".recipe-library-card")];
+    const slotId = section.dataset.slot;
     let matchingCards = 0;
     cards.forEach(card => {
       const matches = !normalized || card.dataset.search.includes(normalized);
       card.classList.toggle("hidden", !matches);
       if (matches) matchingCards += 1;
     });
+    totalMatches += matchingCards;
 
     const toggle = section.querySelector(".recipe-section-toggle");
     const body = section.querySelector(".recipe-section-body");
     if (!normalized) {
+      const isOpen = Boolean(state.openSections[slotId]);
       section.classList.remove("hidden");
-      body?.classList.add("hidden");
-      toggle?.classList.add("collapsed");
-      toggle?.setAttribute("aria-expanded", "false");
+      body?.classList.toggle("hidden", !isOpen);
+      toggle?.classList.toggle("collapsed", !isOpen);
+      toggle?.setAttribute("aria-expanded", String(isOpen));
       return;
     }
 
-    section.classList.toggle("hidden", matchingCards === 0);
-    body?.classList.toggle("hidden", matchingCards === 0);
-    toggle?.classList.toggle("collapsed", matchingCards === 0);
-    toggle?.setAttribute("aria-expanded", String(matchingCards > 0));
+    const hasMatches = matchingCards > 0;
+    section.classList.toggle("hidden", !hasMatches);
+    body?.classList.toggle("hidden", !hasMatches);
+    toggle?.classList.toggle("collapsed", !hasMatches);
+    toggle?.setAttribute("aria-expanded", String(hasMatches));
   });
+  const clearButton = document.getElementById("recipe-search-clear");
+  if (clearButton) clearButton.classList.toggle("hidden", !rawQuery);
+  const emptyState = document.getElementById("recipe-search-empty");
+  if (emptyState) emptyState.classList.toggle("hidden", !rawQuery || totalMatches > 0);
+};
+
+window.clearRecipeSearch = function() {
+  const input = document.getElementById("recipe-search");
+  if (input) {
+    input.value = "";
+    input.focus();
+  }
+  filterRecipeCards("");
 };
 
 window.createNewRecipe = function(slot = "lunch", assignDay = null) {
@@ -1133,6 +1238,39 @@ window.createNewRecipe = function(slot = "lunch", assignDay = null) {
     ingredients: [], steps: [], notes: [], specialNote: ""
   };
   currentModal = { recipe, original: null, dayKey: DAY_ORDER.includes(assignDay) ? assignDay : null, dayType: DAY_ORDER.includes(assignDay) ? getDayType(assignDay) : getRecipePreviewDayType(), assignAfterSave: DAY_ORDER.includes(assignDay) ? { day: assignDay, slot: selectedSlot } : null, isNew: true };
+  editMode = true;
+  renderModalContent();
+  document.getElementById("recipe-modal").classList.remove("hidden");
+};
+
+function duplicatedRecipeFrom(sourceRecipe) {
+  const normalized = normalizeRecipeSchema(sourceRecipe);
+  const slot = normalized.slot || "lunch";
+  return {
+    id: `U${Date.now()}`,
+    slot,
+    name: `${normalized.name || "Ricetta"} (copia)`,
+    emoji: normalized.emoji || getSlotMeta(slot).emoji,
+    proteinCategory: normalized.proteinCategory || "",
+    ingredients: clone(normalized.ingredients || []),
+    steps: clone(normalized.steps || []),
+    notes: clone(normalized.notes || []),
+    specialNote: normalized.specialNote || "",
+    ...(normalized.namesByDayType ? { namesByDayType: clone(normalized.namesByDayType) } : {})
+  };
+}
+
+window.duplicateRecipe = function(recipeId = currentModal?.recipe?.id) {
+  const sourceRecipe = recipeId ? getRecipe(recipeId) : null;
+  if (!sourceRecipe) return;
+  currentModal = {
+    recipe: duplicatedRecipeFrom(sourceRecipe),
+    original: null,
+    dayKey: null,
+    dayType: getRecipePreviewDayType(),
+    slot: null,
+    isNew: true
+  };
   editMode = true;
   renderModalContent();
   document.getElementById("recipe-modal").classList.remove("hidden");
@@ -1289,13 +1427,18 @@ function getVisibleShoppingEntries() {
 function renderShop() {
   const container = document.getElementById("view-shop");
   const entries = getVisibleShoppingEntries();
-  const grouped = Object.fromEntries(SHOP_CATEGORY_ORDER.map(category => [category, entries.filter(entry => entry.category === category)]));
+  const categoryOrder = resolveShopCategoryOrder(entries.map(entry => entry.category));
+  const grouped = Object.fromEntries(categoryOrder.map(category => [category, []]));
+  entries.forEach(entry => {
+    if (!grouped[entry.category]) grouped[entry.category] = [];
+    grouped[entry.category].push(entry);
+  });
   const allSelected = DAY_ORDER.every(day => MEAL_SLOTS.every(slot => (appState.shopping.selectedMeals[day] || []).includes(slot.id)));
   container.innerHTML = `
     <div class="page-heading shop-heading"><div><p class="eyebrow">Dosi esatte · ${escapeHtml(getProfileLabel())}</p><h1>Lista della spesa</h1><p>Le quantità derivano solo dai pasti selezionati, senza fattori percentuali.</p></div><button class="btn btn-outline" onclick="toggleShopSettings()">${shopSettingsVisible ? "Chiudi" : "Seleziona"}</button></div>
     ${shopSettingsVisible ? renderShopSettings(allSelected) : ""}
     <div class="shopping-summary"><strong>${entries.length} alimenti</strong><span>${DAY_ORDER.reduce((sum, day) => sum + (appState.shopping.selectedMeals[day] || []).length, 0)} pasti selezionati</span></div>
-    ${SHOP_CATEGORY_ORDER.map(category => grouped[category].length ? `
+    ${categoryOrder.map(category => grouped[category]?.length ? `
       <section class="shop-category">
         <h2 class="shop-category-title">${category}</h2>
         ${grouped[category].map(entry => `<div class="shop-item"><div class="shop-item-details"><strong>${escapeHtml(entry.name)}</strong><small>${escapeHtml(entry.tags.join(" · "))}</small></div><input class="shop-amount-input" aria-label="Quantità ${escapeAttr(entry.name)}" value="${escapeAttr(shoppingAmountText(entry))}" onchange="updateShopItemQty('${escapeAttr(entry.id)}', this.value)"><button class="btn-icon remove-shop-item" title="Escludi" onclick="excludeShopItem('${escapeAttr(entry.id)}')">×</button></div>`).join("")}
@@ -1306,6 +1449,7 @@ function renderShop() {
 
 function renderShopSettings(allSelected) {
   const excludedCount = (appState.shopping.excludedItems || []).length;
+  const categoryOrder = resolveShopCategoryOrder();
   return `
     <section class="shop-settings card">
       <div class="flex-between"><h2>Pasti da includere</h2><button class="btn btn-small btn-outline" onclick="toggleShopAllWeek(${!allSelected})">${allSelected ? "Deseleziona tutto" : "Seleziona tutto"}</button></div>
@@ -1317,12 +1461,33 @@ function renderShopSettings(allSelected) {
         }).join("")}
       </div>
       <label class="settings-row"><span><strong>Dispensa e spezie</strong><small>Olio, frutta secca, aromi e condimenti</small></span><input type="checkbox" ${appState.shopping.includePantry ? "checked" : ""} onchange="toggleShopPantry(this.checked)"></label>
+      <div class="shop-order-settings">
+        <div class="flex-between"><h2>Ordine categorie</h2><button class="btn btn-small btn-outline" onclick="resetShopCategoryOrder()">Ripristina ordine predefinito</button></div>
+        <p class="text-muted">Questo ordine viene usato sia nella vista Spesa sia nella copia/condivisione testuale.</p>
+        <div class="shop-category-order-list">
+          ${categoryOrder.map((category, index) => `<div class="shop-category-order-row"><strong>${escapeHtml(category)}</strong><div class="shop-category-order-actions"><button class="btn btn-small btn-outline" aria-label="Sposta in alto ${escapeAttr(category)}" ${index === 0 ? "disabled" : ""} onclick="moveShopCategory(${index}, -1)">↑</button><button class="btn btn-small btn-outline" aria-label="Sposta in basso ${escapeAttr(category)}" ${index === categoryOrder.length - 1 ? "disabled" : ""} onclick="moveShopCategory(${index}, 1)">↓</button></div></div>`).join("")}
+        </div>
+      </div>
       ${excludedCount ? `<div class="excluded-list"><h3>Esclusi (${excludedCount})</h3>${appState.shopping.excludedItems.map(id => `<button class="frequency-chip" onclick="includeShopItem('${escapeAttr(id)}')">${escapeHtml(id.replaceAll("-", " "))} ×</button>`).join(" ")}</div>` : ""}
     </section>`;
 }
 
 window.toggleShopSettings = function() {
   shopSettingsVisible = !shopSettingsVisible;
+  renderShop();
+};
+
+window.moveShopCategory = function(index, delta) {
+  const order = resolveShopCategoryOrder();
+  const target = index + delta;
+  if (target < 0 || target >= order.length) return;
+  [order[index], order[target]] = [order[target], order[index]];
+  saveShopCategoryOrder(order);
+  renderShop();
+};
+
+window.resetShopCategoryOrder = function() {
+  saveShopCategoryOrder(SHOP_CATEGORY_ORDER);
   renderShop();
 };
 
@@ -1412,7 +1577,8 @@ window.includeShopItem = function(id) {
 
 function shoppingText() {
   const entries = getVisibleShoppingEntries();
-  const blocks = SHOP_CATEGORY_ORDER.map(category => {
+  const categoryOrder = resolveShopCategoryOrder(entries.map(entry => entry.category));
+  const blocks = categoryOrder.map(category => {
     const items = entries.filter(entry => entry.category === category);
     if (!items.length) return "";
     return `----- ${category}\n${items.map(entry => `${entry.name} - ${shoppingAmountText(entry)}`).join("\n")}`;
@@ -1495,9 +1661,7 @@ function setupMellerModal() {
         <div class="modal-footer"><button class="btn btn-primary full-width" onclick="closeMellerAlternatives()">Chiudi</button></div>
       </div>
     </div>`);
-  document.getElementById("meller-alternatives-modal").addEventListener("click", e => {
-    if (e.target.id === "meller-alternatives-modal") closeMellerAlternatives();
-  });
+  bindModalOutsideClose("meller-alternatives-modal", () => window.closeMellerAlternatives());
 }
 window.openMellerAlternatives = function(ingredientName) {
   const data = getMellerAlternativesForIngredient(ingredientName);
@@ -1598,9 +1762,18 @@ function renderSettings() {
 function renderBackupSection() {
   const meta = readLocalJson("backup_meta", null);
   const hasBackup = Boolean(meta?.operation || meta?.description || meta?.createdAt);
+  const protectedOperations = [
+    "Importazioni che sostituiscono tutte le ricette",
+    "Condivisioni che sovrascrivono ricette o settimana",
+    "Applicazione del generatore settimana",
+    "Eliminazione di una o più ricette",
+    "Collegamento o scollegamento account"
+  ];
   return `
     <section class="settings-section backup-section">
-      <div class="flex-between"><h2>Backup e annullamento</h2><span class="recipe-code">Copia di sicurezza automatica</span></div>
+      <div class="flex-between"><h2>Backup e annullamento</h2><span class="backup-status ${hasBackup ? "ready" : "idle"}">${hasBackup ? "Backup pronto" : "Nessun backup"}</span></div>
+      <p class="text-muted backup-note">Prima delle operazioni più pesanti salviamo automaticamente una copia di <strong>ricette, settimana e lista spesa</strong>. La copia più recente sostituisce quella precedente.</p>
+      <ul class="backup-covered-list">${protectedOperations.map(item => `<li>${escapeHtml(item)}</li>`).join("")}</ul>
       ${hasBackup ? `
         <div class="backup-meta">
           <div><small>Ultima operazione</small><strong>${escapeHtml(meta.operation || "—")}</strong></div>
@@ -1608,9 +1781,9 @@ function renderBackupSection() {
           <div><small>Data backup</small><strong>${escapeHtml(formatBackupDate(meta.createdAt) || "—")}</strong></div>
         </div>
         <button class="btn btn-danger full-width" onclick="undoLastModification()">↩ Annulla ultima modifica</button>
-        <p class="text-muted backup-note">Il ripristino è disponibile una sola volta: dopo il ripristino la copia di sicurezza viene eliminata.</p>
+        <p class="text-muted backup-note">Il ripristino è disponibile una sola volta: dopo l'annullamento la copia di sicurezza viene eliminata.</p>
       ` : `
-        <p class="text-muted backup-note">Nessun backup disponibile. Prima delle operazioni distruttive (importazione “Sostituisci tutte”, accettazione di una condivisione con sostituzione, applicazione del generatore settimana) viene salvata una copia di catalogo, piano e lista spesa.</p>
+        <p class="text-muted backup-note">Appena esegui una di queste operazioni, qui comparirà l'ultimo punto di ripristino disponibile.</p>
       `}
     </section>
   `;
@@ -1666,7 +1839,10 @@ window.undoLastModification = async function() {
     setRecipes(restored.catalog.recipes || []);
     appState.plan = restored.plan;
     appState.shopping = restored.shoppingList || getDefaultShoppingList();
+    appState.household = getCurrentHousehold();
     writeLocalJson("backup_meta", null);
+    renderGlobalHeader();
+    startAccountRealtimeSync();
     handleRoute();
     showToast("Ultima modifica annullata ✅");
   } catch (error) {
@@ -1854,7 +2030,7 @@ function setupTransferModals() {
       <div class="modal-content transfer-modal-content">
         <div class="modal-header"><div><p class="eyebrow">CONDIVISIONE</p><h2>Invia ricette a un utente</h2></div><button class="btn-icon" onclick="closeShareDialog()">&times;</button></div>
         <p id="share-send-summary" class="text-muted"></p>
-        <label class="share-username-field">Username destinatario<input id="share-recipient-username" autocomplete="off" autocapitalize="none" placeholder="es. mario"></label>
+        <label class="share-username-field">Username destinatario<input id="share-recipient-username" autocomplete="off" autocapitalize="none" spellcheck="false" placeholder="es. mario"></label>
         <label class="share-plan-option"><input id="share-include-plan" type="checkbox"> Invia anche la struttura della settimana</label>
         <p class="text-muted transfer-privacy-note">Il destinatario riceverà una richiesta e potrà importare solo le ricette, solo la settimana o tutto.</p>
         <button id="share-send-button" class="btn btn-primary full-width" onclick="submitRecipeShare()">Invia richiesta</button>
@@ -1880,11 +2056,16 @@ function setupTransferModals() {
       <div class="modal-content transfer-modal-content">
         <div class="modal-header"><div><p class="eyebrow">ACCOUNT COLLEGATI</p><h2>Collega un altro account</h2></div><button class="btn-icon" onclick="closeAccountLinkDialog()">&times;</button></div>
         <p class="text-muted">Invia una richiesta tramite username. Dopo l'accettazione condividerete piano, ricette, batch cooking e lista della spesa; ciascuno manterrà il proprio profilo porzioni locale.</p>
-        <label class="share-username-field">Username da collegare<input id="account-link-username" autocomplete="off" autocapitalize="none" placeholder="es. anna"></label>
+        <label class="share-username-field">Username da collegare<input id="account-link-username" autocomplete="off" autocapitalize="none" spellcheck="false" placeholder="es. anna"></label>
         <p class="text-muted transfer-privacy-note">Prima dell'invio verrà creato un backup del tuo stato corrente.</p>
         <button id="account-link-send-button" class="btn btn-primary full-width" onclick="submitAccountLink()">Invia richiesta di collegamento</button>
       </div>
     </div>`);
+  bindModalOutsideClose("recipe-import-modal", () => window.closeRecipeImportModal());
+  bindModalOutsideClose("share-send-modal", () => window.closeShareDialog());
+  bindModalOutsideClose("incoming-shares-modal", () => window.closeIncomingShares());
+  bindModalOutsideClose("share-conflict-modal", () => window.closeShareConflictModal());
+  bindModalOutsideClose("account-link-modal", () => window.closeAccountLinkDialog());
 }
 
 window.openAccountLinkDialog = function() {
@@ -2298,7 +2479,7 @@ constraints: {
 // le personalizzazioni dell'utente.
 const GENERATOR_PREFS_VERSION = 2;
 
-let generatorState = { seed: null, blocks: {}, proposal: null };
+let generatorState = { seed: null, blocks: {}, proposal: null, panels: { advanced: false, locks: false } };
 
 function migrateGeneratorPrefs(saved) {
   if (!saved || typeof saved !== 'object') return null;
@@ -2343,9 +2524,30 @@ function getGeneratorPrefs() {
   };
 }
 
-function saveGeneratorPrefs(updater) {
-  const advancedWasOpen = document.getElementById("generator-advanced")?.open;
+function getGeneratorPanelState() {
+  return {
+    advanced: document.getElementById("generator-advanced")?.open ?? Boolean(generatorState.panels?.advanced),
+    locks: document.getElementById("generator-locks")?.open ?? Boolean(generatorState.panels?.locks)
+  };
+}
 
+function restoreGeneratorPanelState(state) {
+  generatorState.panels = { ...state };
+  const advanced = document.getElementById("generator-advanced");
+  const locks = document.getElementById("generator-locks");
+  if (advanced) advanced.open = Boolean(state.advanced);
+  if (locks) locks.open = Boolean(state.locks);
+}
+
+function scrollGeneratorPreviewIntoView() {
+  const preview = document.getElementById("generator-preview");
+  if (!preview || typeof preview.scrollIntoView !== "function") return;
+  const scroll = () => preview.scrollIntoView({ behavior: "smooth", block: "start" });
+  if (typeof requestAnimationFrame === "function") requestAnimationFrame(scroll);
+  else setTimeout(scroll, 0);
+}
+
+function saveGeneratorPrefs(updater) {
   const current = getGeneratorPrefs();
   const next = typeof updater === "function" ? updater(current) : { ...current, ...updater };
   next.version = GENERATOR_PREFS_VERSION;
@@ -2354,11 +2556,6 @@ function saveGeneratorPrefs(updater) {
   saveLocalDeviceSettings(appState.deviceSettings);
   generatorState.proposal = null;
   renderGeneratorModal();
-
-  if (advancedWasOpen) {
-    const details = document.getElementById("generator-advanced");
-    if (details) details.open = true;
-  }
 }
 
 function setupGeneratorModal() {
@@ -2367,15 +2564,14 @@ function setupGeneratorModal() {
     <div id="generator-modal" class="modal hidden" role="dialog" aria-modal="true">
       <div class="modal-content generator-modal-content">
         <div class="modal-header"><div><p class="eyebrow">GENERATORE</p><h2>Genera settimana</h2></div><button class="btn-icon" onclick="closeGeneratorModal()">&times;</button></div>
-        <p id="generator-subtitle" class="text-muted">🔒 Bloccato = resta identico e conta nelle frequenze · 🔓 Sbloccato = il generatore può cambiarlo</p>
         <div id="generator-params" class="generator-params"></div>
+        <div id="generator-blocks" class="generator-blocks"></div>
         <div class="generator-controls">
-          <label class="share-username-field">Seed (risultato riproducibile)<input id="generator-seed" type="text" inputmode="numeric" placeholder="es. 42" onchange="generatorSeedChanged(this.value)"></label>
-          <button class="btn btn-outline" onclick="generatorPrefsReset()">Valori predefiniti</button>
-          <button class="btn btn-outline" onclick="computeGeneratorProposal(true)">Rigenera (nuovo seed)</button>
+          <label class="share-username-field">Numero prova (facoltativo)<input id="generator-seed" type="text" inputmode="numeric" placeholder="Lascia vuoto oppure scrivi un numero" onchange="generatorSeedChanged(this.value)"></label>
+          <button class="btn btn-outline" onclick="generatorPrefsReset()">Ripristina impostazioni</button>
+          <button class="btn btn-outline" onclick="computeGeneratorProposal(true)">Nuova proposta</button>
           <button class="btn btn-primary" onclick="computeGeneratorProposal(false)">Anteprima</button>
         </div>
-        <div id="generator-blocks" class="generator-blocks"></div>
         <div id="generator-preview" class="generator-preview"></div>
         <div class="modal-footer">
           <button class="btn btn-outline" onclick="closeGeneratorModal()">Annulla</button>
@@ -2383,16 +2579,23 @@ function setupGeneratorModal() {
         </div>
       </div>
     </div>`);
+  bindModalOutsideClose("generator-modal", () => window.closeGeneratorModal());
 }
 
 window.openGeneratorModal = function() {
-  generatorState = { seed: Math.floor(Math.random() * 1000000), blocks: {}, proposal: null };
+  generatorState = {
+    seed: Math.floor(Math.random() * 1000000),
+    blocks: {},
+    proposal: null,
+    panels: { advanced: false, locks: false }
+  };
   renderGeneratorModal();
   document.getElementById("generator-modal").classList.remove("hidden");
 };
 
 window.closeGeneratorModal = function() {
   document.getElementById("generator-modal")?.classList.add("hidden");
+  modalOutsideCloseState.set("generator-modal", false);
   generatorState.proposal = null;
 };
 
@@ -2474,50 +2677,53 @@ function renderGeneratorParams() {
   }).join("");
   return `
     <div class="generator-params-block">
-      <strong>Cosa generare</strong>
-      <small>Gli slot esclusi (o bloccati sotto) restano com'erano e contano nelle frequenze.</small>
+      <strong>Quali pasti vuoi aggiornare?</strong>
+      <small>Togli la spunta ai pasti che vuoi lasciare così come sono.</small>
       <div class="generator-slot-toggles">${slotToggles}</div>
     </div>
     <div class="generator-param-grid">
-      <label><span>🍳 Batch cena → pranzo</span><small>Pranzo successivo identico alla cena (doppia porzione automatica). Ogni coppia conta 2 volte la proteina: più coppie aumentano ripetizioni e possibili avvisi su manzo, uova o pollame.</small>
+      <label><span>🍳 Cucinare una volta e mangiare due volte</span><small>La cena diventa anche il pranzo del giorno dopo.</small>
         <select onchange="generatorParamChanged('batchPairs', Number(this.value))">
-          ${[0, 1, 2, 3, 4, 5, 6, 7].map(n => `<option value="${n}" ${prefs.batchPairs === n ? "selected" : ""}>${n === 0 ? "Nessuna" : `${n} ${n === 1 ? "giorno" : "giorni"}`}</option>`).join("")}
+          ${[0, 1, 2, 3, 4, 5, 6, 7].map(n => `<option value="${n}" ${prefs.batchPairs === n ? "selected" : ""}>${n === 0 ? "Mai" : `${n} ${n === 1 ? "volta" : "volte"}`}</option>`).join("")}
         </select>
       </label>
-      <label><span>🔁 Stessa ricetta al massimo</span><small>Ripetizioni in settimana (1 = mai ripetuta)</small>
+      <label><span>🔁 Quante volte può tornare la stessa ricetta?</span><small>1 = mai ripetuta. 2 = al massimo due volte nella settimana.</small>
         <select onchange="generatorParamChanged('maxRepeats', Number(this.value))">
           ${[1, 2, 3, 4].map(n => `<option value="${n}" ${prefs.maxRepeats === n ? "selected" : ""}>${n} ${n === 1 ? "volta" : "volte"}</option>`).join("")}
         </select>
       </label>
-      <label><span>↻ Solo varietà: includi anche ricette dell'altro pasto</span><small>Carboidrati adattati. NON crea doppie porzioni: per cucinare una volta per due pasti usa il numero “Batch cena → pranzo del giorno dopo” qui sopra.</small>
+      <label><span>↔ Vuoi più scelta tra pranzo e cena?</span><small>Se attivi questa opzione, il generatore può usare anche ricette di pranzo a cena e viceversa.</small>
         <select onchange="generatorParamChanged('allowCrossSlot', this.value === '1')">
           <option value="0" ${!prefs.allowCrossSlot ? "selected" : ""}>No</option>
           <option value="1" ${prefs.allowCrossSlot ? "selected" : ""}>Sì</option>
         </select>
       </label>
     </div>
-  <details id="generator-advanced" class="generator-advanced">
-<summary>Frequenze proteiche min–max <small>(impostazioni avanzate)</small></summary>
-      <p class="text-muted">Quanti pasti a settimana per ogni categoria. Il generatore cerca di restare nell'intervallo e avvisa quando non è possibile.</p>
+    <details id="generator-advanced" class="generator-advanced">
+      <summary>Proteine della settimana <small>(avanzate)</small></summary>
+      <p class="text-muted">Se vuoi, puoi decidere quante volte inserire carne, pesce, uova, latticini e legumi. Se non tocchi nulla, usiamo le impostazioni consigliate.</p>
       <div class="generator-constraints-grid">${constraintRows}</div>
     </details>`;
 }
 
 function renderGeneratorBlocks() {
-  return `<div class="generator-blocks-title"><strong>Blocca / sblocca pasto</strong><small>Gli elementi bloccati non vengono sovrascritti dalla generazione.</small></div>
-    <div class="generator-block-table">
-      ${DAY_ORDER.map(day => {
-        const block = generatorState.blocks[day];
-        const dayLocked = Boolean(block?.all);
-        return `<div class="generator-block-row">
-          <label class="generator-day-lock"><input type="checkbox" title="Blocca questo giorno: tutti i pasti resteranno identici alla generazione" ${dayLocked ? "checked" : ""} onchange="toggleGeneratorDayLock('${day}', this.checked)"> ${DAY_NAMES[day]}${dayLocked ? ' <span class="generator-lock-pill">Giorno mantenuto</span>' : ""}</label>
-          <div class="generator-slot-locks">${MEAL_SLOTS.map(slot => {
-            const slotLocked = Boolean(block?.[slot.id]);
-            return `<label class="${dayLocked ? "locked" : ""}"><input type="checkbox" title="Blocca questo pasto: resterà identico alla generazione" ${dayLocked || slotLocked ? "checked" : ""} ${dayLocked ? "disabled" : ""} onchange="toggleGeneratorSlotLock('${day}', '${slot.id}', this.checked)"> ${escapeHtml(slot.shortLabel)}${slotLocked && !dayLocked ? ' <span class="generator-slot-lock-badge">🔒 mantenuto</span>' : ""}</label>`;
-          }).join("")}</div>
-        </div>`;
-      }).join("")}
-    </div>`;
+  return `<details id="generator-locks" class="generator-advanced generator-locks-panel">
+      <summary>Lascia fissi alcuni pasti <small>(facoltativo)</small></summary>
+      <p class="text-muted">Spunta i giorni o i pasti che non vuoi far cambiare.</p>
+      <div class="generator-block-table">
+        ${DAY_ORDER.map(day => {
+          const block = generatorState.blocks[day];
+          const dayLocked = Boolean(block?.all);
+          return `<div class="generator-block-row">
+            <label class="generator-day-lock"><input type="checkbox" title="Lascia tutto il giorno uguale" ${dayLocked ? "checked" : ""} onchange="toggleGeneratorDayLock('${day}', this.checked)"> ${DAY_NAMES[day]}${dayLocked ? ' <span class="generator-lock-pill">Giorno fisso</span>' : ""}</label>
+            <div class="generator-slot-locks">${MEAL_SLOTS.map(slot => {
+              const slotLocked = Boolean(block?.[slot.id]);
+              return `<label class="${dayLocked ? "locked" : ""}"><input type="checkbox" title="Lascia questo pasto uguale" ${dayLocked || slotLocked ? "checked" : ""} ${dayLocked ? "disabled" : ""} onchange="toggleGeneratorSlotLock('${day}', '${slot.id}', this.checked)"> ${escapeHtml(slot.shortLabel)}${slotLocked && !dayLocked ? ' <span class="generator-slot-lock-badge">Fisso</span>' : ""}</label>`;
+            }).join("")}</div>
+          </div>`;
+        }).join("")}
+      </div>
+    </details>`;
 }
 
 window.computeGeneratorProposal = function(newSeed) {
@@ -2543,6 +2749,7 @@ window.computeGeneratorProposal = function(newSeed) {
   generatorState.proposal = result;
   document.getElementById("generator-seed").value = String(result.seed ?? generatorState.seed ?? "");
   renderGeneratorPreview();
+  scrollGeneratorPreviewIntoView();
 };
 
 function generatorRecipeName(recipeId) {
@@ -2571,7 +2778,7 @@ function renderGeneratorPreview() {
   const preview = document.getElementById("generator-preview");
   const result = generatorState.proposal;
   if (!result) {
-    preview.innerHTML = "";
+    preview.innerHTML = `<div class="generator-empty"><span>✨</span><strong>Anteprima non ancora generata</strong><p>Tocca “Anteprima” per vedere la proposta prima di applicarla.</p></div>`;
     return;
   }
   const changes = window.PianoDomain ? PianoDomain.diffPlans(appState.plan, result.plan) : [];
@@ -2584,11 +2791,11 @@ function renderGeneratorPreview() {
   const pairsHtml = pairs.length
     ? `<div class="generator-pairs">${pairs.map(pair => {
         const targetDay = DAY_ORDER[(DAY_ORDER.indexOf(pair.anchorDay) + 1) % DAY_ORDER.length];
-        return `<span class="generator-pair-chip" title="Cena del ${DAY_NAMES[pair.anchorDay]} raddoppiata per il pranzo del giorno dopo">🍳 ${DAY_NAMES[pair.anchorDay].slice(0, 3)} cena → ${DAY_NAMES[targetDay].slice(0, 3)} pranzo · ${escapeHtml(generatorRecipeName(pair.recipeId))}</span>`;
+        return `<span class="generator-pair-chip" title="Cena del ${DAY_NAMES[pair.anchorDay]} usata anche per il pranzo del giorno dopo">🍳 ${DAY_NAMES[pair.anchorDay].slice(0, 3)} cena + ${DAY_NAMES[targetDay].slice(0, 3)} pranzo</span>`;
       }).join("")}</div>`
     : "";
   preview.innerHTML = `
-    <div class="generator-preview-head"><strong>Anteprima proposta</strong><span>${changes.length} modifiche${pairs.length ? ` · ${pairs.length} batch` : ""}</span></div>
+    <div class="generator-preview-head"><strong>Anteprima</strong><span>${changes.length} cambi${pairs.length ? ` · ${pairs.length} doppi pasti` : ""}</span></div>
     ${result.warnings.length ? `<div class="generator-warnings">${result.warnings.map(warning => `<p>⚠️ ${escapeHtml(warning)}</p>`).join("")}</div>` : ""}
     <div class="generator-counts">${Object.entries(result.counts).map(([key, value]) => `<span class="${generatorCountStatus(key, value)}" title="Intervallo scelto nel pannello avanzate">${escapeHtml(GENERATOR_COUNT_LABELS[key] || key)}: ${value}</span>`).join("")}</div>
     ${pairsHtml}
@@ -2598,9 +2805,8 @@ function renderGeneratorPreview() {
         return `<div class="generator-diff-day"><strong>${DAY_NAMES[day]} ${result.plan.days[day].type === "training" ? "(A)" : "(R)"}</strong>
           ${MEAL_SLOTS.map(slot => {
             const change = dayChanges.find(item => item.slot === slot.id);
-            const from = change?.from ?? appState.plan.days[day][slot.id];
             const to = change?.to ?? result.plan.days[day][slot.id];
-            return `<div class="generator-diff-slot ${change ? "changed" : ""}"><small>${escapeHtml(slot.shortLabel)}</small><span>${change ? `↻ ${escapeHtml(generatorRecipeName(from))} → ${escapeHtml(generatorRecipeName(to))}` : escapeHtml(generatorRecipeName(to))}</span></div>`;
+            return `<div class="generator-diff-slot ${change ? "changed" : ""}"><small>${escapeHtml(slot.shortLabel)}</small><span>${escapeHtml(generatorRecipeName(to))}</span></div>`;
           }).join("")}
         </div>`;
       }).join("")}
@@ -2608,10 +2814,12 @@ function renderGeneratorPreview() {
 }
 
 function renderGeneratorModal() {
+  const panels = getGeneratorPanelState();
   document.getElementById("generator-seed").value = generatorState.seed ?? "";
   const params = document.getElementById("generator-params");
   if (params) params.innerHTML = renderGeneratorParams();
   document.getElementById("generator-blocks").innerHTML = renderGeneratorBlocks();
+  restoreGeneratorPanelState(panels);
   renderGeneratorPreview();
 }
 
@@ -2649,9 +2857,7 @@ window.applyGenerator = async function() {
 
 function setupModal() {
   document.getElementById("modal-close").addEventListener("click", closeRecipeModal);
-  document.getElementById("recipe-modal").addEventListener("click", event => {
-    if (event.target.id === "recipe-modal") closeRecipeModal();
-  });
+  bindModalOutsideClose("recipe-modal", () => closeRecipeModal());
   document.querySelectorAll(".tab-btn").forEach(button => {
     button.addEventListener("click", () => {
       document.querySelectorAll(".tab-btn").forEach(item => item.classList.remove("active"));
@@ -2665,6 +2871,7 @@ function setupModal() {
     currentModal.recipe = clone(currentModal.recipe);
     renderModalContent();
   });
+  document.getElementById("modal-duplicate-btn").addEventListener("click", () => duplicateRecipe(currentModal?.recipe?.id));
   document.getElementById("modal-save-btn").addEventListener("click", saveRecipeEdit);
   document.getElementById("modal-revert-btn").addEventListener("click", revertRecipe);
   document.getElementById("modal-export-btn").addEventListener("click", exportCurrentRecipe);
@@ -2723,6 +2930,7 @@ window.openRecipeModal = function(recipeId, dayKey = null, slot = null) {
 
 function closeRecipeModal() {
   document.getElementById("recipe-modal").classList.add("hidden");
+  modalOutsideCloseState.set("recipe-modal", false);
   currentModal = null;
   editMode = false;
 }
@@ -2847,6 +3055,7 @@ function renderModalContent() {
   }
 
   document.getElementById("modal-edit-btn").classList.toggle("hidden", editMode);
+  document.getElementById("modal-duplicate-btn").classList.toggle("hidden", editMode || currentModal.isNew);
   document.getElementById("modal-save-btn").classList.toggle("hidden", !editMode);
   document.getElementById("modal-export-btn").classList.toggle("hidden", editMode || currentModal.isNew);
   document.getElementById("modal-share-btn").classList.toggle("hidden", editMode || currentModal.isNew);
@@ -4320,9 +4529,8 @@ function setupPriceModals() {
         </div>
       </div>
     </div>`);
-  document.getElementById("price-scan-modal").addEventListener("click", event => {
-    if (event.target.id === "price-scan-modal") closePriceScanModal();
-  });
+  bindModalOutsideClose("price-scan-modal", () => window.closePriceScanModal());
+  bindModalOutsideClose("price-import-modal", () => window.closePriceImportModal());
 }
 
 window.openPriceScanModal = function() {

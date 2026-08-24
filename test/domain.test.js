@@ -209,6 +209,29 @@ test('crackers dinamici A/R: presenti nei giorni A solo via piano', () => {
   assert.equal(fruit.totals.g, 250); // solo martedì (R)
 });
 
+test('resolveShopCategoryOrder usa il default quando manca un ordine salvato', () => {
+  const defaults = ['🥩 Carne', '🐟 Pesce', '🥬 Verdura'];
+  assert.deepEqual(d.resolveShopCategoryOrder(null, defaults), defaults);
+});
+
+test('resolveShopCategoryOrder completa le categorie mancanti e scarta duplicati', () => {
+  const defaults = ['🥩 Carne', '🐟 Pesce', '🥬 Verdura', '🍚 Carboidrati'];
+  const saved = ['🥬 Verdura', '🐟 Pesce', '🥬 Verdura'];
+  assert.deepEqual(
+    d.resolveShopCategoryOrder(saved, defaults),
+    ['🥬 Verdura', '🐟 Pesce', '🥩 Carne', '🍚 Carboidrati']
+  );
+});
+
+test('resolveShopCategoryOrder mette in coda le categorie non previste dal default', () => {
+  const defaults = ['🥩 Carne', '🐟 Pesce', '🥬 Verdura'];
+  const saved = ['🐟 Pesce', '🥩 Carne'];
+  assert.deepEqual(
+    d.resolveShopCategoryOrder(saved, defaults, ['❄️ Surgelati', '🥬 Verdura', '❄️ Surgelati']),
+    ['🐟 Pesce', '🥩 Carne', '🥬 Verdura', '❄️ Surgelati']
+  );
+});
+
 // ---- Adattamento carboidrati pranzo <-> cena ----
 
 test('carbSourceForName riconosce i carboidrati (gnocchi prima di patate)', () => {
