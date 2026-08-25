@@ -73,13 +73,23 @@
       </div>
 
       <div class="modal-footer">
-        <button id="modal-export-btn" class="btn btn-outline">Esporta ricetta</button>
-        <button id="modal-share-btn" class="btn btn-outline">Invia</button>
-        <button id="modal-edit-btn" class="btn btn-outline">Modifica ricetta</button>
-        <button id="modal-duplicate-btn" class="btn btn-outline">Duplica</button>
-        <button id="modal-revert-btn" class="btn btn-outline hidden">Ripristina originale</button>
-        <button id="modal-delete-btn" class="btn btn-danger">Elimina ricetta</button>
-        <button id="modal-save-btn" class="btn btn-primary hidden">Salva nel cloud</button>
+        <div class="modal-footer-primary">
+          <button id="modal-save-btn" class="btn btn-primary hidden">Salva nel cloud</button>
+          <button id="modal-edit-btn" class="btn btn-primary">Modifica ricetta</button>
+          <button id="modal-cancel-edit-btn" class="btn btn-outline hidden" type="button">Annulla</button>
+          <button id="modal-more-btn" class="btn btn-outline modal-more-toggle" type="button" aria-expanded="false" aria-controls="modal-more-actions">Altro</button>
+        </div>
+        <div id="modal-more-actions" class="modal-more">
+          <div class="modal-more-backdrop"></div>
+          <div class="modal-more-sheet" role="group" aria-label="Altre azioni sulla ricetta">
+            <p class="modal-more-title">Altre azioni</p>
+            <button id="modal-export-btn" class="btn btn-outline">Esporta ricetta</button>
+            <button id="modal-share-btn" class="btn btn-outline">Invia</button>
+            <button id="modal-duplicate-btn" class="btn btn-outline">Duplica</button>
+            <button id="modal-revert-btn" class="btn btn-outline hidden">Ripristina originale</button>
+            <button id="modal-delete-btn" class="btn btn-danger">Elimina ricetta</button>
+          </div>
+        </div>
       </div>
     </div>
   </div>
