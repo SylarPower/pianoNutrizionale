@@ -929,7 +929,9 @@ const PROTEIN_CATEGORY_LABELS = {
 
   // Genera una proposta di settimana "solida e ottimizzata": rispetta i tipi
   // A/R e i blocchi, insegue min E max delle frequenze proteiche, limita le
-  // ripetizioni della stessa ricetta e può programmare accoppiate cena →
+  // ripetizioni della stessa ricetta, distanzia gli omega-3 (mai in giorni
+  // consecutivi, salvo le accoppiate cena → pranzo richieste con batchPairs,
+  // dove l'adiacenza è intrinseca) e può programmare accoppiate cena →
   // pranzo per il batch cooking "doppia porzione". Non modifica mai i dosaggi.
   // Il risultato è riproducibile con lo stesso seed.
   //
@@ -1117,6 +1119,10 @@ const PROTEIN_CATEGORY_LABELS = {
       if ((usage[recipe.id] || 0) + 2 > maxRepeats) return false;
       if (category && counts[category] + 2 > maxFor(category)) return false;
       if (isFishy(recipe) && (fishCountOn(anchorDay) >= 1 || fishCountOn(targetDay) >= 1)) return false;
+      // Un'accoppiata omega cena → pranzo è adiacente a se stessa per
+      // costruzione (è ciò che l'utente ha chiesto), ma non deve mai toccare
+      // ALTRI giorni omega: niente catene di omega-3 consecutivi.
+      if (category === 'omega' && (omegaToday[prevDayOf(anchorDay)] || omegaToday[nextDayOf(targetDay)])) return false;
       // Niente stessa ricetta già affiancata (pranzo/cena dello stesso giorno o il giorno prima).
       if (chosen[anchorDay]?.lunch === recipe.id || previousSlotValue(anchorDay, 'dinner') === recipe.id) return false;
       if (chosen[targetDay]?.dinner === recipe.id || previousSlotValue(targetDay, 'lunch') === recipe.id) return false;
@@ -1128,10 +1134,6 @@ const PROTEIN_CATEGORY_LABELS = {
       if (category && counts[category] < minFor(category)) score += 7;
       if (!category) score -= 1;
       score -= (usage[recipe.id] || 0) * 3;
-      if (category === 'omega') {
-        if (omegaToday[prevDayOf(anchorDay)]) score -= 6;
-        if (omegaToday[nextDayOf(targetDay)]) score -= 6;
-      }
       return score;
     };
     const pairDays = shuffle(
@@ -1161,14 +1163,20 @@ const PROTEIN_CATEGORY_LABELS = {
 
     // --- Passo 2: riempimento principale di pranzi e cene ---
     // Vincoli duri: tetto settimanale per categoria, massimo un pesce al
-    // giorno, tetto ripetizioni. Se il pool si svuota si rilassano a gradini
-    // (con un unico avviso per pasto) anziché lasciare il pasto vuoto.
-    const candidateHardOk = (recipe, day, { relaxMax = false, relaxRepeats = false, relaxFish = false } = {}) => {
+    // giorno, tetto ripetizioni, omega-3 mai in giorni consecutivi. Se il pool
+    // si svuota si rilassano a gradini (con un unico avviso per pasto) anziché
+    // lasciare il pasto vuoto.
+    const candidateHardOk = (recipe, day, { relaxMax = false, relaxRepeats = false, relaxFish = false, relaxOmegaSpacing = false } = {}) => {
       const category = classifyProtein(recipe);
       if (!category) return true;
       if (!relaxMax && counts[category] >= maxFor(category)) return false;
       if (isFishy(recipe) && !relaxFish && fishCountOn(day) >= 1) return false;
       if (!relaxRepeats && (usage[recipe.id] || 0) >= maxRepeats) return false;
+      // Omega-3 distanziati: l'unica adiacenza ammessa è quella costruita
+      // dall'utente con un'accoppiata batch (stessa ricetta a cena e a pranzo
+      // del giorno dopo), che però viene piazzata al passo 1 e qui non passa
+      // mai da questo filtro perché i suoi slot sono già occupati.
+      if (!relaxOmegaSpacing && category === 'omega' && (omegaToday[prevDayOf(day)] || omegaToday[nextDayOf(day)])) return false;
       return true;
     };
     const candidateScore = (recipe, day, slot) => {
@@ -1179,6 +1187,8 @@ const PROTEIN_CATEGORY_LABELS = {
       if (!category) score -= 1;
       score -= 3 * (usage[recipe.id] || 0);
       if (previousSlotValue(day, slot) === recipe.id) score -= 5;
+      // La penalità guida la scelta anche quando il vincolo è rilassato
+      // (ultimo gradino): a parità di condizioni resta preferita la distanza.
       if (category === 'omega') {
         if (omegaToday[prevDayOf(day)]) score -= 6;
         if (omegaToday[nextDayOf(day)]) score -= 6;
@@ -1192,7 +1202,11 @@ const PROTEIN_CATEGORY_LABELS = {
         {}, // tutti i vincoli duri
         { relaxMax: true },
         { relaxMax: true, relaxRepeats: true },
-        { relaxMax: true, relaxRepeats: true, relaxFish: true }
+        { relaxMax: true, relaxRepeats: true, relaxFish: true },
+        // Ultima spiaggia (catalogi irrisolvibili): si accetta anche un
+        // omega-3 adiacente pur di non lasciare il pasto vuoto; l'adiacenza
+        // residua viene poi segnalata tra i warning finali.
+        { relaxMax: true, relaxRepeats: true, relaxFish: true, relaxOmegaSpacing: true }
       ];
       for (let index = 0; index < levels.length; index++) {
         const candidates = pool.filter(recipe => candidateHardOk(recipe, day, levels[index]));
@@ -1237,6 +1251,10 @@ const PROTEIN_CATEGORY_LABELS = {
             if (counts[category] + 1 > maxFor(category)) return false;
             if ((usage[recipe.id] || 0) >= maxRepeats) return false;
             if (isFishy(recipe) && fishCountOn(day) - (isFishy(currentRecipe) ? 1 : 0) + 1 > 1) return false;
+            // Anche la riparazione delle frequenze minime rispetta la distanza
+            // degli omega-3: se il minimo resta irraggiungibile prevale il
+            // warning esplicito sulla frequenza mancante, non l'adiacenza.
+            if (category === 'omega' && (omegaToday[prevDayOf(day)] || omegaToday[nextDayOf(day)])) return false;
             return true;
           };
           const replacement = pool.filter(replacementOk)
@@ -1330,9 +1348,19 @@ const PROTEIN_CATEGORY_LABELS = {
       const tail = omegaSegments.pop();
       omegaSegments[0] = tail.concat(omegaSegments[0]);
     }
+    // Un'accoppiata batch omega richiesta dall'utente (cena → pranzo del
+    // giorno dopo, stessa ricetta) occupa due giorni consecutivi per
+    // costruzione: quell'adiacenza è voluta, non va segnalata. Si avvisano
+    // solo le adiacenze rimaste per altre strade (rilassamenti dei vincoli,
+    // pasti bloccati o mantenuti dall'utente).
+    const omegaPairSpans = new Set(pairs
+      .filter(pair => recipesById[pair.recipeId] && classifyProtein(recipesById[pair.recipeId]) === 'omega')
+      .map(pair => `${pair.anchorDay}|${pair.targetDay}`));
     const adjacentOmegaRuns = omegaSegments.filter(segment => segment.length > 1);
-    if (adjacentOmegaRuns.length) {
-      warnings.push(`Omega-3 in giorni consecutivi: ${adjacentOmegaRuns.map(segment => `${DAY_LABELS[segment[0]]}–${DAY_LABELS[segment[segment.length - 1]]}`).join(', ')}.`);
+    const unexplainedOmegaRuns = adjacentOmegaRuns.filter(segment =>
+      !(segment.length === 2 && omegaPairSpans.has(`${segment[0]}|${segment[1]}`)));
+    if (unexplainedOmegaRuns.length) {
+      warnings.push(`Omega-3 in giorni consecutivi: ${unexplainedOmegaRuns.map(segment => `${DAY_LABELS[segment[0]]}–${DAY_LABELS[segment[segment.length - 1]]}`).join(', ')}.`);
     }
     const doubleFishDays = DAYS.filter(day => fishCountOn(day) > 1);
     if (doubleFishDays.length) warnings.push(`Due pasti di pesce nello stesso giorno: ${doubleFishDays.map(day => DAY_LABELS[day]).join(', ')}.`);
