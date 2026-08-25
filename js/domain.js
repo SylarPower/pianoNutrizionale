@@ -434,6 +434,20 @@ const DEFAULT_CONSTRAINTS = {
     return resolved.concat(uniqueStrings(extraCategories).filter(category => !resolved.includes(category)));
   }
 
+  // Ordine configurabile degli alimenti DENTRO una categoria della spesa:
+  // usa l'ordine salvato (array di ingredientId) per gli id ancora presenti e
+  // accoda in coda tutti gli id correnti non salvati, così un ingrediente
+  // nuovo compare in coda senza rompere l'ordine esistente e nessun alimento
+  // sparisce mai dalla lista. Gli id salvati non più presenti vengono ignorati.
+  // Idempotente: risolvere di nuovo il risultato non cambia l'ordine.
+  function resolveShopItemOrder(savedOrder = [], currentIds = []) {
+    const current = uniqueStrings(currentIds);
+    const currentSet = new Set(current);
+    const saved = uniqueStrings(savedOrder).filter(id => currentSet.has(id));
+    const savedSet = new Set(saved);
+    return saved.concat(current.filter(id => !savedSet.has(id)));
+  }
+
   function categoryForIngredient(name) {
     const value = aliasKey(name);
     const hit = CATEGORY_RULES.find(rule => rule.terms.some(term => value.includes(term)));
@@ -1362,6 +1376,7 @@ const PROTEIN_CATEGORY_LABELS = {
     commonRecipeBatch,
     categoryForIngredient,
     resolveShopCategoryOrder,
+    resolveShopItemOrder,
     isEmptyPortion,
     parseSimpleAmount,
     CARB_REFERENCE,

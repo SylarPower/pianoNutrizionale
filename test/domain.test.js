@@ -232,6 +232,45 @@ test('resolveShopCategoryOrder mette in coda le categorie non previste dal defau
   );
 });
 
+test('resolveShopItemOrder rispetta l\'ordine salvato per gli id ancora presenti', () => {
+  assert.deepEqual(
+    d.resolveShopItemOrder(['whole-eggs', 'greek-yogurt'], ['greek-yogurt', 'whole-eggs', 'basilico']),
+    ['whole-eggs', 'greek-yogurt', 'basilico']
+  );
+});
+
+test('resolveShopItemOrder ignora gli id salvati non più presenti', () => {
+  assert.deepEqual(
+    d.resolveShopItemOrder(['old-id', 'whole-eggs', 'another-old-id', 'basilico'], ['basilico', 'whole-eggs', 'riso-venere']),
+    ['whole-eggs', 'basilico', 'riso-venere']
+  );
+});
+
+test('resolveShopItemOrder accoda gli id nuovi dopo quelli salvati', () => {
+  assert.deepEqual(
+    d.resolveShopItemOrder(['whole-eggs', 'basilico'], ['basilico', 'new-ingredient', 'whole-eggs']),
+    ['whole-eggs', 'basilico', 'new-ingredient']
+  );
+});
+
+test('resolveShopItemOrder senza ordine salvato lascia invariato l\'ordine corrente', () => {
+  const current = ['greek-yogurt', 'whole-eggs', 'basilico'];
+  assert.deepEqual(d.resolveShopItemOrder([], current), current);
+  assert.deepEqual(d.resolveShopItemOrder(undefined, current), current);
+  assert.deepEqual(d.resolveShopItemOrder(null, current), current);
+  assert.deepEqual(d.resolveShopItemOrder('non-sono-un-array', current), current);
+});
+
+test('resolveShopItemOrder non duplica mai un id e non ne perde nessuno', () => {
+  assert.deepEqual(
+    d.resolveShopItemOrder(['whole-eggs', 'whole-eggs', 'basilico'], ['basilico', 'whole-eggs', 'whole-eggs', 'riso-venere']),
+    ['whole-eggs', 'basilico', 'riso-venere']
+  );
+  // Idempotente: risolvere di nuovo il risultato non cambia l'ordine.
+  const once = d.resolveShopItemOrder(['basilico', 'whole-eggs'], ['whole-eggs', 'riso-venere', 'basilico']);
+  assert.deepEqual(d.resolveShopItemOrder(once, ['whole-eggs', 'riso-venere', 'basilico']), once);
+});
+
 // ---- Adattamento carboidrati pranzo <-> cena ----
 
 test('carbSourceForName riconosce i carboidrati (gnocchi prima di patate)', () => {
