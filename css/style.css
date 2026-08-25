@@ -340,6 +340,12 @@ h3 { font-size: 1rem; }
 .batch-next { padding: 12px; border-radius: 10px; background: rgba(255,255,255,.7); color: #7c4c28; font-size: .85rem; }
 .tomorrow-section { padding-top: 2px; }
 
+/* Doppia porzione: cena di stasera + pranzo di domani in un'unica scheda,
+   con le quantità già sommate (stessa ricetta, dosi diverse per pasto). */
+.double-portion-card { border-color: #f1c9a7; }
+.double-portion-note { margin-top: 14px; font-size: .85rem; }
+.double-portion-list li strong { white-space: nowrap; }
+
 /* Settimana */
 .plan-check { margin-bottom: 22px; padding: 18px; border: 1px solid var(--line); border-radius: var(--radius); background: var(--surface); }
 .plan-check.ok { border-color: rgba(49,132,93,.28); }
@@ -502,6 +508,7 @@ input[type="checkbox"], input[type="radio"] { accent-color: var(--primary); widt
 .excluded-list { margin-top: 12px; padding-top: 12px; border-top: 1px solid var(--line); }
 .excluded-list h3 { margin-bottom: 8px; }
 .excluded-list button { border: 0; cursor: pointer; }
+.excluded-hint { margin-bottom: 9px; color: var(--text-muted); font-size: .78rem; }
 .shop-order-settings { margin-top: 16px; padding-top: 16px; border-top: 1px solid var(--line); }
 .shop-order-settings > p { margin: 8px 0 12px; font-size: .8rem; }
 .shop-category-order-list { display: grid; gap: 8px; }
@@ -616,6 +623,15 @@ input[type="checkbox"], input[type="radio"] { accent-color: var(--primary); widt
 .modal-footer .btn { flex: 1; }
 #recipe-modal .modal-footer { flex-wrap: wrap; }
 #recipe-modal .modal-footer .btn { flex: 1 1 160px; }
+/* Azioni della ricetta: su schermo largo restano tutte in fila (i contenitori
+ * spariscono con display: contents), su mobile diventano azione principale
+ * fissa in basso + foglio "Altre azioni" (vedi media query 520px). */
+.modal-footer-primary,
+.modal-more,
+.modal-more-sheet { display: contents; }
+.modal-more-backdrop,
+.modal-more-title,
+#modal-more-btn { display: none; }
 .batch-modal { padding: 16px; border-radius: 13px; background: var(--accent-soft); }
 .batch-modal ol { margin: 14px 0 14px 20px; }
 .batch-modal li { margin: 7px 0; }
@@ -934,7 +950,60 @@ body.dark-mode .login-card {
     border-radius: 22px 22px 0 0;
   }
   .modal-header h2 { font-size: 1.1rem; }
-  .modal-footer { flex-direction: column-reverse; }
+  /* Piede modale: azioni su un'unica riga invece di una colonna di pulsanti. */
+  .modal-footer { flex-direction: row; align-items: stretch; }
+  .modal-footer .btn { min-height: 46px; padding-inline: 12px; font-size: .9rem; }
+  /* Ricetta: barra azioni fissa in basso (si raggiunge senza scrollare tutto)
+     + foglio "Altre azioni" per esporta/invia/duplica/ripristina/elimina. */
+  #recipe-modal .modal-content { padding-bottom: 0; }
+  #recipe-modal .modal-footer {
+    position: sticky;
+    bottom: 0;
+    z-index: 2;
+    flex-wrap: nowrap;
+    margin: 20px -15px 0;
+    padding: 11px 15px calc(11px + env(safe-area-inset-bottom));
+    background: var(--surface);
+  }
+  .modal-footer-primary { display: flex; flex: 1 1 auto; flex-wrap: nowrap; gap: 9px; min-width: 0; }
+  #recipe-modal .modal-footer .modal-footer-primary .btn { flex: 1 1 0; min-width: 0; padding-inline: 10px; }
+  #recipe-modal .modal-footer .modal-footer-primary #modal-more-btn { display: inline-flex; flex: 0 0 auto; min-width: 86px; padding-inline: 12px; }
+  #modal-more-btn.active { border-color: var(--primary); background: var(--primary-soft); color: var(--primary); }
+  .modal-more { display: none; position: fixed; inset: 0; z-index: 5; align-items: flex-end; }
+  .modal-more.open { display: flex; }
+  .modal-more-backdrop { display: block; position: absolute; inset: 0; background: rgba(12, 25, 19, .45); }
+  .modal-more-sheet {
+    display: flex;
+    position: relative;
+    flex-direction: column;
+    gap: 9px;
+    width: 100%;
+    max-height: 72vh;
+    overflow-y: auto;
+    padding: 14px 15px calc(14px + env(safe-area-inset-bottom));
+    border-radius: 22px 22px 0 0;
+    background: var(--surface);
+    box-shadow: 0 -18px 50px rgba(0, 0, 0, .28);
+    animation: modal-in .18s ease;
+  }
+  .modal-more-title {
+    display: block;
+    color: var(--text-muted);
+    font-size: .7rem;
+    font-weight: 800;
+    letter-spacing: .1em;
+    text-transform: uppercase;
+  }
+  #recipe-modal .modal-footer .modal-more .btn {
+    flex: 0 0 auto;
+    width: 100%;
+    min-height: 52px;
+    justify-content: flex-start;
+    padding-inline: 14px;
+    text-align: left;
+    font-size: .95rem;
+  }
+  #recipe-modal .modal-footer .modal-more .btn-danger { margin-top: 4px; }
   .edit-ingredient > div,
   .edit-ingredient > div.portion-edit-grid { grid-template-columns: 1fr 1fr; }
   .edit-ingredient > div .remove-edit-item { grid-column: 1 / -1; width: 100%; }

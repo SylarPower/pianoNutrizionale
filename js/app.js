@@ -711,8 +711,7 @@ const BATCH_STATUS_LABELS = {
 };
 
 // Raccolta dei task dei batch attivi per il giorno, senza duplicati per ID.
-function collectBatchTasks(dayKey) {
-  const batches = getActiveBatch(dayKey);
+function collectBatchTasks(batches) {
   const byId = new Map();
   batches.forEach(batch => {
     (batch.tasks || []).forEach(task => {
@@ -728,8 +727,8 @@ function collectBatchTasks(dayKey) {
   return [...byId.values()];
 }
 
-function renderBatchCard(dayKey) {
-  const tasks = collectBatchTasks(dayKey);
+function renderBatchCard(dayKey, batches = getActiveBatch(dayKey)) {
+  const tasks = collectBatchTasks(batches);
   if (!tasks.length) return "";
   const targetInfo = [...new Set(tasks.map(task =>
     `pranzo di ${DAY_NAMES[task.targetDay]} · tra ${task.daysUntilTarget} ${task.daysUntilTarget === 1 ? "giorno" : "giorni"}`
@@ -756,6 +755,34 @@ function renderBatchCard(dayKey) {
     </section>`;
 }
 
+// Scheda "doppia porzione": la stessa ricetta è a cena stasera e a pranzo
+// domani, quindi ingredienti e procedimento sono identici e cambia solo la
+// quantità. Una sola scheda con le dosi già sommate sostituisce i tre blocchi
+// separati (cena + batch + pranzo) che ripetevano le stesse voci tre volte.
+function doublePortionCardHtml(recipe, dayKey, nextDay, batch) {
+  const dayType = getDayType(dayKey);
+  const tasks = batch.tasks || [];
+  const storageNote = tasks[0]?.storage?.instructions || "Conserva in frigo la porzione per il pranzo di domani.";
+  return `
+    <article class="card meal-card double-portion-card ${dayType}">
+      <div class="meal-card-head">
+        <div>
+          <span class="recipe-code">${escapeHtml(recipe.id)}</span>
+          <h3>${escapeHtml(recipe.emoji || "🍲")} ${escapeHtml(getRecipeDisplayName(recipe, dayType))}</h3>
+          <p class="text-muted">${DAY_NAMES[dayKey]} · cena + ${DAY_NAMES[nextDay]} · pranzo · ${escapeHtml(getProfileLabel())}</p>
+        </div>
+      </div>
+      <p class="batch-next double-portion-note">🍳 <strong>Cucina una volta sola:</strong> le quantità qui sotto sono già la somma di stasera e di domani a pranzo. ${escapeHtml(storageNote)}</p>
+      <div class="meal-preview">
+        <ul class="ingredient-list compact double-portion-list">
+          ${tasks.map(task => `<li class="no-toggle"><span>${escapeHtml(task.label)}</span><strong>${escapeHtml(task.quantity)}</strong></li>`).join("")}
+        </ul>
+        ${stepsHtml(recipe, true, false)}
+      </div>
+      <button class="btn btn-primary meal-open-btn" onclick="openRecipeModal('${escapeAttr(recipe.id)}', '${dayKey}', 'dinner')">Vedi ricetta completa</button>
+    </article>`;
+}
+
 function renderChef() {
   const container = document.getElementById("view-chef");
   const selectedDay = appState.deviceSettings.chefSelectedDay || getTodayKey();
@@ -764,6 +791,14 @@ function renderChef() {
   const nextLunch = getPlannedRecipe(nextDay, "lunch");
   const activeBatch = getActiveBatch(selectedDay);
   const daytimeSlots = ["breakfast", "snack1", "lunch", "snack2"];
+
+  // Doppia porzione: il batch automatico "stessa ricetta" scatta solo quando la
+  // cena di oggi è anche il pranzo di domani (massimo 1 giorno per il frigo),
+  // quindi in quel caso i tre blocchi diventano un'unica scheda.
+  const doublePortion = dinner && nextLunch && nextLunch.id === dinner.id
+    ? activeBatch.find(batch => batch.commonRecipe) || null
+    : null;
+  const otherBatches = activeBatch.filter(batch => batch !== doublePortion);
 
   container.innerHTML = `
     <div class="page-heading chef-heading">
@@ -787,17 +822,23 @@ function renderChef() {
       </div>
     </section>
 
+    ${doublePortion ? `
+    <section class="chef-section double-portion-section">
+      <div class="section-title"><span>🍳</span><div><small>Cucini una volta, mangi due volte</small><h2>Cena di stasera e pranzo di ${DAY_NAMES[nextDay]}</h2></div></div>
+      ${doublePortionCardHtml(dinner, selectedDay, nextDay, doublePortion)}
+    </section>
+    ${renderBatchCard(selectedDay, otherBatches)}` : `
     <section class="chef-section">
       <div class="section-title"><span>🌙</span><div><small>Da cucinare</small><h2>Cena di stasera</h2></div></div>
       ${mealCardHtml(dinner, selectedDay, "dinner", { open: true, primary: true, noToggle: true })}
     </section>
 
-    ${renderBatchCard(selectedDay)}
+    ${renderBatchCard(selectedDay, activeBatch)}
 
     <section class="chef-section tomorrow-section">
       <div class="section-title"><span>🍱</span><div><small>${activeBatch.length ? "Incluso nel batch cooking" : "Prossimo pranzo"}</small><h2>Pranzo di ${DAY_NAMES[nextDay]}</h2></div></div>
       ${mealCardHtml(nextLunch, nextDay, "lunch", { open: true, noToggle: true })}
-    </section>
+    </section>`}
   `;
 }
 
@@ -1447,9 +1488,32 @@ function renderShop() {
   `;
 }
 
+// Etichette leggibili degli alimenti: la lista spesa salva gli id ingrediente
+// (es. "whole-eggs") e, per le esclusioni più vecchie, lo slug del nome. La
+// mappa viene costruita dall'aggregazione corrente (che include anche gli
+// alimenti già esclusi) usando sia l'id sia il legacy id come chiave.
+function shoppingItemLabels() {
+  const labels = new Map();
+  aggregateShoppingList().forEach(entry => {
+    if (entry.id && !labels.has(entry.id)) labels.set(entry.id, entry.name);
+    if (entry.legacyId && !labels.has(entry.legacyId)) labels.set(entry.legacyId, entry.name);
+  });
+  return labels;
+}
+
+// Nome in italiano di un alimento escluso: prima la lista corrente, poi le
+// etichette canoniche del catalogo, infine l'id reso leggibile come extrema ratio.
+function excludedItemLabel(id, labels) {
+  const known = labels?.get(id) || getCanonicalIngredientLabels()[id];
+  if (known) return known;
+  const text = String(id).replaceAll("-", " ").trim();
+  return text ? text.charAt(0).toUpperCase() + text.slice(1) : String(id);
+}
+
 function renderShopSettings(allSelected) {
-  const excludedCount = (appState.shopping.excludedItems || []).length;
+  const excludedItems = appState.shopping.excludedItems || [];
   const categoryOrder = resolveShopCategoryOrder();
+  const labels = shoppingItemLabels();
   return `
     <section class="shop-settings card">
       <div class="flex-between"><h2>Pasti da includere</h2><button class="btn btn-small btn-outline" onclick="toggleShopAllWeek(${!allSelected})">${allSelected ? "Deseleziona tutto" : "Seleziona tutto"}</button></div>
@@ -1461,6 +1525,11 @@ function renderShopSettings(allSelected) {
         }).join("")}
       </div>
       <label class="settings-row"><span><strong>Dispensa e spezie</strong><small>Olio, frutta secca, aromi e condimenti</small></span><input type="checkbox" ${appState.shopping.includePantry ? "checked" : ""} onchange="toggleShopPantry(this.checked)"></label>
+      ${excludedItems.length ? `<div class="excluded-list">
+        <h3>Esclusi (${excludedItems.length})</h3>
+        <p class="excluded-hint">Tocca un alimento per rimetterlo in lista.</p>
+        ${excludedItems.map(id => `<button class="frequency-chip" aria-label="Rimetti in lista ${escapeAttr(excludedItemLabel(id, labels))}" onclick="includeShopItem('${escapeAttr(id)}')">${escapeHtml(excludedItemLabel(id, labels))} ×</button>`).join(" ")}
+      </div>` : ""}
       <div class="shop-order-settings">
         <div class="flex-between"><h2>Ordine categorie</h2><button class="btn btn-small btn-outline" onclick="resetShopCategoryOrder()">Ripristina ordine predefinito</button></div>
         <p class="text-muted">Questo ordine viene usato sia nella vista Spesa sia nella copia/condivisione testuale.</p>
@@ -1468,7 +1537,6 @@ function renderShopSettings(allSelected) {
           ${categoryOrder.map((category, index) => `<div class="shop-category-order-row"><strong>${escapeHtml(category)}</strong><div class="shop-category-order-actions"><button class="btn btn-small btn-outline" aria-label="Sposta in alto ${escapeAttr(category)}" ${index === 0 ? "disabled" : ""} onclick="moveShopCategory(${index}, -1)">↑</button><button class="btn btn-small btn-outline" aria-label="Sposta in basso ${escapeAttr(category)}" ${index === categoryOrder.length - 1 ? "disabled" : ""} onclick="moveShopCategory(${index}, 1)">↓</button></div></div>`).join("")}
         </div>
       </div>
-      ${excludedCount ? `<div class="excluded-list"><h3>Esclusi (${excludedCount})</h3>${appState.shopping.excludedItems.map(id => `<button class="frequency-chip" onclick="includeShopItem('${escapeAttr(id)}')">${escapeHtml(id.replaceAll("-", " "))} ×</button>`).join(" ")}</div>` : ""}
     </section>`;
 }
 
@@ -2871,12 +2939,41 @@ function setupModal() {
     currentModal.recipe = clone(currentModal.recipe);
     renderModalContent();
   });
+  document.getElementById("modal-cancel-edit-btn").addEventListener("click", cancelRecipeEdit);
+  // Azioni secondarie: su mobile stanno nel foglio "Altre azioni", così la
+  // modale non apre con sei pulsanti impilati che mangiano metà schermo.
+  const moreToggle = document.getElementById("modal-more-btn");
+  const morePanel = document.getElementById("modal-more-actions");
+  moreToggle?.addEventListener("click", () => setRecipeActionsOpen(!morePanel.classList.contains("open")));
+  morePanel?.querySelector(".modal-more-backdrop")?.addEventListener("click", () => setRecipeActionsOpen(false));
+  morePanel?.querySelector(".modal-more-sheet")?.addEventListener("click", event => {
+    if (event.target.closest("button")) setRecipeActionsOpen(false);
+  });
+  document.addEventListener("keydown", event => {
+    if (event.key === "Escape" && morePanel?.classList.contains("open")) setRecipeActionsOpen(false);
+  });
   document.getElementById("modal-duplicate-btn").addEventListener("click", () => duplicateRecipe(currentModal?.recipe?.id));
   document.getElementById("modal-save-btn").addEventListener("click", saveRecipeEdit);
   document.getElementById("modal-revert-btn").addEventListener("click", revertRecipe);
   document.getElementById("modal-export-btn").addEventListener("click", exportCurrentRecipe);
   document.getElementById("modal-share-btn").addEventListener("click", () => openShareDialog(currentModal?.recipe?.id));
   document.getElementById("modal-delete-btn").addEventListener("click", deleteCurrentRecipe);
+}
+
+function setRecipeActionsOpen(open) {
+  const panel = document.getElementById("modal-more-actions");
+  const toggle = document.getElementById("modal-more-btn");
+  if (!panel) return;
+  panel.classList.toggle("open", open);
+  toggle?.classList.toggle("active", open);
+  toggle?.setAttribute("aria-expanded", open ? "true" : "false");
+}
+
+// Uscita esplicita dalla modifica: senza questa l'unico modo di annullare era
+// la X o un tocco fuori, che scartavano le modifiche senza chiedere conferma.
+function cancelRecipeEdit() {
+  if (editMode && !window.confirm("Annullare le modifiche non salvate?")) return;
+  closeRecipeModal();
 }
 
 // Preferenza A/R dell'anteprima ricette: persistita nelle impostazioni
@@ -2931,6 +3028,7 @@ window.openRecipeModal = function(recipeId, dayKey = null, slot = null) {
 function closeRecipeModal() {
   document.getElementById("recipe-modal").classList.add("hidden");
   modalOutsideCloseState.set("recipe-modal", false);
+  setRecipeActionsOpen(false);
   currentModal = null;
   editMode = false;
 }
@@ -3061,6 +3159,13 @@ function renderModalContent() {
   document.getElementById("modal-share-btn").classList.toggle("hidden", editMode || currentModal.isNew);
   document.getElementById("modal-revert-btn").classList.toggle("hidden", editMode || !recipe._original);
   document.getElementById("modal-delete-btn").classList.toggle("hidden", editMode || currentModal.isNew);
+  document.getElementById("modal-cancel-edit-btn").classList.toggle("hidden", !editMode);
+  // "Altro" ha senso solo se nel foglio resta almeno un'azione disponibile.
+  document.getElementById("modal-more-btn").classList.toggle(
+    "hidden",
+    editMode || (currentModal.isNew && !recipe._original)
+  );
+  setRecipeActionsOpen(false);
   document.getElementById("modal-edit-btn").textContent = "Modifica ricetta";
   document.getElementById("modal-save-btn").textContent = "Salva nel cloud";
 }
