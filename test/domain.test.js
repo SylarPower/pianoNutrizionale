@@ -232,6 +232,45 @@ test('resolveShopCategoryOrder mette in coda le categorie non previste dal defau
   );
 });
 
+test('resolveShopItemOrder rispetta l\'ordine salvato per gli id ancora presenti', () => {
+  assert.deepEqual(
+    d.resolveShopItemOrder(['whole-eggs', 'greek-yogurt'], ['greek-yogurt', 'whole-eggs', 'basilico']),
+    ['whole-eggs', 'greek-yogurt', 'basilico']
+  );
+});
+
+test('resolveShopItemOrder ignora gli id salvati non più presenti', () => {
+  assert.deepEqual(
+    d.resolveShopItemOrder(['old-id', 'whole-eggs', 'another-old-id', 'basilico'], ['basilico', 'whole-eggs', 'riso-venere']),
+    ['whole-eggs', 'basilico', 'riso-venere']
+  );
+});
+
+test('resolveShopItemOrder accoda gli id nuovi dopo quelli salvati', () => {
+  assert.deepEqual(
+    d.resolveShopItemOrder(['whole-eggs', 'basilico'], ['basilico', 'new-ingredient', 'whole-eggs']),
+    ['whole-eggs', 'basilico', 'new-ingredient']
+  );
+});
+
+test('resolveShopItemOrder senza ordine salvato lascia invariato l\'ordine corrente', () => {
+  const current = ['greek-yogurt', 'whole-eggs', 'basilico'];
+  assert.deepEqual(d.resolveShopItemOrder([], current), current);
+  assert.deepEqual(d.resolveShopItemOrder(undefined, current), current);
+  assert.deepEqual(d.resolveShopItemOrder(null, current), current);
+  assert.deepEqual(d.resolveShopItemOrder('non-sono-un-array', current), current);
+});
+
+test('resolveShopItemOrder non duplica mai un id e non ne perde nessuno', () => {
+  assert.deepEqual(
+    d.resolveShopItemOrder(['whole-eggs', 'whole-eggs', 'basilico'], ['basilico', 'whole-eggs', 'whole-eggs', 'riso-venere']),
+    ['whole-eggs', 'basilico', 'riso-venere']
+  );
+  // Idempotente: risolvere di nuovo il risultato non cambia l'ordine.
+  const once = d.resolveShopItemOrder(['basilico', 'whole-eggs'], ['whole-eggs', 'riso-venere', 'basilico']);
+  assert.deepEqual(d.resolveShopItemOrder(once, ['whole-eggs', 'riso-venere', 'basilico']), once);
+});
+
 // ---- Adattamento carboidrati pranzo <-> cena ----
 
 test('carbSourceForName riconosce i carboidrati (gnocchi prima di patate)', () => {
@@ -606,7 +645,7 @@ function assertConstraints(result) {
   });
 }
 test('generatore: omega-3 distribuiti (non in giorni consecutivi)', () => {
-  [1, 2, 3, 5, 8, 13, 21, 34, 55].forEach(seed => {
+  [1, 2, 3, 5, 8, 13, 21, 34, 55, 42, 7, 89, 99, 123, 777, 2024].forEach(seed => {
     const result = d.generateWeek(generatorCatalog(), { seed });
     const omegaDays = d.DAYS.filter(day =>
       [result.plan.days[day].lunch, result.plan.days[day].dinner]
@@ -620,7 +659,83 @@ test('generatore: omega-3 distribuiti (non in giorni consecutivi)', () => {
       assert.ok(!omegaDays.includes(next),
         `seed ${seed}: omega adiacenti ${day}-${next}`);
     });
+    // Senza accoppiate richieste l'adiacenza non è mai giustificata: il
+    // generatore non deve nemmeno segnalarla, perché non deve produrla.
+    assert.ok(!result.warnings.some(warning => warning.startsWith('Omega-3 in giorni consecutivi')),
+      `seed ${seed}: nessun warning omega consecutivi senza accoppiate`);
   });
+});
+
+test('generatore: omega-3 adiacenti solo con accoppiata batch cena → pranzo richiesta', () => {
+  let adjacencyFromPairSeen = 0;
+  [1, 2, 3, 4, 5, 6, 8, 13, 17, 21, 26, 31].forEach(seed => {
+    const result = d.generateWeek(generatorCatalog(), { seed, batchPairs: 2 });
+    const omegaDays = d.DAYS.filter(day =>
+      [result.plan.days[day].lunch, result.plan.days[day].dinner]
+        .some(id => {
+          const r = generatorCatalog().find(x => x.id === id);
+          return r && d.classifyProtein(r) === 'omega';
+        })
+    );
+    // L'unica adiacenza ammessa: la stessa ricetta omega a cena (anchor) e a
+    // pranzo del giorno dopo (target), cioè l'accoppiata richiesta.
+    const omegaPairSpans = new Set(result.pairs
+      .filter(pair => {
+        const r = generatorCatalog().find(x => x.id === pair.recipeId);
+        return r && d.classifyProtein(r) === 'omega';
+      })
+      .map(pair => `${pair.anchorDay}|${pair.targetDay}`));
+    omegaDays.forEach(day => {
+      const next = d.DAYS[(d.DAYS.indexOf(day) + 1) % 7];
+      if (omegaDays.includes(next)) {
+        adjacencyFromPairSeen += 1;
+        assert.ok(omegaPairSpans.has(`${day}|${next}`),
+          `seed ${seed}: omega adiacenti ${day}-${next} senza accoppiata batch richiesta`);
+      }
+    });
+    // L'adiacenza voluta (stesso pasto del batch) non è un problema da segnalare.
+    const hasPairAdjacency = [...omegaPairSpans].some(span => {
+      const [anchor, target] = span.split('|');
+      return omegaDays.includes(anchor) && omegaDays.includes(target);
+    });
+    if (hasPairAdjacency) {
+      assert.ok(!result.warnings.some(warning => warning.startsWith('Omega-3 in giorni consecutivi')),
+        `seed ${seed}: l'adiacenza dell'accoppiata richiesta non va segnalata`);
+    }
+  });
+  assert.ok(adjacencyFromPairSeen >= 1, 'almeno un seed deve esercitare l\'eccezione dell\'accoppiata omega');
+});
+
+test('generatore: omega-3 adiacenti su pasti bloccati restano segnalati', () => {
+  const result = d.generateWeek(generatorCatalog(), {
+    seed: 11,
+    blocks: { tuesday: { lunch: 'L-O1' }, wednesday: { lunch: 'L-O2' } }
+  });
+  assert.equal(result.plan.days.tuesday.lunch, 'L-O1', 'pasto bloccato mantenuto');
+  assert.equal(result.plan.days.wednesday.lunch, 'L-O2', 'pasto bloccato mantenuto');
+  // L'adiacenza nasce dai blocchi dell'utente: va segnalata, e il generatore
+  // non deve aggiungerne altre (il warning elenca solo Martedì–Mercoledì).
+  assert.ok(result.warnings.includes('Omega-3 in giorni consecutivi: Martedì–Mercoledì.'),
+    'adiacenza dei blocchi segnalata senza altre aggiunte');
+});
+
+test('generatore: catalogo solo omega riempie i pasti e segnala le adiacenze inevitabili', () => {
+  const onlyOmega = [
+    recipe('W1', 'Salmone A', 'lunch', [ingredient('Salmone')], 'Pesce omega-3'),
+    recipe('W2', 'Salmone B', 'lunch', [ingredient('Sgombro')], 'Pesce omega-3'),
+    recipe('W3', 'Salmone C', 'dinner', [ingredient('Salmone')], 'Pesce omega-3'),
+    recipe('W4', 'Salmone D', 'dinner', [ingredient('Sgombro')], 'Pesce omega-3'),
+    recipe('K', 'Avena', 'breakfast', [ingredient('Avena')]),
+    recipe('S', 'Frutta', 'snack1', [ingredient('Frutta')]),
+    recipe('M', 'Yogurt', 'snack2', [ingredient('Yogurt')])
+  ];
+  const result = d.generateWeek(onlyOmega, { seed: 4, maxRepeats: 4 });
+  d.DAYS.forEach(day => {
+    assert.ok(result.plan.days[day].lunch, `pranzo ${day} riempito anche senza alternative`);
+    assert.ok(result.plan.days[day].dinner, `cena ${day} riempita anche senza alternative`);
+  });
+  assert.ok(result.warnings.some(warning => warning.startsWith('Omega-3 in giorni consecutivi')),
+    'l\'adiacenza inevitabile viene segnalata');
 });
 test('generatore: vincoli rispettati con catalogo sufficiente', () => {
   const result = d.generateWeek(generatorCatalog(), { seed: 42 });

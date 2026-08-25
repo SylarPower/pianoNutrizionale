@@ -524,7 +524,13 @@ input[type="checkbox"], input[type="radio"] { accent-color: var(--primary); widt
 }
 .shop-category-order-row strong { font-size: .9rem; }
 .shop-category-order-actions { display: flex; gap: 6px; }
-.shop-category-order-actions .btn { min-width: 44px; }
+/* Frecce ↑/↓ e scorciatoie dell'ordine: target touch >= 44px (una mano sola). */
+.shop-category-order-actions .btn { min-width: 44px; min-height: 44px; }
+.shop-item-order-settings { margin-top: 16px; padding-top: 16px; border-top: 1px solid var(--line); }
+.shop-item-order-settings > h2 { margin-bottom: 0; }
+.shop-item-order-category { margin-top: 14px; }
+.shop-item-order-head { display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 8px; margin-bottom: 8px; }
+.shop-item-order-head strong { font-size: .85rem; color: var(--primary); }
 .shopping-summary { display: flex; justify-content: space-between; margin: 14px 0; color: var(--text-muted); font-size: .82rem; }
 .shopping-summary strong { color: var(--text); }
 .shop-category { margin: 21px 0; }

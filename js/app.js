@@ -1465,19 +1465,57 @@ function getVisibleShoppingEntries() {
   });
 }
 
-function renderShop() {
-  const container = document.getElementById("view-shop");
-  const entries = getVisibleShoppingEntries();
+// Ordina gli alimenti di una categoria con l'ordine salvato nel documento
+// spesa condiviso (itemOrder, chiavi = ingredientId, mai i nomi visibili):
+// prima gli id salvati ancora presenti, poi tutti gli altri in coda, così un
+// ingrediente nuovo non rompe l'ordine scelto. Robustezza finale: se un id
+// non venisse risolto, la voce resta comunque visibile in coda.
+function sortShopCategoryItems(category, entries) {
+  if (!entries || entries.length < 2) return entries || [];
+  const savedOrder = appState.shopping?.itemOrder?.[category];
+  const resolvedIds = window.PianoDomain?.resolveShopItemOrder
+    ? PianoDomain.resolveShopItemOrder(savedOrder, entries.map(entry => entry.id))
+    : entries.map(entry => entry.id);
+  const byId = new Map(entries.map(entry => [entry.id, entry]));
+  const ordered = [];
+  const used = new Set();
+  resolvedIds.forEach(id => {
+    if (!used.has(id) && byId.has(id)) {
+      ordered.push(byId.get(id));
+      used.add(id);
+    }
+  });
+  entries.forEach(entry => {
+    if (!used.has(entry.id)) ordered.push(entry);
+  });
+  return ordered;
+}
+
+// Raggruppa le voci per categoria nell'ordine configurabile delle categorie e
+// con gli alimenti ordinati dentro ogni categoria secondo itemOrder. Unica
+// fonte dell'ordine sia per la vista Spesa sia per Copia/Condividi: testo e
+// schermata non possono divergere.
+function groupShoppingEntries(entries) {
   const categoryOrder = resolveShopCategoryOrder(entries.map(entry => entry.category));
   const grouped = Object.fromEntries(categoryOrder.map(category => [category, []]));
   entries.forEach(entry => {
     if (!grouped[entry.category]) grouped[entry.category] = [];
     grouped[entry.category].push(entry);
   });
+  Object.keys(grouped).forEach(category => {
+    grouped[category] = sortShopCategoryItems(category, grouped[category] || []);
+  });
+  return { categoryOrder, grouped };
+}
+
+function renderShop() {
+  const container = document.getElementById("view-shop");
+  const entries = getVisibleShoppingEntries();
+  const { categoryOrder, grouped } = groupShoppingEntries(entries);
   const allSelected = DAY_ORDER.every(day => MEAL_SLOTS.every(slot => (appState.shopping.selectedMeals[day] || []).includes(slot.id)));
   container.innerHTML = `
     <div class="page-heading shop-heading"><div><p class="eyebrow">Dosi esatte · ${escapeHtml(getProfileLabel())}</p><h1>Lista della spesa</h1><p>Le quantità derivano solo dai pasti selezionati, senza fattori percentuali.</p></div><button class="btn btn-outline" onclick="toggleShopSettings()">${shopSettingsVisible ? "Chiudi" : "Seleziona"}</button></div>
-    ${shopSettingsVisible ? renderShopSettings(allSelected) : ""}
+    ${shopSettingsVisible ? renderShopSettings(allSelected, grouped) : ""}
     <div class="shopping-summary"><strong>${entries.length} alimenti</strong><span>${DAY_ORDER.reduce((sum, day) => sum + (appState.shopping.selectedMeals[day] || []).length, 0)} pasti selezionati</span></div>
     ${categoryOrder.map(category => grouped[category]?.length ? `
       <section class="shop-category">
@@ -1510,10 +1548,13 @@ function excludedItemLabel(id, labels) {
   return text ? text.charAt(0).toUpperCase() + text.slice(1) : String(id);
 }
 
-function renderShopSettings(allSelected) {
+function renderShopSettings(allSelected, groupedEntries = null) {
   const excludedItems = appState.shopping.excludedItems || [];
   const categoryOrder = resolveShopCategoryOrder();
   const labels = shoppingItemLabels();
+  // Categorie con almeno un alimento in lista, nell'ordine mostrato in Spesa.
+  const grouped = groupedEntries || groupShoppingEntries(getVisibleShoppingEntries()).grouped;
+  const itemCategories = Object.keys(grouped).filter(category => grouped[category]?.length);
   return `
     <section class="shop-settings card">
       <div class="flex-between"><h2>Pasti da includere</h2><button class="btn btn-small btn-outline" onclick="toggleShopAllWeek(${!allSelected})">${allSelected ? "Deseleziona tutto" : "Seleziona tutto"}</button></div>
@@ -1536,6 +1577,18 @@ function renderShopSettings(allSelected) {
         <div class="shop-category-order-list">
           ${categoryOrder.map((category, index) => `<div class="shop-category-order-row"><strong>${escapeHtml(category)}</strong><div class="shop-category-order-actions"><button class="btn btn-small btn-outline" aria-label="Sposta in alto ${escapeAttr(category)}" ${index === 0 ? "disabled" : ""} onclick="moveShopCategory(${index}, -1)">↑</button><button class="btn btn-small btn-outline" aria-label="Sposta in basso ${escapeAttr(category)}" ${index === categoryOrder.length - 1 ? "disabled" : ""} onclick="moveShopCategory(${index}, 1)">↓</button></div></div>`).join("")}
         </div>
+        ${itemCategories.length ? `
+        <div class="shop-item-order-settings">
+          <h2>Ordine alimenti</h2>
+          <p class="text-muted">Sposta gli alimenti dentro ogni categoria nell’ordine in cui li trovi al supermercato. L’ordine è condiviso con gli account collegati, vale anche per Copia e Condividi e gli alimenti nuovi compaiono in coda.</p>
+          ${itemCategories.map((category, categoryIndex) => `
+          <div class="shop-item-order-category">
+            <div class="shop-item-order-head"><strong>${escapeHtml(category)}</strong><div class="shop-category-order-actions"><button class="btn btn-small btn-outline" aria-label="Ordina alfabeticamente ${escapeAttr(category)}" onclick="sortShopItemsAZ(${categoryIndex})">A→Z</button><button class="btn btn-small btn-outline" aria-label="Ripristina l’ordine automatico di ${escapeAttr(category)}" onclick="resetShopItemOrder(${categoryIndex})">Ripristina</button></div></div>
+            <div class="shop-category-order-list">
+              ${grouped[category].map((entry, index) => `<div class="shop-category-order-row"><strong>${escapeHtml(entry.name)}</strong><div class="shop-category-order-actions"><button class="btn btn-small btn-outline" aria-label="Sposta in alto ${escapeAttr(entry.name)}" ${index === 0 ? "disabled" : ""} onclick="moveShopItem(${categoryIndex}, ${index}, -1)">↑</button><button class="btn btn-small btn-outline" aria-label="Sposta in basso ${escapeAttr(entry.name)}" ${index === grouped[category].length - 1 ? "disabled" : ""} onclick="moveShopItem(${categoryIndex}, ${index}, 1)">↓</button></div></div>`).join("")}
+            </div>
+          </div>`).join("")}
+        </div>` : ""}
       </div>
     </section>`;
 }
@@ -1556,6 +1609,65 @@ window.moveShopCategory = function(index, delta) {
 
 window.resetShopCategoryOrder = function() {
   saveShopCategoryOrder(SHOP_CATEGORY_ORDER);
+  renderShop();
+};
+
+// ---- Ordine alimenti dentro le categorie ----
+// A differenza dell'ordine delle categorie (preferenza locale del dispositivo),
+// l'ordine degli alimenti vive nel documento Firestore della spesa ed è quindi
+// condiviso: l'altro account collegato alla household lo riceve in tempo reale
+// grazie al listener già attivo sul documento.
+
+// Categorie con almeno un alimento in lista, nell'ordine del pannello.
+function shopItemOrderCategories() {
+  const { categoryOrder, grouped } = groupShoppingEntries(getVisibleShoppingEntries());
+  return categoryOrder.filter(category => (grouped[category] || []).length);
+}
+
+// Id correnti di una categoria nell'ordine effettivamente mostrato.
+function shopItemOrderIdsFor(category) {
+  return sortShopCategoryItems(category, getVisibleShoppingEntries().filter(entry => entry.category === category))
+    .map(entry => entry.id);
+}
+
+function saveShopItemOrder(category, orderedIds) {
+  const itemOrder = { ...(appState.shopping.itemOrder || {}) };
+  itemOrder[category] = [...new Set((orderedIds || []).filter(Boolean))];
+  appState.shopping.itemOrder = itemOrder;
+  // Stesso pattern delle altre interazioni della spesa: stato aggiornato subito,
+  // scrittura remota accorpata dal debounce, rendering immediato.
+  queueShoppingSave();
+  renderShop();
+}
+
+window.moveShopItem = function(categoryIndex, itemIndex, delta) {
+  const category = shopItemOrderCategories()[categoryIndex];
+  if (!category) return;
+  const ids = shopItemOrderIdsFor(category);
+  const target = itemIndex + delta;
+  if (target < 0 || target >= ids.length) return;
+  [ids[itemIndex], ids[target]] = [ids[target], ids[itemIndex]];
+  saveShopItemOrder(category, ids);
+};
+
+window.sortShopItemsAZ = function(categoryIndex) {
+  const category = shopItemOrderCategories()[categoryIndex];
+  if (!category) return;
+  const items = getVisibleShoppingEntries()
+    .filter(entry => entry.category === category)
+    .sort((left, right) => left.name.localeCompare(right.name, "it", { sensitivity: "base" }));
+  saveShopItemOrder(category, items.map(entry => entry.id));
+};
+
+// "Ripristina" per categoria: rimuove l'ordine salvato e torna all'ordine
+// automatico di primo incontro scorrendo la settimana.
+window.resetShopItemOrder = function(categoryIndex) {
+  const category = shopItemOrderCategories()[categoryIndex];
+  if (!category) return;
+  const itemOrder = { ...(appState.shopping.itemOrder || {}) };
+  delete itemOrder[category];
+  appState.shopping.itemOrder = itemOrder;
+  queueShoppingSave();
   renderShop();
 };
 
@@ -1645,9 +1757,11 @@ window.includeShopItem = function(id) {
 
 function shoppingText() {
   const entries = getVisibleShoppingEntries();
-  const categoryOrder = resolveShopCategoryOrder(entries.map(entry => entry.category));
+  // Stesso raggruppamento/ordine del rendering: Copia e Condividi producono
+  // testo coerente con la schermata (categorie E alimenti dentro le categorie).
+  const { categoryOrder, grouped } = groupShoppingEntries(entries);
   const blocks = categoryOrder.map(category => {
-    const items = entries.filter(entry => entry.category === category);
+    const items = grouped[category] || [];
     if (!items.length) return "";
     return `----- ${category}\n${items.map(entry => `${entry.name} - ${shoppingAmountText(entry)}`).join("\n")}`;
   }).filter(Boolean);

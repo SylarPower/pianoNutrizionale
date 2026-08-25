@@ -213,6 +213,27 @@ function observeHouseholdChanges(callback, onError = null) {
     });
 }
 
+// Normalizza il campo itemOrder del documento spesa: mappa "nome categoria" ->
+// elenco di ingredientId. Difensivo verso documenti vecchi o scritti male
+// (campo assente, non oggetto, valori non array, id non stringa, duplicati):
+// le categorie senza id validi non creano chiavi inutili.
+function normalizeShopItemOrder(value) {
+  const itemOrder = {};
+  if (!value || typeof value !== "object" || Array.isArray(value)) return itemOrder;
+  Object.keys(value).forEach(category => {
+    const ids = [];
+    const seen = new Set();
+    (Array.isArray(value[category]) ? value[category] : []).forEach(id => {
+      const clean = typeof id === "string" ? id.trim() : "";
+      if (!clean || seen.has(clean)) return;
+      seen.add(clean);
+      ids.push(clean);
+    });
+    if (ids.length) itemOrder[category] = ids;
+  });
+  return itemOrder;
+}
+
 function shoppingValueFromData(data = {}) {
   const defaults = getDefaultShoppingList();
   return {
@@ -220,7 +241,8 @@ function shoppingValueFromData(data = {}) {
     ...data,
     selectedMeals: { ...defaults.selectedMeals, ...(data.selectedMeals || {}) },
     excludedItems: data.excludedItems || [],
-    customQuantities: data.customQuantities || {}
+    customQuantities: data.customQuantities || {},
+    itemOrder: { ...defaults.itemOrder, ...normalizeShopItemOrder(data.itemOrder) }
   };
 }
 
@@ -283,7 +305,10 @@ function getDefaultShoppingList() {
     },
     includePantry: true,
     excludedItems: [],
-    customQuantities: {}
+    customQuantities: {},
+    // Ordine degli alimenti DENTRO ogni categoria, condiviso con la household
+    // perché vive nel documento spesa: { "<nome categoria>": ["<ingredientId>"] }.
+    itemOrder: {}
   };
 }
 

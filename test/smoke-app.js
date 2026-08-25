@@ -139,6 +139,9 @@ const recipes = [
 const samePortion = value => ({ ipoTraining: value, ipoRest: value, manTraining: value, manRest: value });
 recipes.find(item => item.id === 'L1').ingredients.push({ name: 'Basilico', ingredientId: 'basilico', portions: samePortion('1') });
 recipes.find(item => item.id === 'D1').ingredients.push({ name: 'Basilico', ingredientId: 'basilico', portions: samePortion('un mazzetto') });
+// Secondo carboidrato nella colazione: serve per verificare l'ordine degli
+// alimenti DENTRO una categoria (itemOrder condiviso nel documento spesa).
+recipes.find(item => item.id === 'B1').ingredients.push({ name: 'Pane integrale', ingredientId: 'pane-integrale', portions: samePortion('60g') });
 const days = {};
 window.PianoDomain.DAYS.forEach(day => {
   days[day] = { type: ['monday', 'wednesday', 'friday', 'sunday'].includes(day) ? 'training' : 'rest', breakfast: 'B1', snack1: 'S1', lunch: 'L1', snack2: 'M1', dinner: 'D1' };
@@ -200,6 +203,54 @@ assert.equal(shoppingAmountText({ id: 'opaque-only', legacyId: 'opaque-only', to
 assert.equal(shoppingAmountText({ id: 'spoons', legacyId: 'spoons', totals: { g: 50 }, opaque: {}, free: false }), '50g');
 assert.match(exportedShopping, /Basilico - 7 pz/);
 assert.doesNotMatch(exportedShopping, /Basilico[^\n]*mazzetto/);
+
+// ---- Ordine alimenti dentro le categorie (itemOrder condiviso) ----
+{
+  // Senza itemOrder l'ordine è quello di "primo incontro": la colazione del
+  // lunedì viene letta prima delle altre, quindi Riso venere precede Pane.
+  assert.ok(exportedShopping.indexOf('Riso venere') < exportedShopping.indexOf('Pane integrale'), 'ordine automatico: riso prima di pane');
+
+  // Le frecce A→Z/Ripristina passano da queueShoppingSave: stub remoto come
+  // nel test del debounce, per contare le scritture del documento spesa.
+  const originalCloud = global.saveShoppingListCloud;
+  let remoteWrites = 0;
+  global.saveShoppingListCloud = async () => { remoteWrites += 1; };
+
+  // L'ordine salvato nel documento spesa viene applicato sia al testo sia alla vista.
+  appState.shopping.itemOrder = { '🍚 Carboidrati': ['pane-integrale', 'riso-venere'] };
+  const reorderedText = shoppingText();
+  assert.ok(reorderedText.indexOf('Pane integrale') < reorderedText.indexOf('Riso venere'), 'itemOrder condiviso vale per Copia/Condividi');
+  shopSettingsVisible = false;
+  renderShop();
+  assert.ok(document.getElementById('view-shop').innerHTML.indexOf('Pane integrale') < document.getElementById('view-shop').innerHTML.indexOf('Riso venere'), 'itemOrder condiviso vale per la vista Spesa');
+
+  // Pannello "Ordine alimenti": frecce e scorciatoie A→Z / Ripristina.
+  shopSettingsVisible = true;
+  renderShop();
+  const orderPanelHtml = document.getElementById('view-shop').innerHTML;
+  assert.match(orderPanelHtml, /Ordine alimenti/);
+  assert.match(orderPanelHtml, /moveShopItem\(0, 1, -1\)/, 'frecce su/giù per gli alimenti di una categoria');
+  assert.match(orderPanelHtml, /sortShopItemsAZ\(0\)/, 'scorciatoia A→Z per categoria');
+  assert.match(orderPanelHtml, /resetShopItemOrder\(0\)/, 'scorciatoia Ripristina per categoria');
+
+  // Freccia ↑: riso (posizione 1) sale sopra pane e l'ordine viene salvato.
+  moveShopItem(0, 1, -1);
+  assert.deepEqual(appState.shopping.itemOrder['🍚 Carboidrati'], ['riso-venere', 'pane-integrale'], 'lo spostamento con le frecce aggiorna itemOrder');
+  // A→Z: Pane precede Riso alfabeticamente.
+  sortShopItemsAZ(0);
+  assert.deepEqual(appState.shopping.itemOrder['🍚 Carboidrati'], ['pane-integrale', 'riso-venere'], 'A→Z ordina per nome visibile ma salva ingredientId');
+  // Ripristina: torna all'ordine automatico di primo incontro.
+  resetShopItemOrder(0);
+  assert.equal(appState.shopping.itemOrder['🍚 Carboidrati'], undefined, 'Ripristina rimuove l\'ordine salvato della categoria');
+  const afterResetText = shoppingText();
+  assert.ok(afterResetText.indexOf('Riso venere') < afterResetText.indexOf('Pane integrale'), 'dopo il ripristino vale di nuovo l\'ordine automatico');
+  // Più riordini ravvicinati producono UNA sola scrittura del documento spesa.
+  assert.equal(remoteWrites, 0, 'nessuna scrittura remota immediata durante i riordini');
+  flushShoppingSave();
+  assert.equal(remoteWrites, 1, 'i riordini accodati diventano una sola scrittura remota');
+
+  global.saveShoppingListCloud = originalCloud;
+}
 
 // ---- Debounce lista spesa: cache locale subito, una sola scrittura remota ----
 {
@@ -329,6 +380,7 @@ const startupChecks = (async () => {
   assert.equal(applied.recipes[0].id, 'L9', 'lo stato parte dalla cache locale');
   assert.ok(applied.plan?.days, 'piano popolato dalla cache');
   assert.ok(applied.shopping?.selectedMeals, 'lista spesa normalizzata dalla cache');
+  assert.deepEqual(applied.shopping.itemOrder, {}, 'documento spesa senza itemOrder resta valido (merge difensivo)');
 
   // Household SENZA cache utilizzabile: fallback alle tre letture dirette,
   // nessuna schermata vuota in attesa di listener che potrebbero non arrivare.
