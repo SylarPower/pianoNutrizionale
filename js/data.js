@@ -85,10 +85,10 @@ proteinFrequencies: [
   ["Pollame", "1-2 volte a settimana"],
   ["Manzo e maiale", "Massimo 1 volta a settimana"],
   ["Affettati e carni miste", "Massimo 1 volta a settimana"],
-  ["Pesce ricco di omega-3 (salmone, sgombro, sardine/aringhe)", "2-3 volte a settimana"],
+  ["Pesce ricco di omega-3 (salmone, sgombro, sardine, aringhe, alici/acciughe)", "2-3 volte a settimana"],
   ["Altro pesce e prodotti ittici", "1-2 volte a settimana"],
-  ["Latticini e formaggi (a pranzo e cena)", "1-2 volte a settimana"],
-  ["Uova (a pranzo e cena)", "1-2 volte a settimana"],
+  ["Latticini e formaggi", "1-2 volte a settimana"],
+  ["Uova", "1-2 volte a settimana"],
   ["Legumi e derivati", "Almeno 3 volte a settimana"]
 ],
   faq: [
