@@ -404,7 +404,7 @@ const DEFAULT_CONSTRAINTS = {
   const CATEGORY_RULES = [
     { category: '🥩 Carne', terms: ['pollo', 'tacchino', 'vitello', 'manzo'] },
     { category: '🐟 Pesce', terms: ['salmone', 'sgombro', 'merluzzo', 'tonno', 'gamber', 'calamar', 'polpo'] },
-    { category: '🥚 Uova e latticini', terms: ['uov', 'ricotta', 'mozzarella', 'caprino', 'feta', 'parmigiano', 'fiocchi di latte', 'yogurt', 'skyr', 'kefir', 'latte'] },
+    { category: '🥚 Uova e latticini', terms: ['uov', 'album', 'ricotta', 'mozzarella', 'caprino', 'feta', 'parmigiano', 'fiocchi di latte', 'yogurt', 'skyr', 'kefir', 'latte'] },
     { category: '🫘 Legumi', terms: ['ceci', 'lenticch', 'fagiol', 'edamame', 'piselli'] },
     { category: '🍚 Carboidrati', terms: ['pasta', 'riso', 'orzo', 'farro', 'quinoa', 'cous cous', 'pane', 'patate', 'farina di ceci', 'polenta', 'cracker', 'trofie', 'avena', 'cereali', 'fette biscottate', 'wasa', 'granola'] },
     { category: '🍑 Frutta', terms: ['pesca', 'mango', 'anguria', 'melone', 'avocado', 'lampon', 'limone', 'lime', 'albicocc', 'cilieg', 'mirtill', 'ananas', 'frutta fresca', 'frutti di bosco'] },
