@@ -571,23 +571,25 @@ function portionFor(ingredient, profile, dayType, slot, recipeSlot) {
     let amounts = isCena ? source.cena : source.pranzo;
     let name = ingredient.name;
     let ingredientId = ingredient.ingredientId || ingredientIdFor(ingredient.name);
+    let ipoAmountsOverride = null;
     if (!amounts) {
       const fallback = cenaCarbOption(options.cenaFallbackKey);
       amounts = fallback.amounts;
+      ipoAmountsOverride = fallback.amountsIpo || null;
       name = fallback.label;
       ingredientId = ingredientIdFor(name);
     }
-  const ipoAmounts = source.cenaIpo || amounts;
-  return {
-    name,
-    ingredientId,
-    portions: {
-      ipoTraining: `${ipoAmounts.training}g`,
-      ipoRest: `${ipoAmounts.rest}g`,
-      manTraining: `${amounts.training}g`,
-      manRest: `${amounts.rest}g`
-    }
-  };
+    const ipoAmounts = ipoAmountsOverride || (isCena ? source?.cenaIpo : source?.pranzoIpo) || amounts;
+    return {
+      name,
+      ingredientId,
+      portions: {
+        ipoTraining: `${ipoAmounts.training}g`,
+        ipoRest: `${ipoAmounts.rest}g`,
+        manTraining: `${amounts.training}g`,
+        manRest: `${amounts.rest}g`
+      }
+    };
   }
 
   // Aggrega la lista della spesa per ingredientId. Le dosi "—" vengono saltate.
