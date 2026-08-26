@@ -222,18 +222,40 @@ const DEFAULT_CONSTRAINTS = {
     return 'later';
   }
 
-  function portionFor(ingredient, profile, dayType) {
-    const p = normalizePortions(ingredient?.portions || {});
-    const training = dayType === 'training';
-    if (profile === 'ipo') return training ? p.ipoTraining : p.ipoRest;
-    if (profile === 'couple') {
-      return {
-        man: training ? p.manTraining : p.manRest,
-        ipo: training ? p.ipoTraining : p.ipoRest
-      };
+function portionFor(ingredient, profile, dayType, slot, recipeSlot) {
+  const p = normalizePortions(ingredient?.portions || {});
+  const training = dayType === 'training';
+  
+  // Se è un carboidrato e la ricetta è di pranzo ma viene usata a cena
+  // (o viceversa), applica l'adattamento
+  if (slot && recipeSlot && isPranzoCenaCross(recipeSlot, slot)) {
+    const source = carbSourceForName(ingredient?.name);
+    if (source) {
+      const isCena = slot === 'dinner';
+      let amounts = isCena ? source.cena : source.pranzo;
+      if (amounts) {
+        const ipoAmounts = source.cenaIpo || amounts;
+        if (profile === 'ipo') return training ? `${ipoAmounts.training}g` : `${ipoAmounts.rest}g`;
+        if (profile === 'couple') {
+          return {
+            man: training ? `${amounts.training}g` : `${amounts.rest}g`,
+            ipo: training ? `${ipoAmounts.training}g` : `${ipoAmounts.rest}g`
+          };
+        }
+        return training ? `${amounts.training}g` : `${amounts.rest}g`;
+      }
     }
-    return training ? p.manTraining : p.manRest;
   }
+  
+  if (profile === 'ipo') return training ? p.ipoTraining : p.ipoRest;
+  if (profile === 'couple') {
+    return {
+      man: training ? p.manTraining : p.manRest,
+      ipo: training ? p.ipoTraining : p.ipoRest
+    };
+  }
+  return training ? p.manTraining : p.manRest;
+}
 
   function formatPortion(portion, profile) {
     if (profile === 'couple' && portion && typeof portion === 'object') {
