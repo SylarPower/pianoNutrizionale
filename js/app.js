@@ -1331,10 +1331,10 @@ function getCategoryForIngredient(name) {
   if (has("salmone", "sgombro", "merluzzo", "tonno", "gamber", "calamar", "polpo")) return "🐟 Pesce";
   if (has("uov", "ricotta", "mozzarella", "caprino", "feta", "parmigiano", "fiocchi di latte", "yogurt", "skyr", "kefir", "latte")) return "🥚 Uova e latticini";
   if (has("ceci", "lenticch", "fagiol", "edamame", "piselli")) return "🫘 Legumi";
-  if (has("pasta", "riso", "orzo", "farro", "quinoa", "cous cous", "pane", "patate", "farina di ceci", "polenta", "cracker", "trofie", "avena", "cereali", "fette biscottate", "wasa", "granola")) return "🍚 Carboidrati";
+  if (has("pasta", "riso", "orzo", "farro", "quinoa", "cous cous", "pane", "patate", "polenta", "cracker", "trofie", "avena", "cereali", "fette biscottate", "wasa", "granola")) return "🍚 Carboidrati";
   if (has("pesca", "mango", "anguria", "melone", "avocado", "lampon", "limone", "lime", "albicocc", "cilieg", "mirtill", "ananas", "frutta fresca", "frutti di bosco")) return "🍑 Frutta";
   if (has("zucchin", "pomodor", "friggitell", "peperon", "melanzan", "rucola", "cetriolo", "carota", "fagiolini", "spinacin", "lattuga", "songino", "sedano", "verdura", "cipolla")) return "🥬 Verdura";
-  if (has("olio", "olive", "mandorle", "noci", "pistacchi", "semi", "pesto", "capperi", "brodo", "salsa di soia", "aceto", "cacao", "cioccolato", "marmellata", "confettura", "miele", "sciroppo", "dolcificante", "cocco", "proteine whey")) return "🥫 Dispensa";
+  if (has("olio", "olive", "mandorle", "noci", "pistacchi", "semi", "pesto", "capperi", "brodo", "passata di pomodoro", "farina", "salsa di soia", "aceto", "cacao", "cioccolato", "marmellata", "confettura", "miele", "sciroppo", "dolcificante", "cocco", "proteine whey")) return "🥫 Dispensa";
   return "🌿 Spezie e aromi";
 }
 
