@@ -1355,3 +1355,13 @@ test('nessuna ricetta hardcoded nei file applicativi', () => {
   const data = fs.readFileSync(path.join(ROOT, 'js/data.js'), 'utf8');
   assert.doesNotMatch(app + domain + data, /"C19"|"P16"|firebase-seed/);
 });
+
+test('categorie spesa: passata di pomodoro e farine in Dispensa', () => {
+  assert.equal(d.categoryForIngredient('Passata di pomodoro'), '🥫 Dispensa');
+  assert.equal(d.categoryForIngredient("Farina d'avena"), '🥫 Dispensa');
+  assert.equal(d.categoryForIngredient('Farina di ceci'), '🥫 Dispensa');
+  // I carboidrati veri e la verdura fresca restano dove sono.
+  assert.equal(d.categoryForIngredient('Fiocchi d\'avena'), '🍚 Carboidrati');
+  assert.equal(d.categoryForIngredient('Pasta integrale'), '🍚 Carboidrati');
+  assert.equal(d.categoryForIngredient('Pomodori freschi'), '🥬 Verdura');
+});
