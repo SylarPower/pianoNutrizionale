@@ -178,10 +178,29 @@ const batchModalList = document.getElementById('batch-modal-list');
 assert.match(batchModalList.innerHTML, /Preparazioni in anticipo/, 'titolo del batch nella modale');
 assert.match(batchModalList.innerHTML, /Cuoci il riso/, 'task del batch nella modale');
 assert.match(batchModalList.innerHTML, /batch-task-quantity/, 'dosi del batch nella modale');
-assert.match(batchModalList.innerHTML, /Vedi ricetta completa/, 'collegamento alle ricette cena\/pranzo');
+assert.match(batchModalList.innerHTML, /Ingredienti/, 'ingredienti completi già visibili nella modale batch');
+assert.match(batchModalList.innerHTML, /Preparazione/, 'preparazione completa già visibile nella modale batch');
+assert.match(batchModalList.innerHTML, /Passo uno/, 'passaggi della ricetta già visibili nella modale batch');
+assert.doesNotMatch(batchModalList.innerHTML, /Vedi ricetta completa/, 'nessun passaggio a una seconda modale');
+assert.doesNotMatch(batchModalList.innerHTML, /Conservazione|batch-task-storage/, 'nessuna nota di conservazione');
+assert.doesNotMatch(batchModalList.innerHTML, /Prepara oggi/i, 'nessuna label ridondante per la preparazione odierna');
 assert.equal(document.getElementById('batch-modal').classList.contains('hidden'), false, 'modale batch aperta');
 closeBatchModal();
 assert.equal(document.getElementById('batch-modal').classList.contains('hidden'), true, 'modale batch chiudibile');
+
+// Stessa ricetta a cena e al pranzo successivo: un'unica ricetta completa con
+// dosi sommate, senza titolo "Doppia porzione" né indicazione del giorno target.
+const originalTemplates = appState.plan.batchTemplates;
+const originalTuesdayLunch = appState.plan.days.tuesday.lunch;
+appState.plan.batchTemplates = [];
+appState.plan.days.tuesday.lunch = 'D1';
+openBatchModal('monday');
+assert.match(batchModalList.innerHTML, /Ingredienti · dosi totali/, 'dosi totali integrate nella ricetta completa');
+assert.match(batchModalList.innerHTML, /160g/, 'dose cena e pranzo sommata');
+assert.doesNotMatch(batchModalList.innerHTML, /Doppia porzione|Pranzo di Martedì|tra 1 giorno/, 'testi ridondanti assenti per cena e pranzo successivo');
+closeBatchModal();
+appState.plan.batchTemplates = originalTemplates;
+appState.plan.days.tuesday.lunch = originalTuesdayLunch;
 
 renderWeek();
 renderRecipes();
