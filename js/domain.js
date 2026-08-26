@@ -504,7 +504,7 @@ const DEFAULT_CONSTRAINTS = {
     { key: 'pasta', match: /pasta/, label: 'Pasta', pranzo: { training: 90, rest: 70 }, cena: null },
     { key: 'riso', match: /\briso\b|risotto/, label: 'Riso', pranzo: { training: 90, rest: 70 }, cena: null },
     { key: 'crackers', match: /cracker|grissin|crostin/, label: 'Crackers/Grissini/Crostini', pranzo: { training: 70, rest: 60 }, cena: { training: 40, rest: 40 } },
-    { key: 'patate', match: /patat/, label: 'Patate', pranzo: { training: 450, rest: 350 }, cena: { training: 230, rest: 230 } },
+    { key: 'patate', match: /patat/, label: 'Patate', pranzo: { training: 450, rest: 350 }, cena: { training: 230, rest: 230 }, cenaIpo: { training: 150, rest: 150 } },
     { key: 'pane', match: /\bpane\b/, label: 'Pane', pranzo: { training: 120, rest: 90 }, cena: { training: 60, rest: 60 } }
   ];
 
@@ -514,7 +514,7 @@ const DEFAULT_CONSTRAINTS = {
   const CENA_CARB_OPTIONS = [
     { key: 'pane', label: 'Pane', amounts: { training: 60, rest: 60 } },
     { key: 'crackers', label: 'Crackers / Grissini / Crostini', amounts: { training: 40, rest: 40 } },
-    { key: 'patate', label: 'Patate', amounts: { training: 230, rest: 230 } },
+    { key: 'patate', label: 'Patate', amounts: { training: 230, rest: 230 }, amountsIpo: { training: 150, rest: 150 } },
     { key: 'polenta', label: 'Polenta cotta', amounts: { training: 220, rest: 220 } }
   ];
   const DEFAULT_CENA_CARB_KEY = 'pane';
@@ -555,16 +555,17 @@ const DEFAULT_CONSTRAINTS = {
       name = fallback.label;
       ingredientId = ingredientIdFor(name);
     }
-    return {
-      name,
-      ingredientId,
-      portions: {
-        ipoTraining: `${amounts.training}g`,
-        ipoRest: `${amounts.rest}g`,
-        manTraining: `${amounts.training}g`,
-        manRest: `${amounts.rest}g`
-      }
-    };
+  const ipoAmounts = source.cenaIpo || amounts;
+  return {
+    name,
+    ingredientId,
+    portions: {
+      ipoTraining: `${ipoAmounts.training}g`,
+      ipoRest: `${ipoAmounts.rest}g`,
+      manTraining: `${amounts.training}g`,
+      manRest: `${amounts.rest}g`
+    }
+  };
   }
 
   // Aggrega la lista della spesa per ingredientId. Le dosi "—" vengono saltate.
