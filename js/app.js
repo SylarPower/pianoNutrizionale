@@ -71,10 +71,6 @@ function getTodayKey() {
   return DAY_BY_JS_INDEX[new Date().getDay()];
 }
 
-function getNextDay(dayKey) {
-  return DAY_ORDER[(DAY_ORDER.indexOf(dayKey) + 1) % DAY_ORDER.length];
-}
-
 function getDayType(dayKey) {
   return appState.plan?.days?.[dayKey]?.type || "rest";
 }
@@ -228,12 +224,6 @@ function getActiveBatch(dayKey) {
     if (!alreadyCovered) batches.push(common);
   }
   return batches;
-}
-
-// Retrocompatibilità: primo batch attivo (usato dal vecchio flusso).
-function getActiveBatchRule(dayKey) {
-  const batches = getActiveBatch(dayKey);
-  return batches.length ? batches[0] : null;
 }
 
 function showToast(message, isError = false) {
@@ -407,7 +397,7 @@ async function loadUserData(user, { silent = false } = {}) {
       showToast("Connessione assente: stai vedendo i dati salvati sul dispositivo.", true);
     } else {
       showApp();
-      const container = document.getElementById("view-chef");
+      const container = document.getElementById("view-week");
       container.classList.remove("hidden");
       container.innerHTML = `<div class="empty-state"><h2>Sincronizzazione non riuscita</h2><p>${escapeHtml(error.message || "Controlla la connessione e riprova.")}</p><button class="btn btn-primary" onclick="window.location.reload()">Riprova</button></div>`;
     }
@@ -427,14 +417,6 @@ function applyState(recipes, plan, shopping) {
   appState.deviceSettings = getLocalDeviceSettings();
   if (needsCatalogMigration) {
     saveRecipeCatalog(appState.recipes).catch(error => console.warn("Migrazione schema 5: salvataggio catalogo non riuscito", error));
-  }
-
-  const today = getTodayKey();
-  const dateKey = new Date().toLocaleDateString("sv-SE");
-  if (appState.deviceSettings.lastOpenDate !== dateKey) {
-    appState.deviceSettings.chefSelectedDay = today;
-    appState.deviceSettings.lastOpenDate = dateKey;
-    saveLocalDeviceSettings(appState.deviceSettings);
   }
 
   applyTheme(!!appState.deviceSettings.darkMode);
@@ -548,8 +530,8 @@ async function initApp() {
 
 function setupRouter() {
   window.addEventListener("hashchange", handleRoute);
-  if (!window.location.hash || !["#chef", "#week", "#recipes", "#shop", "#prices", "#settings"].includes(window.location.hash)) {
-    window.location.hash = "#chef";
+  if (!window.location.hash || !["#week", "#recipes", "#shop", "#prices", "#settings"].includes(window.location.hash)) {
+    window.location.hash = "#week";
   } else {
     handleRoute();
   }
@@ -559,23 +541,9 @@ function setupRouter() {
 // corrente solo quando la si apre, non a ogni re-render della stessa vista.
 let lastRenderedRoute = null;
 
-// Memoria scroll per Oggi: quando si lascia #chef e si torna, si ritrova
-// esattamente dove si era lasciato (richiesta utente).
-let chefScrollY = 0;
-try {
-  const saved = sessionStorage.getItem("pn_chef_scroll");
-  if (saved !== null) chefScrollY = parseInt(saved, 10) || 0;
-} catch (_) {}
-
 function handleRoute() {
   if (!appState.user || !appState.plan) return;
-  const hash = window.location.hash || "#chef";
-
-  // Salva la posizione di Oggi prima di nasconderla.
-  if (lastRenderedRoute === "#chef" && hash !== "#chef") {
-    chefScrollY = window.scrollY || document.documentElement.scrollTop || 0;
-    try { sessionStorage.setItem("pn_chef_scroll", String(chefScrollY)); } catch (_) {}
-  }
+  const hash = window.location.hash || "#week";
 
   document.querySelectorAll(".view").forEach(view => view.classList.add("hidden"));
   document.querySelectorAll(".nav-item").forEach(item => item.classList.remove("active"));
@@ -583,8 +551,6 @@ function handleRoute() {
   document.getElementById(`nav-${hash.slice(1)}`)?.classList.add("active");
 
   const enteringWeek = hash === "#week" && lastRenderedRoute !== "#week";
-  const enteringChef = hash === "#chef" && lastRenderedRoute !== "#chef";
-  if (hash === "#chef") renderChef();
   if (hash === "#week") renderWeek();
   if (hash === "#recipes") renderRecipes();
   if (hash === "#shop") renderShop();
@@ -593,27 +559,7 @@ function handleRoute() {
   lastRenderedRoute = hash;
 
   if (enteringWeek) scrollWeekToToday();
-  if (enteringChef) {
-    let saved = chefScrollY;
-    try {
-      const s = sessionStorage.getItem("pn_chef_scroll");
-      if (s !== null) saved = parseInt(s, 10) || saved;
-    } catch (_) {}
-    if (saved > 0) {
-      const restore = () => window.scrollTo(0, saved);
-      if (typeof requestAnimationFrame === "function") requestAnimationFrame(() => requestAnimationFrame(restore));
-      else setTimeout(restore, 0);
-    }
-  }
 }
-
-// Aggiorna la memoria scroll mentre si è su Oggi (scroll continuo).
-window.addEventListener("scroll", () => {
-  if ((window.location.hash || "#chef") === "#chef" && !document.getElementById("view-chef")?.classList.contains("hidden")) {
-    chefScrollY = window.scrollY || document.documentElement.scrollTop || 0;
-    try { sessionStorage.setItem("pn_chef_scroll", String(chefScrollY)); } catch (_) {}
-  }
-}, { passive: true });
 
 function scrollWeekToToday() {
   const target = document.getElementById(`day-${getTodayKey()}`);
@@ -652,57 +598,12 @@ window.changePortionProfile = function(profile) {
   handleRoute();
 };
 
-function ingredientListHtml(recipe, dayType, compact = false, enableToggle = true, assignedSlot = null) {
-  if (!recipe) return "";
-  return `<ul class="ingredient-list ${compact ? "compact" : ""}">${recipe.ingredients.map(ingredient => {
-    const adapted = (window.PianoDomain && assignedSlot)
-      ? PianoDomain.adaptIngredientForSlot(ingredient, recipe.slot, assignedSlot, { cenaFallbackKey: getCrossSlotCenaCarb() })
-      : null;
-    const ing = adapted ? { ...ingredient, name: adapted.name, portions: adapted.portions } : ingredient;
-    const adaptedMark = adapted ? ` <small class="adapted-mark" title="Dose adattata per questo pasto">↻</small>` : "";
-    return `
-    <li class="${enableToggle ? "step-item" : "no-toggle"}" ${enableToggle ? "onclick=\"this.classList.toggle('done')\"" : ""}>
-      <span>${escapeHtml(ing.name)}${adaptedMark}</span>
-      <strong>${escapeHtml(getIngredientDisplay(ing, dayType))}</strong>
-    </li>`;
-  }).join("")}</ul>`;
-}
+// ----- Modale batch cooking (aperta dalla colonna della Settimana) -----
 
-function stepsHtml(recipe, compact = false, enableToggle = true) {
-  if (!recipe) return "";
-  return `<ol class="steps-list ${compact ? "compact" : ""}">${recipe.steps.map(step => `<li class="${enableToggle ? "step-item" : "no-toggle"}" ${enableToggle ? "onclick=\"this.classList.toggle('done')\"" : ""}>${escapeHtml(step)}</li>`).join("")}</ol>`;
-}
-
-function mealCardHtml(recipe, dayKey, slot, options = {}) {
-  if (!recipe) {
-    const meta = getSlotMeta(slot);
-    return `<div class="card empty-meal-card"><span>${meta.emoji}</span><div><strong>Nessuna ${escapeHtml(meta.label.toLowerCase())} assegnata</strong><p>Crea una ricetta oppure scegline una dal ricettario.</p></div><button class="btn btn-outline" onclick="createNewRecipe('${slot}', '${dayKey}')">+ Crea</button></div>`;
-  }
-  const dayType = getDayType(dayKey);
-  const typeLabel = dayType === "training" ? "A · Allenamento" : "R · Riposo";
-  const context = `${DAY_NAMES[dayKey]} · ${typeLabel}`;
-  const enableToggle = options.noToggle ? false : true;
-  return `
-    <article class="card meal-card ${dayType}">
-      <div class="meal-card-head">
-        <div>
-          <span class="recipe-code">${escapeHtml(recipe.id)}</span>
-          <h3>${escapeHtml(recipe.emoji || "🍲")} ${escapeHtml(getRecipeDisplayName(recipe, dayType))}</h3>
-          <p class="text-muted">${escapeHtml(context)} · ${escapeHtml(getProfileLabel())}</p>
-        </div>
-        ${options.swap ? `<button class="btn-icon btn-swap" title="Sostituisci ricetta" onclick="openSwapModal('${dayKey}', '${slot}')">🔄</button>` : ""}
-      </div>
-      ${options.open ? `<div class="meal-preview">${ingredientListHtml(recipe, dayType, true, enableToggle, slot)}${stepsHtml(recipe, true, enableToggle)}</div>` : ""}
-      <button class="btn ${options.primary ? "btn-primary" : "btn-outline"} meal-open-btn" onclick="openRecipeModal('${escapeAttr(recipe.id)}', '${dayKey}', '${slot}')">Vedi ricetta completa</button>
-    </article>`;
-}
-
-window.changeChefDay = function(dayKey) {
-  if (!DAY_ORDER.includes(dayKey)) return;
-  appState.deviceSettings.chefSelectedDay = dayKey;
-  saveLocalDeviceSettings(appState.deviceSettings);
-  renderChef();
-};
+// La dicitura "Batch cooking disponibile" nella colonna del giorno apre una
+// modale con le ricette coinvolte (cena anchor + pranzo target) e le dosi da
+// preparare: le quantità sono quelle calcolate dal dominio per profilo e tipo
+// A/R del giorno target, già sommate nel caso della doppia porzione.
 
 const BATCH_STATUS_LABELS = {
   today: { label: "Prepara oggi", className: "today" },
@@ -710,137 +611,84 @@ const BATCH_STATUS_LABELS = {
   later: { label: "Non ancora preparabile", className: "later" }
 };
 
-// Raccolta dei task dei batch attivi per il giorno, senza duplicati per ID.
-function collectBatchTasks(batches) {
-  const byId = new Map();
-  batches.forEach(batch => {
-    (batch.tasks || []).forEach(task => {
-      if (byId.has(task.id)) return;
-      byId.set(task.id, {
-        ...task,
-        targetDay: batch.targetDay,
-        daysUntilTarget: batch.daysUntilTarget,
-        templateTitle: batch.template.title || "Preparazioni in anticipo"
-      });
-    });
-  });
-  return [...byId.values()];
+function batchTaskStorageNote(task) {
+  const maxDays = task.storage?.maxDays;
+  if (maxDays === 0) return "Fresco: da preparare al momento";
+  const method = task.storage?.method === "fridge" ? "frigo" : (task.storage?.method || "frigo");
+  const windowNote = maxDays ? ` · max ${maxDays} ${maxDays === 1 ? "giorno" : "giorni"}` : "";
+  return `Conservazione: ${escapeHtml(method)}${windowNote}${task.storage?.instructions ? ` · ${escapeHtml(task.storage.instructions)}` : ""}`;
 }
 
-function renderBatchCard(dayKey, batches = getActiveBatch(dayKey)) {
-  const tasks = collectBatchTasks(batches);
-  if (!tasks.length) return "";
-  const targetInfo = [...new Set(tasks.map(task =>
-    `pranzo di ${DAY_NAMES[task.targetDay]} · tra ${task.daysUntilTarget} ${task.daysUntilTarget === 1 ? "giorno" : "giorni"}`
-  ))];
-  const title = tasks[0].templateTitle || "Preparazioni in anticipo";
+function batchRecipeBoxHtml(heading, recipe, dayKey, slot) {
+  if (!recipe) return "";
   return `
-    <section class="batch-card">
-      <div class="batch-title"><span>🍳</span><div><small>Batch cooking attivo</small><h3>${escapeHtml(title)}</h3></div></div>
-      <p class="batch-next"><strong>🎯 ${escapeHtml(targetInfo.join(" · "))}</strong></p>
-      <ol>${tasks.map(task => {
+    <div class="batch-detail-recipe">
+      <small>${escapeHtml(heading)}</small>
+      <strong>${escapeHtml(recipe.emoji || "🍲")} ${escapeHtml(getRecipeDisplayName(recipe, getDayType(dayKey)))}</strong>
+      <button class="btn btn-outline" onclick="closeBatchModal(); openRecipeModal('${escapeAttr(recipe.id)}', '${dayKey}', '${slot}')">Vedi ricetta completa</button>
+    </div>`;
+}
+
+function batchDetailSectionHtml(batch, dayKey) {
+  const template = batch.template || {};
+  const targetDay = batch.targetDay;
+  const targetInfo = `🎯 Pranzo di ${DAY_NAMES[targetDay]} · tra ${batch.daysUntilTarget} ${batch.daysUntilTarget === 1 ? "giorno" : "giorni"}`;
+  const anchorRecipe = getRecipe(template.anchor?.recipeId);
+  const targetRecipe = getRecipe(template.target?.recipeId);
+  // Doppia porzione: cena e pranzo sono la stessa ricetta, un solo riquadro.
+  const recipesHtml = batch.commonRecipe
+    ? batchRecipeBoxHtml(`Cena di ${DAY_NAMES[dayKey]} + pranzo di ${DAY_NAMES[targetDay]} · stessa ricetta`, anchorRecipe, dayKey, "dinner")
+    : batchRecipeBoxHtml(`Cena di ${DAY_NAMES[dayKey]}`, anchorRecipe, dayKey, "dinner")
+      + batchRecipeBoxHtml(`Pranzo di ${DAY_NAMES[targetDay]}`, targetRecipe, targetDay, "lunch");
+  const doubleNote = batch.commonRecipe
+    ? `<p class="batch-detail-note">🍳 <strong>Cucina una volta sola:</strong> le dosi qui sotto sono già la somma di cena e pranzo.</p>`
+    : "";
+  return `
+    <section class="batch-modal batch-detail">
+      <h3>${escapeHtml(template.title || "Preparazioni in anticipo")}</h3>
+      <p class="batch-detail-target"><strong>${escapeHtml(targetInfo)}</strong></p>
+      ${doubleNote}
+      <div class="batch-detail-recipes">${recipesHtml}</div>
+      <ol>${(batch.tasks || []).map(task => {
         const status = BATCH_STATUS_LABELS[task.status] || BATCH_STATUS_LABELS.later;
-        const method = task.storage?.method === "fridge" ? "frigo" : (task.storage?.method || "frigo");
-        const maxDays = task.storage?.maxDays;
-        const storageNote = maxDays === 0
-          ? "Fresco: da preparare al momento"
-          : `Conservazione: ${escapeHtml(method)} · max ${maxDays} ${maxDays === 1 ? "giorno" : "giorni"}`;
-        return `<li class="step-item batch-task">
+        return `<li class="batch-task">
           <span class="batch-task-label">${escapeHtml(task.label)}</span>
           <span class="batch-task-status ${status.className}">${status.label}</span>
-          ${task.quantity ? `<span class="batch-task-quantity">${escapeHtml(task.quantity)}</span>` : ""}
-          <small class="batch-task-storage">${storageNote}${task.storage?.instructions ? ` · ${escapeHtml(task.storage.instructions)}` : ""}</small>
+          ${task.quantity ? `<strong class="batch-task-quantity">${escapeHtml(task.quantity)}</strong>` : ""}
+          <small class="batch-task-storage">${batchTaskStorageNote(task)}</small>
         </li>`;
       }).join("")}</ol>
     </section>`;
 }
 
-// Scheda "doppia porzione": la stessa ricetta è a cena stasera e a pranzo
-// domani, quindi ingredienti e procedimento sono identici e cambia solo la
-// quantità. Una sola scheda con le dosi già sommate sostituisce i tre blocchi
-// separati (cena + batch + pranzo) che ripetevano le stesse voci tre volte.
-function doublePortionCardHtml(recipe, dayKey, nextDay, batch) {
-  const dayType = getDayType(dayKey);
-  const tasks = batch.tasks || [];
-  const storageNote = tasks[0]?.storage?.instructions || "Conserva in frigo la porzione per il pranzo di domani.";
-  return `
-    <article class="card meal-card double-portion-card ${dayType}">
-      <div class="meal-card-head">
-        <div>
-          <span class="recipe-code">${escapeHtml(recipe.id)}</span>
-          <h3>${escapeHtml(recipe.emoji || "🍲")} ${escapeHtml(getRecipeDisplayName(recipe, dayType))}</h3>
-          <p class="text-muted">${DAY_NAMES[dayKey]} · cena + ${DAY_NAMES[nextDay]} · pranzo · ${escapeHtml(getProfileLabel())}</p>
-        </div>
+function setupBatchModal() {
+  if (document.getElementById("batch-modal")) return;
+  document.body.insertAdjacentHTML("beforeend", `
+    <div id="batch-modal" class="modal hidden" role="dialog" aria-modal="true" aria-labelledby="batch-modal-title">
+      <div class="modal-content batch-modal-content">
+        <div class="modal-header"><div><p class="eyebrow">Batch cooking</p><h2 id="batch-modal-title"></h2></div><button class="btn-icon" onclick="closeBatchModal()">&times;</button></div>
+        <p class="text-muted" id="batch-modal-subtitle"></p>
+        <div id="batch-modal-list"></div>
       </div>
-      <p class="batch-next double-portion-note">🍳 <strong>Cucina una volta sola:</strong> le quantità qui sotto sono già la somma di stasera e di domani a pranzo. ${escapeHtml(storageNote)}</p>
-      <div class="meal-preview">
-        <ul class="ingredient-list compact double-portion-list">
-          ${tasks.map(task => `<li class="no-toggle"><span>${escapeHtml(task.label)}</span><strong>${escapeHtml(task.quantity)}</strong></li>`).join("")}
-        </ul>
-        ${stepsHtml(recipe, true, false)}
-      </div>
-      <button class="btn btn-primary meal-open-btn" onclick="openRecipeModal('${escapeAttr(recipe.id)}', '${dayKey}', 'dinner')">Vedi ricetta completa</button>
-    </article>`;
+    </div>`);
+  bindModalOutsideClose("batch-modal", () => window.closeBatchModal());
 }
 
-function renderChef() {
-  const container = document.getElementById("view-chef");
-  const selectedDay = appState.deviceSettings.chefSelectedDay || getTodayKey();
-  const nextDay = getNextDay(selectedDay);
-  const dinner = getPlannedRecipe(selectedDay, "dinner");
-  const nextLunch = getPlannedRecipe(nextDay, "lunch");
-  const activeBatch = getActiveBatch(selectedDay);
-  const daytimeSlots = ["breakfast", "snack1", "lunch", "snack2"];
+window.openBatchModal = function(dayKey) {
+  if (!DAY_ORDER.includes(dayKey)) return;
+  const batches = getActiveBatch(dayKey);
+  if (!batches.length) return;
+  setupBatchModal();
+  document.getElementById("batch-modal-title").textContent = `Batch cooking · ${DAY_NAMES[dayKey]}`;
+  document.getElementById("batch-modal-subtitle").textContent = `Dosi calcolate per: ${getProfileLabel()}`;
+  document.getElementById("batch-modal-list").innerHTML = batches.map(batch => batchDetailSectionHtml(batch, dayKey)).join("");
+  document.getElementById("batch-modal").classList.remove("hidden");
+};
 
-  // Doppia porzione: il batch automatico "stessa ricetta" scatta solo quando la
-  // cena di oggi è anche il pranzo di domani (massimo 1 giorno per il frigo),
-  // quindi in quel caso i tre blocchi diventano un'unica scheda.
-  const doublePortion = dinner && nextLunch && nextLunch.id === dinner.id
-    ? activeBatch.find(batch => batch.commonRecipe) || null
-    : null;
-  const otherBatches = activeBatch.filter(batch => batch !== doublePortion);
+window.closeBatchModal = function() {
+  document.getElementById("batch-modal")?.classList.add("hidden");
+};
 
-  container.innerHTML = `
-    <div class="page-heading chef-heading">
-      <div><p class="eyebrow">Il tuo piano completo</p><h1>Pasti di oggi</h1></div>
-      <select aria-label="Giorno da visualizzare" onchange="changeChefDay(this.value)">
-        ${DAY_ORDER.map(day => `<option value="${day}" ${selectedDay === day ? "selected" : ""}>${DAY_NAMES[day]}</option>`).join("")}
-      </select>
-    </div>
-    <div class="day-summary ${getDayType(selectedDay)}">
-      <span class="day-type-badge">${getDayType(selectedDay) === "training" ? "A" : "R"}</span>
-      <div><strong>${DAY_NAMES[selectedDay]}</strong><small>${getDayType(selectedDay) === "training" ? "Allenamento" : "Riposo"}</small></div>
-    </div>
-
-    <section class="chef-section">
-      <div class="section-title"><span>🌅</span><div><small>Colazione, spuntini e pranzo</small><h2>Durante la giornata</h2></div></div>
-      <div class="daily-meals-grid">
-        ${daytimeSlots.map(slot => {
-          const meta = getSlotMeta(slot);
-          return `<div class="daily-meal-wrap"><div class="daily-slot-label">${meta.emoji} ${escapeHtml(meta.label)}</div>${mealCardHtml(getPlannedRecipe(selectedDay, slot), selectedDay, slot)}</div>`;
-        }).join("")}
-      </div>
-    </section>
-
-    ${doublePortion ? `
-    <section class="chef-section double-portion-section">
-      <div class="section-title"><span>🍳</span><div><small>Cucini una volta, mangi due volte</small><h2>Cena di stasera e pranzo di ${DAY_NAMES[nextDay]}</h2></div></div>
-      ${doublePortionCardHtml(dinner, selectedDay, nextDay, doublePortion)}
-    </section>
-    ${renderBatchCard(selectedDay, otherBatches)}` : `
-    <section class="chef-section">
-      <div class="section-title"><span>🌙</span><div><small>Da cucinare</small><h2>Cena di stasera</h2></div></div>
-      ${mealCardHtml(dinner, selectedDay, "dinner", { open: true, primary: true, noToggle: true })}
-    </section>
-
-    ${renderBatchCard(selectedDay, activeBatch)}
-
-    <section class="chef-section tomorrow-section">
-      <div class="section-title"><span>🍱</span><div><small>${activeBatch.length ? "Incluso nel batch cooking" : "Prossimo pranzo"}</small><h2>Pranzo di ${DAY_NAMES[nextDay]}</h2></div></div>
-      ${mealCardHtml(nextLunch, nextDay, "lunch", { open: true, noToggle: true })}
-    </section>`}
-  `;
-}
 
 function recipeProteinCategory(recipe) {
   return window.PianoDomain?.classifyProtein(recipe) || null;
@@ -939,7 +787,7 @@ function renderWeek() {
                 <button class="btn-icon btn-swap" onclick="openMealActions('${day}', '${slot.id}')" title="Operazioni sul pasto" aria-label="Operazioni sul pasto">⋯</button>
               </div>`;
             }).join("")}
-            ${getActiveBatch(day).length ? `<div class="batch-active-chip">🍳 Batch cooking disponibile</div>` : ""}
+            ${getActiveBatch(day).length ? `<button type="button" class="batch-active-chip batch-chip-btn" onclick="openBatchModal('${day}')" title="Mostra le dosi da batch cooking">🍳 Batch cooking disponibile<span class="batch-chip-arrow">›</span></button>` : ""}
           </article>`;
       }).join("")}
     </div>`;
@@ -1322,20 +1170,6 @@ function normalizeIngredientName(name) {
     .normalize("NFD").replace(/[\u0300-\u036f]/g, "")
     .replace(/\s*\([^)]*\)\s*/g, " ")
     .replace(/\s+/g, " ").trim();
-}
-
-function getCategoryForIngredient(name) {
-  const value = normalizeIngredientName(name);
-  const has = (...terms) => terms.some(term => value.includes(term));
-  if (has("pollo", "tacchino", "vitello", "manzo")) return "🥩 Carne";
-  if (has("salmone", "sgombro", "merluzzo", "tonno", "gamber", "calamar", "polpo")) return "🐟 Pesce";
-  if (has("uov", "ricotta", "mozzarella", "caprino", "feta", "parmigiano", "fiocchi di latte", "yogurt", "skyr", "kefir", "latte")) return "🥚 Uova e latticini";
-  if (has("ceci", "lenticch", "fagiol", "edamame", "piselli")) return "🫘 Legumi";
-  if (has("pasta", "riso", "orzo", "farro", "quinoa", "cous cous", "pane", "patate", "farina di ceci", "polenta", "cracker", "trofie", "avena", "cereali", "fette biscottate", "wasa", "granola")) return "🍚 Carboidrati";
-  if (has("pesca", "mango", "anguria", "melone", "avocado", "lampon", "limone", "lime", "albicocc", "cilieg", "mirtill", "ananas", "frutta fresca", "frutti di bosco")) return "🍑 Frutta";
-  if (has("zucchin", "pomodor", "friggitell", "peperon", "melanzan", "rucola", "cetriolo", "carota", "fagiolini", "spinacin", "lattuga", "songino", "sedano", "verdura", "cipolla")) return "🥬 Verdura";
-  if (has("olio", "olive", "mandorle", "noci", "pistacchi", "semi", "pesto", "capperi", "brodo", "salsa di soia", "aceto", "cacao", "cioccolato", "marmellata", "confettura", "miele", "sciroppo", "dolcificante", "cocco", "proteine whey")) return "🥫 Dispensa";
-  return "🌿 Spezie e aromi";
 }
 
 function parseSimpleAmount(raw) {

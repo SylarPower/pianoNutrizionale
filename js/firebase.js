@@ -280,7 +280,6 @@ function getDefaultDeviceSettings() {
   return {
     portionProfile: "man",
     darkMode: false,
-    chefSelectedDay: null,
     lastOpenDate: null,
     // Tipo giornata (A/R) scelto nell'anteprima del ricettario: resta finché
     // l'utente non lo cambia di nuovo manualmente.

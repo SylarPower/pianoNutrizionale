@@ -20,7 +20,7 @@ WebApp PWA privata per gestire colazioni, spuntini, pranzi, cene, batch cooking 
 - **sostituzione pranzo ↔ cena** con adattamento automatico dei carboidrati alle dosi del pasto (es. frittata di cena a pranzo con pane da 120g invece di 60g);
 - **suggerimento batch cooking nella sostituzione**: cambiando un pranzo viene evidenziata la cena del giorno prima (e cambiando una cena il pranzo del giorno dopo), così un tocco attiva la "doppia porzione";
 - generatore automatico della settimana con parametri strutturali (slot da rigenerare, **accoppiate cena → pranzo per il batch**, tetto ripetizioni, cross-slot pranzo ↔ cena, frequenze proteiche min–max), vincoli nutrizionali, blocchi pasto/giornata che contano nelle frequenze, seed riproducibile, anteprima e diff;
-- batch cooking dinamico basato su `batchTemplates` strutturati (cena di oggi → pranzo futuro), con stato “Prepara oggi / Prepara al momento / Non ancora preparabile” e quantità calcolate da profilo, ricetta target e tipo A/R del giorno target;
+- batch cooking dinamico basato su `batchTemplates` strutturati (cena di oggi → pranzo futuro): la colonna del giorno nella vista **Settimana** mostra la chip cliccabile "Batch cooking disponibile", che apre una modale con le ricette coinvolte (cena anchor + pranzo target, un unico riquadro per la doppia porzione), lo stato "Prepara oggi / Prepara al momento / Non ancora preparabile" e le quantità calcolate da profilo, ricetta target e tipo A/R del giorno target;
 - backup precedente (`users/{uid}/backups/previous`) e **Annulla ultima modifica** prima delle operazioni distruttive;
 - lista della spesa aggregata per `ingredientId` con profili Uomo, Donna IPO e Coppia, ordine delle categorie locale e **ordine degli alimenti dentro ogni categoria condiviso nell'household** (salvato nel documento spesa come mappa `itemOrder` categoria → ingredientId, con frecce ↑/↓ e scorciatoie A→Z / Ripristina);
 - PWA offline con shell versionata, aggiornamento one-tap e fallback offline comprensibile;
@@ -561,7 +561,7 @@ Quando una ricetta di cena viene collocata a pranzo (o viceversa), **solo il car
 
 Andando **pranzo → cena**, i carboidrati non previsti a cena (pasta, riso, gnocchi, quinoa, piadina, farro, orzo) vengono **convertiti nel carboidrato cena di default** (Pane 60g), scelto nelle **Impostazioni → Sostituzioni pranzo ↔ cena**. Andando **cena → pranzo** non ci sono conversioni: pane, crackers, patate e polenta esistono in entrambi i pasti e cambia solo la quantità. I valori sono uguali per tutti i profili porzioni (Uomo, Donna IPO, Coppia).
 
-L'adattamento è applicato ovunque le dosi vengono mostrate o sommate: vista **Oggi**, modale ricetta (con avviso e marcatore ↻ sugli ingredienti adattati), vista **Settimana** (piccolo ↻ sul pasto) e **Lista della spesa** (le quantità tengono conto del pasto in cui la ricetta è collocata). Le funzioni pure sono in `js/domain.js` (`adaptIngredientForSlot`, `carbSourceForName`, `isPranzoCenaCross`).
+L'adattamento è applicato ovunque le dosi vengono mostrate o sommate: modale ricetta (con avviso e marcatore ↻ sugli ingredienti adattati), vista **Settimana** (piccolo ↻ sul pasto e modale batch dalla colonna del giorno) e **Lista della spesa** (le quantità tengono conto del pasto in cui la ricetta è collocata). Le funzioni pure sono in `js/domain.js` (`adaptIngredientForSlot`, `carbSourceForName`, `isPranzoCenaCross`).
 
 # Generatore automatico della settimana
 

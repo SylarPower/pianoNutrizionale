@@ -165,11 +165,24 @@ appState.shopping = {
   selectedMeals: Object.fromEntries(window.PianoDomain.DAYS.map(day => [day, ['breakfast', 'snack1', 'lunch', 'snack2', 'dinner']])),
   includePantry: true, excludedItems: [], customQuantities: {}
 };
-appState.deviceSettings = { portionProfile: 'man', darkMode: false, chefSelectedDay: 'monday', lastOpenDate: null };
+appState.deviceSettings = { portionProfile: 'man', darkMode: false, lastOpenDate: null };
 
 // ---- Percorsi di rendering ----
 renderGlobalHeader();
-renderChef();
+renderWeek();
+
+// Batch cooking: la chip della settimana è cliccabile e apre la modale dosi.
+assert.match(document.getElementById('view-week').innerHTML, /batch-chip-btn[^>]*openBatchModal\('monday'\)/, 'chip batch cliccabile nella colonna del giorno');
+openBatchModal('monday');
+const batchModalList = document.getElementById('batch-modal-list');
+assert.match(batchModalList.innerHTML, /Preparazioni in anticipo/, 'titolo del batch nella modale');
+assert.match(batchModalList.innerHTML, /Cuoci il riso/, 'task del batch nella modale');
+assert.match(batchModalList.innerHTML, /batch-task-quantity/, 'dosi del batch nella modale');
+assert.match(batchModalList.innerHTML, /Vedi ricetta completa/, 'collegamento alle ricette cena\/pranzo');
+assert.equal(document.getElementById('batch-modal').classList.contains('hidden'), false, 'modale batch aperta');
+closeBatchModal();
+assert.equal(document.getElementById('batch-modal').classList.contains('hidden'), true, 'modale batch chiudibile');
+
 renderWeek();
 renderRecipes();
 assert.match(document.getElementById('view-recipes').innerHTML, /recipe-section-toggle collapsed/);
