@@ -318,8 +318,13 @@ h3 { font-size: 1rem; }
   border-radius: 11px;
   background: rgba(255, 255, 255, .75);
 }
-.batch-detail-recipe small { color: #a96632; font-size: .7rem; font-weight: 800; text-transform: uppercase; letter-spacing: .05em; }
-.batch-detail-recipe .btn { margin-top: 6px; padding: 7px 12px; font-size: .78rem; }
+.batch-detail-recipe > small { color: #a96632; font-size: .7rem; font-weight: 800; text-transform: uppercase; letter-spacing: .05em; }
+.batch-detail-recipe h4 { margin: 2px 0 8px; font-size: 1.05rem; }
+.batch-detail-recipe h5 { margin: 12px 0 2px; color: var(--text-muted); font-size: .72rem; text-transform: uppercase; letter-spacing: .05em; }
+.batch-detail-recipe .modal-ingredient-list { width: 100%; }
+.batch-recipe-steps { margin: 6px 0 0 18px !important; }
+.batch-recipe-steps li { padding: 4px 0; }
+.batch-detail-recipe .recipe-notes { width: 100%; }
 
 /* Settimana */
 .plan-check { margin-bottom: 22px; padding: 18px; border: 1px solid var(--line); border-radius: var(--radius); background: var(--surface); }

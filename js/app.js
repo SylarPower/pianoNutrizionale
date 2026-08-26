@@ -606,58 +606,77 @@ window.changePortionProfile = function(profile) {
 // A/R del giorno target, già sommate nel caso della doppia porzione.
 
 const BATCH_STATUS_LABELS = {
-  today: { label: "Prepara oggi", className: "today" },
+  // Quando la preparazione è disponibile oggi non serve un'etichetta: è già
+  // implicito dal punto di accesso nella giornata corrente.
+  today: null,
   fresh: { label: "Prepara al momento", className: "fresh" },
   later: { label: "Non ancora preparabile", className: "later" }
 };
 
-function batchTaskStorageNote(task) {
-  const maxDays = task.storage?.maxDays;
-  if (maxDays === 0) return "Fresco: da preparare al momento";
-  const method = task.storage?.method === "fridge" ? "frigo" : (task.storage?.method || "frigo");
-  const windowNote = maxDays ? ` · max ${maxDays} ${maxDays === 1 ? "giorno" : "giorni"}` : "";
-  return `Conservazione: ${escapeHtml(method)}${windowNote}${task.storage?.instructions ? ` · ${escapeHtml(task.storage.instructions)}` : ""}`;
+function batchRecipeIngredients(recipe, dayKey, slot, batch) {
+  if (batch?.commonRecipe) {
+    const tasksById = new Map((batch.tasks || []).map(task => [task.id, task]));
+    return (recipe.ingredients || []).map(ingredient => {
+      const fallbackId = String(ingredient.name || "").toLowerCase().normalize("NFD")
+        .replace(/[\u0300-\u036f]/g, "").replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "");
+      const id = `common-${ingredient.ingredientId || fallbackId}`;
+      const task = tasksById.get(id);
+      return task ? { name: task.label, quantity: task.quantity } : null;
+    }).filter(Boolean);
+  }
+
+  return (recipe.ingredients || []).map(ingredient => {
+    const adapted = window.PianoDomain
+      ? PianoDomain.adaptIngredientForSlot(ingredient, recipe.slot, slot, { cenaFallbackKey: getCrossSlotCenaCarb() })
+      : null;
+    const displayed = adapted ? { ...ingredient, name: adapted.name, portions: adapted.portions } : ingredient;
+    return { name: displayed.name, quantityHtml: getIngredientCoupleHtml(displayed, getDayType(dayKey)) };
+  });
 }
 
-function batchRecipeBoxHtml(heading, recipe, dayKey, slot) {
+// Nel popup batch la ricetta è già completa: ingredienti, dosi e preparazione
+// sono consultabili senza aprire una seconda modale.
+function batchRecipeBoxHtml(heading, recipe, dayKey, slot, batch) {
   if (!recipe) return "";
+  const ingredients = batchRecipeIngredients(recipe, dayKey, slot, batch);
   return `
-    <div class="batch-detail-recipe">
-      <small>${escapeHtml(heading)}</small>
-      <strong>${escapeHtml(recipe.emoji || "🍲")} ${escapeHtml(getRecipeDisplayName(recipe, getDayType(dayKey)))}</strong>
-      <button class="btn btn-outline" onclick="closeBatchModal(); openRecipeModal('${escapeAttr(recipe.id)}', '${dayKey}', '${slot}')">Vedi ricetta completa</button>
-    </div>`;
+    <article class="batch-detail-recipe">
+      ${heading ? `<small>${escapeHtml(heading)}</small>` : ""}
+      <h4>${escapeHtml(recipe.emoji || "🍲")} ${escapeHtml(getRecipeDisplayName(recipe, getDayType(dayKey)))}</h4>
+      <h5>Ingredienti${batch?.commonRecipe ? " · dosi totali" : ""}</h5>
+      <ul class="modal-ingredient-list">${ingredients.map(ingredient => `
+        <li><span>${escapeHtml(ingredient.name)}</span>${ingredient.quantityHtml || `<strong>${escapeHtml(ingredient.quantity)}</strong>`}</li>`).join("")}</ul>
+      <h5>Preparazione</h5>
+      <ol class="batch-recipe-steps">${(recipe.steps || []).map((step, index) => `<li><strong>${index + 1}.</strong> ${escapeHtml(step)}</li>`).join("")}</ol>
+      ${recipe.specialNote ? `<p class="special-note"><strong>Importante:</strong> ${escapeHtml(recipe.specialNote)}</p>` : ""}
+      ${recipe.notes?.length ? `<div class="recipe-notes"><strong>Note</strong><ul>${recipe.notes.map(note => `<li>${escapeHtml(note)}</li>`).join("")}</ul></div>` : ""}
+    </article>`;
 }
 
 function batchDetailSectionHtml(batch, dayKey) {
   const template = batch.template || {};
   const targetDay = batch.targetDay;
-  const targetInfo = `🎯 Pranzo di ${DAY_NAMES[targetDay]} · tra ${batch.daysUntilTarget} ${batch.daysUntilTarget === 1 ? "giorno" : "giorni"}`;
   const anchorRecipe = getRecipe(template.anchor?.recipeId);
   const targetRecipe = getRecipe(template.target?.recipeId);
-  // Doppia porzione: cena e pranzo sono la stessa ricetta, un solo riquadro.
+  // Se cena e pranzo usano la stessa ricetta evitiamo le informazioni
+  // ridondanti su doppia porzione e giorno target: bastano ricetta e dosi totali.
   const recipesHtml = batch.commonRecipe
-    ? batchRecipeBoxHtml(`Cena di ${DAY_NAMES[dayKey]} + pranzo di ${DAY_NAMES[targetDay]} · stessa ricetta`, anchorRecipe, dayKey, "dinner")
-    : batchRecipeBoxHtml(`Cena di ${DAY_NAMES[dayKey]}`, anchorRecipe, dayKey, "dinner")
-      + batchRecipeBoxHtml(`Pranzo di ${DAY_NAMES[targetDay]}`, targetRecipe, targetDay, "lunch");
-  const doubleNote = batch.commonRecipe
-    ? `<p class="batch-detail-note">🍳 <strong>Cucina una volta sola:</strong> le dosi qui sotto sono già la somma di cena e pranzo.</p>`
-    : "";
+    ? batchRecipeBoxHtml("", anchorRecipe, dayKey, "dinner", batch)
+    : batchRecipeBoxHtml(`Cena di ${DAY_NAMES[dayKey]}`, anchorRecipe, dayKey, "dinner", batch)
+      + batchRecipeBoxHtml(`Pranzo di ${DAY_NAMES[targetDay]}`, targetRecipe, targetDay, "lunch", batch);
+  const targetInfo = `🎯 Pranzo di ${DAY_NAMES[targetDay]} · tra ${batch.daysUntilTarget} ${batch.daysUntilTarget === 1 ? "giorno" : "giorni"}`;
   return `
     <section class="batch-modal batch-detail">
-      <h3>${escapeHtml(template.title || "Preparazioni in anticipo")}</h3>
-      <p class="batch-detail-target"><strong>${escapeHtml(targetInfo)}</strong></p>
-      ${doubleNote}
+      ${batch.commonRecipe ? "" : `<h3>${escapeHtml(template.title || "Preparazioni in anticipo")}</h3><p class="batch-detail-target"><strong>${escapeHtml(targetInfo)}</strong></p>`}
       <div class="batch-detail-recipes">${recipesHtml}</div>
-      <ol>${(batch.tasks || []).map(task => {
-        const status = BATCH_STATUS_LABELS[task.status] || BATCH_STATUS_LABELS.later;
+      ${batch.commonRecipe ? "" : `<ol>${(batch.tasks || []).map(task => {
+        const status = BATCH_STATUS_LABELS[task.status] || null;
         return `<li class="batch-task">
           <span class="batch-task-label">${escapeHtml(task.label)}</span>
-          <span class="batch-task-status ${status.className}">${status.label}</span>
+          ${status ? `<span class="batch-task-status ${status.className}">${status.label}</span>` : ""}
           ${task.quantity ? `<strong class="batch-task-quantity">${escapeHtml(task.quantity)}</strong>` : ""}
-          <small class="batch-task-storage">${batchTaskStorageNote(task)}</small>
         </li>`;
-      }).join("")}</ol>
+      }).join("")}</ol>`}
     </section>`;
 }
 
@@ -3092,8 +3111,8 @@ function renderModalContent() {
         <h3>${escapeHtml(batch.template.title || "Preparazioni in anticipo")}</h3>
         <p><strong>🎯 Pranzo di ${DAY_NAMES[batch.targetDay]} · tra ${batch.daysUntilTarget} ${batch.daysUntilTarget === 1 ? "giorno" : "giorni"}</strong></p>
         <ol>${batch.tasks.map(task => {
-          const status = BATCH_STATUS_LABELS[task.status] || BATCH_STATUS_LABELS.later;
-          return `<li><span>${escapeHtml(task.label)}</span> <span class="batch-task-status ${status.className}">${status.label}</span>${task.quantity ? ` <strong>${escapeHtml(task.quantity)}</strong>` : ""}</li>`;
+          const status = BATCH_STATUS_LABELS[task.status] || null;
+          return `<li><span>${escapeHtml(task.label)}</span>${status ? ` <span class="batch-task-status ${status.className}">${status.label}</span>` : ""}${task.quantity ? ` <strong>${escapeHtml(task.quantity)}</strong>` : ""}</li>`;
         }).join("")}</ol>
       </div>`).join("");
   } else {
