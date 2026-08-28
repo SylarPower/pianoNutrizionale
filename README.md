@@ -27,6 +27,8 @@ WebApp PWA privata per gestire colazioni, spuntini, pranzi, cene, batch cooking 
 - alternative alimentari di Meller sempre consultabili nelle Impostazioni;
 - **registro prezzi condiviso** (scheda Prezzi): un unico database tra tutti gli utenti per registrare i prezzi nei negozi (con barcode Open Food Facts), confrontare il prezzo normalizzato €/kg tra negozi con indicazione del migliore (ricerca prodotto con suggerimenti live mentre si digita, prodotti recenti a un tocco, navigazione da tastiera), giudizio rispetto allo storico (minimo storico / affare / caro), suggerimento del nome prodotto già in archivio quando quello scannerizzato è una variante più lunga ("Cereali di grano duro" → "Cereali"), archivio con modifica delle proprie voci e importazione/esportazione di backup JSON (incluso il vecchio formato "Spesa Smart");
 - **pagina negozio** (Prezzi → Negozi): per ogni negozio l'ultimo prezzo registrato di ogni prodotto, con indicazione di dove quel prodotto costa meno (🏆 miglior prezzo, scostamento % rispetto al migliore, "solo qui");
+- **assistente AI integrato** (pulsante 💬 in basso a destra): risponde in italiano alle domande sul piano e sull'app. Le risposte sul piano (pasti del giorno e della settimana, lista della spesa, frequenze proteiche, batch cooking, ricette, manuale Meller) sono calcolate sul dispositivo e funzionano anche offline; per le domande più libere usa un'AI gratuita — Google Gemini (con chiave gratuita incollata in chat, salvata solo sul dispositivo) oppure Pollinations.AI come ripiego — disattivabile con un interruttore;
+- **coach vocale conversazionale** gratuito (sintesi e riconoscimento vocali del browser, nessun servizio esterno): un unico assistente stile Alexa a cui si parla e che, se vuoi, risponde a voce. Niente pulsanti 🔊 sparsi: si accede solo dal pulsante 💬, con microfono 🎤 e lettura delle risposte facoltativi nella chat;
 - nessuna funzionalità di notifica (né push né locali).
 
 ## Dove si trovano i dati
@@ -639,7 +641,7 @@ Anteprima prima dell'accettazione con: mittente, numero di ricette, ricette nuov
 
 # PWA offline
 
-`sw.js` (cache versionata `piano-nutrizionale-shell-v23`):
+`sw.js` (cache versionata `piano-nutrizionale-shell-v32`):
 
 - shell dell'app: `index.html`, CSS, JS, manifest, icone, `offline.html`;
 - navigazione **network-first** con fallback in cache (e pagina offline comprensibile);
@@ -652,6 +654,40 @@ Anteprima prima dell'accettazione con: mittente, numero di ricette, ricette nuov
 - funzionamento offline con i dati Firestore già persistiti localmente.
 
 Test consigliati: primo caricamento, caricamento offline dopo un accesso precedente, aggiornamento del service worker, navigazione sotto `/pianoNutrizionale/`.
+
+# Assistente AI e coach vocale
+
+Il pulsante fluttuante 💬 (in basso a destra, dentro l'app) è **l'unico punto di accesso** all'assistente: non ci sono altri pulsanti 🔊 sparsi nell'app. È **un'unica AI conversazionale**, stile Alexa ma con la voce facoltativa: si scrive oppure si parla col microfono 🎤 e, se l'utente lo desidera, le risposte vengono lette ad alta voce. Le due funzioni vivono in `js/assistant.js` (dominio puro, testato in `test/assistant.test.js`) e `js/assistant-ui.js` (DOM, sintesi/riconoscimento vocale e chiamata AI).
+
+## Risposte locali (sempre disponibili, anche offline)
+
+Le domande sul piano vengono riconosciute e risposte sul dispositivo, usando solo i dati già caricati (piano, ricette, lista spesa, manuale Meller). Nessuna richiesta viene inviata a servizi esterni e la funzione resta disponibile offline.
+
+## Cucina guidata (passo-passo, a voce)
+
+Con frasi come **"cuciniamo la cena di stasera"** (oppure "prepariamo il pranzo di domani", "come si prepara la frittata?") il coach avvia una sessione di cucina: introduce il piatto e dice il primo ingrediente in modo naturale, ad esempio **"Perfetto, cuciniamo Pollo e riso. Prendi 90g di Riso."**. Dicendo **"prossimo"** (o "avanti", "continua") passa all'ingrediente successivo; finiti gli ingredienti passa alla **preparazione un passo alla volta**, sempre con "prossimo". "Indietro" o "ripeti" torna al passaggio precedente; "stop"/"basta" termina la sessione. Se il microfono è acceso, il coach **resta in ascolto da solo** e risponde a voce, senza toccare lo schermo.
+
+## Risposte precise di quantità
+
+Domande come **"quanti grammi di frutta ho nello spuntino di oggi?"** ricevono **solo la dose richiesta** (es. "Di Frutta fresca devi prenderne 250g"), non l'intero pasto. Vale per qualsiasi alimento di colazione, spuntino, pranzo, merenda o cena, per il profilo porzioni attivo (Uomo, Donna IPO, Coppia).
+
+## AI online gratuita (facoltativa)
+
+Per le domande più libere l'assistente usa **Google Gemini** oppure, in mancanza della chiave, **Pollinations.AI** come ripiego.
+
+- **Google Gemini** (consigliato): una chiave API gratuita ottenibile da Google AI Studio (nessuna carta di credito). La chiave si incolla nel campo dedicato in fondo alla chat e viene salvata **solo in localStorage su quel dispositivo** — non viene mai caricata nel repository né inviata ad altri servizi. Il modello usato è `gemini-2.5-flash` (`GEMINI_MODEL` all'inizio di `js/assistant-ui.js`). Nota: in area EEA/UK/CH Google può richiedere l'attivazione della fatturazione sul progetto anche per la quota gratuita, e sul tier gratuito le richieste possono essere usate da Google per migliorare i propri prodotti.
+- **Pollinations.AI** (ripiego senza chiave): usato automaticamente quando non è presente una chiave Gemini o quando Gemini non risponde (quota esaurita, chiave non valida). La richiesta è inviata in formato OpenAI-compatible a `https://text.pollinations.ai/openai` (modello `openai`).
+
+Non vengono mai inviate password o credenziali dell'app, e nel repository **non c'è alcuna chiave AI**. L'AI online è attivabile/disattivabile con l'interruttore nella chat (la scelta resta sul dispositivo): quando è attiva, la domanda e un riepilogo del piano (pasti, lista spesa, frequenze proteiche) vengono inviati al servizio scelto; disattivandola, le risposte locali continuano a funzionare senza alcun invio esterno.
+
+## Coach vocale (sintesi e riconoscimento, entrambi facoltativi)
+
+La voce usa la **sintesi vocale integrata del browser** (Web Speech API, voce italiana se disponibile sul dispositivo) e, dove il browser lo consente (Chrome/Safari), anche il **riconoscimento vocale**: nessun servizio esterno e nessun costo.
+
+Tutto è **facoltativo e controllato dall'utente**:
+
+- **🔊 Risposte ad alta voce** (interruttore nel piede della chat, spento di default): quando è attivo il coach legge ad alta voce le risposte; quando è spento risponde solo a testo. Il messaggio di benvenuto non viene **mai** letto ad alta voce.
+- **🎤 Microfono**: è **spento di default**. Una volta attivato (toccando 🎤) **resta acceso** e il coach riascolta da solo dopo ogni risposta — come Alexa — senza bisogno di riattivarlo a ogni domanda. Per spegnerlo basta **ri-toccare 🎤** oppure dire (o scrivere) **"spegni il microfono"** / "smetti di ascoltare"; per riaccenderlo, "accendi il microfono". Il microfono si spegne anche chiudendo la chat. Il coach attende la fine della propria voce prima di riascoltare, così non sente se stesso.
 
 # Firebase App Check
 
@@ -697,6 +733,8 @@ git diff --check
 
 I test (`test/domain.test.js`) coprono: migrazioni schema 3→5 e idempotenza (inclusa rimozione `frequency`), alias ingredienti, ingredienti senza ID, porzioni legacy, lista spesa per `ingredientId`, profili Uomo/Donna IPO/Coppia, crackers A/R, **adattamento carboidrati pranzo↔cena** (riconoscimento carboidrati, conversione dosi A/R, fallback configurabile pranzo→cena, propagazione alla lista spesa), batch indipendente da A/R, batch cena→pranzo futuro, attraversamento domenica→lunedì, batch parziale, `maxDays` diversi, quantità target A/R, copia/scambio pasti, blocchi, generatore e vincoli (frequenze su molti seed, **omega-3 distanziati con eccezione solo per le accoppiate batch richieste**, **accoppiate batch cena → pranzo fino a 7 giorni**, tetto ripetizioni, blocchi che contano nelle frequenze e nel pesce/giorno, slot disabilitati, cross-slot, inferenza della categoria dagli ingredienti, vincoli personalizzati, beef e curedMeats conteggiati separatamente, warning centralizzati), classificazione proteica (ingredienti prevalgono su `proteinCategory`, fallback su chiavi tecniche e testuali legacy), cataloghi vuoto/insufficiente, riferimenti piano mancanti, import Aggiungi/Sostituisci, conflitti condivisione (solo ricette/solo settimana/completa), backup, service worker (shell, cache, fallback offline, aggiornamento).
 
+I test (`test/assistant.test.js`) coprono l'assistente: contesto (7 giorni, profili, lista spesa), formattazione dosi (Uomo/Donna IPO/Coppia), classificazione proteica locale, conteggi delle frequenze, narrazioni per il coach (giorno, settimana, spesa, ricetta), cucina guidata (intro e passaggi ingredienti → preparazione, dosi nei passaggi), risposte precise di quantità (solo la dose richiesta), motore di risposta locale (pasti del giorno, spesa, frequenze, batch, ricerca ricette per nome e ID, aiuto, domande fuori contesto) e prompt per l'AI online.
+
 Smoke test locale:
 
 ```bash
@@ -708,4 +746,5 @@ python3 -m http.server 8080 --bind 0.0.0.0
 - `firebase-seed.json` resta fuori dal repository (vedi `.gitignore` e lo ZIP separato);
 - nessuna ricetta o dosaggio hardcoded: i dati arrivano da Firestore;
 - non pubblicare Secret Key, token debug, credenziali o service account;
+- nessuna chiave AI nel repository: l'assistente online usa Google Gemini (chiave gratuita incollata dall'utente, salvata solo in localStorage) oppure Pollinations.AI senza autenticazione (costanti sostituibili in `js/assistant-ui.js`); il coach vocale usa la sintesi del browser, senza servizi esterni;
 - il tema scuro AMOLED (nero puro) e l'assenza di notifiche sono intenzionali e vanno preservati.

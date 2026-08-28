@@ -5,7 +5,7 @@
  * (sottocartella /pianoNutrizionale/).
  */
 // IMPORTANTE: incrementare CACHE_VERSION a OGNI modifica di CSS, JS o index.html.
-const CACHE_VERSION = 31;
+const CACHE_VERSION = 35;
 const CACHE = `piano-nutrizionale-shell-v${CACHE_VERSION}`;
 const SHELL = [
   './',
@@ -15,6 +15,8 @@ const SHELL = [
   './js/domain.js',
   './js/data.js',
   './js/prices.js',
+  './js/assistant.js',
+  './js/assistant-ui.js',
   './js/firebase.js',
   './js/app.js',
   './manifest.json',

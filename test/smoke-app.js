@@ -115,7 +115,7 @@ global.firebase = {
   firestore: { FieldValue: { serverTimestamp: () => ({}) } }
 };
 
-for (const file of ['js/domain.js', 'js/data.js', 'js/prices.js', 'js/firebase.js', 'js/app.js']) {
+for (const file of ['js/domain.js', 'js/data.js', 'js/prices.js', 'js/assistant.js', 'js/assistant-ui.js', 'js/firebase.js', 'js/app.js']) {
   vm.runInThisContext(fs.readFileSync(path.join(ROOT, file), 'utf8'), { filename: file });
 }
 
@@ -170,6 +170,16 @@ appState.deviceSettings = { portionProfile: 'man', darkMode: false, lastOpenDate
 // ---- Percorsi di rendering ----
 renderGlobalHeader();
 renderWeek();
+assert.doesNotMatch(document.getElementById('view-week').innerHTML, /Coach\.speak/, 'nessun pulsante coach vocale nella Settimana');
+assert.equal(typeof window.Coach, 'object', 'Coach vocale esposto globalmente');
+assert.equal(typeof window.AssistantUI, 'object', 'Assistente esposto globalmente');
+assert.equal(typeof window.PianoAssistant, 'object', 'dominio puro dell\'assistente esposto globalmente');
+window.AssistantUI.init();
+assert.match(document.body._innerHTML, /assistant-fab/, 'pulsante flottante assistente iniettato');
+assert.match(document.body._innerHTML, /assistant-modal/, 'modale chat assistente iniettata');
+assert.match(document.body._innerHTML, /assistant-voice/, 'interruttore risposte ad alta voce presente nella chat');
+assert.match(document.body._innerHTML, /assistant-mic/, 'pulsante microfono presente nella chat');
+assert.match(document.body._innerHTML, /assistant-gemini-key/, 'campo chiave Google Gemini presente nella chat');
 
 // Batch cooking: la chip della settimana è cliccabile e apre la modale dosi.
 assert.match(document.getElementById('view-week').innerHTML, /batch-chip-btn[^>]*openBatchModal\('monday'\)/, 'chip batch cliccabile nella colonna del giorno');
@@ -225,6 +235,7 @@ renderShop();
 shopSettingsVisible = true;
 renderShop();
 assert.match(document.getElementById('view-shop').innerHTML, /toggleShopDay\('monday'\)/);
+assert.doesNotMatch(document.getElementById('view-shop').innerHTML, /Coach\.speak/, 'nessun pulsante coach vocale nella Spesa');
 appState.deviceSettings.shopCategoryOrder = ['🐟 Pesce', '🍚 Carboidrati', '🥚 Uova e latticini'];
 const exportedShopping = shoppingText();
 assert.ok(exportedShopping.indexOf('----- 🐟 Pesce') < exportedShopping.indexOf('----- 🍚 Carboidrati'));

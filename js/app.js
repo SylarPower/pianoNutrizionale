@@ -432,6 +432,7 @@ function applyState(recipes, plan, shopping) {
     setupGeneratorModal();
     setupMellerModal();
     setupPriceModals();
+    if (typeof window.AssistantUI !== "undefined") window.AssistantUI.init();
     appStarted = true;
   }
 }
@@ -784,7 +785,7 @@ function renderWeek() {
   const container = document.getElementById("view-week");
   const today = getTodayKey();
   container.innerHTML = `
-    <div class="page-heading week-heading"><div><p class="eyebrow">Schema ottimizzato</p><h1>Piano settimanale</h1><p>Sab(R) · Dom(A) · Lun(A) · Mar(R) · Mer(A) · Gio(R) · Ven(A)</p></div><button class="btn btn-outline" onclick="openGeneratorModal()">✨ Genera settimana</button></div>
+    <div class="page-heading week-heading"><div><p class="eyebrow">Schema ottimizzato</p><h1>Piano settimanale</h1><p>Sab(R) · Dom(A) · Lun(A) · Mar(R) · Mer(A) · Gio(R) · Ven(A)</p></div><div class="week-heading-actions"><button class="btn btn-outline" onclick="openGeneratorModal()">✨ Genera settimana</button></div></div>
     ${renderWeekAnalysis()}
     <div class="week-grid">
       ${DAY_ORDER.map(day => {
@@ -793,9 +794,11 @@ function renderWeek() {
           <article id="day-${day}" class="day-column ${day === today ? "current-day" : ""}">
             <div class="day-column-head">
               <div>${day === today ? `<span class="today-badge">OGGI</span>` : `<span class="recipe-code">GIORNO</span>`}<h2>${DAY_NAMES[day]}</h2></div>
-              <div class="day-type-control">
-                <button class="type-option training ${planDay.type === "training" ? "active" : ""}" onclick="changeDayType('${day}', 'training')">A</button>
-                <button class="type-option rest ${planDay.type === "rest" ? "active" : ""}" onclick="changeDayType('${day}', 'rest')">R</button>
+              <div class="day-column-actions">
+                <div class="day-type-control">
+                  <button class="type-option training ${planDay.type === "training" ? "active" : ""}" onclick="changeDayType('${day}', 'training')">A</button>
+                  <button class="type-option rest ${planDay.type === "rest" ? "active" : ""}" onclick="changeDayType('${day}', 'rest')">R</button>
+                </div>
               </div>
             </div>
             ${MEAL_SLOTS.map(slot => {
@@ -1367,7 +1370,7 @@ function renderShop() {
   const { categoryOrder, grouped } = groupShoppingEntries(entries);
   const allSelected = DAY_ORDER.every(day => MEAL_SLOTS.every(slot => (appState.shopping.selectedMeals[day] || []).includes(slot.id)));
   container.innerHTML = `
-    <div class="page-heading shop-heading"><div><p class="eyebrow">Dosi esatte · ${escapeHtml(getProfileLabel())}</p><h1>Lista della spesa</h1><p>Le quantità derivano solo dai pasti selezionati, senza fattori percentuali.</p></div><button class="btn btn-outline" onclick="toggleShopSettings()">${shopSettingsVisible ? "Chiudi" : "Seleziona"}</button></div>
+    <div class="page-heading shop-heading"><div><p class="eyebrow">Dosi esatte · ${escapeHtml(getProfileLabel())}</p><h1>Lista della spesa</h1><p>Le quantità derivano solo dai pasti selezionati, senza fattori percentuali.</p></div><div class="week-heading-actions"><button class="btn btn-outline" onclick="toggleShopSettings()">${shopSettingsVisible ? "Chiudi" : "Seleziona"}</button></div></div>
     ${shopSettingsVisible ? renderShopSettings(allSelected, grouped) : ""}
     <div class="shopping-summary"><strong>${entries.length} alimenti</strong><span>${DAY_ORDER.reduce((sum, day) => sum + (appState.shopping.selectedMeals[day] || []).length, 0)} pasti selezionati</span></div>
     ${categoryOrder.map(category => grouped[category]?.length ? `
