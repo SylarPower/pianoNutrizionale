@@ -284,9 +284,6 @@ function getDefaultDeviceSettings() {
     // Tipo giornata (A/R) scelto nell'anteprima del ricettario: resta finché
     // l'utente non lo cambia di nuovo manualmente.
     recipePreviewDayType: "training",
-    // Carboidrato di default usato quando una ricetta di pranzo viene spostata
-    // a cena e il suo carboidrato non è previsto a cena (pasta, riso, ecc.).
-    crossSlotCenaCarb: "pane",
     // Preferenze locali del ricettario: ricerca e sezioni aperte restano sul
     // singolo dispositivo e non vengono mai condivise con la household.
     recipeLibraryState: { searchQuery: "", openSections: {} },

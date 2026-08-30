@@ -129,13 +129,6 @@ function getProfileLabel() {
   return "Uomo · dosi A/R";
 }
 
-// Carboidrato cena di default per la conversione pranzo -> cena (impostazione
-// personale del dispositivo). Pranzo -> cena: i carboidrati non previsti a
-// cena (pasta, riso, gnocchi, quinoa, piadina, farro, orzo) diventano questo.
-function getCrossSlotCenaCarb() {
-  return appState.deviceSettings?.crossSlotCenaCarb || (window.PianoDomain?.DEFAULT_CENA_CARB_KEY || "pane");
-}
-
 function normalizeRecipeLibraryState(state = {}) {
   const openSections = { ...RECIPE_LIBRARY_SECTION_DEFAULTS };
   const savedSections = state?.openSections && typeof state.openSections === "object" ? state.openSections : {};
@@ -218,7 +211,7 @@ function getActiveBatch(dayKey) {
   // Batch automatico "doppia porzione": stessa ricetta a cena e al pranzo
   // successivo (anche via cross-slot). Le dosi sono la somma cena + pranzo.
   const dinnerId = appState.plan.days[dayKey]?.dinner;
-  const common = PianoDomain.commonRecipeBatch(dayKey, appState.plan, appState.recipesById, getPortionProfile(), { cenaFallbackKey: getCrossSlotCenaCarb() });
+  const common = PianoDomain.commonRecipeBatch(dayKey, appState.plan, appState.recipesById, getPortionProfile());
   if (common && dinnerId) {
     const alreadyCovered = batches.some(batch => batch.targetDay === common.targetDay && batch.template?.target?.recipeId === dinnerId);
     if (!alreadyCovered) batches.push(common);
@@ -627,7 +620,7 @@ function batchRecipeIngredients(recipe, dayKey, slot, batch) {
 
   return (recipe.ingredients || []).map(ingredient => {
     const adapted = window.PianoDomain
-      ? PianoDomain.adaptIngredientForSlot(ingredient, recipe.slot, slot, { cenaFallbackKey: getCrossSlotCenaCarb() })
+      ? PianoDomain.adaptIngredientForSlot(ingredient, recipe.slot, slot)
       : null;
     const displayed = adapted ? { ...ingredient, name: adapted.name, portions: adapted.portions } : ingredient;
     return { name: displayed.name, quantityHtml: getIngredientCoupleHtml(displayed, getDayType(dayKey)) };
@@ -802,7 +795,7 @@ function renderWeek() {
               const recipe = getRecipe(planDay[slot.id]);
               return `<div class="week-meal">
                 <small>${escapeHtml(slot.shortLabel)}</small>
-                <button class="week-meal-name" onclick="openRecipeModal('${escapeAttr(recipe?.id || "")}', '${day}', '${slot.id}')">${escapeHtml(recipe?.emoji || "")} ${escapeHtml(recipe ? getRecipeDisplayName(recipe, planDay.type) : "Non disponibile")}${recipe && recipeIsCrossSlot(recipe, slot.id) ? ` <span class="cross-slot-badge" title="Carboidrati adattati per questo pasto">↻</span>` : ""}</button>
+                <button class="week-meal-name" onclick="openRecipeModal('${escapeAttr(recipe?.id || "")}', '${day}', '${slot.id}')">${escapeHtml(recipe?.emoji || "")} ${escapeHtml(recipe ? getRecipeDisplayName(recipe, planDay.type) : "Non disponibile")}${recipe && recipeIsCrossSlot(recipe, slot.id) ? ` <span class="cross-slot-badge" title="Carboidrati trasformati in percentuale per questo pasto">↻</span>` : ""}</button>
                 <button class="btn-icon btn-swap" onclick="openMealActions('${day}', '${slot.id}')" title="Operazioni sul pasto" aria-label="Operazioni sul pasto">⋯</button>
               </div>`;
             }).join("")}
@@ -863,7 +856,7 @@ window.openSwapModal = function(dayKey, slot) {
   const batchSuggestionHtml = (() => {
     if (!batchRecipe) return "";
     const selected = batchRecipe.id === currentId;
-    const crossBadge = recipeIsCrossSlot(batchRecipe, slot) ? ` <span class="swap-cross-badge" title="Carboidrati adattati">↻</span>` : "";
+    const crossBadge = recipeIsCrossSlot(batchRecipe, slot) ? ` <span class="swap-cross-badge" title="Carboidrati trasformati in percentuale">↻</span>` : "";
     return `<div class="batch-suggestion">
       <div class="batch-suggestion-title">🍳 Consiglio batch cooking</div>
       <button class="swap-item batch-suggestion-item ${selected ? "selected" : ""}" onclick="confirmSwap('${dayKey}', '${slot}', '${escapeAttr(batchRecipe.id)}')">
@@ -876,7 +869,7 @@ window.openSwapModal = function(dayKey, slot) {
 
   const sameSlotRecipes = appState.recipes.filter(recipe => recipe.slot === slot && recipe.id !== batchRecipe?.id);
   // Pranzo <-> cena: mostra anche le ricette del pasto opposto; i carboidrati
-  // verranno adattati alle quantità del pasto scelto.
+  // verranno trasformati in percentuale (50% / 200%).
   const oppositeSlot = slot === "lunch" ? "dinner" : slot === "dinner" ? "lunch" : null;
   const oppositeSlotRecipes = oppositeSlot ? appState.recipes.filter(recipe => recipe.slot === oppositeSlot && recipe.id !== batchRecipe?.id) : [];
   const oppositeLabel = oppositeSlot ? getSlotMeta(oppositeSlot).label.toLowerCase() : "";
@@ -888,9 +881,9 @@ window.openSwapModal = function(dayKey, slot) {
   const swapItemHtml = (recipe, crossSlot = false) => {
     const selected = recipe.id === currentId;
     const hint = crossSlot
-      ? `Da ${escapeHtml(oppositeLabel)} · carboidrati adattati`
+      ? `Da ${escapeHtml(oppositeLabel)} · carboidrati trasformati in %`
       : escapeHtml(recipeProteinLabel(recipe));
-    const badge = crossSlot ? ` <span class="swap-cross-badge" title="Carboidrati adattati">↻</span>` : "";
+    const badge = crossSlot ? ` <span class="swap-cross-badge" title="Carboidrati trasformati in percentuale">↻</span>` : "";
     return `<button class="swap-item ${selected ? "selected" : ""}" onclick="confirmSwap('${dayKey}', '${slot}', '${escapeAttr(recipe.id)}')"><span class="swap-code">${escapeHtml(recipe.id)}</span><span><strong>${escapeHtml(recipe.emoji || "🍲")} ${escapeHtml(getRecipeDisplayName(recipe, getDayType(dayKey)))}${badge}</strong><small>${hint}</small></span>${selected ? "<b>✓</b>" : ""}</button>`;
   };
 
@@ -898,7 +891,7 @@ window.openSwapModal = function(dayKey, slot) {
     ${batchSuggestionHtml}
     ${resetButton}
     ${sameSlotRecipes.map(recipe => swapItemHtml(recipe, false)).join("")}
-    ${oppositeSlotRecipes.length ? `<div class="swap-section-label">Dal pasto opposto (carboidrati adattati al ${escapeHtml(slotMeta.label.toLowerCase())})</div>${oppositeSlotRecipes.map(recipe => swapItemHtml(recipe, true)).join("")}` : ""}
+    ${oppositeSlotRecipes.length ? `<div class="swap-section-label">Dal pasto opposto (carboidrati trasformati in % al ${escapeHtml(slotMeta.label.toLowerCase())})</div>${oppositeSlotRecipes.map(recipe => swapItemHtml(recipe, true)).join("")}` : ""}
   `;
   modal.classList.remove("hidden");
 };
@@ -915,7 +908,7 @@ window.confirmSwap = async function(dayKey, slot, recipeId) {
   const recipe = getRecipe(recipeId);
   const crossSlot = recipeIsCrossSlot(recipe, slot);
   const baseMsg = "Sostituire questo pasto con la ricetta scelta? Frequenze e batch cooking potrebbero cambiare.";
-  const crossMsg = crossSlot ? "\n\nI carboidrati verranno adattati alle quantità del pasto scelto (es. pane 120g a pranzo, 60g a cena). Le proteine, le uova e la verdura restano invariate." : "";
+  const crossMsg = crossSlot ? "\n\nI carboidrati verranno trasformati in percentuale (pranzo → cena 50%, cena → pranzo 200%), arrotondati alla decina per eccesso. Le proteine, le uova e la verdura restano invariate." : "";
   if (!confirm(baseMsg + crossMsg)) return;
   appState.plan.days[dayKey][slot] = recipeId;
   try {
@@ -1227,8 +1220,7 @@ function aggregateShoppingList() {
     appState.recipesById,
     appState.shopping.selectedMeals,
     getPortionProfile(),
-    getCanonicalIngredientLabels(),
-    { cenaFallbackKey: getCrossSlotCenaCarb() }
+    getCanonicalIngredientLabels()
   );
   return entries.map(entry => ({
     ...entry,
@@ -1621,8 +1613,23 @@ function shoppingText() {
   return `🛒 Lista della spesa · ${getProfileLabel()}\n\n${blocks.join("\n\n")}`;
 }
 
+// Testo usato solo dal pulsante Copia: compatta la stessa lista senza
+// intestazione "🛒 Lista della spesa..." e senza righe vuote tra le sezioni.
+function shoppingTextCompact() {
+  const entries = getVisibleShoppingEntries();
+  const { categoryOrder, grouped } = groupShoppingEntries(entries);
+  const lines = [];
+  categoryOrder.forEach(category => {
+    const items = grouped[category] || [];
+    if (!items.length) return;
+    lines.push(`----- ${category}`);
+    items.forEach(entry => lines.push(`${entry.name} - ${shoppingAmountText(entry)}`));
+  });
+  return lines.join("\n");
+}
+
 window.copyShopList = async function() {
-  const text = shoppingText();
+  const text = shoppingTextCompact();
   try {
     await navigator.clipboard.writeText(text);
     showToast("Lista copiata ✅");
@@ -1768,14 +1775,6 @@ function renderSettings() {
       <label class="settings-row"><span><strong>Tema scuro</strong><small>Solo su questo dispositivo</small></span><input type="checkbox" ${appState.deviceSettings.darkMode ? "checked" : ""} onchange="toggleDarkMode(this.checked)"></label>
     </section>
 
-    <section class="settings-section">
-      <h2>Sostituzioni pranzo ↔ cena</h2>
-      <p class="settings-intro">Quando sposti una ricetta di cena a pranzo (o viceversa), i carboidrati vengono adattati alle quantità del pasto (es. pane 120g a pranzo, 60g a cena); proteine, uova, verdura e condimenti restano invariati. Scegli con quale carboidrato sostituire pasta, riso, gnocchi, quinoa, piadina, farro e orzo quando una ricetta di pranzo finisce a cena.</p>
-      <label class="settings-row"><span><strong>Carboidrato cena di default</strong><small>Sostituto per le ricette di pranzo spostate a cena</small></span><select onchange="changeCrossSlotCenaCarb(this.value)">
-        ${(window.PianoDomain?.CENA_CARB_OPTIONS || []).map(option => `<option value="${option.key}" ${appState.deviceSettings.crossSlotCenaCarb === option.key ? "selected" : ""}>${escapeHtml(option.label)} · ${option.amounts.training}g</option>`).join("")}
-      </select></label>
-    </section>
-
     <div class="manual-heading"><p class="eyebrow">INDICAZIONI DI MELLER</p><h2>Manuale dieta e alternative</h2><p>Le alternative originali restano sempre consultabili nell'app.</p></div>
 
     ${settingsAccordion("Struttura della dieta", `<ul class="guide-list">${MELLER_GUIDE.structure.map(item => `<li>${escapeHtml(item)}</li>`).join("")}</ul>`)}
@@ -1828,13 +1827,6 @@ window.toggleDarkMode = function(checked) {
   appState.deviceSettings.darkMode = checked;
   saveLocalDeviceSettings(appState.deviceSettings);
   applyTheme(checked);
-};
-
-window.changeCrossSlotCenaCarb = function(key) {
-  const valid = (window.PianoDomain?.CENA_CARB_OPTIONS || []).some(option => option.key === key);
-  if (!valid) return;
-  appState.deviceSettings.crossSlotCenaCarb = key;
-  saveLocalDeviceSettings(appState.deviceSettings);
 };
 
 window.logoutCurrentUser = async function() {
@@ -3066,7 +3058,7 @@ function renderModalContent() {
     Opzionale: serve solo come fallback per ricette con ingredienti non riconoscibili.
   </small>
 </label></div>`
-    : `${escapeHtml(getSlotMeta(currentModal.slot || recipe.slot).label)} · ${dayTypeLabel} · ${escapeHtml(getProfileLabel())}${toggleHtml}${recipeIsCrossSlot(recipe, currentModal.slot) ? `<div class="modal-adapted-note">↻ Carboidrati adattati alle quantità del ${escapeHtml(getSlotMeta(currentModal.slot).label.toLowerCase())}</div>` : ""}`;
+    : `${escapeHtml(getSlotMeta(currentModal.slot || recipe.slot).label)} · ${dayTypeLabel} · ${escapeHtml(getProfileLabel())}${toggleHtml}${recipeIsCrossSlot(recipe, currentModal.slot) ? `<div class="modal-adapted-note">↻ Carboidrati trasformati in percentuale per il ${escapeHtml(getSlotMeta(currentModal.slot).label.toLowerCase())}</div>` : ""}`;
 
   const ingredientList = document.getElementById("modal-ingredients-list");
   if (editMode) {
@@ -3078,14 +3070,14 @@ function renderModalContent() {
   } else {
     const items = recipe.ingredients.map(ingredient => {
       const adapted = (currentModal.slot && window.PianoDomain)
-        ? PianoDomain.adaptIngredientForSlot(ingredient, recipe.slot, currentModal.slot, { cenaFallbackKey: getCrossSlotCenaCarb() })
+        ? PianoDomain.adaptIngredientForSlot(ingredient, recipe.slot, currentModal.slot)
         : null;
       const ing = adapted ? { ...ingredient, name: adapted.name, portions: adapted.portions } : ingredient;
       return { ing, adapted: Boolean(adapted) };
     });
     const hasMeller = items.some(({ ing }) => !!getMellerAlternativesForIngredient(ing.name));
     ingredientList.innerHTML = items.map(({ ing, adapted }) => {
-      const adaptedMark = adapted ? ` <small class="adapted-mark" title="Dose adattata per questo pasto">↻</small>` : "";
+      const adaptedMark = adapted ? ` <small class="adapted-mark" title="Dose trasformata in percentuale per questo pasto">↻</small>` : "";
       if (getMellerAlternativesForIngredient(ing.name)) {
         return `<li class="meller-ingredient" onclick="openMellerAlternatives('${escapeAttr(ing.name)}')" title="Tocca per alternative Meller"><span>${escapeHtml(ing.name)} <small class="meller-hint">⇄</small></span>${getIngredientCoupleHtml(ing, dayType)}</li>`;
       }

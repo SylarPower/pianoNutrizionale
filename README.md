@@ -17,7 +17,7 @@ WebApp PWA privata per gestire colazioni, spuntini, pranzi, cene, batch cooking 
 - crackers dello spuntino mattutino aggiunti nei giorni A e rimossi nei giorni R (dinamici, derivati dal piano);
 - vista ricetta completa in una singola schermata (ingredienti, quantità, preparazione, note e batch cooking);
 - operazioni sui pasti: sostituisci con una ricetta, scambia con un altro giorno, copia in un altro giorno, ripristina scelta iniziale;
-- **sostituzione pranzo ↔ cena** con adattamento automatico dei carboidrati alle dosi del pasto (es. frittata di cena a pranzo con pane da 120g invece di 60g);
+- **sostituzione pranzo ↔ cena** con trasformazione percentuale dei carboidrati (pranzo → cena 50%, cena → pranzo 200%, arrotondati alla decina per eccesso);
 - **suggerimento batch cooking nella sostituzione**: cambiando un pranzo viene evidenziata la cena del giorno prima (e cambiando una cena il pranzo del giorno dopo), così un tocco attiva la "doppia porzione";
 - generatore automatico della settimana con parametri strutturali (slot da rigenerare, **accoppiate cena → pranzo per il batch**, tetto ripetizioni, cross-slot pranzo ↔ cena, frequenze proteiche min–max), vincoli nutrizionali, blocchi pasto/giornata che contano nelle frequenze, seed riproducibile, anteprima e diff;
 - batch cooking dinamico basato su `batchTemplates` strutturati (cena di oggi → pranzo futuro): la colonna del giorno nella vista **Settimana** mostra la chip cliccabile "Batch cooking disponibile", che apre direttamente una modale con ingredienti, dosi e preparazione completi delle ricette coinvolte; per la stessa ricetta a cena e pranzo viene mostrato un solo riquadro con dosi totali, senza informazioni ridondanti né note di conservazione;
@@ -536,32 +536,23 @@ Nelle **Impostazioni** è disponibile **Annulla ultima modifica**, con conferma,
 
 Nella vista **Settimana** ogni pasto ha un menu operazioni:
 
-- **Sostituisci con una ricetta** (stesso tipo pasto). Per pranzo e cena sono mostrate anche le ricette del **pasto opposto**: i carboidrati vengono adattati alle quantità del pasto di destinazione (vedi sotto);
+- **Sostituisci con una ricetta** (stesso tipo pasto). Per pranzo e cena sono mostrate anche le ricette del **pasto opposto**: i carboidrati vengono trasformati in percentuale (vedi sotto);
 - **Scambia con altro pasto** (bidirezionale, solo stesso tipo: `breakfast ↔ breakfast`, `snack1 ↔ snack1`, `lunch ↔ lunch`, `snack2 ↔ snack2`, `dinner ↔ dinner`);
 - **Copia in altro giorno** (il sorgente resta invariato);
 - **Ripristina scelta iniziale** (torna a `defaultDays`).
 
 Ogni operazione chiede conferma, salva il piano una sola volta e aggiorna batch, lista spesa, frequenze e feedback. Il piano resta coerente con le ricette mancanti.
 
-## Adattamento carboidrati pranzo ↔ cena
+## Trasformazione carboidrati pranzo ↔ cena
 
-Quando una ricetta di cena viene collocata a pranzo (o viceversa), **solo il carboidrato** viene ricalcolato alle quantità del pasto di destinazione; proteine, uova, verdura e condimenti restano invariati. Le quantità seguono le linee guida del nutrizionista e distinguono giorno di Allenamento e Riposo per il pranzo (la cena è uguale in A e R):
+Quando una ricetta di cena viene collocata a pranzo (o viceversa), **solo il carboidrato** viene ricalcolato in percentuale; proteine, uova, verdura e condimenti restano invariati.
 
-| Carboidrato | Pranzo (A / R) | Cena |
-|---|---|---|
-| Pasta, Riso | 90 / 70g | non previsto |
-| Gnocchi di patate | 250 / 190g | non previsto |
-| Quinoa, Grano saraceno, Amaranto | 80 / 60g | non previsto |
-| Piadina | 110 / 80g | non previsto |
-| Farro, Orzo | 90 / 70g | non previsto |
-| Pane | 120 / 90g | 60g |
-| Crackers, Grissini, Crostini | 70 / 60g | 40g |
-| Patate | 450 / 350g | 230g |
-| Polenta cotta | 430 / 340g | 220g |
+- **pranzo → cena**: il carboidrato diventa il **50%** della dose pranzo allenamento dell'uomo (`manTraining`), arrotondato alla decina per eccesso. La dose è la stessa per allenamento e riposo (es. pranzo A 470g → 235g → 240g a cena);
+- **cena → pranzo**: il carboidrato diventa il **200%** della dose cena allenamento dell'uomo per il pranzo allenamento, arrotondato alla decina per eccesso (es. cena A 232g → 464g → 470g). Il pranzo riposo mantiene il **rapporto A/R dei carboidrati esistente** (il rapporto riposo / allenamento del pranzo della linea guida).
 
-Andando **pranzo → cena**, i carboidrati non previsti a cena (pasta, riso, gnocchi, quinoa, piadina, farro, orzo) vengono **convertiti nel carboidrato cena di default** (Pane 60g), scelto nelle **Impostazioni → Sostituzioni pranzo ↔ cena**. Andando **cena → pranzo** non ci sono conversioni: pane, crackers, patate e polenta esistono in entrambi i pasti e cambia solo la quantità. I valori sono uguali per tutti i profili porzioni (Uomo, Donna IPO, Coppia).
+Il carboidrato **resta lo stesso** (pasta, riso, pane, patate…): non viene convertito in altro alimento di default, la trasformazione è solo in percentuale.
 
-L'adattamento è applicato ovunque le dosi vengono mostrate o sommate: modale ricetta (con avviso e marcatore ↻ sugli ingredienti adattati), vista **Settimana** (piccolo ↻ sul pasto e modale batch dalla colonna del giorno) e **Lista della spesa** (le quantità tengono conto del pasto in cui la ricetta è collocata). Le funzioni pure sono in `js/domain.js` (`adaptIngredientForSlot`, `carbSourceForName`, `isPranzoCenaCross`).
+La trasformazione è applicata ovunque le dosi vengono mostrate o sommate: modale ricetta (con avviso e marcatore ↻ sugli ingredienti trasformati), vista **Settimana** (piccolo ↻ sul pasto e modale batch dalla colonna del giorno) e **Lista della spesa** (le quantità tengono conto del pasto in cui la ricetta è collocata). Le funzioni pure sono in `js/domain.js` (`adaptIngredientForSlot`, `carbSourceForName`, `isPranzoCenaCross`).
 
 # Generatore automatico della settimana
 
@@ -574,7 +565,7 @@ Nella UI (vista Settimana → **Genera settimana**) il primo passo è il pannell
 - **Cosa generare**: quali slot rigenerare (colazione, spuntino, pranzo, merenda, cena). Gli slot esclusi restano come sono e contano nelle frequenze;
 - **🍳 Batch cena → pranzo** (0-7 giorni): quante cene vengono **pianificate in coppia** col pranzo del giorno dopo (doppia porzione automatica). Le coppie vengono piazzate per prime e contano due volte la proteina: aumentando le coppie crescono le ripetizioni e possono comparire avvisi per i vincoli su manzo, uova o pollame;
 - **🔁 Stessa ricetta al massimo** (1-4 volte): tetto alle ripetizioni in settimana;
-- **↻ Solo varietà: includi anche ricette dell'altro pasto**: il motore può pescare anche dal pasto opposto e adatta i carboidrati alle dosi del pasto scelto (come per lo scambio manuale). Non crea doppie porzioni: per cucinare una volta per cena e pranzo va usato Batch cena → pranzo;
+- **↻ Solo varietà: includi anche ricette dell'altro pasto**: il motore può pescare anche dal pasto opposto e trasforma i carboidrati in percentuale (come per lo scambio manuale). Non crea doppie porzioni: per cucinare una volta per cena e pranzo va usato Batch cena → pranzo;
 - **Frequenze proteiche min–max** (pannello avanzato): intervallo settimanale per legumi, pesce omega-3, altro pesce e prodotti ittici, pollame, manzo e maiale, affettati e carni miste, latticini e formaggi, uova. "Valori predefiniti" ripristina quelli del manuale;
 - **blocco di un singolo pasto** e **blocco dell'intera giornata**: la legenda in modale distingue chiaramente 🔒 bloccato (resta identico e conta nelle frequenze) da 🔓 sbloccato (il generatore può cambiarlo). I pasti bloccati non sono mai sovrascritti e, soprattutto, **contano nelle frequenze**;
 - **seed** opzionale: risultato riproducibile con lo stesso seed; "Rigenera" pesca un seed nuovo.
@@ -639,7 +630,7 @@ Anteprima prima dell'accettazione con: mittente, numero di ricette, ricette nuov
 
 # PWA offline
 
-`sw.js` (cache versionata `piano-nutrizionale-shell-v23`):
+`sw.js` (cache versionata `piano-nutrizionale-shell-v32`):
 
 - shell dell'app: `index.html`, CSS, JS, manifest, icone, `offline.html`;
 - navigazione **network-first** con fallback in cache (e pagina offline comprensibile);
@@ -695,7 +686,7 @@ node test/smoke-app.js
 git diff --check
 ```
 
-I test (`test/domain.test.js`) coprono: migrazioni schema 3→5 e idempotenza (inclusa rimozione `frequency`), alias ingredienti, ingredienti senza ID, porzioni legacy, lista spesa per `ingredientId`, profili Uomo/Donna IPO/Coppia, crackers A/R, **adattamento carboidrati pranzo↔cena** (riconoscimento carboidrati, conversione dosi A/R, fallback configurabile pranzo→cena, propagazione alla lista spesa), batch indipendente da A/R, batch cena→pranzo futuro, attraversamento domenica→lunedì, batch parziale, `maxDays` diversi, quantità target A/R, copia/scambio pasti, blocchi, generatore e vincoli (frequenze su molti seed, **omega-3 distanziati con eccezione solo per le accoppiate batch richieste**, **accoppiate batch cena → pranzo fino a 7 giorni**, tetto ripetizioni, blocchi che contano nelle frequenze e nel pesce/giorno, slot disabilitati, cross-slot, inferenza della categoria dagli ingredienti, vincoli personalizzati, beef e curedMeats conteggiati separatamente, warning centralizzati), classificazione proteica (ingredienti prevalgono su `proteinCategory`, fallback su chiavi tecniche e testuali legacy), cataloghi vuoto/insufficiente, riferimenti piano mancanti, import Aggiungi/Sostituisci, conflitti condivisione (solo ricette/solo settimana/completa), backup, service worker (shell, cache, fallback offline, aggiornamento).
+I test (`test/domain.test.js`) coprono: migrazioni schema 3→5 e idempotenza (inclusa rimozione `frequency`), alias ingredienti, ingredienti senza ID, porzioni legacy, lista spesa per `ingredientId`, profili Uomo/Donna IPO/Coppia, crackers A/R, **trasformazione percentuale carboidrati pranzo↔cena** (riconoscimento carboidrati, 50% pranzo→cena, 200% cena→pranzo, arrotondamento alla decina, pranzo R con rapporto esistente, propagazione alla lista spesa), batch indipendente da A/R, batch cena→pranzo futuro, attraversamento domenica→lunedì, batch parziale, `maxDays` diversi, quantità target A/R, copia/scambio pasti, blocchi, generatore e vincoli (frequenze su molti seed, **omega-3 distanziati con eccezione solo per le accoppiate batch richieste**, **accoppiate batch cena → pranzo fino a 7 giorni**, tetto ripetizioni, blocchi che contano nelle frequenze e nel pesce/giorno, slot disabilitati, cross-slot, inferenza della categoria dagli ingredienti, vincoli personalizzati, beef e curedMeats conteggiati separatamente, warning centralizzati), classificazione proteica (ingredienti prevalgono su `proteinCategory`, fallback su chiavi tecniche e testuali legacy), cataloghi vuoto/insufficiente, riferimenti piano mancanti, import Aggiungi/Sostituisci, conflitti condivisione (solo ricette/solo settimana/completa), backup, service worker (shell, cache, fallback offline, aggiornamento).
 
 Smoke test locale:
 

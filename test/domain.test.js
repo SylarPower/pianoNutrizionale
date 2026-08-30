@@ -271,7 +271,7 @@ test('resolveShopItemOrder non duplica mai un id e non ne perde nessuno', () => 
   assert.deepEqual(d.resolveShopItemOrder(once, ['whole-eggs', 'riso-venere', 'basilico']), once);
 });
 
-// ---- Adattamento carboidrati pranzo <-> cena ----
+// ---- Trasformazione carboidrati pranzo <-> cena ----
 
 test('carbSourceForName riconosce i carboidrati (gnocchi prima di patate)', () => {
   assert.equal(d.carbSourceForName('Gnocchi di patate').key, 'gnocchi');
@@ -297,66 +297,82 @@ test('isPranzoCenaCross solo tra pranzo e cena', () => {
   assert.equal(d.isPranzoCenaCross('breakfast', 'lunch'), false);
 });
 
-test('adatta carboidrato cena -> pranzo (A: 60g -> 120g, R: 60g -> 90g)', () => {
+test('trasforma carboidrato cena -> pranzo (A: 60g -> 120g, R mantiene rapporto 90g)', () => {
   const pane = ingredient('Pane', { ipoTraining: '60g', ipoRest: '60g', manTraining: '60g', manRest: '60g' }, 'bread');
   const adapted = d.adaptIngredientForSlot(pane, 'dinner', 'lunch');
   assert.equal(adapted.portions.manTraining, '120g');
   assert.equal(adapted.portions.manRest, '90g');
   assert.equal(adapted.portions.ipoTraining, '120g');
+  assert.equal(adapted.portions.ipoRest, '90g');
   assert.equal(adapted.name, 'Pane');
   assert.equal(adapted.ingredientId, 'bread');
 });
 
-test('adatta carboidrato pranzo -> cena (pane 120g -> 60g)', () => {
+test('trasforma carboidrato pranzo -> cena (pane 120g -> 60g)', () => {
   const pane = ingredient('Pane', { ipoTraining: '120g', ipoRest: '90g', manTraining: '120g', manRest: '90g' }, 'bread');
   const adapted = d.adaptIngredientForSlot(pane, 'lunch', 'dinner');
   assert.equal(adapted.portions.manTraining, '60g');
   assert.equal(adapted.portions.manRest, '60g');
 });
 
-test('pranzo -> cena: carboidrato non previsto (pasta) diventa pane 60g di default', () => {
+test('pranzo -> cena: la pasta resta pasta e diventa il 50% della dose pranzo A', () => {
   const pasta = ingredient('Pasta di semola', { ipoTraining: '90g', ipoRest: '70g', manTraining: '90g', manRest: '70g' });
   const adapted = d.adaptIngredientForSlot(pasta, 'lunch', 'dinner');
-  assert.equal(adapted.name, 'Pane');
-  assert.equal(adapted.portions.manTraining, '60g');
-  assert.equal(adapted.portions.manRest, '60g');
+  assert.equal(adapted.name, 'Pasta di semola');
+  assert.equal(adapted.ingredientId, 'pasta-di-semola');
+  assert.equal(adapted.portions.manTraining, '50g'); // 90g -> 45g -> 50g
+  assert.equal(adapted.portions.manRest, '50g');
+  assert.equal(adapted.portions.ipoTraining, '50g');
+  assert.equal(adapted.portions.ipoRest, '50g');
 });
 
-test('pranzo -> cena: il carboidrato di default è configurabile (patate)', () => {
-  const pasta = ingredient('Pasta', { ipoTraining: '90g', ipoRest: '70g', manTraining: '90g', manRest: '70g' });
-  const adapted = d.adaptIngredientForSlot(pasta, 'lunch', 'dinner', { cenaFallbackKey: 'patate' });
+test('pranzo -> cena: 50% della dose personalizzata, arrotondata alla decina', () => {
+  // Esempio utente: pranzo A 470g -> cena 235g -> 240g.
+  const patate = ingredient('Patate', { ipoTraining: '—', ipoRest: '—', manTraining: '470g', manRest: '350g' });
+  const adapted = d.adaptIngredientForSlot(patate, 'lunch', 'dinner');
   assert.equal(adapted.name, 'Patate');
-  assert.equal(adapted.portions.manTraining, '230g');
+  assert.equal(adapted.portions.manTraining, '240g');
+  assert.equal(adapted.portions.manRest, '240g');
 });
 
-test('pranzo -> cena: trofie e cous cous diventano il carboidrato cena di default', () => {
-  // Entrambi sono carboidrati solo del pranzo (cena: null): spostati a cena si
-  // convertono nel carboidrato cena scelto nelle impostazioni (pane 60g default).
+test('cena -> pranzo: 200% della dose cena A, pranzo R col rapporto esistente', () => {
+  // Esempio utente: cena A 232g -> pranzo A 464g -> 470g.
+  const patate = ingredient('Patate', { ipoTraining: '—', ipoRest: '—', manTraining: '232g', manRest: '232g' });
+  const adapted = d.adaptIngredientForSlot(patate, 'dinner', 'lunch');
+  assert.equal(adapted.name, 'Patate');
+  assert.equal(adapted.portions.manTraining, '470g');
+  // Il rapporto pranzo esistente Patate (350/450 ≈ 0,78) resta applicato al pranzo R.
+  assert.equal(adapted.portions.manRest, '370g');
+});
+
+test('pranzo -> cena: trofie e cous cous restano lo stesso carboidrato al 50%', () => {
   const trofie = ingredient('Trofie secche', { ipoTraining: '90g', ipoRest: '70g', manTraining: '90g', manRest: '70g' });
-  const adaptedT = d.adaptIngredientForSlot(trofie, 'lunch', 'dinner', { cenaFallbackKey: 'pane' });
-  assert.equal(adaptedT.name, 'Pane');
-  assert.equal(adaptedT.portions.manTraining, '60g');
+  const adaptedT = d.adaptIngredientForSlot(trofie, 'lunch', 'dinner');
+  assert.equal(adaptedT.name, 'Trofie secche');
+  assert.equal(adaptedT.portions.manTraining, '50g');
+  assert.equal(adaptedT.portions.manRest, '50g');
 
   const couscous = ingredient('Cous cous', { ipoTraining: '80g', ipoRest: '60g', manTraining: '80g', manRest: '60g' });
-  const adaptedC = d.adaptIngredientForSlot(couscous, 'lunch', 'dinner', { cenaFallbackKey: 'pane' });
-  assert.equal(adaptedC.name, 'Pane');
-  assert.equal(adaptedC.portions.manTraining, '60g');
+  const adaptedC = d.adaptIngredientForSlot(couscous, 'lunch', 'dinner');
+  assert.equal(adaptedC.name, 'Cous cous');
+  assert.equal(adaptedC.portions.manTraining, '40g');
+  assert.equal(adaptedC.portions.manRest, '40g');
 });
 
-test('ingredienti non carboidrati non vengono adattati', () => {
+test('ingredienti non carboidrati non vengono trasformati', () => {
   const eggs = ingredient('Uova intere', { ipoTraining: '3', ipoRest: '3', manTraining: '3', manRest: '3' }, 'whole-eggs');
   assert.equal(d.adaptIngredientForSlot(eggs, 'dinner', 'lunch'), null);
   assert.equal(d.adaptIngredientForSlot(eggs, 'lunch', 'dinner'), null);
 });
 
-test('nessun adattamento nello slot nativo o in pasti non incrociati', () => {
+test('nessuna trasformazione nello slot nativo o in pasti non incrociati', () => {
   const pane = ingredient('Pane', { ipoTraining: '60g', ipoRest: '60g', manTraining: '60g', manRest: '60g' }, 'bread');
   assert.equal(d.adaptIngredientForSlot(pane, 'dinner', 'dinner'), null);
   assert.equal(d.adaptIngredientForSlot(pane, 'lunch', 'lunch'), null);
   assert.equal(d.adaptIngredientForSlot(pane, 'breakfast', 'lunch'), null);
 });
 
-test('lista spesa adatta i carboidrati di una cena spostata a pranzo', () => {
+test('lista spesa trasforma i carboidrati di una cena spostata a pranzo', () => {
   const days = { monday: { type: 'training', lunch: 'C15' } };
   const recipesById = {
     C15: recipe('C15', 'Frittata ai peperoni', 'dinner', [
@@ -365,12 +381,12 @@ test('lista spesa adatta i carboidrati di una cena spostata a pranzo', () => {
       ingredient('Pane', { ipoTraining: '60g', ipoRest: '60g', manTraining: '60g', manRest: '60g' }, 'bread')
     ], 'Uova')
   };
-  const list = d.aggregateShopping(planWith(days), recipesById, { monday: ['lunch'] }, 'man', {}, { cenaFallbackKey: 'pane' });
+  const list = d.aggregateShopping(planWith(days), recipesById, { monday: ['lunch'] }, 'man', {});
   assert.equal(list.find(e => e.ingredientId === 'bread').totals.g, 120); // 60g -> 120g (pranzo A)
   assert.equal(list.find(e => e.ingredientId === 'whole-eggs').totals.pz, 3); // uova invariate
 });
 
-test('lista spesa converte pasta di un pranzo spostato a cena in pane 60g', () => {
+test('lista spesa: pasta di pranzo spostato a cena resta pasta al 50%', () => {
   const days = { monday: { type: 'training', dinner: 'P1' } };
   const recipesById = {
     P1: recipe('P1', 'Pasta al tonno', 'lunch', [
@@ -378,21 +394,21 @@ test('lista spesa converte pasta di un pranzo spostato a cena in pane 60g', () =
       ingredient('Tonno al naturale', { ipoTraining: '150g', ipoRest: '150g', manTraining: '150g', manRest: '150g' }, 'tuna')
     ], 'Altro pesce e molluschi')
   };
-  const list = d.aggregateShopping(planWith(days), recipesById, { monday: ['dinner'] }, 'man', {}, { cenaFallbackKey: 'pane' });
-  assert.equal(list.find(e => e.ingredientId === 'bread').totals.g, 60); // pasta -> pane 60g
+  const list = d.aggregateShopping(planWith(days), recipesById, { monday: ['dinner'] }, 'man', {});
+  assert.equal(list.find(e => e.ingredientId === 'pasta').totals.g, 50); // 90g -> 45g -> 50g
   assert.equal(list.find(e => e.ingredientId === 'tuna').totals.g, 150); // proteina invariata
-  assert.ok(!list.find(e => e.ingredientId === 'pasta'), 'la pasta non resta come voce separata');
+  assert.ok(!list.find(e => e.ingredientId === 'bread'), 'nessuna conversione in pane');
 });
 
-test('lista spesa non adatta le ricette nel loro slot nativo', () => {
+test('lista spesa non trasforma le ricette nel loro slot nativo', () => {
   const days = { monday: { type: 'training', dinner: 'D1' } };
   const recipesById = {
     D1: recipe('D1', 'Cena con pane', 'dinner', [
       ingredient('Pane', { ipoTraining: '60g', ipoRest: '60g', manTraining: '60g', manRest: '60g' }, 'bread')
     ], 'Pollame')
   };
-  const list = d.aggregateShopping(planWith(days), recipesById, { monday: ['dinner'] }, 'man', {}, { cenaFallbackKey: 'pane' });
-  assert.equal(list.find(e => e.ingredientId === 'bread').totals.g, 60); // dose nativa, non adattata
+  const list = d.aggregateShopping(planWith(days), recipesById, { monday: ['dinner'] }, 'man', {});
+  assert.equal(list.find(e => e.ingredientId === 'bread').totals.g, 60); // dose nativa, non trasformata
 });
 
 // ---- Batch cooking ----
@@ -510,7 +526,7 @@ function commonBatchFixture() {
 
 test('batch doppia porzione: stessa ricetta a cena e al pranzo successivo', () => {
   const { days, recipesById } = commonBatchFixture();
-  const batch = d.commonRecipeBatch('monday', planWith(days), recipesById, 'man', { cenaFallbackKey: 'pane' });
+  const batch = d.commonRecipeBatch('monday', planWith(days), recipesById, 'man');
   assert.ok(batch, 'batch generato');
   assert.equal(batch.targetDay, 'tuesday');
   assert.equal(batch.daysUntilTarget, 1);
@@ -533,14 +549,14 @@ test('batch doppia porzione attivo solo per il pranzo del giorno dopo', () => {
     monday: { type: 'training', dinner: 'C1' },
     wednesday: { type: 'training', lunch: 'C1' }
   };
-  const batch = d.commonRecipeBatch('monday', planWith(days), recipesById, 'man', { cenaFallbackKey: 'pane' });
+  const batch = d.commonRecipeBatch('monday', planWith(days), recipesById, 'man');
   assert.equal(batch, null);
 });
 
 test('batch doppia porzione: niente pranzo futuro con la stessa ricetta', () => {
   const { days, recipesById } = commonBatchFixture();
   days.tuesday.lunch = 'DIVERSA';
-  const batch = d.commonRecipeBatch('monday', planWith(days), recipesById, 'man', { cenaFallbackKey: 'pane' });
+  const batch = d.commonRecipeBatch('monday', planWith(days), recipesById, 'man');
   assert.equal(batch, null);
 });
 
@@ -554,19 +570,18 @@ test('sumPortionStrings: numeriche sommate, opache concatenate', () => {
 });
 
 test('batch doppia porzione con ricetta di pranzo spostata a cena (cross-slot)', () => {
-  // Una ricetta di PRANZO (pasta) messa anche a cena: la dose di cena adatta
-  // i carboidrati (pasta non prevista a cena -> pane 60g), la dose di pranzo
-  // resta nativa (pasta 90g). La somma combina i due carboidrati.
+  // Una ricetta di PRANZO (pasta) messa anche a cena: la dose di cena resta
+  // pasta al 50% (90g -> 50g), la dose di pranzo resta nativa (90g). Essendo
+  // lo stesso carboidrato le dosi si sommano.
   const days = {
     monday: { type: 'training', dinner: 'C2', lunch: 'ALTRO' },
     tuesday: { type: 'training', lunch: 'C2' }
   };
   const { recipesById } = commonBatchFixture();
-  const batch = d.commonRecipeBatch('monday', planWith(days), recipesById, 'man', { cenaFallbackKey: 'pane' });
+  const batch = d.commonRecipeBatch('monday', planWith(days), recipesById, 'man');
   assert.ok(batch);
-  // cena: pasta -> pane 60g; pranzo: pasta 90g. Diversi carboidrati -> "60g + 90g"
-  const carb = batch.tasks.find(t => /pane|pasta/i.test(t.label));
-  assert.ok(/60g \+ 90g|90g \+ 60g/.test(carb.quantity), `quantità inattesa: ${carb.quantity}`);
+  const carb = batch.tasks.find(t => t.label === 'Pasta');
+  assert.equal(carb.quantity, '140g'); // 50g cena + 90g pranzo
 });
 
 // ---- Copia e scambio pasti ----

@@ -196,7 +196,7 @@ appState.plan.batchTemplates = [];
 appState.plan.days.tuesday.lunch = 'D1';
 openBatchModal('monday');
 assert.match(batchModalList.innerHTML, /Ingredienti · dosi totali/, 'dosi totali integrate nella ricetta completa');
-assert.match(batchModalList.innerHTML, /160g/, 'dose cena e pranzo sommata');
+assert.match(batchModalList.innerHTML, /230g/, 'dose cena e pranzo sommata');
 assert.doesNotMatch(batchModalList.innerHTML, /Doppia porzione|Pranzo di Martedì|tra 1 giorno/, 'testi ridondanti assenti per cena e pranzo successivo');
 closeBatchModal();
 appState.plan.batchTemplates = originalTemplates;
@@ -227,6 +227,16 @@ renderShop();
 assert.match(document.getElementById('view-shop').innerHTML, /toggleShopDay\('monday'\)/);
 appState.deviceSettings.shopCategoryOrder = ['🐟 Pesce', '🍚 Carboidrati', '🥚 Uova e latticini'];
 const exportedShopping = shoppingText();
+// Condivisione WhatsApp: mantiene il formato storico con intestazione e
+// righe vuote tra le sezioni.
+assert.match(exportedShopping, /🛒 Lista della spesa/, 'condivisione con intestazione');
+assert.match(exportedShopping, /\n\s*\n/, 'condivisione con righe vuote tra le sezioni');
+// Copia: testo compatto, senza intestazione e senza righe vuote tra le sezioni.
+const copiedShopping = shoppingTextCompact();
+assert.doesNotMatch(copiedShopping, /🛒 Lista della spesa/, 'niente intestazione nel testo copiato');
+assert.doesNotMatch(copiedShopping, /\n\s*\n/, 'niente righe vuote tra le sezioni');
+assert.ok(copiedShopping.indexOf('----- 🐟 Pesce') < copiedShopping.indexOf('----- 🍚 Carboidrati'));
+assert.ok(copiedShopping.indexOf('----- 🍚 Carboidrati') < copiedShopping.indexOf('----- 🥚 Uova e latticini'));
 assert.ok(exportedShopping.indexOf('----- 🐟 Pesce') < exportedShopping.indexOf('----- 🍚 Carboidrati'));
 assert.ok(exportedShopping.indexOf('----- 🍚 Carboidrati') < exportedShopping.indexOf('----- 🥚 Uova e latticini'));
 assert.equal(shoppingAmountText({ id: 'opaque-a', legacyId: 'opaque-a', totals: { pz: 28 }, opaque: { 'Uomo: 8-10': 2, 'Donna IPO: 8-10': 1 }, free: false }), '28 pz');
