@@ -37,7 +37,30 @@ Il modello Live è configurato come `gemini-3.1-flash-live-preview`. Se Google l
 
 ### 2. Crea e pubblica il Worker
 
-Serve Node.js 18 o superiore.
+### Percorso manuale dalla dashboard Cloudflare
+
+Questo è il percorso da usare se non vuoi usare il terminale. Non servono Pages, KV, D1, Durable Objects, domini personalizzati o un piano Workers Paid.
+
+1. Accedi a [Cloudflare Dashboard](https://dash.cloudflare.com/) e seleziona il tuo account.
+2. Vai in **Workers & Pages** → **Create application** → crea un nuovo **Worker** (non un sito Pages).
+3. Come nome inserisci esattamente `piano-nutrizionale-ai` e pubblica una prima versione Hello World.
+4. Apri il Worker appena creato, scegli **Edit code** oppure **Edit** e sostituisci tutto il codice con il contenuto del file `cloudflare/assistant-worker/src/index.js` presente in questo repository. È un singolo file JavaScript e non devi incollare `wrangler.toml` nell'editor.
+5. Vai in **Settings** → **Variables and Secrets** → **Add**. Crea queste variabili nell'ambiente **Production**:
+
+   | Tipo | Nome | Valore |
+   | --- | --- | --- |
+   | Text | `FIREBASE_PROJECT_ID` | `piano-nutrizionale` |
+   | Text | `GEMINI_LIVE_MODEL` | `gemini-3.1-flash-live-preview` |
+   | Text | `ALLOWED_ORIGINS` | `https://sylarpower.github.io,http://localhost:8000,http://127.0.0.1:8000,https://piano-nutrizionale.web.app` |
+   | **Secret** | `GEMINI_API_KEY` | la chiave Gemini, incollata nel campo segreto |
+
+   `GEMINI_API_KEY` deve essere di tipo **Secret**, non una variabile Text. Non inserire virgolette, spazi o `Bearer` nel suo valore.
+6. Salva le variabili e scegli **Deploy**. Se Cloudflare chiede di attivare il sottodominio `workers.dev`, abilitalo: è sufficiente per questa integrazione e non richiede DNS o un dominio personale.
+7. Nel Worker vai in **Overview** oppure **Settings** → **Domains & Routes** e copia l'indirizzo `workers.dev` assegnato. L'endpoint della PWA è quell'indirizzo con `/token` alla fine.
+
+Il codice risponde solo su `/token`: aprire l'indirizzo senza `/token` e ricevere `Endpoint non trovato` è normale.
+
+Serve Node.js 18 o superiore solo se preferisci il percorso da terminale:
 
 ```bash
 cd cloudflare/assistant-worker
