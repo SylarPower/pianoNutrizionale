@@ -196,7 +196,7 @@ appState.plan.batchTemplates = [];
 appState.plan.days.tuesday.lunch = 'D1';
 openBatchModal('monday');
 assert.match(batchModalList.innerHTML, /Ingredienti · dosi totali/, 'dosi totali integrate nella ricetta completa');
-assert.match(batchModalList.innerHTML, /160g/, 'dose cena e pranzo sommata');
+assert.match(batchModalList.innerHTML, /230g/, 'dose cena e pranzo sommata');
 assert.doesNotMatch(batchModalList.innerHTML, /Doppia porzione|Pranzo di Martedì|tra 1 giorno/, 'testi ridondanti assenti per cena e pranzo successivo');
 closeBatchModal();
 appState.plan.batchTemplates = originalTemplates;
@@ -227,6 +227,10 @@ renderShop();
 assert.match(document.getElementById('view-shop').innerHTML, /toggleShopDay\('monday'\)/);
 appState.deviceSettings.shopCategoryOrder = ['🐟 Pesce', '🍚 Carboidrati', '🥚 Uova e latticini'];
 const exportedShopping = shoppingText();
+// Copia/condivisione compatta: senza intestazione "🛒 Lista della spesa" e
+// senza righe vuote tra le sezioni.
+assert.doesNotMatch(exportedShopping, /🛒 Lista della spesa/, 'niente intestazione nel testo copiato');
+assert.doesNotMatch(exportedShopping, /\n\s*\n/, 'niente righe vuote tra le sezioni');
 assert.ok(exportedShopping.indexOf('----- 🐟 Pesce') < exportedShopping.indexOf('----- 🍚 Carboidrati'));
 assert.ok(exportedShopping.indexOf('----- 🍚 Carboidrati') < exportedShopping.indexOf('----- 🥚 Uova e latticini'));
 assert.equal(shoppingAmountText({ id: 'opaque-a', legacyId: 'opaque-a', totals: { pz: 28 }, opaque: { 'Uomo: 8-10': 2, 'Donna IPO: 8-10': 1 }, free: false }), '28 pz');
