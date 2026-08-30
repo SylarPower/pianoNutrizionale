@@ -1,0 +1,19 @@
+/* Configurazione pubblica dell'assistente vocale.
+ *
+ * Questo file NON deve contenere la chiave Gemini. L'URL del Worker è un
+ * endpoint pubblico, mentre la chiave resta nel secret GEMINI_API_KEY del
+ * Worker Cloudflare.
+ */
+window.PIANO_AI_CONFIG = Object.freeze({
+  // Dopo il deploy del Worker inserisci qui il suo URL /token, per esempio:
+  // https://piano-nutrizionale-ai.<account>.workers.dev/token
+  tokenEndpoint: "",
+  // Modello Live verificato/configurabile dal Worker. Non è una chiave segreta.
+  model: "gemini-3.1-flash-live-preview",
+  language: "it-IT",
+  voiceName: "Aoede",
+  sessionMinutes: 30,
+  // Il Worker può essere pubblicato sia su GitHub Pages sia su Firebase Hosting.
+  // L'elenco effettivo delle origini autorizzate si configura nel Worker.
+  allowGoogleSearch: true
+});

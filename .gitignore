@@ -1,2 +1,5 @@
 /exports/
 .preview/
+.wrangler/
+.env*
+**/.dev.vars

@@ -27,6 +27,7 @@ WebApp PWA privata per gestire colazioni, spuntini, pranzi, cene, batch cooking 
 - alternative alimentari di Meller sempre consultabili nelle Impostazioni;
 - **registro prezzi condiviso** (scheda Prezzi): un unico database tra tutti gli utenti per registrare i prezzi nei negozi (con barcode Open Food Facts), confrontare il prezzo normalizzato €/kg tra negozi con indicazione del migliore (ricerca prodotto con suggerimenti live mentre si digita, prodotti recenti a un tocco, navigazione da tastiera), giudizio rispetto allo storico (minimo storico / affare / caro), suggerimento del nome prodotto già in archivio quando quello scannerizzato è una variante più lunga ("Cereali di grano duro" → "Cereali"), archivio con modifica delle proprie voci e importazione/esportazione di backup JSON (incluso il vecchio formato "Spesa Smart");
 - **pagina negozio** (Prezzi → Negozi): per ogni negozio l'ultimo prezzo registrato di ogni prodotto, con indicazione di dove quel prodotto costa meno (🏆 miglior prezzo, scostamento % rispetto al migliore, "solo qui");
+- **assistente vocale Gemini Live**: orb fluttuante, microfono continuo fino alla chiusura, conversazione in italiano, comandi cucina ingrediente-per-ingrediente e preparazione step-by-step, risposte numeriche calcolate dai dati dell'app, ricerca nella guida/catalogo e Google Search con fonti; setup gratuito documentato in [`docs/AI_ASSISTANT.md`](docs/AI_ASSISTANT.md);
 - nessuna funzionalità di notifica (né push né locali).
 
 ## Dove si trovano i dati
@@ -630,7 +631,7 @@ Anteprima prima dell'accettazione con: mittente, numero di ricette, ricette nuov
 
 # PWA offline
 
-`sw.js` (cache versionata `piano-nutrizionale-shell-v32`):
+`sw.js` (cache versionata `piano-nutrizionale-shell-v33`):
 
 - shell dell'app: `index.html`, CSS, JS, manifest, icone, `offline.html`;
 - navigazione **network-first** con fallback in cache (e pagina offline comprensibile);
@@ -682,7 +683,7 @@ App Check **non sostituisce** Authentication né Firestore Rules: le regole in `
 ```bash
 npm test
 npm run syntax
-node test/smoke-app.js
+npm run smoke
 git diff --check
 ```
 

@@ -426,7 +426,7 @@ function portionFor(ingredient, profile, dayType, slot, recipeSlot) {
     { category: '🥫 Dispensa', terms: ['passata di pomodoro', 'passata', 'farina'] },
     { category: '🫘 Legumi', terms: ['ceci', 'lenticch', 'fagiol', 'edamame', 'piselli'] },
     { category: '🍚 Carboidrati', terms: ['pasta', 'riso', 'orzo', 'farro', 'quinoa', 'cous cous', 'pane', 'patate', 'polenta', 'cracker', 'trofie', 'avena', 'cereali', 'fette biscottate', 'wasa', 'granola'] },
-    { category: '🍑 Frutta', terms: ['pesca', 'mango', 'anguria', 'melone', 'avocado', 'lampon', 'limone', 'lime', 'albicocc', 'cilieg', 'mirtill', 'ananas', 'frutta fresca', 'frutti di bosco'] },
+    { category: '🍑 Frutta', terms: ['mela', 'banana', 'pera', 'arancia', 'mandarin', 'clementin', 'kiwi', 'uva', 'fragol', 'pesca', 'mango', 'anguria', 'melone', 'avocado', 'lampon', 'limone', 'lime', 'albicocc', 'cilieg', 'mirtill', 'ananas', 'papaya', 'pompelmo', 'prugn', 'susin', 'fico', 'cachi', 'ribes', 'mora', 'more', 'frutta fresca', 'frutti di bosco', 'macedonia'] },
     { category: '🥬 Verdura', terms: ['zucchin', 'pomodor', 'friggitell', 'peperon', 'melanzan', 'rucola', 'cetriolo', 'carota', 'fagiolini', 'spinacin', 'lattuga', 'songino', 'sedano', 'verdura', 'cipolla'] },
     { category: '🥫 Dispensa', terms: ['olio', 'olive', 'mandorle', 'noci', 'pistacchi', 'semi', 'pesto', 'capperi', 'brodo', 'salsa di soia', 'aceto', 'cacao', 'cioccolato', 'marmellata', 'confettura', 'miele', 'sciroppo', 'dolcificante', 'cocco', 'proteine whey'] }
   ];

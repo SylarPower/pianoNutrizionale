@@ -289,6 +289,7 @@ function showLogin() {
   document.getElementById("app-container")?.classList.add("hidden");
   document.querySelector(".bottom-nav")?.classList.add("hidden");
   document.getElementById("global-header-container")?.remove();
+  window.PianoAssistant?.setAvailability?.(false);
   clearLoading();
   setTimeout(() => document.getElementById("login-username")?.focus(), 50);
 }
@@ -298,6 +299,7 @@ function showApp() {
   document.getElementById("login-screen")?.classList.add("hidden");
   document.getElementById("app-container")?.classList.remove("hidden");
   document.querySelector(".bottom-nav")?.classList.remove("hidden");
+  window.PianoAssistant?.setAvailability?.(true);
   // Anche l'avvio rapido da cache deve chiudere l'overlay: in quel percorso
   // loadUserData() è silenzioso e il suo finally non chiama clearLoading().
   clearLoading();
@@ -1774,6 +1776,8 @@ function renderSettings() {
       <h2>Aspetto</h2>
       <label class="settings-row"><span><strong>Tema scuro</strong><small>Solo su questo dispositivo</small></span><input type="checkbox" ${appState.deviceSettings.darkMode ? "checked" : ""} onchange="toggleDarkMode(this.checked)"></label>
     </section>
+
+    ${window.PianoAssistant?.settingsSectionHtml?.() || ""}
 
     <div class="manual-heading"><p class="eyebrow">INDICAZIONI DI MELLER</p><h2>Manuale dieta e alternative</h2><p>Le alternative originali restano sempre consultabili nell'app.</p></div>
 
