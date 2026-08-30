@@ -227,10 +227,16 @@ renderShop();
 assert.match(document.getElementById('view-shop').innerHTML, /toggleShopDay\('monday'\)/);
 appState.deviceSettings.shopCategoryOrder = ['🐟 Pesce', '🍚 Carboidrati', '🥚 Uova e latticini'];
 const exportedShopping = shoppingText();
-// Copia/condivisione compatta: senza intestazione "🛒 Lista della spesa" e
-// senza righe vuote tra le sezioni.
-assert.doesNotMatch(exportedShopping, /🛒 Lista della spesa/, 'niente intestazione nel testo copiato');
-assert.doesNotMatch(exportedShopping, /\n\s*\n/, 'niente righe vuote tra le sezioni');
+// Condivisione WhatsApp: mantiene il formato storico con intestazione e
+// righe vuote tra le sezioni.
+assert.match(exportedShopping, /🛒 Lista della spesa/, 'condivisione con intestazione');
+assert.match(exportedShopping, /\n\s*\n/, 'condivisione con righe vuote tra le sezioni');
+// Copia: testo compatto, senza intestazione e senza righe vuote tra le sezioni.
+const copiedShopping = shoppingTextCompact();
+assert.doesNotMatch(copiedShopping, /🛒 Lista della spesa/, 'niente intestazione nel testo copiato');
+assert.doesNotMatch(copiedShopping, /\n\s*\n/, 'niente righe vuote tra le sezioni');
+assert.ok(copiedShopping.indexOf('----- 🐟 Pesce') < copiedShopping.indexOf('----- 🍚 Carboidrati'));
+assert.ok(copiedShopping.indexOf('----- 🍚 Carboidrati') < copiedShopping.indexOf('----- 🥚 Uova e latticini'));
 assert.ok(exportedShopping.indexOf('----- 🐟 Pesce') < exportedShopping.indexOf('----- 🍚 Carboidrati'));
 assert.ok(exportedShopping.indexOf('----- 🍚 Carboidrati') < exportedShopping.indexOf('----- 🥚 Uova e latticini'));
 assert.equal(shoppingAmountText({ id: 'opaque-a', legacyId: 'opaque-a', totals: { pz: 28 }, opaque: { 'Uomo: 8-10': 2, 'Donna IPO: 8-10': 1 }, free: false }), '28 pz');

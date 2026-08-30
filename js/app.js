@@ -1603,8 +1603,20 @@ window.includeShopItem = function(id) {
 function shoppingText() {
   const entries = getVisibleShoppingEntries();
   // Stesso raggruppamento/ordine del rendering: Copia e Condividi producono
-  // testo coerente con la schermata (categorie E alimenti dentro le categorie),
-  // ma compattato: senza intestazione e senza righe vuote tra le sezioni.
+  // testo coerente con la schermata (categorie E alimenti dentro le categorie).
+  const { categoryOrder, grouped } = groupShoppingEntries(entries);
+  const blocks = categoryOrder.map(category => {
+    const items = grouped[category] || [];
+    if (!items.length) return "";
+    return `----- ${category}\n${items.map(entry => `${entry.name} - ${shoppingAmountText(entry)}`).join("\n")}`;
+  }).filter(Boolean);
+  return `🛒 Lista della spesa · ${getProfileLabel()}\n\n${blocks.join("\n\n")}`;
+}
+
+// Testo usato solo dal pulsante Copia: compatta la stessa lista senza
+// intestazione "🛒 Lista della spesa..." e senza righe vuote tra le sezioni.
+function shoppingTextCompact() {
+  const entries = getVisibleShoppingEntries();
   const { categoryOrder, grouped } = groupShoppingEntries(entries);
   const lines = [];
   categoryOrder.forEach(category => {
@@ -1617,7 +1629,7 @@ function shoppingText() {
 }
 
 window.copyShopList = async function() {
-  const text = shoppingText();
+  const text = shoppingTextCompact();
   try {
     await navigator.clipboard.writeText(text);
     showToast("Lista copiata ✅");

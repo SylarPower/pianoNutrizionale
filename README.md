@@ -550,7 +550,7 @@ Quando una ricetta di cena viene collocata a pranzo (o viceversa), **solo il car
 - **pranzo → cena**: il carboidrato diventa il **50%** della dose pranzo allenamento dell'uomo (`manTraining`), arrotondato alla decina per eccesso. La dose è la stessa per allenamento e riposo (es. pranzo A 470g → 235g → 240g a cena);
 - **cena → pranzo**: il carboidrato diventa il **200%** della dose cena allenamento dell'uomo per il pranzo allenamento, arrotondato alla decina per eccesso (es. cena A 232g → 464g → 470g). Il pranzo riposo mantiene il **rapporto A/R dei carboidrati esistente** (il rapporto riposo / allenamento del pranzo della linea guida).
 
-Il carboidrato **resta lo stesso** (pasta, riso, pane, patate…): non esistono più conversioni automatiche da pasta/riso/pane/patate al carboidrato cena di default, né la scelta **Carboidrato cena di default** nelle Impostazioni.
+Il carboidrato **resta lo stesso** (pasta, riso, pane, patate…): non viene convertito in altro alimento di default, la trasformazione è solo in percentuale.
 
 La trasformazione è applicata ovunque le dosi vengono mostrate o sommate: modale ricetta (con avviso e marcatore ↻ sugli ingredienti trasformati), vista **Settimana** (piccolo ↻ sul pasto e modale batch dalla colonna del giorno) e **Lista della spesa** (le quantità tengono conto del pasto in cui la ricetta è collocata). Le funzioni pure sono in `js/domain.js` (`adaptIngredientForSlot`, `carbSourceForName`, `isPranzoCenaCross`).
 
