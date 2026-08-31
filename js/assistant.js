@@ -33,6 +33,14 @@
     reconnectTimer: null,
     reconnectAttempts: 0,
     tokenExpiresAt: null,
+    // Token effimero Gemini riutilizzabile: dura ~30 minuti, ma un'apertura
+    // del pannello non deve chiederne uno nuovo a ogni tentativo/riconnessione,
+    // altrimenti si brucia la quota gratuita del Worker (429).
+    ephemeralToken: null,
+    ephemeralTokenExpiresAt: 0,
+    // Dopo un 429 del Worker ci si ferma fino a questo timestamp invece di
+    // ritentare subito in loop e restare bloccati.
+    rateLimitUntil: 0,
     sessionStartedAt: null,
     cooking: null,
     messages: [],
@@ -835,7 +843,51 @@
     throw new Error('Sessione Firebase non disponibile. Accedi di nuovo alla webapp.');
   }
 
+  // Il token effimero dura ~30 minuti lato Worker: lo si riusa con margine,
+  // così una riconnessione non consuma una nuova emissione (e quindi quota).
+  function validEphemeralToken() {
+    if (state.ephemeralToken && Date.now() < state.ephemeralTokenExpiresAt) {
+      return state.ephemeralToken;
+    }
+    return null;
+  }
+
+  function retryAfterMs(headerValue) {
+    if (!headerValue) return 0;
+    const seconds = Number(String(headerValue).trim());
+    if (Number.isFinite(seconds) && seconds > 0) return Math.min(seconds, 90 * 60) * 1000;
+    const date = Date.parse(headerValue);
+    if (Number.isFinite(date)) return Math.max(0, Math.min(date - Date.now(), 90 * 60 * 1000));
+    return 0;
+  }
+
+  function rateLimitedErrorMessage() {
+    const waitMs = state.rateLimitUntil - Date.now();
+    if (waitMs <= 0) return 'Troppe richieste di attivazione: attendi un minuto e riprova.';
+    const minutes = Math.ceil(waitMs / 60000);
+    return `Troppe attivazioni dell’assistente in poco tempo. Riprova tra circa ${minutes} minuto${minutes > 1 ? 'i' : ''}.`;
+  }
+
+  class RateLimitError extends Error {
+    constructor(retryMs) {
+      // Si imposta lo stato prima di super(): rateLimitedErrorMessage()
+      // legge già la scadenza per calcolare i minuti di attesa.
+      state.rateLimitUntil = Date.now() + Math.max(retryMs, 60 * 1000);
+      state.ephemeralToken = null;
+      super(rateLimitedErrorMessage());
+      this.name = 'RateLimitError';
+      this.rateLimited = true;
+    }
+  }
+
   async function fetchEphemeralToken() {
+    // Cooldown da 429 ancora attivo: non si chiama nemmeno il Worker.
+    if (state.rateLimitUntil > Date.now()) throw new RateLimitError(0);
+
+    // Token ancora valido: lo si riusa invece di chiederne un altro.
+    const cached = validEphemeralToken();
+    if (cached) return cached;
+
     const endpoint = String(getConfig().tokenEndpoint || '').trim();
     if (!endpoint) throw new Error('Assistente non ancora configurato: inserisci l’URL del Worker Cloudflare in js/assistant-config.js.');
     const idToken = await getIdToken();
@@ -846,11 +898,40 @@
     });
     let body = null;
     try { body = await response.json(); } catch (_) {}
+    if (response.status === 429) {
+      // Il Worker comunica anche quanto aspettare via Retry-After.
+      throw new RateLimitError(retryAfterMs(response.headers.get('Retry-After')));
+    }
     if (!response.ok) throw new Error(body?.error || `Worker AI non raggiungibile (${response.status}).`);
     const token = body?.token || body?.name || body?.accessToken;
     if (!token) throw new Error('Il Worker non ha restituito un token Gemini valido.');
+    state.ephemeralToken = token;
     state.tokenExpiresAt = body.expiresAt || null;
+    state.rateLimitUntil = 0;
+    // Margine di sicurezza di 60s sulla scadenza indicata dal Worker.
+    const expiresMs = Date.parse(body.expiresAt || '') || (Date.now() + 29 * 60 * 1000);
+    state.ephemeralTokenExpiresAt = Math.max(Date.now() + 60 * 1000, expiresMs - 60 * 1000);
     return token;
+  }
+
+  function describeClose(event) {
+    const code = event?.code || 0;
+    const reason = event?.reason ? String(event.reason) : '';
+    if (reason) return `Gemini ha chiuso la connessione (${code}): ${reason}`;
+    if (code === 1008 || code === 1003) {
+      return 'Gemini ha rifiutato la configurazione della sessione vocale. ' +
+        'Verifica che il modello Live e la chiave Gemini nel Worker siano corretti e attivi.';
+    }
+    if (code === 1000) return 'La connessione vocale è stata chiusa.';
+    if (code === 1006) return 'Connessione interrotta durante l’avvio della sessione vocale.';
+    return `Connessione Gemini Live chiusa (codice ${code || 'sconosciuto'}).`;
+  }
+
+  // Cadute di rete/riavvii server: vale la pena ritentare. Errori di
+  // configurazione (token/setup rifiutato, 1003/1008/1000): ritentare non
+  // serve e brucerebbe altri token, quindi ci si ferma mostrando il motivo.
+  function isRetryableClose(code) {
+    return !code || code === 1006 || code === 1011 || code === 1012 || code === 1013;
   }
 
   async function openSocket(token) {
@@ -859,27 +940,55 @@
       const socket = new WebSocket(endpoint);
       state.ws = socket;
       let settled = false;
+      const settle = fn => arg => {
+        if (settled) return;
+        settled = true;
+        fn(arg);
+      };
+      const fail = settle(reject);
+      const done = settle(resolve);
       socket.onopen = () => {
         socket.send(JSON.stringify(setupMessage()));
-        if (!settled) { settled = true; resolve(); }
       };
       socket.onmessage = event => {
-        try { handleServerMessage(JSON.parse(event.data)); }
-        catch (error) { console.warn('Messaggio Live non valido', error); }
+        try {
+          const message = JSON.parse(event.data);
+          // Un frame di errore prima di setupComplete vuol dire che la
+          // sessione non si è aperta: lo si riporta subito invece di
+          // restare in attesa fino all'onclose.
+          if (message?.error && !state.setupReady) {
+            fail(new Error(message.error.message || 'Gemini ha rifiutato la configurazione della sessione vocale.'));
+          }
+          handleServerMessage(message);
+          if (message?.setupComplete) done();
+        } catch (error) { console.warn('Messaggio Live non valido', error); }
       };
       socket.onerror = () => {
-        if (!settled) { settled = true; reject(new Error('Connessione Gemini Live non riuscita.')); }
+        fail(new Error('Connessione Gemini Live non riuscita (rete o endpoint).'));
       };
       socket.onclose = event => {
-        if (!settled) { settled = true; reject(new Error(event.reason || 'Connessione Gemini Live chiusa.')); }
+        const retryable = isRetryableClose(event?.code);
+        if (!state.setupReady) {
+          fail(new Error(describeClose(event)));
+        }
         if (state.ws === socket) {
+          const wasActive = state.active;
           state.ws = null;
           state.setupReady = false;
           state.active = false;
           state.connecting = false;
           stopCapture();
-          if (!state.userClosed && state.open && !document.hidden) scheduleReconnect();
-          else if (state.open && !state.userClosed) setStatus('paused', 'In pausa');
+          if (state.userClosed || !state.open) return;
+          if (document.hidden) { setStatus('paused', 'In pausa'); return; }
+          // Errore definitivo (config/modello/token): niente loop di retry.
+          // Si invalida anche il token in cache perché potrebbe essere il
+          // responsabile del rifiuto.
+          if (!retryable && !wasActive) {
+            state.ephemeralToken = null;
+            showError(describeClose(event));
+            return;
+          }
+          scheduleReconnect();
         }
       };
     });
@@ -887,8 +996,11 @@
 
   function scheduleReconnect() {
     if (state.reconnectTimer || state.userClosed || !state.open) return;
+    // Con un 429 in corso non ha senso riconnettersi: si attende la scadenza.
+    if (state.rateLimitUntil > Date.now()) return;
     if (state.reconnectAttempts >= 3) {
-      showError('La connessione vocale si è interrotta. Premi Riprova per riaprire l’assistente.');
+      state.ephemeralToken = null;
+      showError('La connessione vocale non si è stabilita. Chiudi e riapri l’assistente per riprovare.');
       return;
     }
     state.reconnectAttempts += 1;
@@ -905,6 +1017,14 @@
 
   async function connectLive() {
     if (!state.open || state.userClosed || state.connecting || state.active) return;
+    // Cooldown da rate-limit (429 del Worker): niente microfono né nuove
+    // richieste finché non scade, altrimenti si riempie la quota in loop.
+    if (state.rateLimitUntil > Date.now()) {
+      stopCapture();
+      setStatus('error', 'Troppe attivazioni');
+      showError(rateLimitedErrorMessage());
+      return false;
+    }
     clearError();
     state.connecting = true;
     setStatus('connecting', 'Mi collego…');
@@ -917,9 +1037,14 @@
       state.connecting = false;
       stopCapture();
       state.active = false;
-      setStatus('error', 'Configurazione necessaria');
+      if (error?.rateLimited) {
+        setStatus('error', 'Troppe attivazioni');
+      } else {
+        setStatus('error', 'Serve un controllo');
+      }
       throw error;
     }
+    return true;
   }
 
   function closeSocket() {
@@ -980,6 +1105,11 @@
     if (!hasLiveEndpoint()) {
       setStatus('setup', 'Configura il Worker');
       showError('Per attivare Gemini Live devi inserire l’URL del Worker Cloudflare in js/assistant-config.js. La guida è disponibile in docs/AI_ASSISTANT.md.');
+      return;
+    }
+    if (state.rateLimitUntil > Date.now()) {
+      setStatus('error', 'Troppe attivazioni');
+      showError(rateLimitedErrorMessage());
       return;
     }
     connectLive().catch(error => showError(error.message));
@@ -1081,7 +1211,7 @@
       setStatus('paused', 'Pausa: pagina non visibile');
     } else {
       state.hiddenSuspension = false;
-      if (!state.active && !state.userClosed && hasLiveEndpoint()) {
+      if (!state.active && !state.userClosed && hasLiveEndpoint() && state.rateLimitUntil <= Date.now()) {
         connectLive().catch(error => showError(error.message));
       } else if (state.active) {
         ensureMicrophoneStream().then(() => startCapture()).catch(error => showError(error.message));
@@ -1099,7 +1229,10 @@
     isActive: () => state.active,
     getCookingStatus: () => formatCurrentCooking(),
     executeTool,
-    _state: state
+    _state: state,
+    // Hook per gli smoke test: permette di simulare token/429 senza rete.
+    _fetchEphemeralToken: fetchEphemeralToken,
+    _resetRateLimit: () => { state.rateLimitUntil = 0; state.ephemeralToken = null; }
   };
 
   document.addEventListener('visibilitychange', handleVisibility);
