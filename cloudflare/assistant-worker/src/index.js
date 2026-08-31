@@ -11,7 +11,9 @@ const GEMINI_TOKEN_URL = 'https://generativelanguage.googleapis.com/v1beta/auth_
 const DEFAULT_MODEL = 'gemini-3.1-flash-live-preview';
 const MAX_TOKEN_MINUTES = 30;
 const RATE_LIMIT_WINDOW_MS = 15 * 60 * 1000;
-const MAX_TOKEN_REQUESTS_PER_WINDOW = 6;
+// 30 emissioni per finestra: il client riusa il token per le riconnessioni, quindi
+// il margine copre sessioni lunghe/schede multiple senza far scattare il 429.
+const MAX_TOKEN_REQUESTS_PER_WINDOW = 30;
 
 let cachedJwks = null;
 let cachedJwksExpiresAt = 0;
@@ -163,7 +165,11 @@ async function createEphemeralToken(env) {
   const newSessionExpireTime = new Date(now + 60 * 1000).toISOString();
   const model = modelName(env);
   const requestBody = {
-    uses: 1,
+    // uses:0 = nessun limite di utilizzi per il token (resta valido fino a
+    // expireTime). Con uses:1 ogni riconnessione della stessa sessione
+    // (caduta rete, cambio scheda, sospensione PWA) sarebbe stata rifiutata
+    // da Gemini; il client riusa questo token per le riconnessioni.
+    uses: 0,
     expireTime: expiresAt,
     newSessionExpireTime,
     fieldMask: "model,generationConfig.responseModalities",

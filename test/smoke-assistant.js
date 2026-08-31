@@ -54,6 +54,84 @@ const quickButton = panel.querySelector('[data-assistant-text]');
 assert.ok(quickButton, 'azione rapida presente');
 assert.doesNotThrow(() => quickButton.dispatchEvent(new window.Event('click', { bubbles: true })), 'click azione rapida gestito senza crash');
 
-window.PianoAssistant.setAvailability(false);
-assert.equal(fab.classList.contains('hidden'), true, 'orb nascosto senza account');
-console.log('ASSISTANT SMOKE OK — UI montata senza microfono o rete');
+/*
+ * Regressione "Mi collego…" infinito: due blocchi distinti.
+ *  1) 429 del Worker → il client deve fermarsi (cooldown) senza altre chiamate;
+ *  2) 200 con { token, expiresAt } → il token effimero deve essere riusato,
+ *     quindi 3 utilizzi devono richiedere UNA sola emissione.
+ * jsdom non espone fetch/Response: si stubbano entrambi (nessuna rete reale).
+ */
+(async () => {
+  const stubHeaders = { 'retry-after': '90' };
+  class StubResponse {
+    constructor(body, init = {}) {
+      this._body = body;
+      this.status = init.status === undefined ? 200 : init.status;
+      this.ok = this.status >= 200 && this.status < 300;
+      // Headers reali: get() è case-insensitive.
+      this.headers = { get: name => stubHeaders[String(name).toLowerCase()] ?? null };
+    }
+    json() { return Promise.resolve(this._body); }
+  }
+  window.Response = StubResponse;
+  window.currentUser = { getIdToken: async () => 'tok' };
+
+  let fetchCalls = 0;
+  let lastInit = null;
+  let nextBody = null;
+  let nextStatus = 200;
+  window.fetch = (url, init) => {
+    fetchCalls += 1;
+    lastInit = init;
+    return Promise.resolve(new StubResponse(nextBody, { status: nextStatus }));
+  };
+
+  window.PIANO_AI_CONFIG.tokenEndpoint = 'https://piano-nutrizionale-ai.example.workers.dev/token';
+  const { _fetchEphemeralToken, _resetRateLimit, _state: state } = window.PianoAssistant;
+  _resetRateLimit();
+
+  // 1) 429 con Retry-After: errore di rate-limit, e nessun'altra chiamata.
+  nextStatus = 429;
+  nextBody = { error: 'Troppe richieste di token.' };
+  await assert.rejects(
+    () => _fetchEphemeralToken(),
+    error => error.rateLimited === true && error.name === 'RateLimitError' && /Troppe attivazioni/.test(error.message),
+    'il 429 diventa un errore di rate-limit leggibile'
+  );
+  assert.equal(fetchCalls, 1, 'una sola chiamata al Worker');
+  assert.ok(state.rateLimitUntil > Date.now(), 'cooldown attivo fino alla scadenza');
+  assert.equal(state.ephemeralToken, null, 'nessun token in cache dopo un 429');
+  await assert.rejects(() => _fetchEphemeralToken(), error => error.rateLimited === true);
+  await assert.rejects(() => _fetchEphemeralToken(), error => error.rateLimited === true);
+  assert.equal(fetchCalls, 1, 'durante il cooldown non partono nuove richieste');
+
+  // Aprire il pannello con cooldown in corso non deve toccare la rete.
+  window.PianoAssistant.open();
+  assert.equal(fetchCalls, 1, 'open() durante il cooldown non chiama il Worker');
+  assert.match(window.document.getElementById('assistant-error').textContent, /Troppe attivazioni/);
+  window.PianoAssistant.close();
+
+  // 2) 200 con token: riutilizzato da 3 chiamate consecutive.
+  _resetRateLimit();
+  for (const key of Object.keys(stubHeaders)) delete stubHeaders[key];
+  nextStatus = 200;
+  nextBody = { token: 'eph-abc', expiresAt: new Date(Date.now() + 30 * 60 * 1000).toISOString() };
+  assert.equal(await _fetchEphemeralToken(), 'eph-abc', 'token emesso dal Worker');
+  assert.equal(fetchCalls, 2, 'emissione avvenuta');
+  assert.equal(lastInit.method, 'POST');
+  assert.equal(lastInit.headers.Authorization, 'Bearer tok', 'idToken Firebase inoltrato');
+  assert.equal(await _fetchEphemeralToken(), 'eph-abc');
+  assert.equal(await _fetchEphemeralToken(), 'eph-abc');
+  assert.equal(fetchCalls, 2, '3 utilizzi del token = 1 sola emissione (niente 429)');
+  assert.ok(state.ephemeralTokenExpiresAt > Date.now(), 'scadenza con margine di sicurezza');
+  assert.equal(state.rateLimitUntil, 0, 'un 200 azzera il cooldown');
+
+  _resetRateLimit();
+  window.PianoAssistant.setAvailability(false);
+  assert.equal(fab.classList.contains('hidden'), true, 'orb nascosto senza account');
+})()
+  .then(() => console.log('ASSISTANT SMOKE OK — UI montata senza microfono o rete; 429 in cooldown e token riusato'))
+  .catch(error => {
+    console.error(error);
+    process.exitCode = 1;
+  });
