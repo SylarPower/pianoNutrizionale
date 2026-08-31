@@ -85,12 +85,14 @@ const dbStub = {
   where: () => dbStub,
   orderBy: () => dbStub,
   limit: () => dbStub,
-  get: async () => ({ exists: false, forEach: () => {}, data: () => ({}) }),
+  get: async () => ({ exists: false, existsSync: false, forEach: () => {}, data: () => ({}) }),
   set: async () => {},
   add: async () => ({ id: 'price-entry-1' }),
   update: async () => {},
   delete: async () => {},
-  batch: () => ({ set: () => {}, delete: () => {}, commit: async () => {} }),
+  enablePersistence: async () => {},
+  onSnapshot: () => () => {},
+  batch: () => ({ set: () => {}, update: () => {}, delete: () => {}, commit: async () => {} }),
   runTransaction: async fn => fn({ get: async () => ({ exists: false, data: () => ({}) }), set: () => {}, delete: () => {} })
 };
 
@@ -105,15 +107,23 @@ global.firebase = {
   apps: [],
   initializeApp: () => {},
   appCheck: () => ({ activate: () => {} }),
-  firestore: () => dbStub,
+  // Lo stub espone sia il factory firestore() sia il namespace FieldValue,
+  // come fa l'SDK compat reale.
+  firestore: Object.assign(() => dbStub, {
+    FieldValue: {
+      serverTimestamp: () => {},
+      arrayUnion: (...values) => ({ _op: 'arrayUnion', values }),
+      arrayRemove: (...values) => ({ _op: 'arrayRemove', values })
+    }
+  }),
   auth: () => ({
     setPersistence: async () => {},
     signInWithEmailAndPassword: async () => ({}),
     signOut: async () => {},
-    onAuthStateChanged: () => {}
-  }),
-  firestore: { FieldValue: { serverTimestamp: () => ({}) } }
+    onAuthStateChanged: () => () => {}
+  })
 };
+global.firebase.auth.Auth = { Persistence: { LOCAL: 'local' } };
 
 for (const file of ['js/domain.js', 'js/data.js', 'js/prices.js', 'js/firebase.js', 'js/app.js']) {
   vm.runInThisContext(fs.readFileSync(path.join(ROOT, file), 'utf8'), { filename: file });

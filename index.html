@@ -100,10 +100,11 @@
     <a href="#prices" class="nav-item" id="nav-prices"><span class="nav-icon">🏷️</span><span class="nav-label">Prezzi</span></a>
   </nav>
 
-  <script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-app-compat.js"></script>
-  <script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-auth-compat.js"></script>
-  <script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-firestore-compat.js"></script>
-  <script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-app-check-compat.js"></script>
+  <!-- SDK Firebase modulare (ESM): i moduli sono importati dinamicamente da
+       js/firebase.js. L'SDK compat (firebase-*-compat.js) è deprecato e non
+       permette più di configurare la cache persistente multi-scheda senza
+       warning; con i moduli si usa initializeFirestore({ localCache }). -->
+  <link rel="preconnect" href="https://www.gstatic.com" crossorigin>
   <script src="https://unpkg.com/html5-qrcode@2.3.8/html5-qrcode.min.js" defer></script>
   <script src="js/domain.js"></script>
   <script src="js/data.js"></script>

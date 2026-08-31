@@ -7,10 +7,13 @@ const firebaseConfig = {
   appId: "1:117247692441:web:909efc3d3e6206fb95f208"
 };
 const APP_CHECK_SITE_KEY = "6LcFSYctAAAAACJOnCgeWhJFQWWXIwCus-5mtC1N";
+const FIREBASE_VERSION = "9.23.0";
+const FIREBASE_MODULE_BASE = `https://www.gstatic.com/firebasejs/${FIREBASE_VERSION}`;
 
 const INTERNAL_USERNAME_DOMAIN = "utenti.pianonutrizionale.app";
 let db = null;
 let auth = null;
+let fb = null;
 let currentUser = null;
 // Metadati dell'ultimo catalogo letto (es. etichette canoniche degli ingredienti).
 let catalogMeta = {};
@@ -20,42 +23,154 @@ let localDataOwner = null;
 let currentHousehold = null;
 const SHARED_CACHE_NAMES = new Set(["recipe_catalog", "weekly_plan", "shopping"]);
 
-function setLocalDataOwner(uid) { localDataOwner = uid || null; }
-function getCurrentHousehold() { return currentHousehold; }
-function clearDataScope() { currentHousehold = null; }
+// SDK modulare caricato in modo asincrono dai CDN ESM di Firebase. La
+// vecchia API compat (`firebase.firestore()`, `enablePersistence`,
+// `serverTimestamp`...) è deprecata e non consente più di configurare la
+// cache multi-scheda: con l'SDK modulare si usa `initializeFirestore` con
+// `localCache: persistentLocalCache(...)`, eliminando il warning
+// `enableMultiTabIndexedDbPersistence() will be deprecated`.
+let firebaseReady = null;
+let firebaseReadyResolve = null;
+firebaseReady = new Promise(resolve => { firebaseReadyResolve = resolve; });
+
+function hasCompatFirebase() {
+  return typeof window !== "undefined"
+    && window.firebase
+    && typeof window.firebase.apps !== "undefined"
+    && typeof window.firebase.firestore === "function";
+}
+
+async function loadFirebaseModules() {
+  const [appMod, authMod, firestoreMod, appCheckMod] = await Promise.all([
+    import(`${FIREBASE_MODULE_BASE}/firebase-app.js`),
+    import(`${FIREBASE_MODULE_BASE}/firebase-auth.js`),
+    import(`${FIREBASE_MODULE_BASE}/firebase-firestore.js`),
+    import(`${FIREBASE_MODULE_BASE}/firebase-app-check.js`)
+  ]);
+  return { appMod, authMod, firestoreMod, appCheckMod };
+}
+
+async function initializeFirebaseAsync() {
+  if (fb) return;
+  const { appMod, authMod, firestoreMod, appCheckMod } = await loadFirebaseModules();
+  fb = {
+    ...appMod,
+    ...authMod,
+    ...firestoreMod,
+    ...appCheckMod
+  };
+
+  const app = fb.initializeApp(firebaseConfig);
+
+  if (APP_CHECK_SITE_KEY && !APP_CHECK_SITE_KEY.startsWith("REPLACE_")) {
+    try {
+      // Equivale al vecchio compat `appCheck().activate(siteKey, true)`:
+      // il secondo parametro true = auto-refresh del token.
+      fb.initializeAppCheck(app, {
+        provider: new fb.ReCaptchaV3Provider(APP_CHECK_SITE_KEY),
+        isTokenAutoRefreshEnabled: true
+      });
+    } catch (error) {
+      console.warn("Firebase App Check non disponibile", error);
+    }
+  } else {
+    console.warn(
+      "Firebase App Check non configurato: inserire APP_CHECK_SITE_KEY in js/firebase.js."
+    );
+  }
+
+  // Cache offline persistente multi-scheda configurata via settings (API
+  // attuale): sostituisce il deprecato db.enablePersistence({synchronizeTabs}).
+  try {
+    db = fb.initializeFirestore(app, {
+      localCache: fb.persistentLocalCache({
+        tabManager: fb.persistentMultipleTabManager()
+      })
+    });
+  } catch (error) {
+    console.warn("Cache persistente Firestore non disponibile, uso la cache predefinita", error);
+    db = fb.getFirestore(app);
+  }
+
+  auth = fb.getAuth(app);
+  fb.setPersistence(auth, fb.browserLocalPersistence).catch(error => {
+    console.warn("Persistenza autenticazione non disponibile", error);
+  });
+}
+
+async function initializeCompatFirebase() {
+  // Percorso legacy per ambienti che espongono ancora l'SDK compat (negli
+  // smoke test viene iniettato uno stub). In produzione si usano i moduli ESM.
+  const compat = window.firebase;
+  if (!compat.apps.length) compat.initializeApp(firebaseConfig);
+
+  if (
+    typeof compat.appCheck === "function" &&
+    APP_CHECK_SITE_KEY &&
+    !APP_CHECK_SITE_KEY.startsWith("REPLACE_")
+  ) {
+    compat.appCheck().activate(APP_CHECK_SITE_KEY, true);
+  } else {
+    console.warn(
+      "Firebase App Check non configurato: inserire APP_CHECK_SITE_KEY in js/firebase.js."
+    );
+  }
+
+  db = compat.firestore();
+  auth = compat.auth();
+  auth.setPersistence(compat.auth.Auth.Persistence.LOCAL).catch(error => {
+    console.warn("Persistenza autenticazione non disponibile", error);
+  });
+  db.enablePersistence({ synchronizeTabs: true }).catch(error => {
+    if (error.code !== "failed-precondition" && error.code !== "unimplemented") {
+      console.warn("Cache offline Firestore non disponibile", error);
+    }
+  });
+}
 
 function initFirebase() {
   try {
-if (!firebase.apps.length) firebase.initializeApp(firebaseConfig);
-
-if (
-  typeof firebase.appCheck === "function" &&
-  APP_CHECK_SITE_KEY &&
-  !APP_CHECK_SITE_KEY.startsWith("REPLACE_")
-) {
-  firebase.appCheck().activate(APP_CHECK_SITE_KEY, true);
-} else {
-  console.warn(
-    "Firebase App Check non configurato: inserire APP_CHECK_SITE_KEY in js/firebase.js."
-  );
-}
-
-db = firebase.firestore();
-auth = firebase.auth();
-    auth.setPersistence(firebase.auth.Auth.Persistence.LOCAL).catch(error => {
-      console.warn("Persistenza autenticazione non disponibile", error);
-    });
-    db.enablePersistence({ synchronizeTabs: true }).catch(error => {
-      if (error.code !== "failed-precondition" && error.code !== "unimplemented") {
-        console.warn("Cache offline Firestore non disponibile", error);
-      }
-    });
+    if (hasCompatFirebase()) {
+      initializeCompatFirebase();
+      firebaseReadyResolve();
+    } else {
+      initializeFirebaseAsync()
+        .then(() => firebaseReadyResolve())
+        .catch(error => {
+          console.error("Errore inizializzazione Firebase", error);
+          firebaseReadyResolve();
+        });
+    }
     return true;
   } catch (error) {
     console.error("Errore inizializzazione Firebase", error);
     return false;
   }
 }
+
+async function ensureFirebaseReady() {
+  await firebaseReady;
+  if (!db || !auth) throw new Error("Servizio dati non disponibile");
+}
+
+function serverTimestamp() {
+  if (hasCompatFirebase()) return window.firebase.firestore.FieldValue.serverTimestamp();
+  return fb ? fb.serverTimestamp() : null;
+}
+
+function arrayUnion(...values) {
+  if (hasCompatFirebase()) return window.firebase.firestore.FieldValue.arrayUnion(...values);
+  return fb.arrayUnion(...values);
+}
+
+function arrayRemove(...values) {
+  if (hasCompatFirebase()) return window.firebase.firestore.FieldValue.arrayRemove(...values);
+  return fb.arrayRemove(...values);
+}
+
+function setLocalDataOwner(uid) { localDataOwner = uid || null; }
+function getCurrentHousehold() { return currentHousehold; }
+function clearDataScope() { currentHousehold = null; }
 
 function normalizeUsername(username) {
   return String(username || "").trim().toLowerCase();
@@ -86,18 +201,39 @@ async function signInWithUsername(username, password) {
     error.code = "auth/missing-password";
     throw error;
   }
-  return auth.signInWithEmailAndPassword(usernameToInternalEmail(normalized), password);
+  if (hasCompatFirebase()) {
+    return auth.signInWithEmailAndPassword(usernameToInternalEmail(normalized), password);
+  }
+  await ensureFirebaseReady();
+  return fb.signInWithEmailAndPassword(auth, usernameToInternalEmail(normalized), password);
 }
 
 async function signOutUser() {
-  if (auth) await auth.signOut();
+  if (!auth) return;
+  if (hasCompatFirebase()) {
+    await auth.signOut();
+  } else {
+    await ensureFirebaseReady();
+    await fb.signOut(auth);
+  }
 }
 
 function observeAuthState(callback) {
-  return auth.onAuthStateChanged(user => {
-    currentUser = user || null;
-    callback(currentUser);
-  });
+  if (hasCompatFirebase()) {
+    return auth.onAuthStateChanged(user => {
+      currentUser = user || null;
+      callback(currentUser);
+    });
+  }
+  let unsubscribe = () => {};
+  firebaseReady.then(async () => {
+    if (!auth) return;
+    unsubscribe = fb.onAuthStateChanged(auth, user => {
+      currentUser = user || null;
+      callback(currentUser);
+    });
+  }).catch(() => {});
+  return () => unsubscribe && unsubscribe();
 }
 
 function requireUser() {
@@ -105,49 +241,67 @@ function requireUser() {
   return currentUser;
 }
 
+// ----- Riferimenti Firestore (API modulare a documenti/collezioni) -----
+
 function userRoot() {
-  return db.collection("users").doc(requireUser().uid);
+  return docAt(`users/${requireUser().uid}`);
 }
 
 function householdRoot(householdId = currentHousehold?.id) {
   if (!householdId) throw new Error("Account condiviso non disponibile");
-  return db.collection("households").doc(householdId);
+  return docAt(`households/${householdId}`);
+}
+
+function personalContentDoc(name) {
+  return docAt(`users/${requireUser().uid}/content/${name}`);
+}
+
+function personalConfigDoc(name) {
+  return docAt(`users/${requireUser().uid}/config/${name}`);
+}
+
+function householdContentDoc(householdId, name) {
+  return docAt(`households/${householdId}/content/${name}`);
+}
+
+function householdConfigDoc(householdId, name) {
+  return docAt(`households/${householdId}/config/${name}`);
 }
 
 function personalRecipeCatalogRef() {
-  return userRoot().collection("content").doc("recipeCatalog");
+  return personalContentDoc("recipeCatalog");
 }
 
 function personalWeeklyPlanRef() {
-  return userRoot().collection("config").doc("weeklyPlan");
+  return personalConfigDoc("weeklyPlan");
 }
 
 function personalShoppingListRef() {
-  return userRoot().collection("config").doc("shoppingList");
+  return personalConfigDoc("shoppingList");
 }
 
 function recipeCatalogRef() {
   return currentHousehold
-    ? householdRoot().collection("content").doc("recipeCatalog")
+    ? householdContentDoc(currentHousehold.id, "recipeCatalog")
     : personalRecipeCatalogRef();
 }
 
 function weeklyPlanRef() {
   return currentHousehold
-    ? householdRoot().collection("config").doc("weeklyPlan")
+    ? householdConfigDoc(currentHousehold.id, "weeklyPlan")
     : personalWeeklyPlanRef();
 }
 
 function shoppingListRef() {
   return currentHousehold
-    ? householdRoot().collection("config").doc("shoppingList")
+    ? householdConfigDoc(currentHousehold.id, "shoppingList")
     : personalShoppingListRef();
 }
 
 function backupsRef() {
   // Il backup è sempre personale: in questo modo ogni membro può tornare al
   // proprio stato precedente senza condividere anche la cronologia di undo.
-  return userRoot().collection("backups").doc("previous");
+  return docAt(`users/${requireUser().uid}/backups/previous`);
 }
 
 function localKey(name) {
@@ -175,9 +329,122 @@ function writeLocalJson(name, value) {
   try { localStorage.setItem(localKey(name), JSON.stringify(value)); } catch (_) {}
 }
 
+function snapData(snapshot) {
+  return snapshot.data();
+}
+
+function snapExists(snapshot) {
+  // L'SDK compat espone `exists` come booleano, quello modulare come metodo.
+  return typeof snapshot.exists === "function" ? !!snapshot.exists() : !!snapshot.exists;
+}
+
+function snapForEach(snapshot, cb) {
+  snapshot.forEach(doc => cb(doc));
+}
+
+// ----- Builder di riferimenti, funzionanti sia con SDK compat sia modulare -----
+
+function docAt(path) {
+  if (hasCompatFirebase()) return db.doc(path);
+  return fb.doc(db, path);
+}
+
+function collectionAt(path) {
+  if (hasCompatFirebase()) return db.collection(path);
+  return fb.collection(db, path);
+}
+
+// Nuovo documento con id auto-generato dentro una collezione.
+function newDocIn(collectionRef) {
+  if (hasCompatFirebase()) return collectionRef.doc();
+  return fb.doc(collectionRef);
+}
+
+function docInCollection(collectionRef, id) {
+  if (hasCompatFirebase()) return collectionRef.doc(id);
+  return fb.doc(collectionRef, id);
+}
+
+async function getDoc(ref) {
+  if (hasCompatFirebase()) return ref.get();
+  await ensureFirebaseReady();
+  return fb.getDoc(ref);
+}
+
+function setDoc(ref, data, options = undefined) {
+  if (hasCompatFirebase()) return ref.set(data, options);
+  // L'SDK modulare usa { merge: true } come opzione di setDoc, stessa forma.
+  return ensureFirebaseReady().then(() => fb.setDoc(ref, data, options));
+}
+
+function updateDoc(ref, data) {
+  if (hasCompatFirebase()) return ref.update(data);
+  return ensureFirebaseReady().then(() => fb.updateDoc(ref, data));
+}
+
+function deleteDocRef(ref) {
+  if (hasCompatFirebase()) return ref.delete();
+  return ensureFirebaseReady().then(() => fb.deleteDoc(ref));
+}
+
+function addDocRef(collectionRef, data) {
+  if (hasCompatFirebase()) return collectionRef.add(data);
+  return ensureFirebaseReady().then(() => fb.addDoc(collectionRef, data));
+}
+
+function queryWhere(collectionRef, field, op, value) {
+  if (hasCompatFirebase()) return collectionRef.where(field, op, value);
+  return fb.query(collectionRef, fb.where(field, op, value));
+}
+
+function queryWhereIn(collectionRef, field, values) {
+  if (hasCompatFirebase()) return collectionRef.where(field, "in", values);
+  return fb.query(collectionRef, fb.where(field, "in", values));
+}
+
+function queryOrderByLimit(collectionRef, field, direction, limit) {
+  if (hasCompatFirebase()) return collectionRef.orderBy(field, direction).limit(limit);
+  return fb.query(collectionRef, fb.orderBy(field, direction), fb.limit(limit));
+}
+
+function queryLimit(collectionRef, limit) {
+  if (hasCompatFirebase()) return collectionRef.limit(limit);
+  return fb.query(collectionRef, fb.limit(limit));
+}
+
+function legacyRecipesQuery() {
+  return queryLimit(collectionAt(`users/${requireUser().uid}/recipes`), 100);
+}
+
+async function getDocsQuery(query) {
+  if (hasCompatFirebase()) return query.get();
+  await ensureFirebaseReady();
+  return fb.getDocs(query);
+}
+
+function onSnapshotRef(ref, onNext, onError) {
+  if (hasCompatFirebase()) return ref.onSnapshot(onNext, onError);
+  let unsubscribe = () => {};
+  firebaseReady.then(() => {
+    unsubscribe = fb.onSnapshot(ref, onNext, onError);
+  }).catch(onError || (() => {}));
+  return () => unsubscribe && unsubscribe();
+}
+
+function writeBatch() {
+  if (hasCompatFirebase()) return db.batch();
+  const batch = fb.writeBatch(db);
+  return {
+    set: (ref, data, options) => batch.set(ref, data, options),
+    update: (ref, data) => batch.update(ref, data),
+    delete: ref => batch.delete(ref),
+    commit: async () => { await ensureFirebaseReady(); return batch.commit(); }
+  };
+}
+
 function householdFromSnapshot(snapshot) {
   const households = [];
-  snapshot.forEach(doc => households.push({ id: doc.id, ...doc.data() }));
+  snapForEach(snapshot, doc => households.push({ id: doc.id, ...doc.data() }));
   if (!households.length) return null;
   // In condizioni normali un account appartiene a una sola household. Se una
   // vecchia operazione offline ne lascia più di una, manteniamo quella già in
@@ -193,24 +460,37 @@ function householdFromSnapshot(snapshot) {
 
 async function prepareDataScope() {
   const user = requireUser();
-  const snapshot = await db.collection("households")
-    .where("memberUids", "array-contains", user.uid)
-    .get();
+  const households = collectionAt("households");
+  const snapshot = await getDocsQuery(
+    queryWhere(households, "memberUids", "array-contains", user.uid)
+  );
   currentHousehold = householdFromSnapshot(snapshot);
   return currentHousehold;
 }
 
 function observeHouseholdChanges(callback, onError = null) {
   const user = requireUser();
-  return db.collection("households")
-    .where("memberUids", "array-contains", user.uid)
-    .onSnapshot(snapshot => {
-      currentHousehold = householdFromSnapshot(snapshot);
-      callback(currentHousehold);
-    }, error => {
-      console.warn("Sincronizzazione collegamento account non disponibile", error);
-      if (onError) onError(error);
-    });
+  const handleError = error => {
+    console.warn("Sincronizzazione collegamento account non disponibile", error);
+    if (onError) onError(error);
+  };
+  const onNext = snapshot => {
+    currentHousehold = householdFromSnapshot(snapshot);
+    callback(currentHousehold);
+  };
+  let unsubscribe = () => {};
+  const attach = () => {
+    const households = collectionAt("households");
+    const q = queryWhere(households, "memberUids", "array-contains", user.uid);
+    if (hasCompatFirebase()) {
+      unsubscribe = q.onSnapshot(onNext, handleError);
+    } else {
+      unsubscribe = fb.onSnapshot(q, onNext, handleError);
+    }
+  };
+  if (hasCompatFirebase()) attach();
+  else firebaseReady.then(attach).catch(handleError);
+  return () => unsubscribe && unsubscribe();
 }
 
 // Normalizza il campo itemOrder del documento spesa: mappa "nome categoria" ->
@@ -252,27 +532,32 @@ function observeSharedDataChanges(callback, onError = null) {
     console.warn("Sincronizzazione realtime non disponibile", error);
     if (onError) onError(error);
   };
-  const unsubscribers = [
-    recipeCatalogRef().onSnapshot(snapshot => {
-      if (!snapshot.exists) return;
-      const data = snapshot.data();
-      const recipes = Array.isArray(data.recipes) ? data.recipes : [];
-      catalogMeta = data;
-      writeLocalJson("recipe_catalog", recipes);
-      callback("recipes", recipes);
-    }, reportError),
-    weeklyPlanRef().onSnapshot(snapshot => {
-      if (!snapshot.exists) return;
-      const plan = snapshot.data();
-      writeLocalJson("weekly_plan", plan);
-      callback("plan", plan);
-    }, reportError),
-    shoppingListRef().onSnapshot(snapshot => {
-      const shopping = shoppingValueFromData(snapshot.exists ? snapshot.data() : {});
-      writeLocalJson("shopping", shopping);
-      callback("shopping", shopping);
-    }, reportError)
-  ];
+  const unsubscribers = [];
+  const setup = () => {
+    unsubscribers.push(
+      onSnapshotRef(recipeCatalogRef(), snapshot => {
+        if (!snapExists(snapshot)) return;
+        const data = snapData(snapshot);
+        const recipes = Array.isArray(data.recipes) ? data.recipes : [];
+        catalogMeta = data;
+        writeLocalJson("recipe_catalog", recipes);
+        callback("recipes", recipes);
+      }, reportError),
+      onSnapshotRef(weeklyPlanRef(), snapshot => {
+        if (!snapExists(snapshot)) return;
+        const plan = snapData(snapshot);
+        writeLocalJson("weekly_plan", plan);
+        callback("plan", plan);
+      }, reportError),
+      onSnapshotRef(shoppingListRef(), snapshot => {
+        const shopping = shoppingValueFromData(snapExists(snapshot) ? snapData(snapshot) : {});
+        writeLocalJson("shopping", shopping);
+        callback("shopping", shopping);
+      }, reportError)
+    );
+  };
+  if (hasCompatFirebase()) setup();
+  else firebaseReady.then(setup).catch(reportError);
   return () => unsubscribers.forEach(unsubscribe => unsubscribe?.());
 }
 
@@ -353,9 +638,9 @@ function validateImportedDataset(dataset) {
 
 async function getRecipeCatalog() {
   try {
-    const snapshot = await recipeCatalogRef().get();
-    if (snapshot.exists) {
-      const data = snapshot.data();
+    const snapshot = await getDoc(recipeCatalogRef());
+    if (snapExists(snapshot)) {
+      const data = snapData(snapshot);
       let recipes = Array.isArray(data.recipes) ? data.recipes : [];
       catalogMeta = data;
 
@@ -369,7 +654,7 @@ async function getRecipeCatalog() {
         writeLocalJson("recipe_catalog", recipes);
         await saveRecipeCatalog(recipes, {
           migratedFrom: Number(data.schemaVersion || 1),
-          migratedAt: firebase.firestore.FieldValue.serverTimestamp()
+          migratedAt: serverTimestamp()
         });
       } else {
         writeLocalJson("recipe_catalog", recipes);
@@ -388,9 +673,9 @@ async function getRecipeCatalog() {
 
     // Migrazione una tantum dalla vecchia sottocollezione recipes, se presente.
     // Dopo la migrazione gli avvii costano una sola lettura catalogo.
-    const legacySnapshot = await userRoot().collection("recipes").limit(100).get();
+    const legacySnapshot = await getDocsQuery(legacyRecipesQuery());
     const legacyRecipes = [];
-    legacySnapshot.forEach(doc => {
+    snapForEach(legacySnapshot, doc => {
       const data = doc.data();
       if (data?.id && data?.name) legacyRecipes.push(data);
     });
@@ -401,7 +686,7 @@ async function getRecipeCatalog() {
       writeLocalJson("recipe_catalog", migrated.recipes);
       await saveRecipeCatalog(migrated.recipes, {
         migratedFrom: "legacy-subcollection",
-        migratedAt: firebase.firestore.FieldValue.serverTimestamp()
+        migratedAt: serverTimestamp()
       });
       return migrated.recipes;
     }
@@ -431,20 +716,20 @@ async function saveRecipeCatalog(recipes, metadata = {}) {
   validateRecipeCatalog(recipes);
   const clean = cloneData(recipes);
   writeLocalJson("recipe_catalog", clean);
-  await recipeCatalogRef().set({
+  await setDoc(recipeCatalogRef(), {
     schemaVersion: CATALOG_SCHEMA_VERSION,
     recipes: clean,
     recipeCount: clean.length,
     ...metadata,
-    updatedAt: firebase.firestore.FieldValue.serverTimestamp()
+    updatedAt: serverTimestamp()
   });
 }
 
 async function getWeeklyPlan() {
   try {
-    const snapshot = await weeklyPlanRef().get();
-    if (!snapshot.exists) return readLocalJson("weekly_plan", createEmptyWeeklyPlan());
-    const plan = snapshot.data();
+    const snapshot = await getDoc(weeklyPlanRef());
+    if (!snapExists(snapshot)) return readLocalJson("weekly_plan", createEmptyWeeklyPlan());
+    const plan = snapData(snapshot);
 
     // Migrazione una tantum del piano: schema 4 + batchTemplates strutturati
     // derivati dalle vecchie batchRules. Salvata una sola volta.
@@ -453,7 +738,7 @@ async function getWeeklyPlan() {
     if (needsMigration && typeof PianoDomain !== "undefined") {
       const migrated = PianoDomain.migratePlan(plan);
       writeLocalJson("weekly_plan", migrated);
-      await weeklyPlanRef().set(migrated);
+      await setDoc(weeklyPlanRef(), migrated);
       return migrated;
     }
 
@@ -470,14 +755,14 @@ async function getWeeklyPlan() {
 async function saveWeeklyPlan(plan) {
   const clean = cloneData(plan);
   writeLocalJson("weekly_plan", clean);
-  await weeklyPlanRef().set(clean);
+  await setDoc(weeklyPlanRef(), clean);
 }
 
 async function getShoppingListCloud() {
   const defaults = getDefaultShoppingList();
   try {
-    const snapshot = await shoppingListRef().get();
-    const value = shoppingValueFromData(snapshot.exists ? snapshot.data() : {});
+    const snapshot = await getDoc(shoppingListRef());
+    const value = shoppingValueFromData(snapExists(snapshot) ? snapData(snapshot) : {});
     writeLocalJson("shopping", value);
     return value;
   } catch (error) {
@@ -495,7 +780,7 @@ function saveShoppingListLocal(value) {
 
 async function saveShoppingListCloud(value) {
   const clean = saveShoppingListLocal(value);
-  await shoppingListRef().set(clean);
+  await setDoc(shoppingListRef(), clean);
 }
 
 // ---- Backup precedente (users/{uid}/backups/previous) ----
@@ -518,22 +803,22 @@ async function saveBackup(catalog, plan, shopping, operation, description) {
     createdByUid: user.uid,
     createdAt: new Date().toISOString()
   };
-  await backupsRef().set({
+  await setDoc(backupsRef(), {
     ...snapshot,
-    createdAtServer: firebase.firestore.FieldValue.serverTimestamp()
+    createdAtServer: serverTimestamp()
   });
   return snapshot;
 }
 
 async function getBackup() {
   requireUser();
-  const snapshot = await backupsRef().get();
-  return snapshot.exists ? snapshot.data() : null;
+  const snapshot = await getDoc(backupsRef());
+  return snapExists(snapshot) ? snapData(snapshot) : null;
 }
 
 async function deleteBackup() {
   requireUser();
-  await backupsRef().delete();
+  await deleteDocRef(backupsRef());
 }
 
 // Ripristino atomico: legge il backup, ripristina catalogo/piano/spesa e
@@ -543,9 +828,9 @@ async function deleteBackup() {
 // dati condivisi degli altri membri.
 async function restoreBackupAtomic() {
   const user = requireUser();
-  const backupDoc = await backupsRef().get();
-  if (!backupDoc.exists) throw new Error("Non esiste un backup da ripristinare");
-  const backup = backupDoc.data();
+  const backupDoc = await getDoc(backupsRef());
+  if (!snapExists(backupDoc)) throw new Error("Non esiste un backup da ripristinare");
+  const backup = snapData(backupDoc);
   const recipes = Array.isArray(backup?.catalog) ? backup.catalog : backup?.catalog?.recipes;
   if (!Array.isArray(recipes) || !backup?.plan) throw new Error("Il backup non è valido");
   backup.catalog = { schemaVersion: CATALOG_SCHEMA_VERSION, recipes };
@@ -562,21 +847,21 @@ async function restoreBackupAtomic() {
     ? personalShoppingListRef()
     : shoppingListRef();
 
-  const batch = db.batch();
+  const batch = writeBatch();
   batch.set(targetCatalogRef, {
     schemaVersion: CATALOG_SCHEMA_VERSION,
     recipes: cloneData(recipes),
     recipeCount: recipes.length,
-    restoredAt: firebase.firestore.FieldValue.serverTimestamp(),
-    updatedAt: firebase.firestore.FieldValue.serverTimestamp()
+    restoredAt: serverTimestamp(),
+    updatedAt: serverTimestamp()
   });
   batch.set(targetPlanRef, cloneData(backup.plan));
   batch.set(targetShoppingRef, cloneData(backup.shoppingList || getDefaultShoppingList()));
   if (leaveHousehold) {
     batch.update(householdRoot(currentHousehold.id), {
-      memberUids: firebase.firestore.FieldValue.arrayRemove(user.uid),
-      memberUsernames: firebase.firestore.FieldValue.arrayRemove(usernameFromUser(user)),
-      updatedAt: firebase.firestore.FieldValue.serverTimestamp()
+      memberUids: arrayRemove(user.uid),
+      memberUsernames: arrayRemove(usernameFromUser(user)),
+      updatedAt: serverTimestamp()
     });
   }
   batch.delete(backupsRef());
@@ -596,13 +881,13 @@ async function importUserDataset(dataset) {
   const recipes = cloneData(dataset.recipes);
   const plan = cloneData(dataset.plan);
   const shopping = getDefaultShoppingList();
-  const batch = db.batch();
+  const batch = writeBatch();
   batch.set(recipeCatalogRef(), {
     schemaVersion: Number(dataset.schemaVersion || CATALOG_SCHEMA_VERSION),
     recipes,
     recipeCount: recipes.length,
-    importedAt: firebase.firestore.FieldValue.serverTimestamp(),
-    updatedAt: firebase.firestore.FieldValue.serverTimestamp()
+    importedAt: serverTimestamp(),
+    updatedAt: serverTimestamp()
   });
   if (plan) batch.set(weeklyPlanRef(), plan);
   batch.set(shoppingListRef(), shopping);
@@ -614,7 +899,7 @@ async function importUserDataset(dataset) {
 }
 
 function usernameDirectoryRef(username) {
-  return db.collection("usernames").doc(normalizeUsername(username));
+  return docAt(`usernames/${normalizeUsername(username)}`);
 }
 
 async function ensureUsernameDirectory() {
@@ -624,16 +909,16 @@ async function ensureUsernameDirectory() {
   try {
     if (localStorage.getItem(marker) === "1") return;
   } catch (_) {}
-  await usernameDirectoryRef(username).set({ uid: user.uid, username });
+  await setDoc(usernameDirectoryRef(username), { uid: user.uid, username });
   try { localStorage.setItem(marker, "1"); } catch (_) {}
 }
 
 async function findUserByUsername(username) {
   const normalized = normalizeUsername(username);
   if (!isValidUsername(normalized)) throw new Error("Username destinatario non valido");
-  const snapshot = await usernameDirectoryRef(normalized).get();
-  if (!snapshot.exists) throw new Error("Utente non trovato. Deve aver aperto almeno una volta l'ultima versione dell'app.");
-  return snapshot.data();
+  const snapshot = await getDoc(usernameDirectoryRef(normalized));
+  if (!snapExists(snapshot)) throw new Error("Utente non trovato. Deve aver aperto almeno una volta l'ultima versione dell'app.");
+  return snapData(snapshot);
 }
 
 async function sendRecipeShare(recipientUsername, recipes, plan = null) {
@@ -644,12 +929,13 @@ async function sendRecipeShare(recipientUsername, recipes, plan = null) {
   const recipient = await findUserByUsername(recipientUsername);
   if (recipient.uid === currentUser.uid) throw new Error("Non puoi inviare ricette al tuo stesso account");
   const senderUsername = usernameFromUser(currentUser);
-  const shareRef = db.collection("recipeShares").doc();
+  if (!hasCompatFirebase()) await ensureFirebaseReady();
+  const shareRef = newDocIn(collectionAt("recipeShares"));
   const includesPlan = Boolean(plan && plan.days);
   const normalizedPlan = includesPlan && typeof PianoDomain !== "undefined"
     ? PianoDomain.migratePlan(cloneData(plan))
     : null;
-  await shareRef.set({
+  await setDoc(shareRef, {
     senderUid: currentUser.uid,
     senderUsername,
     recipientUid: recipient.uid,
@@ -659,9 +945,16 @@ async function sendRecipeShare(recipientUsername, recipes, plan = null) {
     recipes: cloneData(recipes),
     includesPlan,
     plan: normalizedPlan,
-    createdAt: firebase.firestore.FieldValue.serverTimestamp()
+    createdAt: serverTimestamp()
   });
   return shareRef.id;
+}
+
+async function getIncomingRequestsSnapshot() {
+  const user = requireUser();
+  await ensureUsernameDirectory();
+  const shares = collectionAt("recipeShares");
+  return getDocsQuery(queryWhere(shares, "recipientUid", "==", user.uid));
 }
 
 // Query unica sulla casella delle richieste in arrivo: i documenti vengono
@@ -671,14 +964,10 @@ async function sendRecipeShare(recipientUsername, recipes, plan = null) {
 // per i collegamenti e tutto il resto per le ricette. Il filtro su status/type
 // resta in JavaScript: un secondo `where` richiederebbe un indice composito.
 async function getPendingIncomingRequests() {
-  const user = requireUser();
-  await ensureUsernameDirectory();
-  const snapshot = await db.collection("recipeShares")
-    .where("recipientUid", "==", user.uid)
-    .get();
+  const snapshot = await getIncomingRequestsSnapshot();
   const recipeShares = [];
   const accountLinks = [];
-  snapshot.forEach(doc => {
+  snapForEach(snapshot, doc => {
     const data = doc.data();
     if (data.status !== "pending") return;
     (data.type === "accountLink" ? accountLinks : recipeShares).push({ id: doc.id, ...data });
@@ -695,20 +984,21 @@ async function getPendingRecipeShares() {
 }
 
 async function rejectRecipeShare(shareId) {
-  await db.collection("recipeShares").doc(shareId).delete();
+  await deleteDocRef(docAt(`recipeShares/${shareId}`));
 }
 
 async function acceptRecipeShare(shareId, recipes, plan = null) {
   validateRecipeCatalog(recipes);
-  const batch = db.batch();
+  const batch = writeBatch();
   batch.set(recipeCatalogRef(), {
     schemaVersion: CATALOG_SCHEMA_VERSION,
     recipes: cloneData(recipes),
     recipeCount: recipes.length,
-    updatedAt: firebase.firestore.FieldValue.serverTimestamp()
+    updatedAt: serverTimestamp()
   });
   if (plan) batch.set(weeklyPlanRef(), cloneData(plan));
-  batch.delete(db.collection("recipeShares").doc(shareId));
+  if (!hasCompatFirebase()) await ensureFirebaseReady();
+  batch.delete(docAt(`recipeShares/${shareId}`));
   await batch.commit();
   writeLocalJson("recipe_catalog", recipes);
   if (plan) writeLocalJson("weekly_plan", plan);
@@ -740,8 +1030,9 @@ async function sendAccountLink(recipientUsername, recipes, plan, shoppingList) {
   const sourceMemberUsernames = currentHousehold?.memberUsernames?.length
     ? [...currentHousehold.memberUsernames]
     : [senderUsername];
-  const shareRef = db.collection("recipeShares").doc();
-  await shareRef.set({
+  if (!hasCompatFirebase()) await ensureFirebaseReady();
+  const shareRef = newDocIn(collectionAt("recipeShares"));
+  await setDoc(shareRef, {
     type: "accountLink",
     senderUid: user.uid,
     senderUsername,
@@ -756,7 +1047,7 @@ async function sendAccountLink(recipientUsername, recipes, plan, shoppingList) {
     includesPlan: true,
     plan: dataset.plan,
     shoppingList: dataset.shoppingList,
-    createdAt: firebase.firestore.FieldValue.serverTimestamp()
+    createdAt: serverTimestamp()
   });
   return shareRef.id;
 }
@@ -770,10 +1061,11 @@ async function acceptAccountLink(shareId, base, recipientRecipes, recipientPlan,
   const user = requireUser();
   if (!["sender", "recipient"].includes(base)) throw new Error("Scegli quale settimana usare come base");
   const recipientDataset = accountLinkDataset(recipientRecipes, recipientPlan, recipientShopping);
-  const shareRef = db.collection("recipeShares").doc(shareId);
-  const shareSnapshot = await shareRef.get();
-  if (!shareSnapshot.exists) throw new Error("La richiesta non è più disponibile");
-  const share = shareSnapshot.data();
+  if (!hasCompatFirebase()) await ensureFirebaseReady();
+  const shareRef = docAt(`recipeShares/${shareId}`);
+  const shareSnapshot = await getDoc(shareRef);
+  if (!snapExists(shareSnapshot)) throw new Error("La richiesta non è più disponibile");
+  const share = snapData(shareSnapshot);
   if (share.type !== "accountLink" || share.status !== "pending" || share.recipientUid !== user.uid) {
     throw new Error("Richiesta di collegamento non valida");
   }
@@ -800,26 +1092,29 @@ async function acceptAccountLink(shareId, base, recipientRecipes, recipientPlan,
     throw new Error("Scollega prima il tuo account dal gruppo attuale");
   }
 
-  const householdRef = householdRoot(targetId);
-  const batch = db.batch();
+  const hhRoot = householdRoot(targetId);
+  const hhContentRef = name => householdContentDoc(targetId, name);
+  const hhConfigRef = name => householdConfigDoc(targetId, name);
+
+  const batch = writeBatch();
   if (share.sourceHouseholdId) {
     // Il destinatario non può leggere la household prima dell'accettazione;
     // arrayUnion consente un'aggiunta atomica verificata dalle Security Rules.
-    batch.update(householdRef, {
-      memberUids: firebase.firestore.FieldValue.arrayUnion(user.uid),
-      memberUsernames: firebase.firestore.FieldValue.arrayUnion(usernameFromUser(user)),
+    batch.update(hhRoot, {
+      memberUids: arrayUnion(user.uid),
+      memberUsernames: arrayUnion(usernameFromUser(user)),
       lastLinkRequestId: shareId,
-      updatedAt: firebase.firestore.FieldValue.serverTimestamp()
+      updatedAt: serverTimestamp()
     });
   } else {
-    batch.set(householdRef, {
+    batch.set(hhRoot, {
       ownerUid: share.senderUid,
       memberUids: [share.senderUid, user.uid],
       memberUsernames: [share.senderUsername, usernameFromUser(user)],
       createdFromLinkRequest: shareId,
       lastLinkRequestId: shareId,
-      createdAt: firebase.firestore.FieldValue.serverTimestamp(),
-      updatedAt: firebase.firestore.FieldValue.serverTimestamp()
+      createdAt: serverTimestamp(),
+      updatedAt: serverTimestamp()
     });
   }
 
@@ -827,9 +1122,9 @@ async function acceptAccountLink(shareId, base, recipientRecipes, recipientPlan,
   // nello stesso batch prima di entrare nel nuovo gruppo.
   if (oldHousehold && oldHousehold.id !== targetId) {
     batch.update(householdRoot(oldHousehold.id), {
-      memberUids: firebase.firestore.FieldValue.arrayRemove(user.uid),
-      memberUsernames: firebase.firestore.FieldValue.arrayRemove(usernameFromUser(user)),
-      updatedAt: firebase.firestore.FieldValue.serverTimestamp()
+      memberUids: arrayRemove(user.uid),
+      memberUsernames: arrayRemove(usernameFromUser(user)),
+      updatedAt: serverTimestamp()
     });
   }
 
@@ -839,14 +1134,14 @@ async function acceptAccountLink(shareId, base, recipientRecipes, recipientPlan,
   // household già esistente, ci si fidava del contenuto corrente: se il
   // documento condiviso era vuoto o mancante, entrambi i membri finivano a
   // leggere un catalogo vuoto e le ricette "sparivano" senza errori.
-  batch.set(householdRef.collection("content").doc("recipeCatalog"), {
+  batch.set(hhContentRef("recipeCatalog"), {
     schemaVersion: CATALOG_SCHEMA_VERSION,
     recipes: chosen.recipes,
     recipeCount: chosen.recipes.length,
-    updatedAt: firebase.firestore.FieldValue.serverTimestamp()
+    updatedAt: serverTimestamp()
   });
-  batch.set(householdRef.collection("config").doc("weeklyPlan"), chosen.plan);
-  batch.set(householdRef.collection("config").doc("shoppingList"), chosen.shoppingList);
+  batch.set(hhConfigRef("weeklyPlan"), chosen.plan);
+  batch.set(hhConfigRef("shoppingList"), chosen.shoppingList);
   batch.delete(shareRef);
   await batch.commit();
 
@@ -871,22 +1166,22 @@ async function unlinkCurrentAccount(recipes, plan, shoppingList) {
   if (!currentHousehold) throw new Error("Nessun account collegato");
   const dataset = accountLinkDataset(recipes, plan, shoppingList);
   const household = currentHousehold;
-  const batch = db.batch();
+  const batch = writeBatch();
 
   // Ogni persona riparte da una copia completa dello stato condiviso corrente.
   batch.set(personalRecipeCatalogRef(), {
     schemaVersion: CATALOG_SCHEMA_VERSION,
     recipes: dataset.recipes,
     recipeCount: dataset.recipes.length,
-    detachedAt: firebase.firestore.FieldValue.serverTimestamp(),
-    updatedAt: firebase.firestore.FieldValue.serverTimestamp()
+    detachedAt: serverTimestamp(),
+    updatedAt: serverTimestamp()
   });
   batch.set(personalWeeklyPlanRef(), dataset.plan);
   batch.set(personalShoppingListRef(), dataset.shoppingList);
   batch.update(householdRoot(household.id), {
-    memberUids: firebase.firestore.FieldValue.arrayRemove(user.uid),
-    memberUsernames: firebase.firestore.FieldValue.arrayRemove(usernameFromUser(user)),
-    updatedAt: firebase.firestore.FieldValue.serverTimestamp()
+    memberUids: arrayRemove(user.uid),
+    memberUsernames: arrayRemove(usernameFromUser(user)),
+    updatedAt: serverTimestamp()
   });
   await batch.commit();
 
@@ -904,11 +1199,11 @@ async function unlinkCurrentAccount(recipes, plan, shoppingList) {
 // i suggerimenti condivisi. Aggiornata con arrayUnion solo quando serve.
 
 function priceEntriesRef() {
-  return db.collection("priceEntries");
+  return collectionAt("priceEntries");
 }
 
 function priceMetaRef() {
-  return db.collection("priceMeta").doc("global");
+  return docAt("priceMeta/global");
 }
 
 function defaultPriceMeta() {
@@ -927,8 +1222,8 @@ function sanitizePriceMeta(data = {}) {
 async function getPriceMeta() {
   const fallback = defaultPriceMeta();
   try {
-    const snapshot = await priceMetaRef().get();
-    const meta = sanitizePriceMeta(snapshot.exists ? snapshot.data() : fallback);
+    const snapshot = await getDoc(priceMetaRef());
+    const meta = sanitizePriceMeta(snapExists(snapshot) ? snapData(snapshot) : fallback);
     writeLocalJson("price_meta", meta);
     return meta;
   } catch (error) {
@@ -966,11 +1261,11 @@ async function mergePriceMetaFromEntries(entries) {
   meta.brands.sort((a, b) => a.localeCompare(b, "it"));
   writeLocalJson("price_meta", meta);
   if (!additions.stores.length && !additions.products.length && !additions.brands.length) return false;
-  await priceMetaRef().set({
-    stores: firebase.firestore.FieldValue.arrayUnion(...additions.stores),
-    products: firebase.firestore.FieldValue.arrayUnion(...additions.products),
-    brands: firebase.firestore.FieldValue.arrayUnion(...additions.brands),
-    updatedAt: firebase.firestore.FieldValue.serverTimestamp()
+  await setDoc(priceMetaRef(), {
+    stores: arrayUnion(...additions.stores),
+    products: arrayUnion(...additions.products),
+    brands: arrayUnion(...additions.brands),
+    updatedAt: serverTimestamp()
   }, { merge: true });
   return true;
 }
@@ -979,7 +1274,7 @@ function priceEntryPayload(entry) {
   return {
     ...cloneData(entry),
     createdAtMs: entry.createdAtMs || Date.now(),
-    createdAt: firebase.firestore.FieldValue.serverTimestamp()
+    createdAt: serverTimestamp()
   };
 }
 
@@ -989,7 +1284,7 @@ function priceEntryFromDoc(doc) {
 
 async function savePriceEntry(entry) {
   requireUser();
-  const ref = await priceEntriesRef().add(priceEntryPayload(entry));
+  const ref = await addDocRef(priceEntriesRef(), priceEntryPayload(entry));
   await mergePriceMetaFromEntries(entry).catch(error => console.warn("Rubrica prezzi non aggiornata", error));
   return ref.id;
 }
@@ -998,25 +1293,27 @@ async function savePriceEntry(entry) {
 // voci + al massimo una scrittura della rubrica (vedi savePriceImport).
 async function updatePriceEntry(entryId, entry) {
   requireUser();
-  await priceEntriesRef().doc(entryId).update({
+  await updateDoc(docInCollection(priceEntriesRef(), entryId), {
     ...cloneData(entry),
-    updatedAt: firebase.firestore.FieldValue.serverTimestamp()
+    updatedAt: serverTimestamp()
   });
   await mergePriceMetaFromEntries(entry).catch(error => console.warn("Rubrica prezzi non aggiornata", error));
 }
 
 async function deletePriceEntry(entryId) {
   requireUser();
-  await priceEntriesRef().doc(entryId).delete();
+  await deleteDocRef(docInCollection(priceEntriesRef(), entryId));
 }
 
 // Tutte le voci registrate per un prodotto (chiave normalizzata): una sola
 // query senza indici compositi, l'ordinamento avviene lato client.
 async function getPriceEntriesForProduct(productKey) {
   requireUser();
-  const snapshot = await priceEntriesRef().where("productKey", "==", productKey).get();
+  const snapshot = await getDocsQuery(
+    queryWhere(priceEntriesRef(), "productKey", "==", productKey)
+  );
   const entries = [];
-  snapshot.forEach(doc => entries.push(priceEntryFromDoc(doc)));
+  snapForEach(snapshot, doc => entries.push(priceEntryFromDoc(doc)));
   return PriceDomain.sortEntriesDesc(entries);
 }
 
@@ -1024,9 +1321,11 @@ async function getPriceEntriesForProduct(productKey) {
 // coperto dagli indici automatici di Firestore.
 async function getRecentPriceEntries(limit = 150) {
   requireUser();
-  const snapshot = await priceEntriesRef().orderBy("createdAt", "desc").limit(limit).get();
+  const snapshot = await getDocsQuery(
+    queryOrderByLimit(priceEntriesRef(), "createdAt", "desc", limit)
+  );
   const entries = [];
-  snapshot.forEach(doc => entries.push(priceEntryFromDoc(doc)));
+  snapForEach(snapshot, doc => entries.push(priceEntryFromDoc(doc)));
   return PriceDomain.sortEntriesDesc(entries);
 }
 
@@ -1041,8 +1340,8 @@ async function savePriceImport(entries, meta = {}) {
   const known = new Set();
   for (let start = 0; start < legacyIds.length; start += 30) {
     const chunk = legacyIds.slice(start, start + 30);
-    const snapshot = await priceEntriesRef().where("legacyId", "in", chunk).get();
-    snapshot.forEach(doc => {
+    const snapshot = await getDocsQuery(queryWhereIn(priceEntriesRef(), "legacyId", chunk));
+    snapForEach(snapshot, doc => {
       const data = doc.data();
       if (Number.isFinite(Number(data?.legacyId))) known.add(`${data.legacyId}|${data.productKey || ""}`);
     });
@@ -1053,11 +1352,15 @@ async function savePriceImport(entries, meta = {}) {
     createdBy: meta.uid || requireUser().uid,
     createdByUsername: meta.username || usernameFromUser(currentUser)
   };
+  const compat = hasCompatFirebase();
+  if (!compat) await ensureFirebaseReady();
   const CHUNK_SIZE = 450;
   for (let start = 0; start < fresh.length; start += CHUNK_SIZE) {
-    const batch = db.batch();
+    const batch = writeBatch();
     fresh.slice(start, start + CHUNK_SIZE).forEach(entry => {
-      batch.set(priceEntriesRef().doc(), priceEntryPayload({ ...entry, ...author }));
+      // Un nuovo riferimento documento con id auto-generato: con l'API
+      // modulare `doc(collection)` senza id crea l'id client-side.
+      batch.set(newDocIn(priceEntriesRef()), priceEntryPayload({ ...entry, ...author }));
     });
     await batch.commit();
   }
@@ -1071,8 +1374,10 @@ async function savePriceImport(entries, meta = {}) {
 // sul campo storeKey, coperta dagli indici automatici.
 async function getPriceEntriesForStore(storeKey) {
   requireUser();
-  const snapshot = await priceEntriesRef().where("storeKey", "==", storeKey).get();
+  const snapshot = await getDocsQuery(
+    queryWhere(priceEntriesRef(), "storeKey", "==", storeKey)
+  );
   const entries = [];
-  snapshot.forEach(doc => entries.push(priceEntryFromDoc(doc)));
+  snapForEach(snapshot, doc => entries.push(priceEntryFromDoc(doc)));
   return PriceDomain.sortEntriesDesc(entries);
 }

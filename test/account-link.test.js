@@ -39,6 +39,7 @@ function makeDocRef(docPath) {
 function makeQuery(colPath) {
   return {
     where: () => makeQuery(colPath),
+    orderBy: () => makeQuery(colPath),
     limit: () => makeQuery(colPath),
     get: async () => ({
       _logged: ops.push({ type: 'query', path: colPath }),
@@ -58,12 +59,16 @@ function makeCollectionRef(colPath) {
   return {
     doc: id => makeDocRef(`${colPath}/${id || `auto-${Math.random().toString(36).slice(2)}`}`),
     where: () => makeQuery(colPath),
+    orderBy: () => makeQuery(colPath),
     limit: () => makeQuery(colPath)
   };
 }
 
 const dbStub = {
   collection: name => makeCollectionRef(name),
+  // L'SDK Firestore espone anche doc(pathString) / collection(pathString)
+  // con percorso completo a slash: serve ai builder di riferimenti.
+  doc: pathString => makeDocRef(pathString),
   batch: () => {
     const pending = [];
     return {
