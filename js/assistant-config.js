@@ -7,7 +7,7 @@
 window.PIANO_AI_CONFIG = Object.freeze({
   // Dopo il deploy del Worker inserisci qui il suo URL /token, per esempio:
   // https://piano-nutrizionale-ai.<account>.workers.dev/token
-  tokenEndpoint: "https://piano-nutrizionale-ai.predator-gabri92.workers.dev/token",
+  tokenEndpoint: "https://piano-nutrizionale-ai.sylarpower.workers.dev/token",
   // Modello Live verificato/configurabile dal Worker. Non è una chiave segreta.
   model: "gemini-3.1-flash-live-preview",
   language: "it-IT",
