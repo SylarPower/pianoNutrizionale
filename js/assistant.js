@@ -1034,6 +1034,8 @@
     ui.messages = panel.querySelector('#assistant-messages');
     ui.error = panel.querySelector('#assistant-error');
     ui.close = panel.querySelector('#assistant-close');
+    ui.form = panel.querySelector('#assistant-text-form');
+    ui.input = panel.querySelector('#assistant-text-input');
     ui.close.addEventListener('click', () => closeAssistant('manual'));
     ui.form.addEventListener('submit', event => {
       event.preventDefault();

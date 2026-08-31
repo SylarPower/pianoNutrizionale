@@ -5,7 +5,7 @@
  * (sottocartella /pianoNutrizionale/).
  */
 // IMPORTANTE: incrementare CACHE_VERSION a OGNI modifica di CSS, JS o index.html.
-const CACHE_VERSION = 35;
+const CACHE_VERSION = 36;
 const CACHE = `piano-nutrizionale-shell-v${CACHE_VERSION}`;
 const SHELL = [
   './',
@@ -25,15 +25,18 @@ const SHELL = [
   './icons/icon-512.svg'
 ];
 
-// SDK Firebase compat servito da CDN: file statici immutabili (l'URL contiene
-// la versione), quindi cache-first. Senza questa cache, offline con la cache
-// HTTP scaduta l'app non riusciva nemmeno a inizializzarsi.
+// SDK Firebase modulare servito da CDN: file statici immutabili (l'URL
+// contiene la versione), quindi cache-first. I moduli ESM importano a loro
+// volta i chunk interni (firebase-app internals), ma tutti risiedono sotto
+// lo stesso prefisso e vengono messi in cache al primo fetch riuscito.
+// Senza questa cache, offline con la cache HTTP scaduta l'app non riusciva
+// nemmeno a inizializzarsi.
 const FIREBASE_SDK_PREFIX = 'https://www.gstatic.com/firebasejs/';
 const FIREBASE_SDK = [
-  'https://www.gstatic.com/firebasejs/9.23.0/firebase-app-compat.js',
-  'https://www.gstatic.com/firebasejs/9.23.0/firebase-auth-compat.js',
-  'https://www.gstatic.com/firebasejs/9.23.0/firebase-firestore-compat.js',
-  'https://www.gstatic.com/firebasejs/9.23.0/firebase-app-check-compat.js'
+  'https://www.gstatic.com/firebasejs/9.23.0/firebase-app.js',
+  'https://www.gstatic.com/firebasejs/9.23.0/firebase-auth.js',
+  'https://www.gstatic.com/firebasejs/9.23.0/firebase-firestore.js',
+  'https://www.gstatic.com/firebasejs/9.23.0/firebase-app-check.js'
 ];
 
 // Lettore barcode per la sezione Prezzi: URL versionato e immutabile come

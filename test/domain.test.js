@@ -1348,7 +1348,12 @@ test('index.html: banner aggiorna ora senza loop di refresh', () => {
   assert.match(index, /sw-update/);
   assert.match(index, /SKIP_WAITING/);
   assert.match(index, /js\/domain\.js/);
-  assert.match(index, /firebase-app-check-compat\.js/);
+  // L'SDK Firebase modulare (ESM) è importato da js/firebase.js; l'HTML non
+  // deve più caricare i bundle compat deprecati.
+  const firebaseJs = fs.readFileSync(path.join(ROOT, 'js/firebase.js'), 'utf8');
+  assert.match(firebaseJs, /firebase-app-check\.js/);
+  assert.doesNotMatch(index, /firebase-[\w-]+-compat\.js/);
+  assert.doesNotMatch(index, /enablePersistence/);
   // reload() compare una sola volta, dentro il click di "Aggiorna ora".
   assert.equal((index.match(/location\.reload/g) || []).length, 1);
 });
