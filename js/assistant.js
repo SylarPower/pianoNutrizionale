@@ -499,15 +499,6 @@
     return true;
   }
 
-  function sendText(text) {
-    const clean = String(text || '').trim();
-    if (!clean) return false;
-    addMessage('user', clean);
-    state.currentInput = '';
-    renderLiveTranscript('');
-    return send({ realtimeInput: { text: clean } });
-  }
-
   function base64FromBytes(bytes) {
     let binary = '';
     const chunk = 0x8000;
@@ -663,40 +654,10 @@
     return links ? `<div class="assistant-sources"><span>Fonti</span><ul>${links}</ul></div>` : '';
   }
 
-  function renderMessages() {
-    if (!ui.messages) return;
-    ui.messages.innerHTML = state.messages.slice(-12).map(item => `
-      <div class="assistant-message ${item.role === 'user' ? 'from-user' : 'from-assistant'}">
-        <span class="assistant-message-author">${item.role === 'user' ? 'Tu' : 'Piano'}</span>
-        <p>${escape(item.text)}</p>
-        ${renderSources(item.sources)}
-      </div>`).join('');
-    ui.messages.scrollTop = ui.messages.scrollHeight;
-  }
-
   function addMessage(role, text) {
     const clean = String(text || '').trim();
     if (!clean) return;
     state.messages.push({ role, text: clean });
-    renderMessages();
-  }
-
-  function appendOutput(text) {
-    const clean = String(text || '');
-    if (!clean) return;
-    state.currentOutput = mergeTranscript(state.currentOutput, clean);
-    const previous = state.messages[state.messages.length - 1];
-    if (previous?.role === 'assistant' && previous.live) {
-      previous.text = state.currentOutput;
-    } else {
-      state.messages.push({
-        role: 'assistant',
-        text: state.currentOutput,
-        live: true,
-        sources: state.pendingSources.splice(0)
-      });
-    }
-    renderMessages();
   }
 
   function appendSources(metadata) {
@@ -711,7 +672,6 @@
     const target = !state.currentInput && latest?.role === 'assistant' ? latest : null;
     if (target) target.sources = [...new Map([...(target.sources || []), ...unique].map(source => [source.url, source])).values()].slice(0, 6);
     else state.pendingSources = [...new Map([...(state.pendingSources || []), ...unique].map(source => [source.url, source])).values()].slice(0, 6);
-    renderMessages();
   }
 
   function finishOutput() {
@@ -719,7 +679,6 @@
     if (previous?.live) delete previous.live;
     state.currentOutput = '';
     state.currentOutputNode = null;
-    renderMessages();
   }
 
   function renderLiveTranscript(text) {
@@ -822,9 +781,7 @@
       if (state.currentOutput) finishOutput();
     }
     if (content.groundingMetadata) appendSources(content.groundingMetadata);
-    if (content.inputTranscription?.text) handleInputTranscript(content.inputTranscription.text);
-    if (content.interimInputTranscription?.text) handleInputTranscript(content.interimInputTranscription.text);
-    if (content.outputTranscription?.text) appendOutput(content.outputTranscription.text);
+
     if (content.modelTurn?.parts) {
       content.modelTurn.parts.forEach(part => {
         if (part.inlineData?.data) playAudio(part.inlineData.data);
@@ -854,8 +811,6 @@
           }
         },
         systemInstruction: { parts: [{ text: systemInstruction() }] },
-        inputAudioTranscription: { languageCodes: [cfg.language || 'it-IT'] },
-        outputAudioTranscription: { languageCodes: [cfg.language || 'it-IT'] },
         sessionResumption: state.sessionHandle ? { handle: state.sessionHandle } : {},
         contextWindowCompression: { slidingWindow: {} },
         tools: [
@@ -1022,7 +977,6 @@
     ui.panel?.classList.remove('hidden');
     ui.fab?.classList.add('is-active');
     clearError();
-    renderMessages();
     if (!hasLiveEndpoint()) {
       setStatus('setup', 'Configura il Worker');
       showError('Per attivare Gemini Live devi inserire l’URL del Worker Cloudflare in js/assistant-config.js. La guida è disponibile in docs/AI_ASSISTANT.md.');
@@ -1079,8 +1033,6 @@
     ui.liveTranscript = panel.querySelector('#assistant-live-transcript');
     ui.messages = panel.querySelector('#assistant-messages');
     ui.error = panel.querySelector('#assistant-error');
-    ui.form = panel.querySelector('#assistant-text-form');
-    ui.input = panel.querySelector('#assistant-text-input');
     ui.close = panel.querySelector('#assistant-close');
     ui.close.addEventListener('click', () => closeAssistant('manual'));
     ui.form.addEventListener('submit', event => {
