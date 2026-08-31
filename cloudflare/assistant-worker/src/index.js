@@ -166,14 +166,11 @@ async function createEphemeralToken(env) {
     uses: 1,
     expireTime: expiresAt,
     newSessionExpireTime,
-    liveConnectConstraints: {
+    fieldMask: "model,generationConfig.responseModalities",
+    bidiGenerateContentSetup: {
       model: `models/${model}`,
-      config: {
-        responseModalities: ['AUDIO'],
-        inputAudioTranscription: {},
-        outputAudioTranscription: {},
-        sessionResumption: {},
-        contextWindowCompression: { slidingWindow: {} }
+      generationConfig: {
+        responseModalities: ["AUDIO"]
       }
     }
   };
