@@ -50,6 +50,13 @@
     // Modello a cui appartiene il token in uso: il setup WebSocket deve
     // dichiarare lo stesso modello del token, altrimenti Gemini rifiuta.
     activeModel: '',
+    // Dopo un rifiuto del modello principale (1011 quota / 1008 ritirato) la
+    // sessione riparte direttamente dal modello di riserva, senza ripetere
+    // il tentativo fallito a ogni riconnessione.
+    preferFallback: false,
+    // Vero mentre il chiamante sta per tentare un altro modello: la chiusura
+    // della WebSocket non deve mostrare errori né avviare riconnessioni.
+    pendingFallback: false,
     // Dopo un 429 del Worker ci si ferma fino a questo timestamp invece di
     // ritentare subito in loop e restare bloccati.
     rateLimitUntil: 0,
@@ -678,8 +685,56 @@
     const clean = String(text || '').trim();
     if (!clean) return;
     state.messages.push({ role, text: clean });
+    renderMessages();
   }
 
+  function messageHtml(message) {
+    const role = message.role === 'user' ? 'user' : 'assistant';
+    const author = role === 'user' ? 'Tu' : 'Piano';
+    const text = escape(message.text || '');
+    const cursor = message.live ? ' <span class="assistant-live-cursor">▍</span>' : '';
+    const sources = renderSources(message.sources);
+    return `<div class="assistant-message from-${role}"><span class="assistant-message-author">${author}</span><p>${text}${cursor}</p>${sources}</div>`;
+  }
+
+  // La cronologia della sessione è breve (solo la conversazione corrente):
+  // si ridisegna tutta a ogni variazione per tenere testo, fonti e "live"
+  // sempre allineati.
+  function renderMessages() {
+    if (!ui.messages) return;
+    ui.messages.innerHTML = state.messages.map(messageHtml).join('');
+    ui.messages.scrollTop = ui.messages.scrollHeight;
+  }
+
+  // Aggiunge il testo della risposta del modello, in streaming: aggiorna
+  // l'ultima bolla dell'assistente invece di crearne una per frammento.
+  function appendOutput(text) {
+    const clean = String(text || '').trim();
+    if (!clean) return;
+    const latest = state.messages[state.messages.length - 1];
+    if (latest?.role === 'assistant') {
+      latest.text = mergeTranscript(latest.text, clean);
+      latest.live = true;
+    } else {
+      state.messages.push({ role: 'assistant', text: clean, live: true });
+    }
+    state.currentOutput = state.messages[state.messages.length - 1].text;
+    renderMessages();
+  }
+
+  // Invia al modello un testo digitato (o una domanda rapida) e lo mostra
+  // come bolla dell'utente.
+  function sendText(text) {
+    const clean = String(text || '').trim();
+    if (!clean) return;
+    if (!state.active || !state.ws || state.ws.readyState !== WebSocket.OPEN) {
+      showError('Attendi la connessione vocale per scrivere all’assistente.');
+      return;
+    }
+    addMessage('user', clean);
+    send({ realtimeInput: { text: clean } });
+  }
+  
   function appendSources(metadata) {
     const chunks = Array.isArray(metadata?.groundingChunks) ? metadata.groundingChunks : [];
     const sources = chunks.map(chunk => ({
@@ -699,6 +754,7 @@
     if (previous?.live) delete previous.live;
     state.currentOutput = '';
     state.currentOutputNode = null;
+    renderMessages();
   }
 
   function renderLiveTranscript(text) {
@@ -801,7 +857,17 @@
       if (state.currentOutput) finishOutput();
     }
     if (content.groundingMetadata) appendSources(content.groundingMetadata);
-
+    if (content.inputTranscription?.text) {
+      // Trascrizione del parlato dell'utente: aggiorna il testo live e
+      // consente i comandi vocali di chiusura.
+      handleInputTranscript(content.inputTranscription.text);
+    }
+    if (content.outputTranscription?.text) {
+      // Alcuni modelli inviano la trascrizione della risposta qui invece
+      // che come part.testo: va trattata allo stesso modo.
+      appendOutput(content.outputTranscription.text);
+    }
+    
     if (content.modelTurn?.parts) {
       content.modelTurn.parts.forEach(part => {
         if (part.inlineData?.data) playAudio(part.inlineData.data);
@@ -809,6 +875,13 @@
       });
     }
     if (content.turnComplete) {
+      // La frase pronunciata (o digitata) diventa una bolla dell'utente,
+      // senza duplicarla se è già stata aggiunta dal testo digitato.
+      if (state.currentInput) {
+        const lastMessage = state.messages[state.messages.length - 1];
+        const duplicate = lastMessage?.role === 'user' && normalized(lastMessage.text) === normalized(state.currentInput);
+        if (!duplicate) addMessage('user', state.currentInput);
+      }
       state.currentInput = '';
       renderLiveTranscript('');
       finishOutput();
@@ -975,7 +1048,13 @@
       // Il Worker comunica anche quanto aspettare via Retry-After.
       throw new RateLimitError(retryAfterMs(response.headers.get('Retry-After')));
     }
-    if (!response.ok) throw new Error(body?.error || `Worker AI non raggiungibile (${response.status}).`);
+    if (!response.ok) {
+      // Lo status viaggia con l'errore: il chiamante può decidere se vale la
+      // pena ritentare con il modello di riserva (502/500 = provider).
+      const error = new Error(body?.error || `Worker AI non raggiungibile (${response.status}).`);
+      error.workerStatus = response.status;
+      throw error;
+    }
     const token = body?.token || body?.name || body?.accessToken;
     if (!token) throw new Error('Il Worker non ha restituito un token Gemini valido.');
     const issuedModel = normalizedModelName(body?.model) || model;
@@ -1022,7 +1101,8 @@
     return !code || code === 1006 || code === 1012 || code === 1013;
   }
 
-  async function openSocket(token) {
+  async function openSocket(model, token) {
+    state.activeModel = model;
     const endpoint = `${LIVE_ENDPOINT}?access_token=${encodeURIComponent(token)}`;
     await new Promise((resolve, reject) => {
       const socket = new WebSocket(endpoint);
@@ -1031,10 +1111,19 @@
       const settle = fn => arg => {
         if (settled) return;
         settled = true;
+        clearTimeout(setupTimeout);
         fn(arg);
       };
       const fail = settle(reject);
       const done = settle(resolve);
+      // Se Gemini non conferma il setup entro 20s la sessione non partirà:
+      // si chiude il socket invece di restare su "Mi collego…" all'infinito.
+      const setupTimeout = setTimeout(() => {
+        try { socket.close(); } catch (_) {}
+        const error = new Error('Gemini non ha completato la configurazione della sessione vocale in tempo. Riprova.');
+        error.timeout = true;
+        fail(error);
+      }, 20000);
       socket.onopen = () => {
         socket.send(JSON.stringify(setupMessage()));
       };
@@ -1071,7 +1160,9 @@
           state.active = false;
           state.connecting = false;
           stopCapture();
-          if (state.userClosed || !state.open) return;
+          // Durante il tentativo di fallback è il chiamante a proseguire con
+          // il modello successivo: niente errori né riconnessioni in parallelo.
+          if (state.userClosed || !state.open || state.pendingFallback) return;
           if (document.hidden) { setStatus('paused', 'In pausa'); return; }
           // Errore definitivo (config/modello/token): niente loop di retry.
           // Si invalidano anche i token in cache perché potrebbero essere
@@ -1087,24 +1178,47 @@
     });
   }
 
-  // Apre la sessione con il modello principale; se Gemini lo rifiuta per
-  // quota (1011) o perché il modello non esiste più (1008), riprova una sola
-  // volta con il modello di riserva (native-audio gratuito). Gli errori di
-  // rete non attivano il fallback: si ritenta sullo stesso modello.
-  async function openSocketWithFallback() {
-    const token = await fetchEphemeralToken();
-    try {
-      await openSocket(token);
-    } catch (error) {
-      if (!shouldTryFallbackModel(error)) throw error;
-      const fallback = fallbackModelName();
-      console.info(`Gemini Live: modello principale non disponibile (${error.closeCode}), provo il modello di riserva ${fallback}.`);
-      // Il token e l'eventuale handle di sessione appartengono all'altro
-      // modello: non sono riutilizzabili per la sessione di riserva.
-      state.sessionHandle = null;
-      const fallbackToken = await fetchEphemeralToken(fallback);
-      await openSocket(fallbackToken);
+  // Apre la sessione provando i modelli in ordine: primario, poi di riserva.
+  // Vale sia per la prima apertura sia per le riconnessioni. Si passa al
+  // modello successivo per i rifiuti noti: 1011 (quota), 1008 (modello
+  // ritirato), 502/500 del provider sull'emissione del token o timeout del
+  // setup. Gli errori di rete e di autenticazione NON attivano il fallback.
+  // Il primo successo viene ricordato (preferFallback) così le riconnessioni
+  // non ripetono il tentativo fallito.
+  async function openLiveWithFallback() {
+    const primary = primaryModelName();
+    const fallback = fallbackModelName();
+    const models = fallback && fallback !== primary
+      ? (state.preferFallback ? [fallback, primary] : [primary, fallback])
+      : [primary];
+    let lastError = null;
+    for (let index = 0; index < models.length; index += 1) {
+      const model = models[index];
+      const hasNext = index < models.length - 1;
+      try {
+        state.pendingFallback = hasNext;
+        const token = await fetchEphemeralToken(model);
+        // Il modello reale è quello del token emesso dal Worker: i Worker
+        // recenti emettono token non vincolati, ma si dichiara comunque il
+        // modello che il Worker ha effettivamente scelto.
+        await openSocket(state.activeModel, token);
+        state.pendingFallback = false;
+        state.preferFallback = isFallbackModel(state.activeModel);
+        return;
+      } catch (error) {
+        state.pendingFallback = false;
+        lastError = error;
+        if (!hasNext) throw error;
+        // 429 del Worker: cooldown, non si tenta il modello di riserva.
+        if (error?.rateLimited) throw error;
+        const providerFailure = error?.workerStatus === 502 || error?.workerStatus === 500;
+        if (!shouldTryFallbackModel(error) && !providerFailure && !error?.timeout) throw error;
+        console.info(`Gemini Live: ${model} non disponibile, provo il modello di riserva ${models[index + 1]}.`);
+        // L'eventuale handle di sessione appartiene all'altro modello.
+        state.sessionHandle = null;
+      }
     }
+    throw lastError;
   }
 
   function scheduleReconnect() {
@@ -1144,7 +1258,7 @@
     try {
       await setupAudioContexts();
       await ensureMicrophoneStream();
-      await openSocketWithFallback();
+      await openLiveWithFallback();
     } catch (error) {
       state.connecting = false;
       stopCapture();
@@ -1194,6 +1308,7 @@
     state.currentInput = '';
     state.currentOutput = '';
     state.sessionHandle = null;
+    renderMessages();
     ui.panel?.classList.add('hidden');
     ui.fab?.classList.remove('is-active');
     ui.fab?.setAttribute('aria-label', 'Apri assistente vocale');
@@ -1211,6 +1326,7 @@
     state.currentInput = '';
     state.currentOutput = '';
     state.sessionHandle = null;
+    renderMessages();
     ui.panel?.classList.remove('hidden');
     ui.fab?.classList.add('is-active');
     clearError();
@@ -1342,8 +1458,10 @@
     getCookingStatus: () => formatCurrentCooking(),
     executeTool,
     _state: state,
-    // Hook per gli smoke test: permette di simulare token/429 senza rete.
+    // Hook per gli smoke test: permette di simulare token/429 e la sequenza
+    // di modelli (fallback) senza rete né microfono.
     _fetchEphemeralToken: fetchEphemeralToken,
+    _openLiveWithFallback: openLiveWithFallback,
     _resetRateLimit: () => { state.rateLimitUntil = 0; clearCachedTokens(); }
   };
 
