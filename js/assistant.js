@@ -12,6 +12,11 @@
   const config = root.PIANO_AI_CONFIG || {};
   const LIVE_ENDPOINT = 'wss://generativelanguage.googleapis.com/ws/google.ai.generativelanguage.v1beta.GenerativeService.BidiGenerateContentConstrained';
   const DEFAULT_MODEL = 'gemini-3.1-flash-live-preview';
+  // Modello di riserva: il principale (3.1) può essere rifiutato da Google per
+  // quota gratuita esaurita (1011) o perché ritirato (1008). Il native-audio
+  // 2.5 è ancora attivo e disponibile sul free tier; accetta anche
+  // speechConfig con voce predefinita (es. Aoede).
+  const DEFAULT_FALLBACK_MODEL = 'gemini-2.5-flash-native-audio-preview-12-2025';
 
   const state = {
     available: false,
@@ -38,6 +43,13 @@
     // altrimenti si brucia la quota gratuita del Worker (429).
     ephemeralToken: null,
     ephemeralTokenExpiresAt: 0,
+    // Cache separata per il modello di riserva: i token sono vincolati al
+    // modello per cui sono stati emessi e non sono intercambiabili.
+    fallbackToken: null,
+    fallbackTokenExpiresAt: 0,
+    // Modello a cui appartiene il token in uso: il setup WebSocket deve
+    // dichiarare lo stesso modello del token, altrimenti Gemini rifiuta.
+    activeModel: '',
     // Dopo un 429 del Worker ci si ferma fino a questo timestamp invece di
     // ritentare subito in loop e restare bloccati.
     rateLimitUntil: 0,
@@ -806,7 +818,9 @@
 
   function setupMessage() {
     const cfg = getConfig();
-    const model = String(cfg.model || DEFAULT_MODEL).replace(/^models\//, '');
+    // Il modello deve coincidere con quello del token effimero in uso
+    // (primario oppure di riserva), non con la configurazione statica.
+    const model = normalizedModelName(state.activeModel) || normalizedModelName(cfg.model) || DEFAULT_MODEL;
     const setup = {
       setup: {
         model: `models/${model}`,
@@ -852,6 +866,56 @@
     return null;
   }
 
+  function normalizedModelName(value) {
+    return String(value || '').replace(/^models\//, '').trim();
+  }
+
+  function primaryModelName() {
+    return normalizedModelName(getConfig().model) || DEFAULT_MODEL;
+  }
+
+  // Modello di riserva attivo per default; si disattiva con fallbackModel: ""
+  // in js/assistant-config.js.
+  function fallbackModelName() {
+    const cfg = getConfig();
+    const value = cfg.fallbackModel === undefined ? DEFAULT_FALLBACK_MODEL : cfg.fallbackModel;
+    return normalizedModelName(value);
+  }
+
+  function isFallbackModel(model) {
+    return Boolean(model && model !== primaryModelName());
+  }
+
+  function cachedTokenFor(model) {
+    const fallback = isFallbackModel(model);
+    const token = fallback ? state.fallbackToken : state.ephemeralToken;
+    const expiresAt = fallback ? state.fallbackTokenExpiresAt : state.ephemeralTokenExpiresAt;
+    return token && Date.now() < expiresAt ? token : null;
+  }
+
+  function cacheTokenFor(model, token, expiresAt) {
+    if (isFallbackModel(model)) {
+      state.fallbackToken = token;
+      state.fallbackTokenExpiresAt = expiresAt;
+    } else {
+      state.ephemeralToken = token;
+      state.ephemeralTokenExpiresAt = expiresAt;
+    }
+  }
+
+  function clearCachedTokens() {
+    state.ephemeralToken = null;
+    state.fallbackToken = null;
+  }
+
+  // Il fallback ha senso solo per i rifiuti noti del modello: 1011 (quota/
+  // fatturazione) e 1008 (modello non trovato o non supportato). Gli errori
+  // di rete (1006) vanno riprovati sullo stesso modello, non su un altro.
+  function shouldTryFallbackModel(error) {
+    if (!error?.closeCode) return false;
+    return (error.closeCode === 1011 || error.closeCode === 1008) && Boolean(fallbackModelName());
+  }
+
   function retryAfterMs(headerValue) {
     if (!headerValue) return 0;
     const seconds = Number(String(headerValue).trim());
@@ -873,28 +937,37 @@
       // Si imposta lo stato prima di super(): rateLimitedErrorMessage()
       // legge già la scadenza per calcolare i minuti di attesa.
       state.rateLimitUntil = Date.now() + Math.max(retryMs, 60 * 1000);
-      state.ephemeralToken = null;
+      clearCachedTokens();
       super(rateLimitedErrorMessage());
       this.name = 'RateLimitError';
       this.rateLimited = true;
     }
   }
 
-  async function fetchEphemeralToken() {
+  async function fetchEphemeralToken(requestedModel = '') {
     // Cooldown da 429 ancora attivo: non si chiama nemmeno il Worker.
     if (state.rateLimitUntil > Date.now()) throw new RateLimitError(0);
 
-    // Token ancora valido: lo si riusa invece di chiederne un altro.
-    const cached = validEphemeralToken();
-    if (cached) return cached;
+    const model = normalizedModelName(requestedModel) || primaryModelName();
+
+    // Token ancora valido per QUESTO modello: lo si riusa invece di
+    // chiederne un altro (una sola emissione per modello e per sessione).
+    const cached = cachedTokenFor(model);
+    if (cached) {
+      state.activeModel = model;
+      return cached;
+    }
 
     const endpoint = String(getConfig().tokenEndpoint || '').trim();
     if (!endpoint) throw new Error('Assistente non ancora configurato: inserisci l’URL del Worker Cloudflare in js/assistant-config.js.');
     const idToken = await getIdToken();
     const response = await fetch(endpoint, {
       method: 'POST',
-      headers: { Authorization: `Bearer ${idToken}`, Accept: 'application/json' },
-      credentials: 'omit'
+      headers: { Authorization: `Bearer ${idToken}`, Accept: 'application/json', 'Content-Type': 'application/json' },
+      credentials: 'omit',
+      // Il Worker emette il token vincolato al modello richiesto. Emette
+      // comunque il modello configurato se questo non è tra quelli consentiti.
+      body: JSON.stringify({ model })
     });
     let body = null;
     try { body = await response.json(); } catch (_) {}
@@ -905,24 +978,32 @@
     if (!response.ok) throw new Error(body?.error || `Worker AI non raggiungibile (${response.status}).`);
     const token = body?.token || body?.name || body?.accessToken;
     if (!token) throw new Error('Il Worker non ha restituito un token Gemini valido.');
-    state.ephemeralToken = token;
+    const issuedModel = normalizedModelName(body?.model) || model;
+    state.activeModel = issuedModel;
     state.tokenExpiresAt = body.expiresAt || null;
     state.rateLimitUntil = 0;
     // Margine di sicurezza di 60s sulla scadenza indicata dal Worker.
     const expiresMs = Date.parse(body.expiresAt || '') || (Date.now() + 29 * 60 * 1000);
-    state.ephemeralTokenExpiresAt = Math.max(Date.now() + 60 * 1000, expiresMs - 60 * 1000);
+    cacheTokenFor(issuedModel, token, Math.max(Date.now() + 60 * 1000, expiresMs - 60 * 1000));
     return token;
   }
 
   function describeClose(event) {
     const code = event?.code || 0;
     const reason = event?.reason ? String(event.reason) : '';
-        if (/quota|billing|rate ?limit|429/i.test(reason)) {
-      return 'Quota Gemini esaurita o fatturazione non attiva per la chiave API del Worker. ' +
-        'Controlla quota e fatturazione della chiave Gemini su Google AI Studio / Google Cloud, oppure riprova dopo l’azzeramento della quota.';
+    if (/quota|billing|rate ?limit|429/i.test(reason)) {
+      return 'La quota gratuita di Gemini Live per questo modello è esaurita oppure la fatturazione della chiave non è attiva. ' +
+        'La quota si azzera da sola (verifica su aistudio.google.com/rate-limit) e nessuna fatturazione è richiesta: riprova più tardi.';
     }
     if (reason) return `Gemini ha chiuso la connessione (${code}): ${reason}`;
-    if (code === 1008 || code === 1003) {
+    if (code === 1008) {
+      return 'Il modello Live configurato non esiste più o non è supportato: è stato ritirato da Google. ' +
+        'Aggiorna il modello nel Worker (variabile GEMINI_LIVE_MODEL) con un modello Live ancora disponibile.';
+    }
+    if (code === 1011) {
+      return 'Gemini ha interrotto la sessione con un errore interno (1011): di solito indica quota gratuita esaurita o un problema temporaneo lato Google. Riprova più tardi.';
+    }
+    if (code === 1003) {
       return 'Gemini ha rifiutato la configurazione della sessione vocale. ' +
         'Verifica che il modello Live e la chiave Gemini nel Worker siano corretti e attivi.';
     }
@@ -974,9 +1055,14 @@
         fail(new Error('Connessione Gemini Live non riuscita (rete o endpoint).'));
       };
       socket.onclose = event => {
-                const retryable = isRetryableClose(event?.code, event?.reason);
+        const retryable = isRetryableClose(event?.code, event?.reason);
         if (!state.setupReady) {
-          fail(new Error(describeClose(event)));
+          // Codice e motivo della chiusura viaggiano con l'errore: servono a
+          // connectLive per decidere se tentare il modello di riserva.
+          const error = new Error(describeClose(event));
+          error.closeCode = event?.code || 0;
+          error.closeReason = String(event?.reason || '');
+          fail(error);
         }
         if (state.ws === socket) {
           const wasActive = state.active;
@@ -988,10 +1074,10 @@
           if (state.userClosed || !state.open) return;
           if (document.hidden) { setStatus('paused', 'In pausa'); return; }
           // Errore definitivo (config/modello/token): niente loop di retry.
-          // Si invalida anche il token in cache perché potrebbe essere il
-          // responsabile del rifiuto.
+          // Si invalidano anche i token in cache perché potrebbero essere
+          // i responsabili del rifiuto.
           if (!retryable && !wasActive) {
-            state.ephemeralToken = null;
+            clearCachedTokens();
             showError(describeClose(event));
             return;
           }
@@ -1001,12 +1087,32 @@
     });
   }
 
+  // Apre la sessione con il modello principale; se Gemini lo rifiuta per
+  // quota (1011) o perché il modello non esiste più (1008), riprova una sola
+  // volta con il modello di riserva (native-audio gratuito). Gli errori di
+  // rete non attivano il fallback: si ritenta sullo stesso modello.
+  async function openSocketWithFallback() {
+    const token = await fetchEphemeralToken();
+    try {
+      await openSocket(token);
+    } catch (error) {
+      if (!shouldTryFallbackModel(error)) throw error;
+      const fallback = fallbackModelName();
+      console.info(`Gemini Live: modello principale non disponibile (${error.closeCode}), provo il modello di riserva ${fallback}.`);
+      // Il token e l'eventuale handle di sessione appartengono all'altro
+      // modello: non sono riutilizzabili per la sessione di riserva.
+      state.sessionHandle = null;
+      const fallbackToken = await fetchEphemeralToken(fallback);
+      await openSocket(fallbackToken);
+    }
+  }
+
   function scheduleReconnect() {
     if (state.reconnectTimer || state.userClosed || !state.open) return;
     // Con un 429 in corso non ha senso riconnettersi: si attende la scadenza.
     if (state.rateLimitUntil > Date.now()) return;
     if (state.reconnectAttempts >= 3) {
-      state.ephemeralToken = null;
+      clearCachedTokens();
       showError('La connessione vocale non si è stabilita. Chiudi e riapri l’assistente per riprovare.');
       return;
     }
@@ -1038,8 +1144,7 @@
     try {
       await setupAudioContexts();
       await ensureMicrophoneStream();
-      const token = await fetchEphemeralToken();
-      await openSocket(token);
+      await openSocketWithFallback();
     } catch (error) {
       state.connecting = false;
       stopCapture();
@@ -1239,7 +1344,7 @@
     _state: state,
     // Hook per gli smoke test: permette di simulare token/429 senza rete.
     _fetchEphemeralToken: fetchEphemeralToken,
-    _resetRateLimit: () => { state.rateLimitUntil = 0; state.ephemeralToken = null; }
+    _resetRateLimit: () => { state.rateLimitUntil = 0; clearCachedTokens(); }
   };
 
   document.addEventListener('visibilitychange', handleVisibility);

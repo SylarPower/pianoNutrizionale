@@ -10,6 +10,11 @@ window.PIANO_AI_CONFIG = Object.freeze({
   tokenEndpoint: "https://piano-nutrizionale-ai.sylarpower.workers.dev/token",
   // Modello Live verificato/configurabile dal Worker. Non è una chiave segreta.
   model: "gemini-3.1-flash-live-preview",
+  // Modello di riserva: se Gemini rifiuta il principale (1011 quota gratuita
+  // esaurita oppure 1008 modello ritirato), l'assistente riprova da solo con
+  // questo modello, ancora disponibile sul free tier. Il Worker deve
+  // esporlo in GEMINI_LIVE_FALLBACK_MODEL. Con "" il fallback è disattivato.
+  fallbackModel: "gemini-2.5-flash-native-audio-preview-12-2025",
   language: "it-IT",
   voiceName: "Aoede",
   sessionMinutes: 30,

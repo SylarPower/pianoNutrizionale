@@ -7,6 +7,9 @@ compatibility_date = "2026-08-30"
 [vars]
 FIREBASE_PROJECT_ID = "piano-nutrizionale"
 GEMINI_LIVE_MODEL = "gemini-3.1-flash-live-preview"
+# Modello di riserva che il client può richiedere quando il principale viene
+# rifiutato (quota gratuita esaurita o modello ritirato). Facoltativo.
+GEMINI_LIVE_FALLBACK_MODEL = "gemini-2.5-flash-native-audio-preview-12-2025"
 # Origini senza slash finale, separate da virgola.
 # Aggiungi il tuo dominio personale se lo userai.
 ALLOWED_ORIGINS = "https://sylarpower.github.io,https://piano-nutrizionale.web.app,http://localhost:8000,http://127.0.0.1:8000"

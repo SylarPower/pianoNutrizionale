@@ -33,7 +33,9 @@ Nessuna delle due quote è illimitata. L'app non configura pagamenti automatici 
 3. Non copiarla in `index.html`, `js/assistant.js`, `js/assistant-config.js` o in Git.
 4. Tienila pronta per il comando `wrangler secret put` del passaggio successivo.
 
-Il modello Live è configurato come `gemini-3.1-flash-live-preview`. Se Google lo sostituisce o il progetto non lo espone, modifica `GEMINI_LIVE_MODEL` in `wrangler.toml` usando un modello Live audio disponibile nel tuo account.
+Il modello Live principale è configurato come `gemini-3.1-flash-live-preview`. Se Google lo rifiuta con **1011** (quota gratuita esaurita) o **1008** (modello ritirato), l'app passa da sola al modello di riserva `gemini-2.5-flash-native-audio-preview-12-2025` (vedi sotto), anch'esso sul free tier e con la stessa voce configurata.
+
+> Nota: `gemini-2.0-flash-live-001` è stato **spento da Google il 9 dicembre 2025** e oggi risponde `1008 ... is not found`: non usarlo come modello. Se cambierai modello in futuro, usa sempre un modello Live ancora disponibile nel tuo account (elenco in AI Studio o su <https://ai.google.dev/gemini-api/docs/deprecations>).
 
 ### 2. Crea e pubblica il Worker
 
@@ -51,6 +53,7 @@ Questo è il percorso da usare se non vuoi usare il terminale. Non servono Pages
    | --- | --- | --- |
    | Text | `FIREBASE_PROJECT_ID` | `piano-nutrizionale` |
    | Text | `GEMINI_LIVE_MODEL` | `gemini-3.1-flash-live-preview` |
+   | Text | `GEMINI_LIVE_FALLBACK_MODEL` | `gemini-2.5-flash-native-audio-preview-12-2025` |
    | Text | `ALLOWED_ORIGINS` | `https://sylarpower.github.io,http://localhost:8000,http://127.0.0.1:8000,https://piano-nutrizionale.web.app` |
    | **Secret** | `GEMINI_API_KEY` | la chiave Gemini, incollata nel campo segreto |
 
@@ -99,6 +102,8 @@ Apri `js/assistant-config.js` e valorizza solo l'URL pubblico del Worker:
 window.PIANO_AI_CONFIG = Object.freeze({
   tokenEndpoint: "https://piano-nutrizionale-ai.<account>.workers.dev/token",
   model: "gemini-3.1-flash-live-preview",
+  // Modello usato in automatico se il principale viene rifiutato (1011/1008).
+  fallbackModel: "gemini-2.5-flash-native-audio-preview-12-2025",
   language: "it-IT",
   voiceName: "Aoede",
   sessionMinutes: 30,
@@ -163,7 +168,7 @@ npx serve . -l 8000
 
 - il Worker accetta solo richieste POST su `/token` da origini configurate;
 - verifica il Firebase ID token prima di chiedere un token Gemini;
-- applica un limite best-effort di sei emissioni per utente ogni quindici minuti per isolate;
+- applica un limite best-effort di trenta emissioni per utente ogni quindici minuti per isolate (il client riusa il token già emesso, una sola emissione per modello e per sessione);
 - il token Gemini è limitato a una sessione e ha durata breve;
 - l'app non salva audio, trascrizioni o cronologia in Firestore;
 - il contesto inviato al modello è quello necessario per la richiesta;
@@ -187,5 +192,8 @@ Controlla che `GEMINI_API_KEY` sia stato caricato con `npx wrangler secret put G
 ### Il microfono non parte
 Concedi il permesso al sito, usa Chrome/Edge/Safari aggiornato, verifica HTTPS e assicurati che nessun'altra app stia usando il microfono. Con cuffie o auricolari l'interruzione della voce è più pulita.
 
+### Gemini chiude con 1011 (quota) o 1008 (modello non trovato)
+L'app tenta da sola il modello di riserva configurato: se il principale viene rifiutato con 1011 (quota gratuita esaurita o fatturazione non attiva) o 1008 (modello ritirato da Google), la sessione riparte automaticamente sul modello `fallbackModel` di `js/assistant-config.js` (il Worker lo emette solo se presente tra `GEMINI_LIVE_MODEL` e `GEMINI_LIVE_FALLBACK_MODEL`). La voce configurata (es. `Aoede`) resta la stessa. Se anche il modello di riserva viene rifiutato, compare l'errore con il motivo: niente loop di riconnessione.
+
 ### Quota gratuita esaurita
-La webapp non effettua acquisti automatici. Riprova quando la quota si rinnova oppure sostituisci il provider/modello seguendo una futura integrazione di fallback.
+La webapp non effettua acquisti automatici. La quota del free tier Gemini si azzera da sola: verifica uso e limiti del progetto su <https://aistudio.google.com/rate-limit>. Nel frattempo l'app usa il modello di riserva. Se entrambi i modelli rispondono 1011 anche con chiavi appena create, è un limite temporaneo lato Google sui modelli Live in anteprima: riprova più tardi, nessuna correzione lato app può aggirarlo.

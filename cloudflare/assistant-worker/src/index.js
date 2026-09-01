@@ -159,11 +159,30 @@ function modelName(env) {
   return String(env.GEMINI_LIVE_MODEL || DEFAULT_MODEL).replace(/^models\//, '');
 }
 
-async function createEphemeralToken(env) {
+// Modello che il client può chiedere in alternativa (es. quando il modello
+// principale risponde 1011 quota / 1008 modello ritirato). Facoltativo.
+function fallbackModelName(env) {
+  return String(env.GEMINI_LIVE_FALLBACK_MODEL || '').replace(/^models\//, '').trim();
+}
+
+// Il client invia nel body il modello desiderato: viene accettato SOLO se
+// coincide con il modello principale o con quello di riserva configurati,
+// altrimenti si emette il token per il modello principale.
+async function resolveModel(request, env) {
+  const allowed = [modelName(env), fallbackModelName(env)].filter(Boolean);
+  try {
+    const body = await request.json();
+    const requested = String(body?.model || '').replace(/^models\//, '').trim();
+    if (requested && allowed.includes(requested)) return requested;
+  } catch (_) {}
+  return modelName(env);
+}
+
+async function createEphemeralToken(env, modelOverride) {
   const now = Date.now();
   const expiresAt = new Date(now + MAX_TOKEN_MINUTES * 60 * 1000).toISOString();
   const newSessionExpireTime = new Date(now + 60 * 1000).toISOString();
-  const model = modelName(env);
+  const model = modelOverride || modelName(env);
   const requestBody = {
     // uses:0 = nessun limite di utilizzi per il token (resta valido fino a
     // expireTime). Con uses:1 ogni riconnessione della stessa sessione
@@ -235,7 +254,8 @@ export default {
     }
 
     try {
-      const token = await createEphemeralToken(env);
+      const model = await resolveModel(request, env);
+      const token = await createEphemeralToken(env, model);
       return json(token, 200, origin);
     } catch (error) {
       console.error(error);
