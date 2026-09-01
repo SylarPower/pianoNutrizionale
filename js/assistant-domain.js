@@ -416,6 +416,142 @@
       .map(({ score, ...record }) => record);
   }
 
+  // ---------------------------------------------------------------------
+  // Modalità locale gratuita: richieste intra-app risolte senza Gemini.
+  // ---------------------------------------------------------------------
+
+  // Argomenti fuori dal perimetro dell'app: si risponde subito, gratis,
+  // senza consumare una sessione Gemini.
+  const OUT_OF_SCOPE_PATTERN = /meteo|tempo fa|previsioni del tempo|notizie|news|politica|elezioni|governo|calcio|partita|champions|serie a|film|serie tv|attore|attrice|musica|canzone|cantante|videogioco|videogiochi|barzelletta|traduci|traduzione|inglese|tedesco|francese|spagnolo|programmazione|computer|smartphone|telefono cellulare|auto\b|macchina\b|viaggi|vacanze|oroscopo|lotteria|gioco del lotto/;
+
+  function extractDayWord(value) {
+    const text = normalizeText(value);
+    const words = ['lunedi', 'martedi', 'mercoledi', 'giovedi', 'venerdi', 'sabato', 'domenica', 'oggi', 'domani', 'stasera', 'stamattina'];
+    return words.find(word => text.includes(word)) || '';
+  }
+
+  function extractSlotWord(value) {
+    const text = normalizeText(value);
+    return ['colazione', 'pranzo', 'cena', 'spuntino', 'merenda', 'stasera'].find(word => text.includes(word)) || '';
+  }
+
+  // Interpreta una frase italiana e la mappa su un tool deterministico
+  // dell'app (stesso contratto di executeTool in assistant.js).
+  // Ritorna: { tool, args } per richieste intra-app; { outOfScope: true,
+  // message } per argomenti fuori tema; { localReply } per i saluti;
+  // null quando serve l'intelligenza di Gemini (conversazione libera,
+  // ricette nuove dal web, domande complesse).
+  function analyzeLocalIntent(value) {
+    const text = normalizeText(value);
+    if (!text) return null;
+
+    const command = commandFor(text);
+    if (command === 'close') return { tool: 'close_assistant', args: {} };
+    const COMMAND_TOOLS = {
+      next: 'next_cooking_item', repeat: 'repeat_cooking_item', previous: 'previous_cooking_item',
+      skip: 'skip_cooking_item', pause: 'pause_cooking_session', restart: 'restart_cooking_session',
+      'start-preparation': 'start_preparation'
+    };
+    if (command && COMMAND_TOOLS[command]) return { tool: COMMAND_TOOLS[command], args: {} };
+
+    if (OUT_OF_SCOPE_PATTERN.test(text)) {
+      return { outOfScope: true, message: 'Mi occupo solo di nutrizione, ricette, piano alimentare e lista della spesa: questo non è di mia competenza.' };
+    }
+    if (/^(ciao|salve|buongiorno|buonasera|buondi|ehi|hey|we)\b/.test(text)) {
+      return { localReply: 'Ciao! Dimmi pure: posso leggerti il piano, le ricette, la lista della spesa oppure guidarti in cucina.' };
+    }
+
+    const day = resolveDay(extractDayWord(text), todayKey());
+    const slotWord = extractSlotWord(text);
+    const slot = resolveSlot(slotWord, 'dinner');
+
+    if (/a che punto|quanto manca|che punto siamo|stato della preparazione|come va la preparazione/.test(text)) {
+      return { tool: 'get_cooking_status', args: {} };
+    }
+    if (/cuciniamo|cucina\b|cucinare|cucinami|prepariamo|preparami|prepara\b/.test(text)) {
+      return { tool: 'start_cooking_session', args: { day, slot } };
+    }
+    if (/frutta/.test(text) && /quanta|quanti|quanto|grammi|peso/.test(text)) {
+      const fruitSlot = /merenda|pomeriggio/.test(text) ? 'snack2' : (slotWord ? resolveSlot(slotWord, 'snack1') : 'snack1');
+      return { tool: 'get_fruit_quantity', args: { day, slot: ['snack1', 'snack2'].includes(fruitSlot) ? fruitSlot : 'snack1' } };
+    }
+    if (slotWord && /cosa|che|qual|quale|previsto|prevista|mangio|mangiamo|ricetta|menu/.test(text)) {
+      return { tool: 'get_meal_details', args: { day, slot } };
+    }
+    if (/piano|menu|menù|pasti|programma|settimana/.test(text)) return { tool: 'get_current_plan', args: { day } };
+    if (/spesa|comprare|compro|acquistare|lista della spesa/.test(text)) return { tool: 'get_shopping_list', args: {} };
+    if (/batch|meal prep|in anticipo|preparazioni/.test(text)) return { tool: 'get_batch_cooking', args: { day } };
+    if (/meller|guida|linee guida|regole|dottore|consigli/.test(text)) return { tool: 'search_app_content', args: { query: 'linee guida dott Meller' } };
+    if (/account|collegato|collegati|household|sincronizzazione|chi e collegato/.test(text)) return { tool: 'get_account_context', args: {} };
+    if (/cerca|cerco|trova|trovami|come si prepara|ricetta di|ingredienti per|quali ricette/.test(text)) {
+      return { tool: 'search_app_content', args: { query: value } };
+    }
+    return null;
+  }
+
+  // ---------------------------------------------------------------------
+  // Linee guida del dott. Meller: massimi per pasto usati per adattare
+  // le ricette trovate sul web prima dell'importazione.
+  // (Valori tratti dalla guida MELLER_GUIDE: pollame 200g, manzo 150g,
+  // maiale 100g, pesce 250g, legumi 240g, uova 180g, pasta/riso 90g,
+  // gnocchi 250g, patate 450g, pane 120g, avena/cereali 50g, crackers 40g,
+  // olio EVO 10g, miele 20g, marmellata 30g, frutta 250g, frutta secca 20g,
+  // yogurt 200g, latte 250g.)
+  // ---------------------------------------------------------------------
+
+  const MAX_AMOUNT_RULES = [
+    { pattern: /gnocchi/, max: 250 },
+    { pattern: /patate|pure di/, max: 450 },
+    { pattern: /pane|piadina|tortilla|focaccia/, max: 120 },
+    { pattern: /avena|fiocchi|oatmeal|muesli|granola|corn flakes|cereali/, max: 50 },
+    { pattern: /pasta|spaghetti|penne|rigatoni|linguine|tagliatelle|lasagne|riso|farro|orzo|quinoa|grano saraceno|amaranto|cous ?cous|bulgur/, max: 90 },
+    { pattern: /pollo|tacchino|faraona|pollame/, max: 200 },
+    { pattern: /manzo|vitello|roastbeef|hamburger/, max: 150 },
+    { pattern: /maiale|lonza|prosciutto|salumi|affettati|speck|bresaola|mortadella/, max: 100 },
+    { pattern: /pesce|merluzzo|nasello|salmone|tonno|branzino|orata|spigola|gamberi|calamari|polpo|cozze|vongole|acciughe|sardine|sgombro/, max: 250 },
+    { pattern: /legumi|ceci|lenticchie|fagioli|piselli|soia|tofu/, max: 240 },
+    { pattern: /uova|albume|tuorlo/, max: 180 },
+    { pattern: /latte/, max: 250 },
+    { pattern: /yogurt|kefir/, max: 200 },
+    { pattern: /formaggi|parmigiano|grana|pecorino|mozzarella|ricotta|stracchino|scamorza|feta|emmental/, max: 60 },
+    { pattern: /olio|extravergine|evo\b|burro|margarina/, max: 10 },
+    { pattern: /miele|sciroppo/, max: 20 },
+    { pattern: /marmellata|confettura|composta/, max: 30 },
+    { pattern: /crackers|gallette|fette biscottate/, max: 40 },
+    { pattern: /frutta secca|mandorle|noci|nocciole|arachidi|anacardi|pistacchi|pinoli|semi di|uvetta|datteri/, max: 20 },
+    { pattern: /frutta fresca|mela|mele|banana|banane|pera|pere|arancia|arance|kiwi|fragole|pesca|pesche|albicocca|uva|mango|ananas|melone|anguria|cachi|ciliegie|mirtilli|lamponi|frutti di bosco|macedonia/, max: 250 }
+  ];
+
+  function adaptRecipeToGuidelines(rawRecipe) {
+    const recipe = {
+      name: String(rawRecipe?.name || 'Ricetta').trim(),
+      slot: SLOTS.includes(rawRecipe?.slot) ? rawRecipe.slot : 'lunch',
+      emoji: String(rawRecipe?.emoji || '').trim(),
+      ingredients: [],
+      steps: (Array.isArray(rawRecipe?.steps) ? rawRecipe.steps : []).map(step => String(step || '').trim()).filter(Boolean),
+      notes: (Array.isArray(rawRecipe?.notes) ? rawRecipe.notes : []).map(note => String(note || '').trim()).filter(Boolean)
+    };
+    const report = [];
+    (Array.isArray(rawRecipe?.ingredients) ? rawRecipe.ingredients : []).forEach(item => {
+      const name = String(item?.name || '').trim();
+      let quantity = String(item?.quantity || '').trim();
+      if (!name) return;
+      const rule = MAX_AMOUNT_RULES.find(entry => entry.pattern.test(normalizeText(name)));
+      if (rule) {
+        const parsed = parseFoodAmount(quantity);
+        if (!parsed.skip && !parsed.free && !parsed.opaque && (parsed.unit === 'g' || parsed.unit === 'ml') && parsed.value > rule.max) {
+          report.push({ ingredient: name, from: `${formatNumber(parsed.value)} ${parsed.unit}`, to: `${rule.max} ${parsed.unit}` });
+          quantity = `${rule.max} ${parsed.unit}`;
+        }
+      }
+      recipe.ingredients.push({ name, quantity });
+    });
+    if (report.length) {
+      recipe.notes.push(`Dosi adattate alle linee guida del dott. Meller: ${report.map(item => `${item.ingredient} ${item.from} → ${item.to}`).join('; ')}.`);
+    }
+    return { recipe, report };
+  }
+
   return {
     DAYS,
     SLOTS,
@@ -451,6 +587,8 @@
     skipCooking,
     togglePause,
     restartCooking,
-    searchText
+    searchText,
+    analyzeLocalIntent,
+    adaptRecipeToGuidelines
   };
 });

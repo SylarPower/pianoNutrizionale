@@ -95,3 +95,60 @@ test('cerca nei contenuti senza restituire documenti interi', () => {
   assert.equal(results[0].title, 'Cena');
   assert.equal(Object.prototype.hasOwnProperty.call(results[0], 'score'), false);
 });
+
+test('motore locale: richieste intra-app mappate sui tool deterministici', () => {
+  const today = assistant.todayKey();
+  const tomorrow = assistant.resolveDay('domani', today);
+  assert.deepEqual(assistant.analyzeLocalIntent('cosa prevede il piano di oggi'), { tool: 'get_current_plan', args: { day: today } });
+  assert.deepEqual(assistant.analyzeLocalIntent("che cosa c'è per cena domani"), { tool: 'get_meal_details', args: { day: tomorrow, slot: 'dinner' } });
+  assert.deepEqual(assistant.analyzeLocalIntent('cosa mangio a pranzo'), { tool: 'get_meal_details', args: { day: today, slot: 'lunch' } });
+  assert.deepEqual(assistant.analyzeLocalIntent("quanta frutta c'è nello spuntino"), { tool: 'get_fruit_quantity', args: { day: today, slot: 'snack1' } });
+  assert.deepEqual(assistant.analyzeLocalIntent('quanta frutta nella merenda'), { tool: 'get_fruit_quantity', args: { day: today, slot: 'snack2' } });
+  assert.deepEqual(assistant.analyzeLocalIntent('cosa devo comprare per la spesa'), { tool: 'get_shopping_list', args: {} });
+  assert.deepEqual(assistant.analyzeLocalIntent('prossimo'), { tool: 'next_cooking_item', args: {} });
+  assert.deepEqual(assistant.analyzeLocalIntent('a che punto siamo con la preparazione'), { tool: 'get_cooking_status', args: {} });
+  assert.deepEqual(assistant.analyzeLocalIntent('cuciniamo la cena'), { tool: 'start_cooking_session', args: { day: today, slot: 'dinner' } });
+  assert.deepEqual(assistant.analyzeLocalIntent('dimmi le linee guida del dottor Meller'), { tool: 'search_app_content', args: { query: 'linee guida dott Meller' } });
+});
+
+test('motore locale: saluti, chiusura e fuori tema senza consumare Gemini', () => {
+  assert.ok(assistant.analyzeLocalIntent('ciao').localReply, 'saluto gestito in locale');
+  assert.deepEqual(assistant.analyzeLocalIntent('chiudi assistente'), { tool: 'close_assistant', args: {} });
+  const outOfScope = assistant.analyzeLocalIntent('che tempo fa domani a Bologna');
+  assert.equal(outOfScope.outOfScope, true);
+  assert.match(outOfScope.message, /non è di mia competenza/);
+  assert.equal(assistant.analyzeLocalIntent('parlami dei benefici delle proteine'), null, 'conversazione libera: serve Gemini');
+});
+
+test('linee guida Meller: le ricette dal web non superano i massimi', () => {
+  const adapted = assistant.adaptRecipeToGuidelines({
+    name: 'Pollo al limone', slot: 'dinner',
+    ingredients: [
+      { name: 'Pollo', quantity: '300 g' },
+      { name: 'Olio EVO', quantity: '20 g' },
+      { name: 'Pasta', quantity: '150 g' },
+      { name: 'Limone', quantity: 'q.b.' },
+      { name: 'Marmellata', quantity: '60 g' }
+    ],
+    steps: ['Cuoci il pollo', 'Condisci con limone']
+  });
+  const quantityOf = name => adapted.recipe.ingredients.find(item => item.name === name).quantity;
+  assert.equal(quantityOf('Pollo'), '200 g', 'pollame massimo 200 g');
+  assert.equal(quantityOf('Olio EVO'), '10 g', 'olio massimo 10 g');
+  assert.equal(quantityOf('Pasta'), '90 g', 'pasta massimo 90 g');
+  assert.equal(quantityOf('Marmellata'), '30 g', 'marmellata massimo 30 g');
+  assert.equal(quantityOf('Limone'), 'q.b.', 'le dosi libere restano invariate');
+  assert.match(adapted.recipe.notes.join(' '), /dott\. Meller/);
+  assert.equal(adapted.report.length, 4, 'rapporto con tutte le correzioni');
+  assert.deepEqual(adapted.recipe.steps, ['Cuoci il pollo', 'Condisci con limone']);
+});
+
+test('linee guida Meller: dosi già conformi non vengono toccate', () => {
+  const adapted = assistant.adaptRecipeToGuidelines({
+    name: 'Insalata', slot: 'lunch',
+    ingredients: [{ name: 'Merluzzo', quantity: '200 g' }, { name: 'Olio EVO', quantity: '8 g' }],
+    steps: ['Mescola']
+  });
+  assert.equal(adapted.report.length, 0);
+  assert.match(adapted.recipe.notes.join(' '), /^(?!.*Meller)/, 'nessuna nota di adattamento se nulla è cambiato');
+});

@@ -4,18 +4,17 @@ L'assistente di Piano Nutrizionale usa Gemini Live per la conversazione vocale e
 
 ## Cosa è già implementato
 
-- pulsante orb fluttuante visibile dopo l'accesso;
-- microfono attivo per tutta la modalità, fino alla chiusura manuale o vocale;
-- conversazione audio bidirezionale con interruzione mentre Gemini parla;
-- risposta testuale dell'ultima richiesta e risposta vocale;
+- pulsante orb fluttuante visibile dopo l'accesso: al tocco cambia solo colore/stato, nessuna finestra;
+- all'avvio l'assistente NON parla: resta in ascolto della richiesta;
+- **modalità locale gratuita**: piano, ricette, dosi, frutta, spesa, batch cooking, cucina passo-passo, guida Meller e comandi rispondono con il codice dell'app (riconoscimento e sintesi vocale del browser), **senza consumare quota Gemini**;
+- Gemini Live viene usato solo quando la richiesta non è gestibile in locale (conversazione libera, nuove ricette dal web);
+- richieste fuori tema (meteo, notizie, sport, ecc.) rifiutate: "non è di mia competenza";
+- per le informazioni sull'app Gemini usa solo gli strumenti locali, mai Google Search;
+- Google Search solo per le nuove ricette richieste sul web, **adattate obbligatoriamente alle linee guida del dott. Meller** (massimi per pasto applicati dal codice);
+- una nuova ricetta apre il popup di importazione dell'app con dosi, preparazione e note, pronta per il salvataggio nel cloud;
 - comandi `prossimo`, `avanti`, `ripeti`, `indietro`, `salta`, `pausa`, `ricomincia`, `quanto manca`, `chiudi assistente`;
-- flusso cucina: un ingrediente alla volta, conferma, poi uno step di preparazione alla volta;
-- quantità lette dal piano e dal profilo porzioni attivo, non inventate dal modello;
-- domanda sui grammi di frutta calcolata dal codice e restituita senza ricapitolare il resto del pasto;
-- ricerca nel catalogo, nel piano, nella spesa, nel batch cooking e nella guida Meller;
-- Google Search per domande aggiornate, con fonti mostrate nella schermata;
 - audio e cronologia non salvati dalla webapp;
-- sospensione della cattura quando la pagina viene nascosta. Il browser può sospendere completamente una PWA o negare il microfono con lo schermo bloccato: questo non è aggirabile da una webapp.
+- sospensione dell'ascolto quando la pagina viene nascosta. Il browser può sospendere completamente una PWA o negare il microfono con lo schermo bloccato: questo non è aggirabile da una webapp.
 
 ## Configurazione gratuita
 
@@ -25,6 +24,12 @@ Sono due quote separate:
 2. **Gemini API free tier**: esegue Gemini Live entro le quote correnti del progetto Google AI Studio.
 
 Nessuna delle due quote è illimitata. L'app non configura pagamenti automatici e mostra un errore comprensibile quando il provider rifiuta una richiesta.
+
+### Quanto consuma l'assistente
+
+- **Modalità locale (richieste intra-app): 0 chiamate Gemini.** Piano, ricette, spesa, frutta, batch e cucina usano solo il riconoscimento e la sintesi vocale del browser: gratuiti e senza limite giornaliero.
+- **Gemini Live**: parte solo per richieste libere o nuove ricette dal web. Una sessione = una connessione; il token effimero viene emesso **una sola volta per sessione** (30 minuti) e riusato per le riconnessioni, quindi non si spreca nulla a ogni tentativo.
+- I limiti del free tier (RPD, RPM, TPM e minuti audio per il modello Live) dipendono dal progetto Google e si vedono esattamente su <https://aistudio.google.com/rate-limit>; per i modelli Flash il free tier è nell'ordine di 1500 richieste/giorno, ma per i modelli Live il vincolo pratico sono i token al minuto e la durata audio. Con la modalità locale, la quota Gemini resta per le sole richieste che la meritano.
 
 ### 1. Crea la chiave Gemini
 
