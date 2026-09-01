@@ -63,6 +63,8 @@ Questo è il percorso da usare se non vuoi usare il terminale. Non servono Pages
 
 Il codice risponde solo su `/token`: aprire l'indirizzo senza `/token` e ricevere `Endpoint non trovato` è normale.
 
+Il token Gemini viene emesso **senza vincolarlo a un modello**: il modello è scelto dal client nel setup della WebSocket (primario o di riserva), quindi un solo token vale per entrambi e non serve una nuova emissione per il fallback. Se Gemini rifiuta l'emissione del token per il modello richiesto, il Worker prova da solo il modello `GEMINI_LIVE_FALLBACK_MODEL` prima di rispondere con un errore. Il modello richiesto dal client viene comunque accettato solo se coincide con uno dei due modelli configurati.
+
 Serve Node.js 18 o superiore solo se preferisci il percorso da terminale:
 
 ```bash
@@ -169,7 +171,7 @@ npx serve . -l 8000
 - il Worker accetta solo richieste POST su `/token` da origini configurate;
 - verifica il Firebase ID token prima di chiedere un token Gemini;
 - applica un limite best-effort di trenta emissioni per utente ogni quindici minuti per isolate (il client riusa il token già emesso, una sola emissione per modello e per sessione);
-- il token Gemini è limitato a una sessione e ha durata breve;
+- il token Gemini scade in ~30 minuti ed è riusato dal client per le riconnessioni della stessa sessione (una sola emissione per modello);
 - l'app non salva audio, trascrizioni o cronologia in Firestore;
 - il contesto inviato al modello è quello necessario per la richiesta;
 - il free tier Gemini è soggetto alle condizioni Google sull'uso dei dati per migliorare i prodotti, accettate per questa integrazione;
@@ -193,7 +195,7 @@ Controlla che `GEMINI_API_KEY` sia stato caricato con `npx wrangler secret put G
 Concedi il permesso al sito, usa Chrome/Edge/Safari aggiornato, verifica HTTPS e assicurati che nessun'altra app stia usando il microfono. Con cuffie o auricolari l'interruzione della voce è più pulita.
 
 ### Gemini chiude con 1011 (quota) o 1008 (modello non trovato)
-L'app tenta da sola il modello di riserva configurato: se il principale viene rifiutato con 1011 (quota gratuita esaurita o fatturazione non attiva) o 1008 (modello ritirato da Google), la sessione riparte automaticamente sul modello `fallbackModel` di `js/assistant-config.js` (il Worker lo emette solo se presente tra `GEMINI_LIVE_MODEL` e `GEMINI_LIVE_FALLBACK_MODEL`). La voce configurata (es. `Aoede`) resta la stessa. Se anche il modello di riserva viene rifiutato, compare l'errore con il motivo: niente loop di riconnessione.
+L'app tenta da sola il modello di riserva configurato: se il principale viene rifiutato con 1011 (quota gratuita esaurita o fatturazione non attiva) o 1008 (modello ritirato da Google), la sessione riparte automaticamente sul modello `fallbackModel` di `js/assistant-config.js`. Il token effimero non è vincolato al modello, quindi il passaggio avviene senza una nuova emissione. Dopo il primo successo il modello di riserva viene ricordato per la sessione, così le riconnessioni non ripetono il tentativo fallito. La voce configurata (es. `Aoede`) resta la stessa. Se anche il modello di riserva viene rifiutato, compare l'errore con il motivo: niente loop di riconnessione.
 
 ### Quota gratuita esaurita
 La webapp non effettua acquisti automatici. La quota del free tier Gemini si azzera da sola: verifica uso e limiti del progetto su <https://aistudio.google.com/rate-limit>. Nel frattempo l'app usa il modello di riserva. Se entrambi i modelli rispondono 1011 anche con chiavi appena create, è un limite temporaneo lato Google sui modelli Live in anteprima: riprova più tardi, nessuna correzione lato app può aggirarlo.

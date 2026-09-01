@@ -79,11 +79,13 @@ assert.doesNotThrow(() => quickButton.dispatchEvent(new window.Event('click', { 
   let fetchCalls = 0;
   let lastInit = null;
   let nextBody = null;
+  let nextBodyFn = null;
   let nextStatus = 200;
   window.fetch = (url, init) => {
     fetchCalls += 1;
     lastInit = init;
-    return Promise.resolve(new StubResponse(nextBody, { status: nextStatus }));
+    const body = nextBodyFn ? nextBodyFn(init) : nextBody;
+    return Promise.resolve(new StubResponse(body, { status: nextStatus }));
   };
 
   window.PIANO_AI_CONFIG.tokenEndpoint = 'https://piano-nutrizionale-ai.example.workers.dev/token';
@@ -138,11 +140,102 @@ assert.doesNotThrow(() => quickButton.dispatchEvent(new window.Event('click', { 
   assert.equal(await _fetchEphemeralToken(), 'eph-abc', 'il token primario resta in cache');
   assert.equal(fetchCalls, 3, 'il token di riserva viene riusato (una sola emissione)');
 
+  // 4) Fallback end-to-end senza audio reale: la WebSocket del modello
+  //    principale chiude con 1008 prima del setupComplete, la sessione
+  //    riparte da sola sul modello di riserva e il dialogo funziona davvero
+  //    (bolle renderizzate, trascrizioni, testo digitato).
+  _resetRateLimit();
+  state.open = true;
+  state.userClosed = false;
+  state.messages = [];
+  state.preferFallback = false;
+  const primaryModel = 'gemini-3.1-flash-live-preview';
+  let wsOpened = 0;
+  const declaredModels = [];
+  class StubWebSocket {
+    constructor(url) {
+      this.url = url;
+      this.readyState = 1; // OPEN
+      this.sent = [];
+      wsOpened += 1;
+      queueMicrotask(() => this.onopen?.());
+    }
+    send(payload) {
+      const message = JSON.parse(payload);
+      this.sent.push(message);
+      if (!message.setup) return;
+      const declared = message.setup.model;
+      declaredModels.push(declared);
+      queueMicrotask(() => {
+        if (declared === `models/${primaryModel}`) {
+          this.onclose?.({ code: 1008, reason: `${declared} is not found for API version v1main, or is not supported for bidiGenerateContent.` });
+        } else {
+          this.onmessage?.({ data: JSON.stringify({ setupComplete: {} }) });
+          this.onmessage?.({ data: JSON.stringify({ serverContent: { inputTranscription: { text: 'Cosa prevede il piano di oggi?' } } }) });
+          this.onmessage?.({ data: JSON.stringify({ serverContent: { modelTurn: { parts: [{ text: 'Ciao! Ecco il piano di oggi.' }] }, turnComplete: true } }) });
+        }
+      });
+    }
+    close() {}
+  }
+  window.WebSocket = StubWebSocket;
+  window.WebSocket.OPEN = 1;
+
+  nextBodyFn = init => {
+    const requested = JSON.parse(init.body).model;
+    return {
+      token: requested === fallbackModel ? 'eph-native' : 'eph-abc',
+      model: requested,
+      expiresAt: new Date(Date.now() + 30 * 60 * 1000).toISOString()
+    };
+  };
+
+  await window.PianoAssistant._openLiveWithFallback();
+  assert.equal(wsOpened, 2, 'primario rifiutato (1008) e poi riserva');
+  assert.deepEqual(declaredModels, [`models/${primaryModel}`, `models/${fallbackModel}`], 'modelli dichiarati nel setup');
+  assert.equal(state.activeModel, fallbackModel, 'sessione attiva sul modello di riserva');
+  assert.equal(state.preferFallback, true, 'il modello di riserva diventa preferito');
+  assert.equal(state.pendingFallback, false, 'flag di fallback azzerato');
+  assert.equal(fetchCalls, 5, 'due nuove emissioni dopo l’azzeramento della cache: una per modello');
+
+  // Il dialogo deve essere visibile e funzionante, non solo vocale.
+  const messagesEl = window.document.getElementById('assistant-messages');
+  assert.match(messagesEl.textContent, /Ciao! Ecco il piano di oggi\./, 'risposta del modello renderizzata');
+  assert.match(messagesEl.textContent, /Cosa prevede il piano di oggi\?/, 'domanda dell’utente renderizzata');
+  assert.equal(window.document.getElementById('assistant-status').textContent, 'Ti ascolto', 'stato tornato in ascolto');
+
+  // Anche il testo digitato funziona: bolla utente + realtimeInput al modello.
+  const lastWs = state.ws;
+  input.value = 'Che cena è prevista?';
+  form.dispatchEvent(new window.Event('submit', { cancelable: true }));
+  assert.match(messagesEl.textContent, /Che cena è prevista\?/, 'bolla utente del testo digitato');
+  assert.ok(
+    lastWs.sent.some(msg => msg.realtimeInput?.text === 'Che cena è prevista?'),
+    'testo inoltrato al modello'
+  );
+
+  // Al secondo avvio si va dritti al modello di riserva, senza nuove emissioni.
+  const fetchCallsBeforeSecondRun = fetchCalls;
+  await window.PianoAssistant._openLiveWithFallback();
+  assert.equal(wsOpened, 3, 'una sola nuova WebSocket');
+  assert.equal(declaredModels[2], `models/${fallbackModel}`, 'secondo avvio sul modello di riserva');
+  assert.equal(fetchCalls, fetchCallsBeforeSecondRun, 'token di riserva riusato dalla cache');
+
+  // 5) Frame binari della WebSocket (i modelli native-audio li usano per
+  //    l'audio): il testo JSON va decodificato sia da stringa sia da
+  //    Blob/ArrayBuffer, altrimenti la sessione si blocca su "[object Blob]".
+  const { _messageDataToText } = window.PianoAssistant;
+  assert.equal(await _messageDataToText('{"ok":true}'), '{"ok":true}', 'testo JSON passato inalterato');
+  assert.equal(await _messageDataToText(new window.Blob(['{"ok":true}'])), '{"ok":true}', 'Blob con JSON decodificato in testo');
+  // {"ok":true} in byte, creati dentro il realm della pagina come farebbe un frame reale.
+  const jsonBytes = new window.Uint8Array([123, 34, 111, 107, 34, 58, 116, 114, 117, 101, 125]);
+  assert.equal(await _messageDataToText(jsonBytes.buffer), '{"ok":true}', 'ArrayBuffer con JSON decodificato in testo');
+
   _resetRateLimit();
   window.PianoAssistant.setAvailability(false);
   assert.equal(fab.classList.contains('hidden'), true, 'orb nascosto senza account');
 })()
-  .then(() => console.log('ASSISTANT SMOKE OK — UI montata senza microfono o rete; 429 in cooldown e token riusato'))
+  .then(() => console.log('ASSISTANT SMOKE OK — UI montata senza microfono o rete; 429 in cooldown, token riusato, fallback di modello e dialogo renderizzato'))
   .catch(error => {
     console.error(error);
     process.exitCode = 1;
