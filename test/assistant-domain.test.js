@@ -152,3 +152,27 @@ test('linee guida Meller: dosi già conformi non vengono toccate', () => {
   assert.equal(adapted.report.length, 0);
   assert.match(adapted.recipe.notes.join(' '), /^(?!.*Meller)/, 'nessuna nota di adattamento se nulla è cambiato');
 });
+
+test('motore locale: analyzeRecipeRequest scatta solo per UNA nuova ricetta', () => {
+  assert.equal(assistant.analyzeRecipeRequest('trovami una ricetta'), true);
+  assert.equal(assistant.analyzeRecipeRequest('inventa una ricetta con pollo'), true);
+  assert.equal(assistant.analyzeRecipeRequest('ricetta nuova'), true);
+  assert.equal(assistant.analyzeRecipeRequest('proponimi una ricetta per cena'), true);
+  assert.equal(assistant.analyzeRecipeRequest('cerca una ricetta per il pranzo'), true);
+  assert.equal(assistant.analyzeRecipeRequest('voglio una ricetta diversa'), true);
+  assert.equal(assistant.analyzeRecipeRequest('cercami una ricetta sul web'), true);
+
+  assert.equal(assistant.analyzeRecipeRequest('cosa prevede la ricetta del lunedì'), false, 'ricetta già nel piano');
+  assert.equal(assistant.analyzeRecipeRequest("cosa c'è per cena"), false, 'domanda sul piano');
+  assert.equal(assistant.analyzeRecipeRequest('quale ricetta è prevista per pranzo'), false, 'ricetta prevista');
+  assert.equal(assistant.analyzeRecipeRequest('cuciniamo la cena'), false, 'comando di cucina');
+  assert.equal(assistant.analyzeRecipeRequest('come si prepara la pasta al pomodoro'), false, 'preparazione');
+  assert.equal(assistant.analyzeRecipeRequest('che ricette hai nel catalogo'), false, 'catalogo esistente');
+});
+
+test('motore locale: le richieste di nuova ricetta escono dal motore locale', () => {
+  // Non devono essere mappate su search_app_content: devono uscire verso
+  // Gemini (API testuale con Google Search via Worker /recipe).
+  assert.equal(assistant.analyzeLocalIntent('trovami una ricetta con pollo'), null);
+  assert.equal(assistant.analyzeLocalIntent('proponimi una ricetta nuova'), null);
+});

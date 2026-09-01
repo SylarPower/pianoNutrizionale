@@ -1,14 +1,24 @@
 /*
- * Cloudflare Worker: broker gratuito per token temporanei Gemini Live.
+ * Cloudflare Worker: broker gratuito per Gemini.
  *
- * Il Worker non fa da proxy per l'audio: autentica l'utente Firebase, chiede a
- * Gemini un token a breve durata e lo restituisce alla PWA. La GEMINI_API_KEY
- * resta quindi in un secret Cloudflare e non entra mai nel frontend.
+ * - POST /token: emette token temporanei per Gemini Live (conversazione vocale
+ *   libera). Il Worker non fa da proxy per l'audio.
+ * - POST /recipe: cerca una NUOVA ricetta dal web con l'API testuale di Gemini
+ *   (Google Search grounding) e restituisce la ricetta pronta per il popup di
+ *   importazione. Niente Gemini Live per le ricette.
+ *
+ * In entrambi i casi autentica l'utente Firebase e la GEMINI_API_KEY resta in
+ * un secret Cloudflare, mai nel frontend.
  */
 
 const FIREBASE_JWKS_URL = 'https://www.googleapis.com/service_accounts/v1/jwk/securetoken@system.gserviceaccount.com';
 const GEMINI_TOKEN_URL = 'https://generativelanguage.googleapis.com/v1beta/auth_tokens';
+// Endpoint REST per l'API testuale (generazione con grounding Google Search):
+// usato dall'endpoint /recipe per le nuove ricette dal web, SENZA Gemini Live.
+const GEMINI_GENERATE_URL = 'https://generativelanguage.googleapis.com/v1beta/models/{model}:generateContent';
 const DEFAULT_MODEL = 'gemini-3.1-flash-live-preview';
+// Modello testuale per la ricerca di ricette: gratuito, non è un modello Live.
+const DEFAULT_TEXT_MODEL = 'gemini-2.5-flash';
 // Il token effimero viene emesso SENZA vincolarlo a un modello: è il client
 // a scegliere il modello nel setup della WebSocket (primario o di riserva).
 // GEMINI_LIVE_MODEL/GEMINI_LIVE_FALLBACK_MODEL servono solo a validare il
@@ -169,6 +179,11 @@ function fallbackModelName(env) {
   return String(env.GEMINI_LIVE_FALLBACK_MODEL || '').replace(/^models\//, '').trim();
 }
 
+// Modello testuale per la ricerca di ricette dal web (endpoint /recipe).
+function textModelName(env) {
+  return String(env.GEMINI_TEXT_MODEL || DEFAULT_TEXT_MODEL).replace(/^models\//, '').trim();
+}
+
 // Il client invia nel body il modello desiderato: viene accettato SOLO se
 // coincide con il modello principale o con quello di riserva configurati,
 // altrimenti si emette il token per il modello principale.
@@ -228,6 +243,136 @@ async function createEphemeralToken(env, modelOverride) {
   throw lastError;
 }
 
+// ---------------------------------------------------------------------
+// Endpoint /recipe: nuove ricette dal web con l'API testuale di Gemini
+// (Google Search grounding), SENZA Gemini Live. Stesso schema import_recipe
+// del client, così la ricetta torna pronta per il popup di importazione.
+// ---------------------------------------------------------------------
+
+const RECIPE_TOOL = {
+  name: 'import_recipe',
+  description: 'Prepara una NUOVA ricetta trovata sul web per importarla nel ricettario. Si usa solo su richiesta esplicita dell’utente di una nuova ricetta. Quantità già adattate alle linee guida del dott. Meller; l’app apre il popup di importazione.',
+  parameters: {
+    type: 'OBJECT',
+    properties: {
+      name: { type: 'STRING', description: 'Nome della ricetta' },
+      slot: { type: 'STRING', enum: ['breakfast', 'snack1', 'lunch', 'snack2', 'dinner'], description: 'Pasto di appartenenza' },
+      emoji: { type: 'STRING', description: 'Emoji rappresentativa (opzionale)' },
+      ingredients: {
+        type: 'ARRAY',
+        description: 'Ingredienti con dose per una persona',
+        items: {
+          type: 'OBJECT',
+          properties: {
+            name: { type: 'STRING', description: 'Nome ingrediente' },
+            quantity: { type: 'STRING', description: 'Dose con unità, es. "150 g" oppure "q.b."' }
+          },
+          required: ['name', 'quantity']
+        }
+      },
+      steps: { type: 'ARRAY', items: { type: 'STRING' }, description: 'Preparazione: un passaggio per elemento' },
+      notes: { type: 'ARRAY', items: { type: 'STRING' }, description: 'Note opzionali' }
+    },
+    required: ['name', 'ingredients', 'steps']
+  }
+};
+
+function recipeSystemInstruction() {
+  return [
+    'Sei Piano, l’aiuto-cuoco della webapp Piano Nutrizionale.',
+    'Rispondi SOLO con la chiamata di funzione import_recipe: nessun altro testo.',
+    'Usa Google Search per trovare una ricetta adatta alla richiesta dell’utente.',
+    'La ricetta è per una persona e deve rispettare i massimi del dott. Meller: pollame 200 g, manzo 150 g, maiale 100 g, pesce 250 g, legumi 240 g, uova 180 g, pasta/riso 90 g, gnocchi 250 g, patate 450 g, pane 120 g, olio EVO 10 g, miele 20 g, marmellata 30 g, yogurt 200 g, latte 250 g, formaggi 60 g, crackers 40 g, frutta fresca 250 g, frutta secca 20 g.',
+    'Ogni ingrediente deve avere una dose con unità (es. "150 g", "2 cucchiai" oppure "q.b.").',
+    'Scrivi tutto in italiano: nome, slot (breakfast/snack1/lunch/snack2/dinner), emoji, ingredienti, passaggi di preparazione e note.'
+  ].join('\n');
+}
+
+// Estrae il functionCall import_recipe dalla risposta generateContent.
+function extractRecipeFunctionCall(data) {
+  const parts = data?.candidates?.[0]?.content?.parts || [];
+  for (const part of parts) {
+    if (part?.functionCall?.name === 'import_recipe') return part.functionCall;
+  }
+  return null;
+}
+
+// Normalizza gli argomenti del functionCall in una ricetta pulita per il client.
+function normalizeRecipeFromArgs(args = {}) {
+  return {
+    name: String(args.name || '').trim(),
+    slot: String(args.slot || '').trim(),
+    emoji: String(args.emoji || '').trim(),
+    ingredients: (Array.isArray(args.ingredients) ? args.ingredients : [])
+      .map(item => ({
+        name: String(item?.name || '').trim(),
+        quantity: String(item?.quantity || '').trim()
+      }))
+      .filter(item => item.name),
+    steps: (Array.isArray(args.steps) ? args.steps : []).map(step => String(step || '').trim()).filter(Boolean),
+    notes: (Array.isArray(args.notes) ? args.notes : []).map(note => String(note || '').trim()).filter(Boolean)
+  };
+}
+
+// Restituisce la ricetta pronta oppure null quando Gemini non produce la chiamata.
+function parseRecipeFromResponse(data) {
+  const call = extractRecipeFunctionCall(data);
+  if (!call) return null;
+  const recipe = normalizeRecipeFromArgs(call.args);
+  if (!recipe.name || !recipe.ingredients.length) return null;
+  return recipe;
+}
+
+// Chiama l'API REST generateContent con Google Search grounding e
+// functionDeclarations [import_recipe].
+async function generateRecipeContent(env, query) {
+  const apiKey = String(env.GEMINI_API_KEY || '').trim();
+  if (!apiKey) throw new Error('GEMINI_API_KEY non configurata nel Worker.');
+  const model = textModelName(env);
+  const url = `${GEMINI_GENERATE_URL.replace('{model}', encodeURIComponent(model))}?key=${encodeURIComponent(apiKey)}`;
+  const response = await fetch(url, {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({
+      contents: [{ role: 'user', parts: [{ text: query }] }],
+      systemInstruction: { parts: [{ text: recipeSystemInstruction() }] },
+      tools: [
+        { googleSearch: {} },
+        { functionDeclarations: [RECIPE_TOOL] }
+      ],
+      generationConfig: { temperature: 0.4, maxOutputTokens: 1500 }
+    })
+  });
+  const data = await response.json().catch(() => ({}));
+  if (!response.ok) {
+    throw new Error(data?.error?.message || data?.message || `Gemini ha risposto ${response.status}.`);
+  }
+  return data;
+}
+
+// Handler dell'endpoint /recipe: autenticazione e rate-limit sono già stati
+// applicati dal fetch principale (stesso budget di 30 richieste/15 min).
+async function handleRecipe(request, env, origin) {
+  let body = {};
+  try { body = await request.json(); } catch (_) {}
+  const query = String(body?.query || '').trim();
+  if (!query) return json({ error: 'Manca il testo della richiesta di ricetta.' }, 400, origin);
+
+  let data;
+  try {
+    data = await generateRecipeContent(env, query);
+  } catch (error) {
+    console.error(error);
+    return json({ error: error.message || 'Gemini non ha risposto alla richiesta di ricetta.' }, 502, origin);
+  }
+
+  const recipe = parseRecipeFromResponse(data);
+  if (!recipe) {
+    return json({ error: 'Non sono riuscito a comporre una ricetta valida. Riprova con una richiesta diversa.' }, 422, origin);
+  }
+  return json({ recipe }, 200, origin);
+}
+
 export default {
   async fetch(request, env) {
     const origin = request.headers.get('Origin') || '';
@@ -236,7 +381,8 @@ export default {
       return new Response(null, { status: 204, headers: corsHeaders(origin) });
     }
     if (!isAllowedOrigin(origin, env)) return json({ error: 'Origine non autorizzata.' }, 403, '');
-    if (new URL(request.url).pathname !== '/token') return json({ error: 'Endpoint non trovato.' }, 404, origin);
+    const pathname = new URL(request.url).pathname;
+    if (pathname !== '/token' && pathname !== '/recipe') return json({ error: 'Endpoint non trovato.' }, 404, origin);
     if (request.method !== 'POST') return json({ error: 'Metodo non consentito.' }, 405, origin);
 
     const authorization = request.headers.get('Authorization') || '';
@@ -252,7 +398,7 @@ export default {
 
     const rate = checkRateLimit(claims.sub);
     if (!rate.allowed) {
-      return new Response(JSON.stringify({ error: 'Hai raggiunto il limite temporaneo di avvii dell’assistente. Riprova più tardi.' }), {
+      return new Response(JSON.stringify({ error: 'Hai raggiunto il limite temporaneo di richieste. Riprova più tardi.' }), {
         status: 429,
         headers: {
           'content-type': 'application/json; charset=utf-8',
@@ -264,6 +410,7 @@ export default {
     }
 
     try {
+      if (pathname === '/recipe') return await handleRecipe(request, env, origin);
       const model = await resolveModel(request, env);
       const token = await createEphemeralToken(env, model);
       return json(token, 200, origin);
@@ -275,4 +422,15 @@ export default {
 };
 
 // Export per i test unitari (node --test): il default export resta l'handler.
-export { createEphemeralToken, fallbackModelName, modelName, resolveModel };
+export {
+  createEphemeralToken,
+  fallbackModelName,
+  modelName,
+  resolveModel,
+  textModelName,
+  extractRecipeFunctionCall,
+  normalizeRecipeFromArgs,
+  parseRecipeFromResponse,
+  generateRecipeContent,
+  handleRecipe
+};
