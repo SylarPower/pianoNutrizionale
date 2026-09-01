@@ -631,12 +631,12 @@ Anteprima prima dell'accettazione con: mittente, numero di ricette, ricette nuov
 
 # PWA offline
 
-`sw.js` (cache versionata `piano-nutrizionale-shell-v35`):
+`sw.js` (cache versionata `piano-nutrizionale-shell-v38`):
 
 - shell dell'app: `index.html`, CSS, JS, manifest, icone, `offline.html`;
 - navigazione **network-first** con fallback in cache (e pagina offline comprensibile);
 - asset statici **cache-first / stale-while-revalidate**;
-- SDK Firebase compat da `www.gstatic.com/firebasejs/` in cache **cache-first** (file immutabili versionati): l'app si inizializza anche offline con la cache HTTP scaduta;
+- SDK Firebase modulare (ESM) da `www.gstatic.com/firebasejs/` in cache **cache-first** (file immutabili versionati): l'app si inizializza anche offline con la cache HTTP scaduta;
 - nessuna intercettazione delle chiamate runtime di Firebase Auth, Firestore o App Check;
 - pulizia delle cache obsolete;
 - percorsi relativi (supporto sottocartella GitHub Pages `/pianoNutrizionale/`);
