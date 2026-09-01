@@ -126,6 +126,18 @@ assert.doesNotThrow(() => quickButton.dispatchEvent(new window.Event('click', { 
   assert.ok(state.ephemeralTokenExpiresAt > Date.now(), 'scadenza con margine di sicurezza');
   assert.equal(state.rateLimitUntil, 0, 'un 200 azzera il cooldown');
 
+  // 3) Modello di riserva: una sola emissione dedicata, con il modello nel
+  //    body; i token restano in cache separati e non si sovrascrivono.
+  const fallbackModel = 'gemini-2.5-flash-native-audio-preview-12-2025';
+  nextBody = { token: 'eph-native', model: fallbackModel, expiresAt: new Date(Date.now() + 30 * 60 * 1000).toISOString() };
+  assert.equal(await _fetchEphemeralToken(fallbackModel), 'eph-native', 'token per il modello di riserva');
+  assert.equal(fetchCalls, 3, 'una nuova emissione per il modello di riserva');
+  assert.equal(JSON.parse(lastInit.body).model, fallbackModel, 'il modello richiesto viaggia nel body');
+  assert.equal(state.activeModel, fallbackModel, 'modello attivo aggiornato al token in uso');
+  assert.equal(await _fetchEphemeralToken(fallbackModel), 'eph-native');
+  assert.equal(await _fetchEphemeralToken(), 'eph-abc', 'il token primario resta in cache');
+  assert.equal(fetchCalls, 3, 'il token di riserva viene riusato (una sola emissione)');
+
   _resetRateLimit();
   window.PianoAssistant.setAvailability(false);
   assert.equal(fab.classList.contains('hidden'), true, 'orb nascosto senza account');
