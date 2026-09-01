@@ -225,8 +225,8 @@ async function createEphemeralToken(env, modelOverride) {
       console.warn(`Token Gemini non emesso per ${model}: ${error.message}`);
     }
   }
-    throw lastError;
-  };
+  throw lastError;
+}
 
 export default {
   async fetch(request, env) {
@@ -273,5 +273,6 @@ export default {
     }
   }
 };
+
 // Export per i test unitari (node --test): il default export resta l'handler.
 export { createEphemeralToken, fallbackModelName, modelName, resolveModel };

@@ -635,31 +635,64 @@
     state.currentOutputNode = null;
   }
 
+  function playAudioSamples(samples) {
+    if (!state.outputContext || !samples?.length) return;
+    const buffer = state.outputContext.createBuffer(1, samples.length, 24000);
+    const channel = buffer.getChannelData(0);
+    for (let index = 0; index < samples.length; index += 1) channel[index] = samples[index] / 32768;
+    const source = state.outputContext.createBufferSource();
+    source.buffer = buffer;
+    source.connect(state.outputContext.destination);
+    const startAt = Math.max(state.outputContext.currentTime + 0.01, state.nextPlaybackTime);
+    source.start(startAt);
+    state.nextPlaybackTime = startAt + buffer.duration;
+    state.outputSources.add(source);
+    state.currentOutputNode = source;
+    source.onended = () => {
+      state.outputSources.delete(source);
+      try { source.disconnect(); } catch (_) {}
+      if (!state.outputSources.size && state.active) setStatus('listening', 'Ti ascolto');
+    };
+    setStatus('speaking', 'Sto parlando');
+  }
+
   function playAudio(data) {
     if (!state.outputContext || !data) return;
     try {
       const bytes = bytesFromBase64(data);
-      const samples = new Int16Array(bytes.buffer, bytes.byteOffset, Math.floor(bytes.byteLength / 2));
-      const buffer = state.outputContext.createBuffer(1, samples.length, 24000);
-      const channel = buffer.getChannelData(0);
-      for (let index = 0; index < samples.length; index += 1) channel[index] = samples[index] / 32768;
-      const source = state.outputContext.createBufferSource();
-      source.buffer = buffer;
-      source.connect(state.outputContext.destination);
-      const startAt = Math.max(state.outputContext.currentTime + 0.01, state.nextPlaybackTime);
-      source.start(startAt);
-      state.nextPlaybackTime = startAt + buffer.duration;
-      state.outputSources.add(source);
-      state.currentOutputNode = source;
-      source.onended = () => {
-        state.outputSources.delete(source);
-        try { source.disconnect(); } catch (_) {}
-        if (!state.outputSources.size && state.active) setStatus('listening', 'Ti ascolto');
-      };
-      setStatus('speaking', 'Sto parlando');
+      playAudioSamples(new Int16Array(bytes.buffer, bytes.byteOffset, Math.floor(bytes.byteLength / 2)));
     } catch (error) {
       console.warn('Audio Gemini non riproducibile', error);
     }
+  }
+
+  // Alcuni modelli Live (native-audio) consegnano l'audio come frame binari
+  // della WebSocket (Blob/ArrayBuffer, PCM 16-bit a 24 kHz) invece che come
+  // base64 dentro il JSON: si prova a riprodurli allo stesso modo.
+  async function playAudioBytes(data) {
+    if (!state.outputContext || !data) return;
+    try {
+      let bytes = null;
+      if (data instanceof ArrayBuffer) bytes = new Uint8Array(data);
+      else if (ArrayBuffer.isView(data)) bytes = new Uint8Array(data.buffer, data.byteOffset, data.byteLength);
+      else if (typeof data.arrayBuffer === 'function') bytes = new Uint8Array(await data.arrayBuffer());
+      if (!bytes || bytes.byteLength < 4) return;
+      playAudioSamples(new Int16Array(bytes.buffer, bytes.byteOffset, Math.floor(bytes.byteLength / 2)));
+    } catch (error) {
+      console.warn('Frame audio Live non riproducibile', error);
+    }
+  }
+
+  // I messaggi della WebSocket possono arrivare come testo (JSON) oppure come
+  // frame binari (Blob/ArrayBuffer). Si normalizza a testo quando possibile;
+  // se non è testo il chiamante proverà a trattarlo come audio.
+  async function messageDataToText(data) {
+    if (typeof data === 'string') return data;
+    if (data && typeof data.text === 'function') return data.text();
+    if (typeof TextDecoder !== 'undefined' && (data instanceof ArrayBuffer || ArrayBuffer.isView(data))) {
+      return new TextDecoder().decode(data);
+    }
+    return null;
   }
 
   function safeSourceUrl(value) {
@@ -734,7 +767,7 @@
     addMessage('user', clean);
     send({ realtimeInput: { text: clean } });
   }
-  
+
   function appendSources(metadata) {
     const chunks = Array.isArray(metadata?.groundingChunks) ? metadata.groundingChunks : [];
     const sources = chunks.map(chunk => ({
@@ -867,7 +900,7 @@
       // che come part.testo: va trattata allo stesso modo.
       appendOutput(content.outputTranscription.text);
     }
-    
+
     if (content.modelTurn?.parts) {
       content.modelTurn.parts.forEach(part => {
         if (part.inlineData?.data) playAudio(part.inlineData.data);
@@ -1107,6 +1140,9 @@
     await new Promise((resolve, reject) => {
       const socket = new WebSocket(endpoint);
       state.ws = socket;
+      // Frame binari come ArrayBuffer: più facili da ispezionare dei Blob
+      // (entrambi sono comunque gestiti in onmessage).
+      try { socket.binaryType = 'arraybuffer'; } catch (_) {}
       let settled = false;
       const settle = fn => arg => {
         if (settled) return;
@@ -1127,18 +1163,26 @@
       socket.onopen = () => {
         socket.send(JSON.stringify(setupMessage()));
       };
-      socket.onmessage = event => {
-        try {
-          const message = JSON.parse(event.data);
-          // Un frame di errore prima di setupComplete vuol dire che la
-          // sessione non si è aperta: lo si riporta subito invece di
-          // restare in attesa fino all'onclose.
-          if (message?.error && !state.setupReady) {
-            fail(new Error(message.error.message || 'Gemini ha rifiutato la configurazione della sessione vocale.'));
+      socket.onmessage = async event => {
+        const raw = await messageDataToText(event.data);
+        if (typeof raw === 'string' && raw.trim().startsWith('{')) {
+          try {
+            const message = JSON.parse(raw);
+            // Un frame di errore prima di setupComplete vuol dire che la
+            // sessione non si è aperta: lo si riporta subito invece di
+            // restare in attesa fino all'onclose.
+            if (message?.error && !state.setupReady) {
+              fail(new Error(message.error.message || 'Gemini ha rifiutato la configurazione della sessione vocale.'));
+            }
+            handleServerMessage(message);
+            if (message?.setupComplete) done();
+            return;
+          } catch (error) {
+            console.warn('Messaggio Live non valido', error);
           }
-          handleServerMessage(message);
-          if (message?.setupComplete) done();
-        } catch (error) { console.warn('Messaggio Live non valido', error); }
+        }
+        // Frame binario non JSON: con i modelli native-audio è audio PCM.
+        playAudioBytes(event.data);
       };
       socket.onerror = () => {
         fail(new Error('Connessione Gemini Live non riuscita (rete o endpoint).'));
@@ -1462,6 +1506,7 @@
     // di modelli (fallback) senza rete né microfono.
     _fetchEphemeralToken: fetchEphemeralToken,
     _openLiveWithFallback: openLiveWithFallback,
+    _messageDataToText: messageDataToText,
     _resetRateLimit: () => { state.rateLimitUntil = 0; clearCachedTokens(); }
   };
 
