@@ -9,6 +9,10 @@
 const FIREBASE_JWKS_URL = 'https://www.googleapis.com/service_accounts/v1/jwk/securetoken@system.gserviceaccount.com';
 const GEMINI_TOKEN_URL = 'https://generativelanguage.googleapis.com/v1beta/auth_tokens';
 const DEFAULT_MODEL = 'gemini-3.1-flash-live-preview';
+// Il token effimero viene emesso SENZA vincolarlo a un modello: è il client
+// a scegliere il modello nel setup della WebSocket (primario o di riserva).
+// GEMINI_LIVE_MODEL/GEMINI_LIVE_FALLBACK_MODEL servono solo a validare il
+// modello richiesto dal client e a gestire il fallback in emissione.
 const MAX_TOKEN_MINUTES = 30;
 const RATE_LIMIT_WINDOW_MS = 15 * 60 * 1000;
 // 30 emissioni per finestra: il client riusa il token per le riconnessioni, quindi
@@ -182,41 +186,47 @@ async function createEphemeralToken(env, modelOverride) {
   const now = Date.now();
   const expiresAt = new Date(now + MAX_TOKEN_MINUTES * 60 * 1000).toISOString();
   const newSessionExpireTime = new Date(now + 60 * 1000).toISOString();
-  const model = modelOverride || modelName(env);
-  const requestBody = {
-    // uses:0 = nessun limite di utilizzi per il token (resta valido fino a
-    // expireTime). Con uses:1 ogni riconnessione della stessa sessione
-    // (caduta rete, cambio scheda, sospensione PWA) sarebbe stata rifiutata
-    // da Gemini; il client riusa questo token per le riconnessioni.
-    uses: 0,
-    expireTime: expiresAt,
-    newSessionExpireTime,
-    fieldMask: "model,generationConfig.responseModalities",
-    bidiGenerateContentSetup: {
-      model: `models/${model}`,
-      generationConfig: {
-        responseModalities: ["AUDIO"]
+  const requested = modelOverride || modelName(env);
+  // Il token NON viene vincolato a un modello (niente bidiGenerateContentSetup
+  // né fieldMask nella richiesta ad auth_tokens): secondo l'API ufficiale, se
+  // il setup è assente il setup effettivo della sessione è quello inviato dal
+  // client sulla WebSocket. Così un solo token vale per qualunque modello e
+  // il client può passare al modello di riserva senza una nuova emissione.
+  // Se Gemini rifiuta di emettere il token per il modello richiesto, si prova
+  // subito il modello di riserva configurato prima di restituire un errore.
+  const attempts = [...new Set([requested, fallbackModelName(env)].filter(Boolean))];
+  let lastError = null;
+  for (const model of attempts) {
+    try {
+      const response = await fetch(GEMINI_TOKEN_URL, {
+        method: 'POST',
+        headers: {
+          'content-type': 'application/json',
+          'x-goog-api-key': String(env.GEMINI_API_KEY || '')
+        },
+        body: JSON.stringify({
+          // uses:0 = nessun limite di utilizzi per il token (resta valido
+          // fino a expireTime): le riconnessioni della stessa sessione non
+          // consumano una nuova emissione.
+          uses: 0,
+          expireTime: expiresAt,
+          newSessionExpireTime
+        })
+      });
+      const body = await response.json().catch(() => ({}));
+      if (!response.ok) {
+        throw new Error(body?.error?.message || body?.message || `Gemini non ha emesso il token per ${model}.`);
       }
+      const token = body.name || body.token?.name || body.token || body.accessToken;
+      if (!token) throw new Error('Risposta Gemini senza token temporaneo.');
+      return { token, expiresAt, model };
+    } catch (error) {
+      lastError = error;
+      console.warn(`Token Gemini non emesso per ${model}: ${error.message}`);
     }
-  };
-
-  const response = await fetch(GEMINI_TOKEN_URL, {
-    method: 'POST',
-    headers: {
-      'content-type': 'application/json',
-      'x-goog-api-key': String(env.GEMINI_API_KEY || '')
-    },
-    body: JSON.stringify(requestBody)
-  });
-  const body = await response.json().catch(() => ({}));
-  if (!response.ok) {
-    const detail = body?.error?.message || body?.message || 'Gemini non ha emesso il token.';
-    throw new Error(detail);
   }
-  const token = body.name || body.token?.name || body.token || body.accessToken;
-  if (!token) throw new Error('Risposta Gemini senza token temporaneo.');
-  return { token, expiresAt, model };
-}
+    throw lastError;
+  };
 
 export default {
   async fetch(request, env) {
@@ -263,3 +273,5 @@ export default {
     }
   }
 };
+// Export per i test unitari (node --test): il default export resta l'handler.
+export { createEphemeralToken, fallbackModelName, modelName, resolveModel };
