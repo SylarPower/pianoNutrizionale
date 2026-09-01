@@ -387,6 +387,37 @@
     return { session, status: cookingStatus(session), message: currentCookingItem(session)?.text || '' };
   }
 
+  // ---------------------------------------------------------------------
+  // Richieste di UNA NUOVA ricetta dal web (API testuale + Google Search).
+  // Restituisce true solo quando l'utente chiede una ricetta che NON è già
+  // nel catalogo; NON scatta per le domande sul piano ("cosa prevede la
+  // ricetta del lunedì") né per i comandi di cucina.
+  // ---------------------------------------------------------------------
+  function analyzeRecipeRequest(value) {
+    const text = normalizeText(value);
+    if (!text) return false;
+    const recipe = 'ricett[ae]';
+
+    // Comandi di cucina: si prepara una ricetta già presente, non se ne cerca
+    // una nuova.
+    if (/cucina|cuciniamo|cucinare|cucinami|prepariamo|preparami|prepara\b|come si prepara|come preparo|come cucino|in cucina/.test(text)) return false;
+
+    // Domande su piano o ricette già nel catalogo.
+    if (/cosa prevede|cosa c e|cosa c'e|cosa mangio|cosa mangiamo|previsto|prevista|qual e la ricetta|la ricetta del|la ricetta di|il menu|menu della|menu di|programma|piano alimentare|piano della settimana/.test(text)) return false;
+
+    // Verbi di ricerca/creazione seguiti da "ricetta/e".
+    if (new RegExp(`\\b(trovami|trovare|trova|proponimi|proponi|proposta|proposte|inventa|inventami|suggerisci|suggeriscimi|cerca|cercami|ricerca|crea|creami|dammi|fammi)\\b[^.!?]*\\b${recipe}\\b`).test(text)) return true;
+
+    // "ricetta nuova/diversa/alternativa/dal web".
+    if (new RegExp(`\\b${recipe}\\b[^.!?]*\\b(nuova|nuove|diversa|diverse|differente|alternativa|alternativo|extra|dal web|sul web|online|internet)\\b`).test(text)) return true;
+    if (new RegExp(`\\b(nuova|nuove|diversa|diverse|alternativa|alternativo)\\b[^.!?]*\\b${recipe}\\b`).test(text)) return true;
+
+    // "una ricetta", "qualche ricetta", "delle ricette".
+    if (new RegExp(`\\b(una|un|qualche|delle|altre)\\s+${recipe}\\b`).test(text)) return true;
+
+    return false;
+  }
+
   function commandFor(value) {
     if (isCloseCommand(value)) return 'close';
     if (isAdvanceCommand(value)) return 'next';
@@ -460,6 +491,11 @@
     if (/^(ciao|salve|buongiorno|buonasera|buondi|ehi|hey|we)\b/.test(text)) {
       return { localReply: 'Ciao! Dimmi pure: posso leggerti il piano, le ricette, la lista della spesa oppure guidarti in cucina.' };
     }
+
+    // Richieste di UNA nuova ricetta dal web: il motore locale non le sa
+    // rispondere, escono verso Gemini (API testuale con Google Search tramite
+    // il Worker /recipe). Mai trattarle come ricerca nel catalogo.
+    if (analyzeRecipeRequest(text)) return null;
 
     const day = resolveDay(extractDayWord(text), todayKey());
     const slotWord = extractSlotWord(text);
@@ -589,6 +625,7 @@
     restartCooking,
     searchText,
     analyzeLocalIntent,
+    analyzeRecipeRequest,
     adaptRecipeToGuidelines
   };
 });

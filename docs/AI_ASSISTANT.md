@@ -1,16 +1,17 @@
 # Assistente vocale AI
 
-L'assistente di Piano Nutrizionale usa Gemini Live per la conversazione vocale e un piccolo Cloudflare Worker gratuito soltanto per emettere token temporanei. La PWA resta statica: il Worker non inoltra il flusso audio.
+L'assistente di Piano Nutrizionale usa Gemini Live **solo per la conversazione vocale libera**. Per le nuove ricette dal web usa invece l'**API testuale** di Gemini con Google Search grounding, tramite un secondo endpoint del Worker Cloudflare (`/recipe`): una chiamata REST gratuita, senza sessione Live. Il Worker continua inoltre a emettere i token temporanei per Live su `/token`. La PWA resta statica: il Worker non inoltra il flusso audio.
 
 ## Cosa è già implementato
 
 - pulsante orb fluttuante visibile dopo l'accesso: al tocco cambia solo colore/stato, nessuna finestra;
 - all'avvio l'assistente NON parla: resta in ascolto della richiesta;
 - **modalità locale gratuita**: piano, ricette, dosi, frutta, spesa, batch cooking, cucina passo-passo, guida Meller e comandi rispondono con il codice dell'app (riconoscimento e sintesi vocale del browser), **senza consumare quota Gemini**;
-- Gemini Live viene usato solo quando la richiesta non è gestibile in locale (conversazione libera, nuove ricette dal web);
+- Gemini Live viene usato solo per la conversazione libera, quando la richiesta non è gestibile in locale;
 - richieste fuori tema (meteo, notizie, sport, ecc.) rifiutate: "non è di mia competenza";
 - per le informazioni sull'app Gemini usa solo gli strumenti locali, mai Google Search;
-- Google Search solo per le nuove ricette richieste sul web, **adattate obbligatoriamente alle linee guida del dott. Meller** (massimi per pasto applicati dal codice);
+- **nuove ricette dal web = API testuale (niente Live)**: il client riconosce la richiesta con `analyzeRecipeRequest` e chiama il Worker su `/recipe`, che interroga Gemini (modello testuale `GEMINI_TEXT_MODEL`, default `gemini-2.5-flash`) con Google Search grounding e il tool `import_recipe`;
+- Google Search solo per le nuove ricette richieste sul web, **adattate obbligatoriamente alle linee guida del dott. Meller** (massimi per pasto applicati dal codice e dal Worker);
 - una nuova ricetta apre il popup di importazione dell'app con dosi, preparazione e note, pronta per il salvataggio nel cloud;
 - comandi `prossimo`, `avanti`, `ripeti`, `indietro`, `salta`, `pausa`, `ricomincia`, `quanto manca`, `chiudi assistente`;
 - audio e cronologia non salvati dalla webapp;
@@ -20,15 +21,17 @@ L'assistente di Piano Nutrizionale usa Gemini Live per la conversazione vocale e
 
 Sono due quote separate:
 
-1. **Cloudflare Workers Free**: ospita il piccolo endpoint `/token`.
-2. **Gemini API free tier**: esegue Gemini Live entro le quote correnti del progetto Google AI Studio.
+1. **Cloudflare Workers Free**: ospita gli endpoint `/token` (token Live) e `/recipe` (ricette dal web).
+2. **Gemini API free tier**: esegue Gemini Live (conversazione) e Gemini testuale (ricette dal web) entro le quote correnti del progetto Google AI Studio.
 
 Nessuna delle due quote è illimitata. L'app non configura pagamenti automatici e mostra un errore comprensibile quando il provider rifiuta una richiesta.
 
 ### Quanto consuma l'assistente
 
 - **Modalità locale (richieste intra-app): 0 chiamate Gemini.** Piano, ricette, spesa, frutta, batch e cucina usano solo il riconoscimento e la sintesi vocale del browser: gratuiti e senza limite giornaliero.
-- **Gemini Live**: parte solo per richieste libere o nuove ricette dal web. Una sessione = una connessione; il token effimero viene emesso **una sola volta per sessione** (30 minuti) e riusato per le riconnessioni, quindi non si spreca nulla a ogni tentativo.
+- **Gemini Live**: parte solo per la conversazione libera. Una sessione = una connessione; il token effimero viene emesso **una sola volta per sessione** (30 minuti) e riusato per le riconnessioni, quindi non si spreca nulla a ogni tentativo.
+- **Gemini testuale (ricette dal web)**: una richiesta `generateContent` per ogni nuova ricetta chiesta esplicitamente. Non apre nessuna sessione Live. Le dosi arrivano già adattate dal Worker e vengono ricalcolate anche dal client (`adaptRecipeToGuidelines`, doppia sicurezza sui massimi Meller).
+- Il budget del Worker (30 richieste ogni 15 minuti per utente) è **condiviso** tra `/token` e `/recipe`.
 - I limiti del free tier (RPD, RPM, TPM e minuti audio per il modello Live) dipendono dal progetto Google e si vedono esattamente su <https://aistudio.google.com/rate-limit>; per i modelli Flash il free tier è nell'ordine di 1500 richieste/giorno, ma per i modelli Live il vincolo pratico sono i token al minuto e la durata audio. Con la modalità locale, la quota Gemini resta per le sole richieste che la meritano.
 
 ### 1. Crea la chiave Gemini
@@ -39,6 +42,8 @@ Nessuna delle due quote è illimitata. L'app non configura pagamenti automatici 
 4. Tienila pronta per il comando `wrangler secret put` del passaggio successivo.
 
 Il modello Live principale è configurato come `gemini-3.1-flash-live-preview`. Se Google lo rifiuta con **1011** (quota gratuita esaurita) o **1008** (modello ritirato), l'app passa da sola al modello di riserva `gemini-2.5-flash-native-audio-preview-12-2025` (vedi sotto), anch'esso sul free tier e con la stessa voce configurata.
+
+> Nota sul modello di riserva vocale: `gemini-2.5-flash-native-audio-preview-12-2025` è deprecato ma ancora funzionante; **non va cambiato** per ora. Quando Google lo spegnerà, l'app mostrerà l'errore relativo e la **modalità locale** continuerà a coprire tutte le richieste intra-app, mentre le **nuove ricette dal web restano disponibili** perché usano l'API testuale (`GEMINI_TEXT_MODEL`), non Live.
 
 > Nota: `gemini-2.0-flash-live-001` è stato **spento da Google il 9 dicembre 2025** e oggi risponde `1008 ... is not found`: non usarlo come modello. Se cambierai modello in futuro, usa sempre un modello Live ancora disponibile nel tuo account (elenco in AI Studio o su <https://ai.google.dev/gemini-api/docs/deprecations>).
 
@@ -59,6 +64,7 @@ Questo è il percorso da usare se non vuoi usare il terminale. Non servono Pages
    | Text | `FIREBASE_PROJECT_ID` | `piano-nutrizionale` |
    | Text | `GEMINI_LIVE_MODEL` | `gemini-3.1-flash-live-preview` |
    | Text | `GEMINI_LIVE_FALLBACK_MODEL` | `gemini-2.5-flash-native-audio-preview-12-2025` |
+   | Text | `GEMINI_TEXT_MODEL` | `gemini-2.5-flash` (modello testuale per le ricette dal web) |
    | Text | `ALLOWED_ORIGINS` | `https://sylarpower.github.io,http://localhost:8000,http://127.0.0.1:8000,https://piano-nutrizionale.web.app` |
    | **Secret** | `GEMINI_API_KEY` | la chiave Gemini, incollata nel campo segreto |
 
@@ -66,7 +72,12 @@ Questo è il percorso da usare se non vuoi usare il terminale. Non servono Pages
 6. Salva le variabili e scegli **Deploy**. Se Cloudflare chiede di attivare il sottodominio `workers.dev`, abilitalo: è sufficiente per questa integrazione e non richiede DNS o un dominio personale.
 7. Nel Worker vai in **Overview** oppure **Settings** → **Domains & Routes** e copia l'indirizzo `workers.dev` assegnato. L'endpoint della PWA è quell'indirizzo con `/token` alla fine.
 
-Il codice risponde solo su `/token`: aprire l'indirizzo senza `/token` e ricevere `Endpoint non trovato` è normale.
+Il codice risponde su due endpoint:
+
+- `POST /token` — emette il token temporaneo per Gemini Live (conversazione);
+- `POST /recipe` — cerca una nuova ricetta dal web con Gemini testuale + Google Search grounding e restituisce `{ recipe: {...} }`.
+
+Aprire l'indirizzo senza `/token` o `/recipe` e ricevere `Endpoint non trovato` è normale. Entrambi gli endpoint richiedono `Authorization: Bearer <idToken Firestore>` e condividono lo stesso rate limit (30 richieste/15 minuti per utente).
 
 Il token Gemini viene emesso **senza vincolarlo a un modello**: il modello è scelto dal client nel setup della WebSocket (primario o di riserva), quindi un solo token vale per entrambi e non serve una nuova emissione per il fallback. Se Gemini rifiuta l'emissione del token per il modello richiesto, il Worker prova da solo il modello `GEMINI_LIVE_FALLBACK_MODEL` prima di rispondere con un errore. Il modello richiesto dal client viene comunque accettato solo se coincide con uno dei due modelli configurati.
 
@@ -195,6 +206,9 @@ L'utente non è autenticato o la sessione Firebase è scaduta. Esci e accedi di 
 
 ### `Risposta Gemini senza token temporaneo`
 Controlla che `GEMINI_API_KEY` sia stato caricato con `npx wrangler secret put GEMINI_API_KEY`, che il progetto abbia accesso a Gemini Live e che il modello indicato sia ancora disponibile.
+
+### `Non sono riuscito a comporre una ricetta valida` (422)
+Il Worker ha interpellato Gemini ma non ha ricevuto la chiamata `import_recipe`. Riprova con una richiesta diversa. Se l'errore persiste, verifica che `GEMINI_TEXT_MODEL` sia impostato (default `gemini-2.5-flash`) e che la chiave abbia accesso all'API testuale con Google Search grounding.
 
 ### Il microfono non parte
 Concedi il permesso al sito, usa Chrome/Edge/Safari aggiornato, verifica HTTPS e assicurati che nessun'altra app stia usando il microfono. Con cuffie o auricolari l'interruzione della voce è più pulita.

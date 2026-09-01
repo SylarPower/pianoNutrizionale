@@ -106,10 +106,63 @@ assert.deepEqual(importedRecipe.steps, ['Cuoci il pollo', 'Condisci con limone']
 window.SpeechRecognition = undefined;
 window.webkitSpeechRecognition = undefined;
 
+const waitFor = async (predicate, label, timeoutMs = 3000) => {
+  const start = Date.now();
+  while (!predicate()) {
+    if (Date.now() - start > timeoutMs) throw new Error(`timeout in attesa di: ${label}`);
+    await new Promise(resolve => setTimeout(resolve, 10));
+  }
+};
+
 /*
  * Regressione "Mi collego…" infinito e quota: token/429 gestiti senza rete.
  */
 (async () => {
+  // ---- Nuove ricette dal web: API testuale /recipe, MAI Gemini Live ----
+  {
+    window.SpeechRecognition = FakeRecognition;
+    window.webkitSpeechRecognition = FakeRecognition;
+    importedRecipe = null;
+    window.currentUser = { getIdToken: async () => 'tok' };
+    window.PIANO_AI_CONFIG.tokenEndpoint = 'https://piano-nutrizionale-ai.example.workers.dev/token';
+
+    let recipeFetch = null;
+    window.fetch = (url, init) => {
+      recipeFetch = { url: String(url), init };
+      return Promise.resolve({
+        ok: true,
+        status: 200,
+        json: async () => ({
+          recipe: {
+            name: 'Pollo al curry',
+            slot: 'dinner',
+            emoji: '🍛',
+            ingredients: [{ name: 'Pollo', quantity: '300 g' }, { name: 'Riso', quantity: '150 g' }, { name: 'Olio EVO', quantity: '20 g' }],
+            steps: ['Cuoci il pollo', 'Servi con il riso'],
+            notes: []
+          }
+        })
+      });
+    };
+
+    window.PianoAssistant.open();
+    assert.equal(window.PianoAssistant._state.mode, 'local', 'modalità locale per la ricerca di ricette');
+    simulateSpeech('trovami una ricetta con pollo');
+    await waitFor(() => importedRecipe && importedRecipe.name === 'Pollo al curry', 'popup import ricetta dal web');
+    assert.equal(importedRecipe.ingredients.find(item => item.name === 'Pollo').quantity, '200 g', 'pollame adattato (doppia sicurezza)');
+    assert.equal(importedRecipe.ingredients.find(item => item.name === 'Riso').quantity, '90 g', 'riso adattato al massimo Meller');
+    assert.equal(importedRecipe.ingredients.find(item => item.name === 'Olio EVO').quantity, '10 g', 'olio adattato al massimo Meller');
+    assert.ok(recipeFetch.url.endsWith('/recipe'), 'chiama /recipe, non /token');
+    assert.equal(recipeFetch.init.headers.Authorization, 'Bearer tok', 'idToken Firebase inoltrato');
+    assert.deepEqual(JSON.parse(recipeFetch.init.body), { query: 'trovami una ricetta con pollo', language: 'it-IT' }, 'body con query e lingua');
+    assert.equal(window.PianoAssistant._state.mode, 'local', 'resta in modalità locale: niente Live');
+    assert.equal(window.PianoAssistant._state.ws, null, 'nessuna WebSocket Live aperta');
+    assert.ok(spoken.some(text => /Controlla il popup/.test(text)), 'conferma vocale della ricetta');
+    window.PianoAssistant.close();
+    window.SpeechRecognition = undefined;
+    window.webkitSpeechRecognition = undefined;
+  }
+
   const stubHeaders = { 'retry-after': '90' };
   class StubResponse {
     constructor(body, init = {}) {

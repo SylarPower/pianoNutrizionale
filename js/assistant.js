@@ -787,8 +787,15 @@
   }
 
   function escalateToLive(text) {
+    const clean = String(text || '').trim();
+    // Richiesta di UNA nuova ricetta dal web: si usa l'API testuale di Gemini
+    // (con Google Search grounding) tramite il Worker /recipe, NON Gemini Live.
+    if (domain?.analyzeRecipeRequest?.(clean)) {
+      requestWebRecipe(clean);
+      return;
+    }
     state.mode = 'live';
-    state.pendingText = String(text || '').trim();
+    state.pendingText = clean;
     stopLocalRecognition();
     if (!hasLiveEndpoint()) {
       setStatus('error', 'Serve un controllo');
@@ -796,6 +803,68 @@
       return;
     }
     connectLive().catch(error => showError(error.message));
+  }
+
+  // Endpoint del Worker per la ricerca di ricette: deriva da tokenEndpoint
+  // sostituendo /token con /recipe.
+  function recipeEndpoint() {
+    const token = String(getConfig().tokenEndpoint || '').trim();
+    if (!token) return '';
+    return token.replace(/\/token\/?$/, '/recipe');
+  }
+
+  // Cerca una nuova ricetta sul web con l'API testuale di Gemini (niente
+  // Live): il Worker chiama Gemini con Google Search grounding e restituisce
+  // la ricetta già pronta. Qui si applica una seconda volta
+  // adaptRecipeToGuidelines (doppia sicurezza sui massimi del dott. Meller),
+  // si apre il popup di importazione e si conferma a voce restando in locale.
+  async function requestWebRecipe(text) {
+    const clean = String(text || '').trim();
+    if (!hasLiveEndpoint()) {
+      showError('Per cercare una nuova ricetta serve il Worker Cloudflare: inserisci l’URL in js/assistant-config.js e pubblica il Worker con l’endpoint /recipe. Le richieste su piano, ricette e spesa funzionano comunque.');
+      return;
+    }
+    let idToken;
+    try {
+      idToken = await getIdToken();
+    } catch (error) {
+      showError(error?.message || 'Sessione non disponibile: accedi di nuovo alla webapp.');
+      return;
+    }
+    try {
+      const response = await fetch(recipeEndpoint(), {
+        method: 'POST',
+        headers: { Authorization: `Bearer ${idToken}`, Accept: 'application/json', 'Content-Type': 'application/json' },
+        credentials: 'omit',
+        body: JSON.stringify({ query: clean, language: 'it-IT' })
+      });
+      let body = null;
+      try { body = await response.json(); } catch (_) {}
+      if (response.status === 429) {
+        showError('Troppe richieste di ricette in poco tempo: attendi qualche minuto e riprova.');
+        return;
+      }
+      if (!response.ok) {
+        showError(body?.error || `Ricerca della ricetta non riuscita (${response.status}).`);
+        return;
+      }
+      const recipe = body?.recipe;
+      if (!recipe || !recipe.name || !Array.isArray(recipe.ingredients) || !recipe.ingredients.length) {
+        showError('Non ho ricevuto una ricetta valida dal web. Riprova con una richiesta diversa.');
+        return;
+      }
+      // Doppia sicurezza: anche il Worker adatta i massimi, ma qui si
+      // ricalcolano le dosi con le stesse regole del client prima del popup.
+      const adapted = domain?.adaptRecipeToGuidelines ? domain.adaptRecipeToGuidelines(recipe) : { recipe, report: [] };
+      if (root.PianoDomain?.classifyProtein) {
+        try { adapted.recipe.proteinCategory = root.PianoDomain.classifyProtein(adapted.recipe) || ''; } catch (_) {}
+      }
+      if (!openRecipeImportPopup(adapted.recipe)) return;
+      const adjusted = adapted.report?.length ? ' con le dosi adattate alle linee guida del dott. Meller' : '';
+      speakLocal(`Ho preparato “${adapted.recipe.name}”${adjusted}. Controlla il popup per importarla nel ricettario.`);
+    } catch (error) {
+      showError(error?.message || 'Ricerca della ricetta non riuscita. Controlla la connessione e riprova.');
+    }
   }
 
   function stopCapture() {
@@ -1651,6 +1720,8 @@
     _openLiveWithFallback: openLiveWithFallback,
     _messageDataToText: messageDataToText,
     _analyzeLocalIntent: value => domain?.analyzeLocalIntent ? domain.analyzeLocalIntent(value) : null,
+    _analyzeRecipeRequest: value => domain?.analyzeRecipeRequest ? domain.analyzeRecipeRequest(value) : false,
+    _requestWebRecipe: requestWebRecipe,
     _adaptRecipeToGuidelines: recipe => domain?.adaptRecipeToGuidelines ? domain.adaptRecipeToGuidelines(recipe) : { recipe, report: [] },
     _resetRateLimit: () => { state.rateLimitUntil = 0; clearCachedTokens(); }
   };
