@@ -917,6 +917,10 @@
   function describeClose(event) {
     const code = event?.code || 0;
     const reason = event?.reason ? String(event.reason) : '';
+        if (/quota|billing|rate ?limit|429/i.test(reason)) {
+      return 'Quota Gemini esaurita o fatturazione non attiva per la chiave API del Worker. ' +
+        'Controlla quota e fatturazione della chiave Gemini su Google AI Studio / Google Cloud, oppure riprova dopo l’azzeramento della quota.';
+    }
     if (reason) return `Gemini ha chiuso la connessione (${code}): ${reason}`;
     if (code === 1008 || code === 1003) {
       return 'Gemini ha rifiutato la configurazione della sessione vocale. ' +
@@ -930,8 +934,11 @@
   // Cadute di rete/riavvii server: vale la pena ritentare. Errori di
   // configurazione (token/setup rifiutato, 1003/1008/1000): ritentare non
   // serve e brucerebbe altri token, quindi ci si ferma mostrando il motivo.
-  function isRetryableClose(code) {
-    return !code || code === 1006 || code === 1011 || code === 1012 || code === 1013;
+  // Solo cadute di rete genuine: un rifiuto per quota/configurazione
+  // (1011/1008/1003 o reason con quota/billing) NON va ritentato.
+  function isRetryableClose(code, reason) {
+    if (/quota|billing|rate ?limit|429/i.test(String(reason || ''))) return false;
+    return !code || code === 1006 || code === 1012 || code === 1013;
   }
 
   async function openSocket(token) {
@@ -967,7 +974,7 @@
         fail(new Error('Connessione Gemini Live non riuscita (rete o endpoint).'));
       };
       socket.onclose = event => {
-        const retryable = isRetryableClose(event?.code);
+                const retryable = isRetryableClose(event?.code, event?.reason);
         if (!state.setupReady) {
           fail(new Error(describeClose(event)));
         }
