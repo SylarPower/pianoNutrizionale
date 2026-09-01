@@ -60,6 +60,14 @@
     // Dopo un 429 del Worker ci si ferma fino a questo timestamp invece di
     // ritentare subito in loop e restare bloccati.
     rateLimitUntil: 0,
+    // Modalità locale gratuita (riconoscimento vocale del browser + risposte
+    // deterministiche) oppure Gemini Live per le richieste che la richiedono.
+    mode: 'idle',
+    recognition: null,
+    localStopping: false,
+    // Testo da inoltrare a Gemini Live quando una richiesta non gestibile
+    // in locale fa partire la sessione Live.
+    pendingText: '',
     sessionStartedAt: null,
     cooking: null,
     messages: [],
@@ -174,6 +182,33 @@
       name: 'get_cooking_status',
       description: 'Dice a che punto è la sessione di cucina attiva.',
       parameters: { type: 'OBJECT', properties: {} }
+    },
+    {
+      name: 'import_recipe',
+      description: 'Prepara una NUOVA ricetta trovata sul web per importarla nel ricettario. Si usa solo su richiesta esplicita dell’utente di una nuova ricetta. Quantità già adattate alle linee guida del dott. Meller; l’app apre il popup di importazione.',
+      parameters: {
+        type: 'OBJECT',
+        properties: {
+          name: { type: 'STRING', description: 'Nome della ricetta' },
+          slot: { type: 'STRING', enum: ['breakfast', 'snack1', 'lunch', 'snack2', 'dinner'], description: 'Pasto di appartenenza' },
+          emoji: { type: 'STRING', description: 'Emoji rappresentativa (opzionale)' },
+          ingredients: {
+            type: 'ARRAY',
+            description: 'Ingredienti con dose per l’uomo (l’app adatta i massimi alle linee guida Meller)',
+            items: {
+              type: 'OBJECT',
+              properties: {
+                name: { type: 'STRING', description: 'Nome ingrediente' },
+                quantity: { type: 'STRING', description: 'Dose con unità, es. "150 g" oppure "q.b."' }
+              },
+              required: ['name', 'quantity']
+            }
+          },
+          steps: { type: 'ARRAY', items: { type: 'STRING' }, description: 'Preparazione: un passaggio per elemento' },
+          notes: { type: 'ARRAY', items: { type: 'STRING' }, description: 'Note opzionali' }
+        },
+        required: ['name', 'ingredients', 'steps']
+      }
     },
     {
       name: 'close_assistant',
@@ -392,6 +427,22 @@
     return resultMessage(result.message, { cooking: result.status, spoken: result.message });
   }
 
+  // Apre il popup di importazione dell'app (il modale ricette esistente) con
+  // la ricetta già adattata alle linee guida del dott. Meller.
+  function openRecipeImportPopup(recipe) {
+    try {
+      if (typeof importRecipeFromAssistant !== 'function') {
+        showError('Il popup di importazione ricette non è disponibile in questa pagina.');
+        return false;
+      }
+      importRecipeFromAssistant(recipe);
+      return true;
+    } catch (error) {
+      showError(error?.message || 'Importazione della ricetta non riuscita.');
+      return false;
+    }
+  }
+
   function executeTool(name, args = {}) {
     const data = currentState();
     const profile = currentProfile();
@@ -493,6 +544,31 @@
       return resultMessage(cooking?.current?.text || (cooking?.awaitingPreparationConfirmation ? 'Abbiamo preso tutti gli ingredienti. Attendo la conferma per iniziare la preparazione.' : 'Non c’è una sessione di cucina attiva.'), { cooking });
     }
 
+    if (name === 'import_recipe') {
+      const raw = {
+        name: String(args.name || '').trim(),
+        slot: domain?.resolveSlot ? domain.resolveSlot(args.slot, 'lunch') : 'lunch',
+        emoji: String(args.emoji || '').trim(),
+        ingredients: (Array.isArray(args.ingredients) ? args.ingredients : []).map(item => ({
+          name: String(item?.name || '').trim(),
+          quantity: String(item?.quantity || '').trim()
+        })).filter(item => item.name),
+        steps: (Array.isArray(args.steps) ? args.steps : []).map(step => String(step || '').trim()).filter(Boolean),
+        notes: (Array.isArray(args.notes) ? args.notes : []).map(note => String(note || '').trim()).filter(Boolean)
+      };
+      if (!raw.name || !raw.ingredients.length) {
+        return resultMessage('Non ho ricevuto una ricetta valida dal web. Riprova con un nome e gli ingredienti.');
+      }
+      const adapted = domain?.adaptRecipeToGuidelines ? domain.adaptRecipeToGuidelines(raw) : { recipe: raw, report: [] };
+      // Categoria proteica dedotta dal dominio dell'app (classifyProtein).
+      try {
+        if (root.PianoDomain?.classifyProtein) adapted.recipe.proteinCategory = root.PianoDomain.classifyProtein(adapted.recipe) || '';
+      } catch (_) {}
+      openRecipeImportPopup(adapted.recipe);
+      const adjusted = adapted.report?.length ? ' con le dosi adattate alle linee guida del dott. Meller' : '';
+      return resultMessage(`Ho preparato “${adapted.recipe.name}”${adjusted}. Controlla il popup per importarla nel ricettario.`);
+    }
+
     if (name === 'close_assistant') {
       state.closeRequested = true;
       return resultMessage('Chiudo l’assistente e spengo il microfono.', { close: true });
@@ -505,16 +581,17 @@
     const profile = currentProfile();
     return [
       'Sei Piano, l’assistente vocale integrato nella webapp Piano Nutrizionale.',
-      'Parla sempre in italiano e dai del tu. Il tono è caldo, elegante, colloquiale e naturale, mai robotico.',
-      'La sessione è già stata attivata dal pulsante AI: resta disponibile e ascolta finché l’utente non dice di chiudere oppure preme il pulsante di chiusura.',
+      'Parla sempre in italiano e dai del tu. Il tono è caldo, elegante, colloquiale e naturale, mai robotico. Risposte brevi, una frase quando basta.',
+      'La sessione è già attiva ma all’avvio NON devi parlare: niente saluti, resta in silenzio e ascolta finché l’utente non ti rivolge la parola.',
+      'Il tuo unico ambito è la webapp: alimentazione, nutrizione, ricette, piano settimanale, lista della spesa, batch cooking, preparazione in cucina e le linee guida del dott. Meller. Se la richiesta è fuori da questo ambito (meteo, notizie, sport, politica, intrattenimento, tecnologia, ecc.) rispondi in una frase che non è di tua competenza e invita a chiedere di nutrizione, ricette o del piano.',
+      'Per QUALSIASI informazione sull’app (piano, ricette presenti, dosi, lista della spesa, batch, account, guida) usa esclusivamente gli strumenti dell’app: mai Google Search. Non indovinare e non inventare numeri.',
+      'Usa Google Search SOLO quando l’utente chiede una ricetta nuova da cercare sul web. In quel caso: cerca la ricetta, adattane quantità e ingredienti alle linee guida del dott. Meller (usa search_app_content per la guida; non superare mai i massimi indicati, es. pollame 200g, manzo 150g, maiale 100g, pesce 250g, legumi 240g, uova 180g, pasta/riso 90g, pane 120g, olio EVO 10g, frutta 250g, frutta secca 20g, crackers 40g) e chiama import_recipe con la ricetta completa. Non riepilogarla a voce: l’app apre il popup per importarla.',
       'Non annunciare mai un elenco numerato tipo “ingrediente 1 di 8” se non viene richiesto. Per esempio dì “Prendi 200 grammi di pomodori”.',
       `Il profilo porzioni attivo è ${profile}. Usa solo questo profilo quando dai dosi.`,
-      'Per qualunque dato del piano, ricetta, dose, grammo, lista della spesa, batch cooking, preparazione, account o guida devi usare gli strumenti dell’app. Non indovinare e non inventare numeri.',
       'Se l’utente chiede una sola informazione, rispondi solo a quella. Per esempio, per i grammi di frutta nello spuntino dì solo il totale della frutta e non ricapitolare tutto il pasto.',
       'Quando l’utente chiede di cucinare un pasto, usa start_cooking_session e proponi un solo ingrediente alla volta. Dopo l’ultimo ingrediente chiedi se vuole iniziare la preparazione. Solo dopo una conferma usa start_preparation e poi uno step alla volta.',
       'Interpreta “prossimo”, “avanti”, “fatto” come next_cooking_item; “ripeti” come repeat_cooking_item; “indietro” come previous_cooking_item; “salta” come skip_cooking_item; “pausa” come pause_cooking_session; “ricomincia” come restart_cooking_session.',
       'Dopo ogni tool di cucina pronuncia in modo naturale il campo spoken o message restituito dal tool, senza aggiungere passaggi non presenti.',
-      'Usa Google Search solo per informazioni aggiornate o non presenti nell’app. Riassumi brevemente e indica le fonti nella risposta testuale della schermata, senza leggere URL lunghi.',
       'Non fare diagnosi e non prescrivere farmaci o terapie. Per problemi clinici rimanda a medico o nutrizionista. Non modificare piano, ricette o lista spesa senza una conferma esplicita.',
       'Se l’utente dice “chiudi assistente”, “smetti di ascoltare”, “basta” o equivalente, usa close_assistant e non continuare la conversazione.'
     ].join('\n');
@@ -606,6 +683,119 @@
     state.inputProcessor.connect(state.inputSilence);
     state.inputSilence.connect(state.inputContext.destination);
     renderLiveTranscript('');
+  }
+
+  function speechRecognitionClass() {
+    return root.SpeechRecognition || root.webkitSpeechRecognition || null;
+  }
+
+  // ---------------------------------------------------------------------
+  // Modalità locale gratuita: richieste intra-app risolte dal codice,
+  // senza consumare alcuna chiamata Gemini. Riconoscimento vocale del
+  // browser (gratis) + risposte deterministiche + sintesi vocale di sistema.
+  // ---------------------------------------------------------------------
+
+  function startLocalSession() {
+    state.mode = 'local';
+    state.localStopping = false;
+    clearError();
+    setStatus('listening', 'Ti ascolto');
+    if (typeof showToast === 'function') showToast('Assistente attivo · ti ascolto');
+    setupRecognition();
+  }
+
+  function setupRecognition() {
+    if (state.recognition) return;
+    const Recognition = speechRecognitionClass();
+    if (!Recognition) return;
+    const recognition = new Recognition();
+    recognition.lang = 'it-IT';
+    recognition.continuous = true;
+    recognition.interimResults = true;
+    recognition.onresult = event => {
+      for (let index = event.resultIndex; index < event.results.length; index += 1) {
+        const result = event.results[index];
+        if (!result.isFinal) continue;
+        const text = String(result[0]?.transcript || '').trim();
+        if (text) handleLocalTranscript(text);
+      }
+    };
+    recognition.onerror = event => {
+      if (event?.error === 'not-allowed' || event?.error === 'service-not-allowed') {
+        state.localStopping = true;
+        showError('Permesso del microfono negato: consenti l’accesso al microfono del sito e riprova.');
+      }
+    };
+    recognition.onend = () => {
+      state.recognition = null;
+      // Il browser interrompe il riconoscimento dopo una pausa: si riparte
+      // finché la modalità è aperta e la pagina è visibile.
+      if (!state.open || state.mode !== 'local' || state.localStopping || document.hidden) return;
+      try { setupRecognition(); state.recognition?.start(); } catch (_) {}
+    };
+    state.recognition = recognition;
+    try { recognition.start(); } catch (_) {}
+  }
+
+  function stopLocalRecognition() {
+    state.localStopping = true;
+    const recognition = state.recognition;
+    state.recognition = null;
+    try { recognition?.stop(); } catch (_) {}
+    try { root.speechSynthesis?.cancel?.(); } catch (_) {}
+  }
+
+  // Parla con la sintesi vocale di sistema (gratuita): voce italiana del
+  // browser. La voce "Aoede" resta quella della modalità Gemini Live.
+  function speakLocal(text) {
+    const clean = String(text || '').trim();
+    if (!clean || !state.open || state.mode !== 'local') return;
+    try {
+      if (!root.speechSynthesis || !root.SpeechSynthesisUtterance) return;
+      root.speechSynthesis.cancel();
+      const utterance = new root.SpeechSynthesisUtterance(clean);
+      utterance.lang = 'it-IT';
+      const voices = root.speechSynthesis.getVoices?.() || [];
+      const voice = voices.find(item => /^it(-|_)/i.test(item.lang) && /femminile|female|elena|paola|italian/i.test(item.name))
+        || voices.find(item => /^it(-|_)/i.test(item.lang))
+        || null;
+      if (voice) utterance.voice = voice;
+      setStatus('speaking', 'Sto parlando');
+      utterance.onend = () => { if (state.open && state.mode === 'local') setStatus('listening', 'Ti ascolto'); };
+      utterance.onerror = () => { if (state.open && state.mode === 'local') setStatus('listening', 'Ti ascolto'); };
+      root.speechSynthesis.speak(utterance);
+    } catch (_) {
+      if (state.open && state.mode === 'local') setStatus('listening', 'Ti ascolto');
+    }
+  }
+
+  // Richiesta riconosciuta in modalità locale: se il motore locale sa
+  // rispondere lo fa gratis, altrimenti passa a Gemini Live con il testo.
+  function handleLocalTranscript(text) {
+    const clean = String(text || '').trim();
+    if (!clean || !state.open || state.mode !== 'local') return;
+    if (domain?.isCloseCommand?.(clean)) { closeAssistant('voice'); return; }
+    const intent = domain?.analyzeLocalIntent?.(clean) || null;
+    if (!intent) { escalateToLive(clean); return; }
+    if (intent.localReply) { speakLocal(intent.localReply); return; }
+    if (intent.outOfScope) { speakLocal(intent.message); return; }
+    let result;
+    try { result = executeTool(intent.tool, intent.args || {}); }
+    catch (error) { result = resultMessage(error.message || 'Non riesco a rispondere adesso.'); }
+    if (result?.close || intent.tool === 'close_assistant') { closeAssistant('voice'); return; }
+    if (result?.message) speakLocal(result.message);
+  }
+
+  function escalateToLive(text) {
+    state.mode = 'live';
+    state.pendingText = String(text || '').trim();
+    stopLocalRecognition();
+    if (!hasLiveEndpoint()) {
+      setStatus('error', 'Serve un controllo');
+      showError('Per questa richiesta serve Gemini Live: inserisci l’URL del Worker Cloudflare in js/assistant-config.js. Le richieste su piano, ricette e spesa funzionano comunque.');
+      return;
+    }
+    connectLive().catch(error => showError(error.message));
   }
 
   function stopCapture() {
@@ -757,17 +947,6 @@
 
   // Invia al modello un testo digitato (o una domanda rapida) e lo mostra
   // come bolla dell'utente.
-  function sendText(text) {
-    const clean = String(text || '').trim();
-    if (!clean) return;
-    if (!state.active || !state.ws || state.ws.readyState !== WebSocket.OPEN) {
-      showError('Attendi la connessione vocale per scrivere all’assistente.');
-      return;
-    }
-    addMessage('user', clean);
-    send({ realtimeInput: { text: clean } });
-  }
-
   function appendSources(metadata) {
     const chunks = Array.isArray(metadata?.groundingChunks) ? metadata.groundingChunks : [];
     const sources = chunks.map(chunk => ({
@@ -791,36 +970,25 @@
   }
 
   function renderLiveTranscript(text) {
-    if (ui.liveTranscript) {
-      ui.liveTranscript.textContent = text ? `“${text}”` : 'Microfono attivo · puoi parlare';
-      ui.liveTranscript.classList.toggle('has-text', Boolean(text));
-    }
+    // L'assistente è solo vocale (nessun pannello): il testo live è gestito
+    // internamente; la funzione resta per compatibilità dei flussi audio.
   }
 
   function setStatus(kind, label) {
-    if (ui.status) {
-      ui.status.dataset.state = kind;
-      ui.status.textContent = label;
-    }
     if (ui.fab) {
       ui.fab.dataset.state = kind;
-      ui.fab.setAttribute('aria-label', state.active ? 'Assistente vocale attivo: chiudi' : 'Apri assistente vocale');
+      ui.fab.setAttribute('aria-label', state.active || state.open ? 'Assistente vocale attivo: tocca per chiudere' : 'Apri assistente vocale');
     }
   }
 
   function showError(message) {
     state.lastError = String(message || 'Errore non specificato');
     setStatus('error', 'Serve un controllo');
-    addMessage('assistant', state.lastError);
-    if (ui.error) {
-      ui.error.textContent = state.lastError;
-      ui.error.classList.remove('hidden');
-    }
+    if (typeof showToast === 'function') showToast(state.lastError, true);
   }
 
   function clearError() {
     state.lastError = '';
-    ui.error?.classList.add('hidden');
   }
 
   function mergeTranscript(previous, chunk) {
@@ -869,7 +1037,14 @@
       state.reconnectAttempts = 0;
       setStatus('listening', 'Ti ascolto');
       startCapture().catch(error => showError(error.message));
-      send({ realtimeInput: { text: 'L’utente ha appena aperto la modalità assistente. Salutalo in una frase breve e chiedigli in cosa può aiutarlo.' } });
+      // Niente saluti automatici: all'avvio l'assistente ascolta e basta.
+      // Se la sessione Live è partita per una richiesta non gestibile in
+      // locale, la si inoltra adesso.
+      if (state.pendingText) {
+        const pending = state.pendingText;
+        state.pendingText = '';
+        send({ realtimeInput: { text: pending } });
+      }
       return;
     }
 
@@ -1337,8 +1512,10 @@
     state.hiddenSuspension = false;
     state.closeRequested = false;
     state.cooking = null;
+    state.mode = 'idle';
     if (state.reconnectTimer) clearTimeout(state.reconnectTimer);
     state.reconnectTimer = null;
+    stopLocalRecognition();
     stopCapture();
     stopPlayback();
     closeSocket();
@@ -1352,8 +1529,8 @@
     state.currentInput = '';
     state.currentOutput = '';
     state.sessionHandle = null;
+    state.pendingText = '';
     renderMessages();
-    ui.panel?.classList.add('hidden');
     ui.fab?.classList.remove('is-active');
     ui.fab?.setAttribute('aria-label', 'Apri assistente vocale');
     setStatus('idle', 'Assistente vocale');
@@ -1370,13 +1547,21 @@
     state.currentInput = '';
     state.currentOutput = '';
     state.sessionHandle = null;
+    state.pendingText = '';
     renderMessages();
-    ui.panel?.classList.remove('hidden');
     ui.fab?.classList.add('is-active');
     clearError();
+    // Prima di tutto la modalità locale gratuita: piano, ricette, spesa e
+    // cucina rispondono senza consumare quota Gemini. Gemini Live si usa
+    // solo quando una richiesta non è gestibile in locale.
+    if (speechRecognitionClass()) {
+      startLocalSession();
+      return;
+    }
+    // Browser senza riconoscimento vocale (es. Firefox): solo Gemini Live.
     if (!hasLiveEndpoint()) {
       setStatus('setup', 'Configura il Worker');
-      showError('Per attivare Gemini Live devi inserire l’URL del Worker Cloudflare in js/assistant-config.js. La guida è disponibile in docs/AI_ASSISTANT.md.');
+      showError('Per attivare l’assistente vocale devi inserire l’URL del Worker Cloudflare in js/assistant-config.js. La guida è disponibile in docs/AI_ASSISTANT.md.');
       return;
     }
     if (state.rateLimitUntil > Date.now()) {
@@ -1394,65 +1579,17 @@
 
   function ensureUi() {
     if (ui.fab) return;
+    // Orb vocale senza pannello: al tocco cambia solo colore/stato.
     const fab = document.createElement('button');
     fab.id = 'assistant-fab';
     fab.className = 'assistant-fab hidden';
     fab.type = 'button';
     fab.innerHTML = '<span class="assistant-fab-glow"></span><span class="assistant-fab-icon">✦</span><span class="assistant-fab-mic">⌁</span>';
     fab.setAttribute('aria-label', 'Apri assistente vocale');
-    fab.title = 'Apri assistente vocale';
+    fab.title = 'Assistente vocale';
     fab.addEventListener('click', toggleAssistant);
-
-    const panel = document.createElement('section');
-    panel.id = 'assistant-panel';
-    panel.className = 'assistant-panel hidden';
-    panel.setAttribute('role', 'dialog');
-    panel.setAttribute('aria-modal', 'false');
-    panel.setAttribute('aria-labelledby', 'assistant-title');
-    panel.innerHTML = `
-      <div class="assistant-panel-header">
-        <div class="assistant-title-wrap"><span class="assistant-mini-mark">✦</span><div><p class="eyebrow">ASSISTENTE VOCALE</p><h2 id="assistant-title">Parliamo del tuo piano</h2></div></div>
-        <button id="assistant-close" class="btn-icon assistant-close" type="button" aria-label="Chiudi assistente">&times;</button>
-      </div>
-      <div class="assistant-status-row"><span class="assistant-status-dot"></span><span id="assistant-status">Assistente vocale</span><span class="assistant-session-note">Nessuna cronologia salvata</span></div>
-      <div id="assistant-live-transcript" class="assistant-live-transcript">Microfono attivo · puoi parlare</div>
-      <div id="assistant-messages" class="assistant-messages" aria-live="polite"></div>
-      <p id="assistant-error" class="assistant-error hidden" role="alert"></p>
-      <div class="assistant-quick-actions">
-        <button type="button" data-assistant-text="Cosa prevede il piano di oggi?">Piano di oggi</button>
-        <button type="button" data-assistant-text="Quanta frutta c’è nello spuntino di oggi?">Frutta spuntino</button>
-        <button type="button" data-assistant-text="Cuciniamo la cena di stasera">Cuciniamo</button>
-      </div>
-      <form id="assistant-text-form" class="assistant-text-form">
-        <input id="assistant-text-input" type="text" autocomplete="off" placeholder="Scrivi o parla…" aria-label="Scrivi all’assistente">
-        <button class="assistant-send" type="submit" aria-label="Invia messaggio">↑</button>
-      </form>
-      <p class="assistant-mic-hint"><span>●</span> Microfono attivo finché non chiudi · solo con la pagina in primo piano · prova “chiudi assistente”</p>`;
-    document.body.append(fab, panel);
+    document.body.append(fab);
     ui.fab = fab;
-    ui.panel = panel;
-    ui.status = panel.querySelector('#assistant-status');
-    ui.liveTranscript = panel.querySelector('#assistant-live-transcript');
-    ui.messages = panel.querySelector('#assistant-messages');
-    ui.error = panel.querySelector('#assistant-error');
-    ui.close = panel.querySelector('#assistant-close');
-    ui.form = panel.querySelector('#assistant-text-form');
-    ui.input = panel.querySelector('#assistant-text-input');
-    ui.close.addEventListener('click', () => closeAssistant('manual'));
-    ui.form.addEventListener('submit', event => {
-      event.preventDefault();
-      const text = ui.input.value.trim();
-      ui.input.value = '';
-      if (!state.active) {
-        showError('Attendi la connessione vocale oppure configura il Worker.');
-        return;
-      }
-      sendText(text);
-    });
-    panel.querySelectorAll('[data-assistant-text]').forEach(button => button.addEventListener('click', () => {
-      if (!state.active) { showError('Attendi la connessione vocale.'); return; }
-      sendText(button.dataset.assistantText);
-    }));
     setStatus('idle', 'Assistente vocale');
   }
 
@@ -1461,7 +1598,7 @@
     return `
       <section class="settings-section assistant-settings-section">
         <div class="assistant-settings-icon">✦</div>
-        <div class="assistant-settings-copy"><p class="eyebrow">GEMINI LIVE</p><h2>Assistente vocale</h2><p>${configured ? 'Worker configurato: puoi parlare con il piano, il ricettario e la guida.' : 'Completa la configurazione del Worker gratuito per attivare la conversazione vocale.'}</p><small>Audio e trascrizioni non vengono salvati dalla webapp. Nessun acquisto automatico: usi solo la quota gratuita configurata.</small></div>
+        <div class="assistant-settings-copy"><p class="eyebrow">GEMINI LIVE</p><h2>Assistente vocale</h2><p>${configured ? 'Tocca l’orb e parla: piano, ricette, spesa e cucina rispondono gratis, senza consumare quota. Gemini Live serve solo per le richieste libere e per le nuove ricette dal web.' : 'Tocca l’orb e parla: piano, ricette, spesa e cucina rispondono gratis anche senza Worker. Per le richieste libere e le nuove ricette dal web completa la configurazione del Worker gratuito.'}</p><small>Audio e trascrizioni non vengono salvati dalla webapp. Nessun acquisto automatico: usi solo la quota gratuita configurata.</small></div>
         <button class="btn ${configured ? 'btn-primary' : 'btn-outline'}" type="button" onclick="window.PianoAssistant.open()">${configured ? 'Apri assistente' : 'Configura e prova'}</button>
       </section>`;
   }
@@ -1478,11 +1615,17 @@
     if (document.hidden) {
       state.hiddenSuspension = true;
       stopCapture();
+      if (state.mode === 'local') stopLocalRecognition();
       renderLiveTranscript('');
-      if (ui.liveTranscript) ui.liveTranscript.textContent = 'Microfono in pausa · torna alla pagina per continuare';
       setStatus('paused', 'Pausa: pagina non visibile');
     } else {
       state.hiddenSuspension = false;
+      if (state.mode === 'local') {
+        state.localStopping = false;
+        if (!state.recognition) setupRecognition();
+        setStatus('listening', 'Ti ascolto');
+        return;
+      }
       if (!state.active && !state.userClosed && hasLiveEndpoint() && state.rateLimitUntil <= Date.now()) {
         connectLive().catch(error => showError(error.message));
       } else if (state.active) {
@@ -1507,6 +1650,8 @@
     _fetchEphemeralToken: fetchEphemeralToken,
     _openLiveWithFallback: openLiveWithFallback,
     _messageDataToText: messageDataToText,
+    _analyzeLocalIntent: value => domain?.analyzeLocalIntent ? domain.analyzeLocalIntent(value) : null,
+    _adaptRecipeToGuidelines: recipe => domain?.adaptRecipeToGuidelines ? domain.adaptRecipeToGuidelines(recipe) : { recipe, report: [] },
     _resetRateLimit: () => { state.rateLimitUntil = 0; clearCachedTokens(); }
   };
 

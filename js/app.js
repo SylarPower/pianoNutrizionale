@@ -1179,6 +1179,46 @@ window.duplicateRecipe = function(recipeId = currentModal?.recipe?.id) {
   document.getElementById("recipe-modal").classList.remove("hidden");
 };
 
+// Importazione di una ricetta proposta dall'assistente vocale (Gemini Live):
+// si riusa il popup di modifica ricetta già esistente. Le dosi arrivano già
+// adattate alle linee guida del dott. Meller dall'assistente; qui l'utente
+// può rivederle e salvarle nel cloud con il normale pulsante di salvataggio.
+window.importRecipeFromAssistant = function(data = {}) {
+  const source = data && typeof data === "object" ? data : {};
+  const slot = MEAL_SLOTS.some(item => item.id === source.slot) ? source.slot : "lunch";
+  const quantityFor = quantity => {
+    const clean = String(quantity ?? "").trim();
+    return clean || "—";
+  };
+  const ingredients = (Array.isArray(source.ingredients) ? source.ingredients : [])
+    .map(item => ({
+      name: String(item?.name || "").trim() || "Ingrediente",
+      portions: {
+        ipoTraining: quantityFor(item?.quantity),
+        ipoRest: quantityFor(item?.quantity),
+        manTraining: quantityFor(item?.quantity),
+        manRest: quantityFor(item?.quantity)
+      }
+    }));
+  const steps = (Array.isArray(source.steps) ? source.steps : []).map(step => String(step || "").trim()).filter(Boolean);
+  const recipe = {
+    id: `U${Date.now()}`,
+    slot,
+    name: String(source.name || "Ricetta").trim() || "Ricetta",
+    emoji: String(source.emoji || "").trim() || getSlotMeta(slot).emoji,
+    proteinCategory: String(source.proteinCategory || ""),
+    ingredients,
+    steps,
+    notes: (Array.isArray(source.notes) ? source.notes : []).map(note => String(note || "").trim()).filter(Boolean),
+    specialNote: String(source.specialNote || "").trim()
+  };
+  currentModal = { recipe, original: null, dayKey: null, dayType: getRecipePreviewDayType(), slot: null, isNew: true };
+  editMode = true;
+  renderModalContent();
+  document.getElementById("recipe-modal").classList.remove("hidden");
+  showToast("Ricetta proposta dall'assistente: controlla dosi e preparazione, poi salva");
+};
+
 function normalizeIngredientName(name) {
   return String(name || "").trim().toLowerCase()
     .normalize("NFD").replace(/[\u0300-\u036f]/g, "")
