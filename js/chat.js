@@ -435,10 +435,6 @@
         importRecipeFromChat(recipe);
         return true;
       }
-      if (typeof importRecipeFromAssistant === 'function') {
-        importRecipeFromAssistant(recipe);
-        return true;
-      }
       if (typeof showToast === 'function') showToast('Il popup di importazione ricette non è disponibile.', true);
       return false;
     } catch (error) {
