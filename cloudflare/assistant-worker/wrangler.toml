@@ -6,12 +6,8 @@ compatibility_date = "2026-08-30"
 # npx wrangler secret put GEMINI_API_KEY
 [vars]
 FIREBASE_PROJECT_ID = "piano-nutrizionale"
-GEMINI_LIVE_MODEL = "gemini-3.1-flash-live-preview"
-# Modello di riserva che il client può richiedere quando il principale viene
-# rifiutato (quota gratuita esaurita o modello ritirato). Facoltativo.
-GEMINI_LIVE_FALLBACK_MODEL = "gemini-2.5-flash-native-audio-preview-12-2025"
-# Modello testuale (non Live) per la ricerca di nuove ricette dal web via
-# /recipe con Google Search grounding.
+# Modello testuale per la ricerca di nuove ricette dal web via /recipes
+# con Google Search grounding.
 GEMINI_TEXT_MODEL = "gemini-2.5-flash"
 # Origini senza slash finale, separate da virgola.
 # Aggiungi il tuo dominio personale se lo userai.

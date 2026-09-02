@@ -1385,3 +1385,74 @@ test('categorie spesa: passata di pomodoro e farine in Dispensa', () => {
   assert.equal(d.categoryForIngredient('Pasta integrale'), '🍚 Carboidrati');
   assert.equal(d.categoryForIngredient('Pomodori freschi'), '🥬 Verdura');
 });
+
+// ---------------------------------------------------------------------
+// Grammature del dott. Meller: segnalazione e adattamento one-click.
+// ---------------------------------------------------------------------
+const mportion = (manTraining, manRest = manTraining, ipoTraining = manTraining, ipoRest = manRest) => ({
+  manTraining, manRest, ipoTraining, ipoRest
+});
+
+test('Meller: riconosce la famiglia e l\'ordine delle regole', () => {
+  assert.equal(d.mellerRuleForIngredient('Fiocchi di latte').family, 'formaggi');
+  assert.equal(d.mellerRuleForIngredient('Latte parzialmente scremato').family, 'latte');
+  assert.equal(d.mellerRuleForIngredient('Orata').family, 'pesceBianco');
+  assert.equal(d.mellerRuleForIngredient('Salmone').family, 'pesceOmega');
+  assert.equal(d.mellerRuleForIngredient('Zucchine'), null, 'la verdura non ha una grammatura');
+});
+
+test('Meller: segnala solo le dosi oltre il riferimento del proprio pasto', () => {
+  const pranzo = recipe('X1', 'Pasta col tonno', 'lunch', [
+    ingredient('Pasta', mportion('150g', '150g', '120g', '120g')),
+    ingredient('Tonno', mportion('150g')),
+    ingredient('Zucchine', mportion('200g')),
+    ingredient('Olio EVO', mportion('10g'))
+  ]);
+  const check = d.checkMellerAdaptation(pranzo);
+  assert.equal(check.adapted, false);
+  assert.equal(check.summary.length, 1, 'solo la pasta supera il riferimento');
+  assert.equal(check.summary[0].ingredient, 'Pasta');
+  assert.equal(check.summary[0].expected, 90);
+  assert.equal(check.summary[0].actual, 150);
+});
+
+test('Meller: adatta con un click alle grammature A/R del pasto', () => {
+  const pranzo = recipe('X2', 'Pasta al pomodoro', 'lunch', [
+    ingredient('Pasta', mportion('150g', '150g', '140g', '140g')),
+    ingredient('Parmigiano', mportion('40g')),
+    ingredient('Olio EVO', mportion('q.b.'))
+  ]);
+  const result = d.adaptRecipeToMeller(pranzo);
+  assert.equal(result.changed, true);
+  const pasta = result.recipe.ingredients[0].portions;
+  assert.equal(pasta.manTraining, '90 g');
+  assert.equal(pasta.manRest, '70 g');
+  assert.equal(pasta.ipoTraining, '90 g');
+  assert.equal(pasta.ipoRest, '70 g');
+  assert.equal(result.recipe.ingredients[1].portions.manTraining, '40g', 'sotto il riferimento resta invariato');
+  assert.equal(result.recipe.ingredients[2].portions.manTraining, 'q.b.', 'q.b. invariato');
+});
+
+test('Meller: il riferimento cambia con il pasto (pane e pesce a cena)', () => {
+  const cena = recipe('X3', 'Cena con pane', 'dinner', [
+    ingredient('Pane', mportion('120g')),
+    ingredient('Orata', mportion('300g'))
+  ]);
+  const check = d.checkMellerAdaptation(cena);
+  assert.equal(check.adapted, false);
+  const byName = Object.fromEntries(check.summary.map(item => [item.ingredient, item]));
+  assert.equal(byName['Pane'].expected, 60);
+  assert.equal(byName['Orata'].expected, 250);
+  const result = d.adaptRecipeToMeller(cena);
+  assert.equal(result.recipe.ingredients[0].portions.manTraining, '60 g');
+  assert.equal(result.recipe.ingredients[1].portions.manTraining, '250 g');
+});
+
+test('Meller: una ricetta già adattata non viene segnalata né modificata', () => {
+  const pranzo = recipe('X4', 'Pollo e patate', 'lunch', [
+    ingredient('Pollo', mportion('200g')),
+    ingredient('Patate', mportion('450g', '350g', '450g', '350g'))
+  ]);
+  assert.equal(d.checkMellerAdaptation(pranzo).adapted, true);
+  assert.equal(d.adaptRecipeToMeller(pranzo).changed, false);
+});
