@@ -12,7 +12,7 @@ async function loadWorker() {
 
 test('Worker: modello testuale di default e prefisso models/ rimosso', async () => {
   const { textModelName } = await loadWorker();
-  assert.equal(textModelName({}), 'gemini-2.5-flash', 'default gemini-2.5-flash');
+  assert.equal(textModelName({}), 'gemini-3.6-flash', 'default gemini-3.6-flash');
   assert.equal(textModelName({ GEMINI_TEXT_MODEL: 'models/gemini-2.0-flash' }), 'gemini-2.0-flash');
 });
 
@@ -90,7 +90,7 @@ test('Worker /recipes: chiama Gemini testuale con grounding e restituisce le ric
     };
   };
   const request = { json: async () => ({ query: 'ricetta con pollo e riso' }) };
-  const response = await handleRecipes(request, { GEMINI_API_KEY: 'k', GEMINI_TEXT_MODEL: 'gemini-2.5-flash' }, 'https://app');
+  const response = await handleRecipes(request, { GEMINI_API_KEY: 'k', GEMINI_TEXT_MODEL: 'gemini-3.6-flash' }, 'https://app');
   const body = await response.json();
   assert.equal(response.status, 200);
   assert.equal(body.recipes.length, 1);
