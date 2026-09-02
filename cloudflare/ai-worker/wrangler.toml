@@ -1,0 +1,14 @@
+name = "piano-nutrizionale-ai"
+main = "src/index.js"
+compatibility_date = "2026-08-30"
+
+# Nessuna chiave segreta va inserita qui. GEMINI_API_KEY si aggiunge con:
+# npx wrangler secret put GEMINI_API_KEY
+[vars]
+FIREBASE_PROJECT_ID = "piano-nutrizionale"
+# Modello testuale per la ricerca di nuove ricette dal web via /recipes
+# con Google Search grounding.
+GEMINI_TEXT_MODEL = "gemini-2.5-flash"
+# Origini senza slash finale, separate da virgola.
+# Aggiungi il tuo dominio personale se lo userai.
+ALLOWED_ORIGINS = "https://sylarpower.github.io,https://piano-nutrizionale.web.app,http://localhost:8000,http://127.0.0.1:8000"
