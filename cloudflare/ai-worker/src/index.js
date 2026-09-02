@@ -13,7 +13,7 @@
 const FIREBASE_JWKS_URL = 'https://www.googleapis.com/service_accounts/v1/jwk/securetoken@system.gserviceaccount.com';
 // Endpoint REST per l'API testuale con grounding Google Search.
 const GEMINI_GENERATE_URL = 'https://generativelanguage.googleapis.com/v1beta/models/{model}:generateContent';
-const DEFAULT_TEXT_MODEL = 'gemini-2.5-flash';
+const DEFAULT_TEXT_MODEL = 'gemini-3.6-flash';
 const RATE_LIMIT_WINDOW_MS = 15 * 60 * 1000;
 // 30 ricerche per finestra: più che sufficienti per un uso personale.
 const MAX_REQUESTS_PER_WINDOW = 30;
