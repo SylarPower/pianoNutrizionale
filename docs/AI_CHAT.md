@@ -32,7 +32,7 @@ La chat non esegue modifiche: è in sola lettura. Le correzioni restano manuali.
 - `js/chat-config.js` — configurazione pubblica (URL del Worker).
 - `js/domain.js` — grammature Meller (`checkMellerAdaptation`,
   `adaptRecipeToMeller`) usate da popup e ricettario.
-- `cloudflare/assistant-worker` — Worker con un solo endpoint `POST /recipes`
+- `cloudflare/ai-worker` — Worker con un solo endpoint `POST /recipes`
   che interroga Gemini (API testuale, modello `gemini-2.5-flash` di default) con
   Google Search grounding e restituisce le ricette candidate.
 
@@ -63,7 +63,7 @@ Il Worker espone un solo endpoint: `POST /recipes`.
 1. Vai in **Workers & Pages → Create application → Worker**.
 2. Nome esattamente `piano-nutrizionale-ai`.
 3. Sostituisci il codice con il contenuto di
-   `cloudflare/assistant-worker/src/index.js`.
+   `cloudflare/ai-worker/src/index.js`.
 4. In **Settings → Variables and Secrets → Add** (ambiente **Production**):
 
    | Tipo | Nome | Valore |
@@ -85,7 +85,7 @@ limite best-effort di 30 richieste ogni 15 minuti per utente.
 **Da terminale** (Node 18+):
 
 ```bash
-cd cloudflare/assistant-worker
+cd cloudflare/ai-worker
 npx wrangler login
 npx wrangler secret put GEMINI_API_KEY
 npx wrangler deploy
@@ -111,7 +111,7 @@ Dopo la modifica incrementa `CACHE_VERSION` in `sw.js` prima del deploy.
 
 ### 4. Origini autorizzate
 
-Nel file `cloudflare/assistant-worker/wrangler.toml`, `ALLOWED_ORIGINS` contiene
+Nel file `cloudflare/ai-worker/wrangler.toml`, `ALLOWED_ORIGINS` contiene
 gli indirizzi previsti: usa solo l'origine, senza percorso e senza slash finale.
 Aggiungi il tuo dominio personale se lo userai e ripubblica con
 `npx wrangler deploy`.
