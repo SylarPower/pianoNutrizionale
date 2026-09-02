@@ -18,6 +18,17 @@
   // speechConfig con voce predefinita (es. Aoede).
   const DEFAULT_FALLBACK_MODEL = 'gemini-2.5-flash-native-audio-preview-12-2025';
 
+  // Debounce di fine eloquio per il riconoscimento locale: la Web Speech API
+  // finalizza un risultato dopo una breve pausa, quindi una pausa a metà
+  // frase produrrebbe un intento troncato ("cosa devo mangiare oggi" senza
+  // "a pranzo"). I risultati finali si accumulano in un buffer e vengono
+  // processati solo dopo questo silenzio. Override opzionale con
+  // `recognitionSilenceMs` in js/assistant-config.js.
+  const RECOGNITION_SILENCE_MS = 1100;
+  // Toast di debug con il testo riconosciuto dall'ASR: attivabile con
+  // `debugRecognition: true` in js/assistant-config.js.
+  const RECOGNITION_DEBUG_DEFAULT = false;
+
   const state = {
     available: false,
     open: false,
@@ -65,6 +76,10 @@
     mode: 'idle',
     recognition: null,
     localStopping: false,
+    // Buffer dei risultati finali dell'ASR locale e timer del debounce di
+    // fine eloquio (vedi RECOGNITION_SILENCE_MS).
+    recognitionBuffer: '',
+    recognitionTimer: null,
     // Testo da inoltrare a Gemini Live quando una richiesta non gestibile
     // in locale fa partire la sessione Live.
     pendingText: '',
@@ -85,12 +100,12 @@
   const FUNCTION_DECLARATIONS = [
     {
       name: 'get_current_plan',
-      description: 'Legge i pasti del piano per un giorno. Usalo prima di rispondere su cosa è previsto oggi o in un altro giorno.',
+      description: 'Elenca TUTTI i pasti di un giorno. Usalo SOLO quando l’utente chiede l’intera giornata o la settimana, MAI per un singolo pasto: per quello usa get_meal_details.',
       parameters: { type: 'OBJECT', properties: { day: { type: 'STRING', description: 'Giorno italiano oppure today/oggi. Se omesso usa oggi.' } } }
     },
     {
       name: 'get_meal_details',
-      description: 'Legge ricetta, ingredienti, dosi e preparazione del pasto richiesto dal piano. Non inventare mai quantità al di fuori del risultato.',
+      description: 'Legge ricetta, ingredienti, dosi e preparazione di UN SOLO pasto (colazione, spuntino, pranzo, merenda o cena). Usalo SEMPRE quando la domanda riguarda un pasto specifico, es. “cosa mangio a pranzo”. Non inventare mai quantità al di fuori del risultato.',
       parameters: {
         type: 'OBJECT',
         properties: {
@@ -580,20 +595,17 @@
   function systemInstruction() {
     const profile = currentProfile();
     return [
-      'Sei Piano, l’assistente vocale integrato nella webapp Piano Nutrizionale.',
-      'Parla sempre in italiano e dai del tu. Il tono è caldo, elegante, colloquiale e naturale, mai robotico. Risposte brevi, una frase quando basta.',
-      'La sessione è già attiva ma all’avvio NON devi parlare: niente saluti, resta in silenzio e ascolta finché l’utente non ti rivolge la parola.',
-      'Il tuo unico ambito è la webapp: alimentazione, nutrizione, ricette, piano settimanale, lista della spesa, batch cooking, preparazione in cucina e le linee guida del dott. Meller. Se la richiesta è fuori da questo ambito (meteo, notizie, sport, politica, intrattenimento, tecnologia, ecc.) rispondi in una frase che non è di tua competenza e invita a chiedere di nutrizione, ricette o del piano.',
-      'Per QUALSIASI informazione sull’app (piano, ricette presenti, dosi, lista della spesa, batch, account, guida) usa esclusivamente gli strumenti dell’app: mai Google Search. Non indovinare e non inventare numeri.',
-      'Usa Google Search SOLO quando l’utente chiede una ricetta nuova da cercare sul web. In quel caso: cerca la ricetta, adattane quantità e ingredienti alle linee guida del dott. Meller (usa search_app_content per la guida; non superare mai i massimi indicati, es. pollame 200g, manzo 150g, maiale 100g, pesce 250g, legumi 240g, uova 180g, pasta/riso 90g, pane 120g, olio EVO 10g, frutta 250g, frutta secca 20g, crackers 40g) e chiama import_recipe con la ricetta completa. Non riepilogarla a voce: l’app apre il popup per importarla.',
-      'Non annunciare mai un elenco numerato tipo “ingrediente 1 di 8” se non viene richiesto. Per esempio dì “Prendi 200 grammi di pomodori”.',
-      `Il profilo porzioni attivo è ${profile}. Usa solo questo profilo quando dai dosi.`,
-      'Se l’utente chiede una sola informazione, rispondi solo a quella. Per esempio, per i grammi di frutta nello spuntino dì solo il totale della frutta e non ricapitolare tutto il pasto.',
-      'Quando l’utente chiede di cucinare un pasto, usa start_cooking_session e proponi un solo ingrediente alla volta. Dopo l’ultimo ingrediente chiedi se vuole iniziare la preparazione. Solo dopo una conferma usa start_preparation e poi uno step alla volta.',
-      'Interpreta “prossimo”, “avanti”, “fatto” come next_cooking_item; “ripeti” come repeat_cooking_item; “indietro” come previous_cooking_item; “salta” come skip_cooking_item; “pausa” come pause_cooking_session; “ricomincia” come restart_cooking_session.',
-      'Dopo ogni tool di cucina pronuncia in modo naturale il campo spoken o message restituito dal tool, senza aggiungere passaggi non presenti.',
-      'Non fare diagnosi e non prescrivere farmaci o terapie. Per problemi clinici rimanda a medico o nutrizionista. Non modificare piano, ricette o lista spesa senza una conferma esplicita.',
-      'Se l’utente dice “chiudi assistente”, “smetti di ascoltare”, “basta” o equivalente, usa close_assistant e non continuare la conversazione.'
+      'Sei Piano, l’assistente vocale della webapp Piano Nutrizionale. Parla solo italiano, dai del tu; tono caldo, colloquiale e naturale, mai robotico. Risposte brevi, una frase quando basta.',
+      'All’avvio NON parlare: niente saluti, resta in silenzio finché l’utente non ti rivolge la parola.',
+      'Ambito esclusivo: alimentazione, ricette, piano settimanale, lista della spesa, batch cooking, cucina e linee guida del dott. Meller. Fuori ambito (meteo, notizie, sport, ecc.): dì in una frase che non è di tua competenza e invita a chiedere di nutrizione o del piano.',
+      'Per QUALSIASI dato dell’app (piano, ricette, dosi, spesa, batch, account, guida) usa SOLO gli strumenti dell’app, mai Google Search. Non inventare numeri.',
+      'REGOLA PASTI: se la domanda riguarda UN pasto specifico (colazione, spuntino, pranzo, merenda o cena) usa SEMPRE get_meal_details con lo slot corretto e MAI get_current_plan; get_current_plan serve solo per l’intera giornata o la settimana. Esempi: “cosa devo mangiare oggi a pranzo” → get_meal_details(slot=lunch); “cosa c’è stasera” → get_meal_details(slot=dinner); “cosa prevede il piano di oggi” → get_current_plan.',
+      'Google Search SOLO se l’utente chiede una ricetta nuova dal web: cercala, adatta le dosi ai massimi del dott. Meller (pollame 200g, manzo 150g, maiale 100g, pesce 250g, legumi 240g, uova 180g, pasta/riso 90g, pane 120g, olio EVO 10g, frutta 250g, frutta secca 20g, crackers 40g) e chiama import_recipe: l’app apre il popup, non riepilogarla a voce.',
+      `Profilo porzioni attivo: ${profile}. Usa solo questo profilo per le dosi.`,
+      'Rispondi solo a ciò che viene chiesto (per i grammi di frutta dì solo il totale). Niente elenchi numerati tipo “ingrediente 1 di 8”: dì “Prendi 200 grammi di pomodori”.',
+      'Cucina: start_cooking_session propone un solo ingrediente alla volta; dopo l’ultimo chiedi conferma e solo allora start_preparation, poi uno step alla volta. “prossimo/avanti/fatto”=next_cooking_item, “ripeti”=repeat_cooking_item, “indietro”=previous_cooking_item, “salta”=skip_cooking_item, “pausa”=pause_cooking_session, “ricomincia”=restart_cooking_session. Dopo ogni tool pronuncia il campo spoken o message, senza aggiungere passaggi.',
+      'Niente diagnosi né farmaci: per problemi clinici rimanda a medico o nutrizionista. Non modificare piano, ricette o spesa senza conferma esplicita.',
+      'Se l’utente dice “chiudi assistente”, “smetti di ascoltare” o “basta”, usa close_assistant e fermati.'
     ].join('\n');
   }
 
@@ -704,6 +716,38 @@
     setupRecognition();
   }
 
+  function recognitionSilenceMs() {
+    const value = Number(getConfig().recognitionSilenceMs);
+    return Number.isFinite(value) && value >= 50 ? value : RECOGNITION_SILENCE_MS;
+  }
+
+  function recognitionDebugEnabled() {
+    const flag = getConfig().debugRecognition;
+    return flag === undefined ? RECOGNITION_DEBUG_DEFAULT : Boolean(flag);
+  }
+
+  function scheduleRecognitionFlush() {
+    if (state.recognitionTimer) clearTimeout(state.recognitionTimer);
+    state.recognitionTimer = setTimeout(flushRecognitionBuffer, recognitionSilenceMs());
+  }
+
+  function clearRecognitionBuffer() {
+    if (state.recognitionTimer) clearTimeout(state.recognitionTimer);
+    state.recognitionTimer = null;
+    state.recognitionBuffer = '';
+  }
+
+  // Processa la frase completa accumulata nel buffer dopo il silenzio di
+  // fine eloquio: due finali ravvicinati ("cosa devo mangiare oggi" + "a
+  // pranzo") diventano un'unica richiesta, mai un intento troncato.
+  function flushRecognitionBuffer() {
+    if (state.recognitionTimer) clearTimeout(state.recognitionTimer);
+    state.recognitionTimer = null;
+    const text = state.recognitionBuffer.trim();
+    state.recognitionBuffer = '';
+    if (text) handleLocalTranscript(text);
+  }
+
   function setupRecognition() {
     if (state.recognition) return;
     const Recognition = speechRecognitionClass();
@@ -717,19 +761,30 @@
         const result = event.results[index];
         if (!result.isFinal) continue;
         const text = String(result[0]?.transcript || '').trim();
-        if (text) handleLocalTranscript(text);
+        if (!text) continue;
+        // Debounce di fine eloquio: si accumula e si riparte con il timer,
+        // il buffer viene processato solo dopo RECOGNITION_SILENCE_MS.
+        state.recognitionBuffer = state.recognitionBuffer ? `${state.recognitionBuffer} ${text}` : text;
+        if (recognitionDebugEnabled() && typeof showToast === 'function') showToast(`🎤 ${state.recognitionBuffer}`);
       }
+      // Qualsiasi attività vocale (anche risultati interinali) rimanda la
+      // scadenza: l'utente sta ancora parlando.
+      if (state.recognitionBuffer) scheduleRecognitionFlush();
     };
     recognition.onerror = event => {
       if (event?.error === 'not-allowed' || event?.error === 'service-not-allowed') {
         state.localStopping = true;
         showError('Permesso del microfono negato: consenti l’accesso al microfono del sito e riprova.');
+        return;
       }
+      // 'aborted' e 'no-speech' sono fisiologici (pause lunghe, riavvii del
+      // servizio): nessun errore all'utente, onend riavvia in silenzio.
     };
     recognition.onend = () => {
       state.recognition = null;
       // Il browser interrompe il riconoscimento dopo una pausa: si riparte
-      // finché la modalità è aperta e la pagina è visibile.
+      // finché la modalità è aperta e la pagina è visibile. Il buffer di
+      // fine eloquio sopravvive al riavvio: sarà il timer a processarlo.
       if (!state.open || state.mode !== 'local' || state.localStopping || document.hidden) return;
       try { setupRecognition(); state.recognition?.start(); } catch (_) {}
     };
@@ -739,6 +794,7 @@
 
   function stopLocalRecognition() {
     state.localStopping = true;
+    clearRecognitionBuffer();
     const recognition = state.recognition;
     state.recognition = null;
     try { recognition?.stop(); } catch (_) {}
@@ -1720,6 +1776,9 @@
     _openLiveWithFallback: openLiveWithFallback,
     _messageDataToText: messageDataToText,
     _analyzeLocalIntent: value => domain?.analyzeLocalIntent ? domain.analyzeLocalIntent(value) : null,
+    // Hook per gli smoke test: svuota subito il buffer del debounce di fine
+    // eloquio senza attendere RECOGNITION_SILENCE_MS.
+    _flushRecognition: flushRecognitionBuffer,
     _analyzeRecipeRequest: value => domain?.analyzeRecipeRequest ? domain.analyzeRecipeRequest(value) : false,
     _requestWebRecipe: requestWebRecipe,
     _adaptRecipeToGuidelines: recipe => domain?.adaptRecipeToGuidelines ? domain.adaptRecipeToGuidelines(recipe) : { recipe, report: [] },

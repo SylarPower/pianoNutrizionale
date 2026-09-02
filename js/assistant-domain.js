@@ -48,7 +48,12 @@
   }
 
   function resolveDay(value, fallback = todayKey()) {
-    const key = normalizeText(value);
+    // "lunedì prossimo", "il prossimo sabato", "questa domenica": i
+    // qualificatori non cambiano il giorno della settimana risolto.
+    const key = normalizeText(value)
+      .replace(/\b(prossim[oa]|prossimi|questo|questa|il|la)\b/g, ' ')
+      .replace(/\s+/g, ' ')
+      .trim();
     const safeFallback = DAYS.includes(fallback) ? fallback : todayKey();
     const nextDay = DAYS[(DAYS.indexOf(safeFallback) + 1) % DAYS.length];
     const aliases = {
@@ -57,7 +62,8 @@
       lunedi: 'monday', martedi: 'tuesday', mercoledi: 'wednesday',
       giovedi: 'thursday', venerdi: 'friday', sabato: 'saturday', domenica: 'sunday',
       oggi: safeFallback, stasera: safeFallback, stamattina: safeFallback,
-      domani: nextDay, tomorrow: nextDay
+      domani: nextDay, tomorrow: nextDay,
+      'fine settimana': 'saturday', finesettimana: 'saturday', weekend: 'saturday'
     };
     return aliases[key] || safeFallback;
   }
@@ -67,8 +73,9 @@
     const aliases = {
       breakfast: 'breakfast', colazione: 'breakfast',
       snack1: 'snack1', spuntino: 'snack1', spuntinomattina: 'snack1', mattina: 'snack1',
-      snack2: 'snack2', merenda: 'snack2', spuntino2: 'snack2', spuntinopomeriggio: 'snack2',
-      lunch: 'lunch', pranzo: 'lunch', dinner: 'dinner', cena: 'dinner', stasera: 'dinner'
+      snack2: 'snack2', merenda: 'snack2', spuntino2: 'snack2', spuntinopomeriggio: 'snack2', pomeriggio: 'snack2',
+      lunch: 'lunch', pranzo: 'lunch', mezzogiorno: 'lunch',
+      dinner: 'dinner', cena: 'dinner', stasera: 'dinner', sera: 'dinner'
     };
     return aliases[key] || (SLOTS.includes(fallback) ? fallback : 'dinner');
   }
@@ -111,6 +118,22 @@
     return map[value] ?? Number(String(value).replace(',', '.'));
   }
 
+  // Quantità italiane espresse a parole ("un etto", "mezzo chilo",
+  // "un cucchiaio"): tradotte in grammi per il parser vocale.
+  const WORD_NUMBERS = { un: 1, uno: 1, una: 1, mezzo: 0.5, mezza: 0.5, due: 2, tre: 3, quattro: 4, cinque: 5 };
+  const WORD_UNITS_GRAMS = {
+    etto: 100, etti: 100,
+    chilo: 1000, chili: 1000, kilo: 1000, kili: 1000,
+    cucchiaio: 10, cucchiai: 10,
+    cucchiaino: 5, cucchiaini: 5
+  };
+
+  function parseWordAmount(value) {
+    const match = normalizeText(value).match(/^(un|uno|una|mezzo|mezza|due|tre|quattro|cinque)\s+(etto|etti|chilo|chili|kilo|kili|cucchiaio|cucchiai|cucchiaino|cucchiaini)$/);
+    if (!match) return null;
+    return { value: WORD_NUMBERS[match[1]] * WORD_UNITS_GRAMS[match[2]], unit: 'g' };
+  }
+
   // Parser dedicato alle risposte vocali: un numero nudo in una ricetta
   // alimentare è trattato come grammi, mentre la lista spesa mantiene la
   // propria semantica storica (numero nudo = pezzi).
@@ -120,6 +143,8 @@
     if (/^(q\.?b\.?|liber[oaie]|a piacere)$/i.test(original)) {
       return { free: true, label: original };
     }
+    const wordAmount = parseWordAmount(original);
+    if (wordAmount) return wordAmount;
     const match = original.match(/^(\d+(?:[.,]\d+)?|[½¼¾])(?:\s*[-–—]\s*(\d+(?:[.,]\d+)?|[½¼¾]))?\s*(g|gr|grammi?|ml|millilitri?|pz|pezzi?|cucchiai?|cucchiaini?)?$/i);
     if (!match) return { opaque: original };
     const first = parseNumberToken(match[1]);
@@ -453,17 +478,17 @@
 
   // Argomenti fuori dal perimetro dell'app: si risponde subito, gratis,
   // senza consumare una sessione Gemini.
-  const OUT_OF_SCOPE_PATTERN = /meteo|tempo fa|previsioni del tempo|notizie|news|politica|elezioni|governo|calcio|partita|champions|serie a|film|serie tv|attore|attrice|musica|canzone|cantante|videogioco|videogiochi|barzelletta|traduci|traduzione|inglese|tedesco|francese|spagnolo|programmazione|computer|smartphone|telefono cellulare|auto\b|macchina\b|viaggi|vacanze|oroscopo|lotteria|gioco del lotto/;
+  const OUT_OF_SCOPE_PATTERN = /meteo|tempo fa|previsioni del tempo|notizie|news|politica|elezioni|governo|calcio|partita|champions|serie a|tennis|basket|pallavolo|formula 1|motogp|film|serie tv|attore|attrice|musica|canzone|cantante|concerto|videogioco|videogiochi|barzelletta|traduci|traduzione|inglese|tedesco|francese|spagnolo|programmazione|computer|smartphone|telefono cellulare|auto\b|macchina\b|viaggi|vacanze|oroscopo|lotteria|gioco del lotto|criptovalute|bitcoin|borsa valori|gossip|cronaca nera/;
 
   function extractDayWord(value) {
     const text = normalizeText(value);
-    const words = ['lunedi', 'martedi', 'mercoledi', 'giovedi', 'venerdi', 'sabato', 'domenica', 'oggi', 'domani', 'stasera', 'stamattina'];
+    const words = ['lunedi', 'martedi', 'mercoledi', 'giovedi', 'venerdi', 'sabato', 'domenica', 'fine settimana', 'weekend', 'oggi', 'domani', 'stasera', 'stamattina'];
     return words.find(word => text.includes(word)) || '';
   }
 
   function extractSlotWord(value) {
     const text = normalizeText(value);
-    return ['colazione', 'pranzo', 'cena', 'spuntino', 'merenda', 'stasera'].find(word => text.includes(word)) || '';
+    return ['colazione', 'pranzo', 'mezzogiorno', 'cena', 'stasera', 'spuntino', 'merenda', 'pomeriggio', 'sera'].find(word => text.includes(word)) || '';
   }
 
   // Interpreta una frase italiana e la mappa su un tool deterministico
@@ -488,7 +513,7 @@
     if (OUT_OF_SCOPE_PATTERN.test(text)) {
       return { outOfScope: true, message: 'Mi occupo solo di nutrizione, ricette, piano alimentare e lista della spesa: questo non è di mia competenza.' };
     }
-    if (/^(ciao|salve|buongiorno|buonasera|buondi|ehi|hey|we)\b/.test(text)) {
+    if (/^(ciao|salve|buongiorno|buonasera|buonanotte|buon pomeriggio|buondi|ehi|ehila|hey|we)\b/.test(text)) {
       return { localReply: 'Ciao! Dimmi pure: posso leggerti il piano, le ricette, la lista della spesa oppure guidarti in cucina.' };
     }
 
@@ -511,8 +536,16 @@
       const fruitSlot = /merenda|pomeriggio/.test(text) ? 'snack2' : (slotWord ? resolveSlot(slotWord, 'snack1') : 'snack1');
       return { tool: 'get_fruit_quantity', args: { day, slot: ['snack1', 'snack2'].includes(fruitSlot) ? fruitSlot : 'snack1' } };
     }
-    if (slotWord && /cosa|che|qual|quale|previsto|prevista|mangio|mangiamo|ricetta|menu/.test(text)) {
+    if (slotWord && /cosa|che|qual|quale|previsto|prevista|mangi|ricetta|menu/.test(text)) {
       return { tool: 'get_meal_details', args: { day, slot } };
+    }
+    // "cosa devo mangiare oggi" senza pasto: meglio una domanda
+    // chiarificatrice locale (gratis) che l'elenco completo via Gemini Live.
+    if (!slotWord && /mangi(are|o|amo|a)\b/.test(text) && extractDayWord(text)) {
+      return {
+        clarify: true,
+        localReply: 'Per quale pasto? Colazione, spuntino, pranzo, merenda o cena?'
+      };
     }
     if (/piano|menu|menù|pasti|programma|settimana/.test(text)) return { tool: 'get_current_plan', args: { day } };
     if (/spesa|comprare|compro|acquistare|lista della spesa/.test(text)) return { tool: 'get_shopping_list', args: {} };

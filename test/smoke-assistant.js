@@ -14,7 +14,7 @@ const dom = new JSDOM('<!doctype html><html><body></body></html>', {
   runScripts: 'outside-only'
 });
 const window = dom.window;
-window.PIANO_AI_CONFIG = { tokenEndpoint: '', model: 'gemini-3.1-flash-live-preview', language: 'it-IT', voiceName: 'Aoede' };
+window.PIANO_AI_CONFIG = { tokenEndpoint: '', model: 'gemini-3.1-flash-live-preview', language: 'it-IT', voiceName: 'Aoede', recognitionSilenceMs: 120 };
 window.PianoDomain = {};
 window.appState = {
   user: { email: 'mario@utenti.pianonutrizionale.app' },
@@ -72,15 +72,26 @@ const simulateSpeech = transcript => lastRecognition.onresult({
   resultIndex: 0,
   results: [{ 0: { transcript }, isFinal: true, length: 1 }]
 });
+// I risultati finali passano dal debounce di fine eloquio: nei test sincroni
+// il buffer viene svuotato subito con l'hook dedicato.
+const speakAndFlush = transcript => {
+  simulateSpeech(transcript);
+  window.PianoAssistant._flushRecognition();
+};
 
-simulateSpeech('cosa prevede il piano di oggi');
+speakAndFlush('cosa prevede il piano di oggi');
 assert.ok(spoken.some(text => /Piano di/.test(text)), 'piano letto a voce in locale');
 assert.equal(fab.dataset.state, 'listening', 'orb di nuovo in ascolto dopo la risposta');
 
-simulateSpeech('che tempo fa domani a Bologna');
+speakAndFlush('che tempo fa domani a Bologna');
 assert.ok(spoken.some(text => /non è di mia competenza/.test(text)), 'fuori tema rifiutato in locale, senza Gemini');
 
-simulateSpeech('chiudi assistente');
+// Frase senza pasto: domanda chiarificatrice locale, niente Gemini Live.
+speakAndFlush('cosa devo mangiare oggi');
+assert.ok(spoken.some(text => /quale pasto/i.test(text)), 'domanda chiarificatrice sul pasto');
+assert.equal(window.PianoAssistant._state.mode, 'local', 'la chiarificazione resta in locale');
+
+speakAndFlush('chiudi assistente');
 assert.equal(window.PianoAssistant._state.open, false, 'chiusura vocale');
 assert.equal(window.PianoAssistant._state.mode, 'idle');
 assert.equal(fab.dataset.state, 'idle', 'orb tornato a riposo');
@@ -118,6 +129,31 @@ const waitFor = async (predicate, label, timeoutMs = 3000) => {
  * Regressione "Mi collego…" infinito e quota: token/429 gestiti senza rete.
  */
 (async () => {
+  // ---- Debounce di fine eloquio: DUE finali separati = UNA sola frase ----
+  // "cosa devo mangiare oggi" + pausa breve + "a pranzo" deve produrre
+  // get_meal_details(lunch) sulla frase intera, MAI get_current_plan (elenco
+  // completo) sull'intento troncato.
+  {
+    window.SpeechRecognition = FakeRecognition;
+    window.webkitSpeechRecognition = FakeRecognition;
+    spoken.length = 0;
+    window.PianoAssistant.open();
+    assert.equal(window.PianoAssistant._state.mode, 'local', 'modalità locale attiva');
+    simulateSpeech('cosa devo mangiare oggi');
+    assert.equal(spoken.length, 0, 'il primo finale NON viene processato subito (debounce attivo)');
+    await new Promise(resolve => setTimeout(resolve, 40)); // pausa sotto la soglia di silenzio
+    simulateSpeech('a pranzo');
+    await waitFor(() => spoken.length > 0, 'risposta dopo il silenzio di fine eloquio');
+    assert.ok(spoken.some(text => /pranzo/i.test(text)), 'risposta sul SOLO pranzo (get_meal_details)');
+    assert.ok(!spoken.some(text => /^Piano di/.test(text)), 'nessun elenco completo dei pasti (get_current_plan)');
+    assert.equal(window.PianoAssistant._state.mode, 'local', 'frase gestita in locale, niente Gemini Live');
+    assert.equal(window.PianoAssistant._state.ws, null, 'nessuna WebSocket Live aperta');
+    assert.equal(window.PianoAssistant._state.recognitionBuffer, '', 'buffer svuotato dopo il flush');
+    window.PianoAssistant.close();
+    window.SpeechRecognition = undefined;
+    window.webkitSpeechRecognition = undefined;
+  }
+
   // ---- Nuove ricette dal web: API testuale /recipe, MAI Gemini Live ----
   {
     window.SpeechRecognition = FakeRecognition;
@@ -147,7 +183,7 @@ const waitFor = async (predicate, label, timeoutMs = 3000) => {
 
     window.PianoAssistant.open();
     assert.equal(window.PianoAssistant._state.mode, 'local', 'modalità locale per la ricerca di ricette');
-    simulateSpeech('trovami una ricetta con pollo');
+    speakAndFlush('trovami una ricetta con pollo');
     await waitFor(() => importedRecipe && importedRecipe.name === 'Pollo al curry', 'popup import ricetta dal web');
     assert.equal(importedRecipe.ingredients.find(item => item.name === 'Pollo').quantity, '200 g', 'pollame adattato (doppia sicurezza)');
     assert.equal(importedRecipe.ingredients.find(item => item.name === 'Riso').quantity, '90 g', 'riso adattato al massimo Meller');
@@ -320,7 +356,7 @@ const waitFor = async (predicate, label, timeoutMs = 3000) => {
   window.PianoAssistant.setAvailability(false);
   assert.equal(fab.classList.contains('hidden'), true, 'orb nascosto senza account');
 })()
-  .then(() => console.log('ASSISTANT SMOKE OK — orb vocale senza pannello; modalità locale gratuita; 429 in cooldown; token riusato; fallback di modello; popup import ricette con linee guida'))
+  .then(() => console.log('ASSISTANT SMOKE OK — orb vocale senza pannello; modalità locale gratuita; debounce di fine eloquio (due finali = una frase, get_meal_details e non get_current_plan); domanda chiarificatrice senza slot; 429 in cooldown; token riusato; fallback di modello; popup import ricette con linee guida'))
   .catch(error => {
     console.error(error);
     process.exitCode = 1;

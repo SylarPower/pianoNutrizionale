@@ -113,11 +113,56 @@ test('motore locale: richieste intra-app mappate sui tool deterministici', () =>
 
 test('motore locale: saluti, chiusura e fuori tema senza consumare Gemini', () => {
   assert.ok(assistant.analyzeLocalIntent('ciao').localReply, 'saluto gestito in locale');
+  assert.ok(assistant.analyzeLocalIntent('buonanotte').localReply, 'saluto ampliato gestito in locale');
   assert.deepEqual(assistant.analyzeLocalIntent('chiudi assistente'), { tool: 'close_assistant', args: {} });
   const outOfScope = assistant.analyzeLocalIntent('che tempo fa domani a Bologna');
   assert.equal(outOfScope.outOfScope, true);
   assert.match(outOfScope.message, /non è di mia competenza/);
+  const crypto = assistant.analyzeLocalIntent('quanto vale il bitcoin');
+  assert.equal(crypto.outOfScope, true, 'fuori tema ampliato (criptovalute)');
   assert.equal(assistant.analyzeLocalIntent('parlami dei benefici delle proteine'), null, 'conversazione libera: serve Gemini');
+});
+
+test('pasto specifico: slot presente → get_meal_details, mai elenco completo', () => {
+  const today = assistant.todayKey();
+  const tomorrow = assistant.resolveDay('domani', today);
+  assert.deepEqual(assistant.analyzeLocalIntent('cosa devo mangiare oggi a pranzo'), { tool: 'get_meal_details', args: { day: today, slot: 'lunch' } });
+  assert.deepEqual(assistant.analyzeLocalIntent('cosa mangio stasera'), { tool: 'get_meal_details', args: { day: today, slot: 'dinner' } });
+  assert.deepEqual(assistant.analyzeLocalIntent('cosa devo mangiare domani a colazione'), { tool: 'get_meal_details', args: { day: tomorrow, slot: 'breakfast' } });
+  assert.deepEqual(assistant.analyzeLocalIntent('cosa mangiamo domani a mezzogiorno'), { tool: 'get_meal_details', args: { day: tomorrow, slot: 'lunch' } });
+});
+
+test('pasto assente: mangiare + giorno senza slot → domanda chiarificatrice locale', () => {
+  const intent = assistant.analyzeLocalIntent('cosa devo mangiare oggi');
+  assert.equal(intent.clarify, true, 'domanda chiarificatrice, non Gemini Live');
+  assert.match(intent.localReply, /quale pasto/i);
+  assert.match(intent.localReply, /colazione/i);
+  assert.match(intent.localReply, /pranzo/i);
+  assert.match(intent.localReply, /cena/i);
+  const domani = assistant.analyzeLocalIntent('cosa si mangia domani');
+  assert.equal(domani.clarify, true, 'chiarificazione anche per domani');
+  assert.deepEqual(assistant.analyzeLocalIntent('cosa prevede il piano di oggi'), { tool: 'get_current_plan', args: { day: assistant.todayKey() } }, 'la richiesta esplicita del piano resta get_current_plan');
+});
+
+test('alias slot e giorno: mezzogiorno, pomeriggio, sera, weekend, lunedì prossimo', () => {
+  assert.equal(assistant.resolveSlot('mezzogiorno'), 'lunch');
+  assert.equal(assistant.resolveSlot('pomeriggio'), 'snack2');
+  assert.equal(assistant.resolveSlot('sera'), 'dinner');
+  assert.equal(assistant.resolveDay('weekend', 'monday'), 'saturday');
+  assert.equal(assistant.resolveDay('fine settimana', 'monday'), 'saturday');
+  assert.equal(assistant.resolveDay('lunedì prossimo', 'wednesday'), 'monday');
+  assert.equal(assistant.resolveDay('il prossimo sabato', 'wednesday'), 'saturday');
+});
+
+test('parseFoodAmount: quantità italiane a parole', () => {
+  assert.deepEqual(assistant.parseFoodAmount('un etto'), { value: 100, unit: 'g' });
+  assert.deepEqual(assistant.parseFoodAmount('mezzo chilo'), { value: 500, unit: 'g' });
+  assert.deepEqual(assistant.parseFoodAmount('un cucchiaio'), { value: 10, unit: 'g' });
+  assert.deepEqual(assistant.parseFoodAmount('due etti'), { value: 200, unit: 'g' });
+  assert.deepEqual(assistant.parseFoodAmount('un cucchiaino'), { value: 5, unit: 'g' });
+  // Le forme storiche restano invariate.
+  assert.deepEqual(assistant.parseFoodAmount('150 g'), { value: 150, unit: 'g' });
+  assert.equal(assistant.parseFoodAmount('q.b.').free, true);
 });
 
 test('linee guida Meller: le ricette dal web non superano i massimi', () => {
