@@ -33,7 +33,7 @@ La chat non esegue modifiche: è in sola lettura. Le correzioni restano manuali.
 - `js/domain.js` — grammature Meller (`checkMellerAdaptation`,
   `adaptRecipeToMeller`) usate da popup e ricettario.
 - `cloudflare/ai-worker` — Worker con un solo endpoint `POST /recipes`
-  che interroga Gemini (API testuale, modello `gemini-2.5-flash` di default) con
+  che interroga Gemini (API testuale, modello `gemini-3.6-flash` di default) con
   Google Search grounding e restituisce le ricette candidate.
 
 ## Configurazione gratuita
@@ -69,7 +69,7 @@ Il Worker espone un solo endpoint: `POST /recipes`.
    | Tipo | Nome | Valore |
    | --- | --- | --- |
    | Text | `FIREBASE_PROJECT_ID` | `piano-nutrizionale` |
-   | Text | `GEMINI_TEXT_MODEL` | `gemini-2.5-flash` |
+   | Text | `GEMINI_TEXT_MODEL` | `gemini-3.6-flash` |
    | Text | `ALLOWED_ORIGINS` | `https://sylarpower.github.io,http://localhost:8000,http://127.0.0.1:8000,https://piano-nutrizionale.web.app` |
    | **Secret** | `GEMINI_API_KEY` | la chiave Gemini, incollata nel campo segreto |
 
