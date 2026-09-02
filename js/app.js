@@ -289,7 +289,7 @@ function showLogin() {
   document.getElementById("app-container")?.classList.add("hidden");
   document.querySelector(".bottom-nav")?.classList.add("hidden");
   document.getElementById("global-header-container")?.remove();
-  window.PianoAssistant?.setAvailability?.(false);
+  window.PianoChat?.setAvailability?.(false);
   clearLoading();
   setTimeout(() => document.getElementById("login-username")?.focus(), 50);
 }
@@ -299,7 +299,7 @@ function showApp() {
   document.getElementById("login-screen")?.classList.add("hidden");
   document.getElementById("app-container")?.classList.remove("hidden");
   document.querySelector(".bottom-nav")?.classList.remove("hidden");
-  window.PianoAssistant?.setAvailability?.(true);
+  window.PianoChat?.setAvailability?.(true);
   // Anche l'avvio rapido da cache deve chiudere l'overlay: in quel percorso
   // loadUserData() è silenzioso e il suo finally non chiama clearLoading().
   clearLoading();
@@ -1064,7 +1064,12 @@ function recipeSectionHtml(title, recipes, slot) {
       </button>
       <div id="${sectionId}" class="recipe-section-body ${isOpen ? "" : "hidden"}">
         <div class="recipe-grid">
-          ${recipes.map(recipe => `<button class="recipe-library-card" data-search="${escapeAttr(`${recipe.id} ${recipe.name} ${recipe.namesByDayType?.training || ""} ${recipe.namesByDayType?.rest || ""} ${recipeProteinLabel(recipe)} ${(recipe.ingredients || []).map(i => i.name).join(" ")}`.toLowerCase())}" onclick="openRecipeModal('${escapeAttr(recipe.id)}')"><span class="recipe-code">${escapeHtml(recipe.id)}</span><span class="recipe-card-emoji">${escapeHtml(recipe.emoji || "🍲")}</span><strong>${escapeHtml(recipe.name)}</strong><small>${escapeHtml(recipeProteinLabel(recipe))}</small></button>`).join("")}
+          ${recipes.map(recipe => {
+            const mellerFlag = window.PianoDomain?.checkMellerAdaptation?.(recipe)?.adapted === false
+              ? `<span class="meller-card-flag" title="Dosi non adattate alle grammature del dott. Meller">⚠</span>`
+              : "";
+            return `<button class="recipe-library-card" data-search="${escapeAttr(`${recipe.id} ${recipe.name} ${recipe.namesByDayType?.training || ""} ${recipe.namesByDayType?.rest || ""} ${recipeProteinLabel(recipe)} ${(recipe.ingredients || []).map(i => i.name).join(" ")}`.toLowerCase())}" onclick="openRecipeModal('${escapeAttr(recipe.id)}')"><span class="recipe-code">${escapeHtml(recipe.id)}</span>${mellerFlag}<span class="recipe-card-emoji">${escapeHtml(recipe.emoji || "🍲")}</span><strong>${escapeHtml(recipe.name)}</strong><small>${escapeHtml(recipeProteinLabel(recipe))}</small></button>`;
+          }).join("")}
         </div>
       </div>
     </section>`;
@@ -1179,11 +1184,12 @@ window.duplicateRecipe = function(recipeId = currentModal?.recipe?.id) {
   document.getElementById("recipe-modal").classList.remove("hidden");
 };
 
-// Importazione di una ricetta proposta dall'assistente vocale (Gemini Live):
-// si riusa il popup di modifica ricetta già esistente. Le dosi arrivano già
-// adattate alle linee guida del dott. Meller dall'assistente; qui l'utente
-// può rivederle e salvarle nel cloud con il normale pulsante di salvataggio.
-window.importRecipeFromAssistant = function(data = {}) {
+// Importazione di una ricetta proposta dalla chat AI (ricerca web): si riusa
+// il popup ricetta già esistente. Le dosi arrivano così come trovate sul web;
+// il banner "non adattata a Meller" e il pulsante "Adatta a Meller" permettono
+// di riportarle alle grammature del manuale con un click, poi si salva nel
+// cloud con il normale pulsante di salvataggio.
+window.importRecipeFromChat = function(data = {}) {
   const source = data && typeof data === "object" ? data : {};
   const slot = MEAL_SLOTS.some(item => item.id === source.slot) ? source.slot : "lunch";
   const quantityFor = quantity => {
@@ -1201,6 +1207,13 @@ window.importRecipeFromAssistant = function(data = {}) {
       }
     }));
   const steps = (Array.isArray(source.steps) ? source.steps : []).map(step => String(step || "").trim()).filter(Boolean);
+  const notes = (Array.isArray(source.notes) ? source.notes : []).map(note => String(note || "").trim()).filter(Boolean);
+  let sourceUrl = "";
+  try {
+    const parsed = new URL(String(source.sourceUrl || ""));
+    if (["http:", "https:"].includes(parsed.protocol)) sourceUrl = parsed.href;
+  } catch (_) {}
+  if (sourceUrl) notes.push(`Fonte: ${sourceUrl}`);
   const recipe = {
     id: `U${Date.now()}`,
     slot,
@@ -1209,14 +1222,14 @@ window.importRecipeFromAssistant = function(data = {}) {
     proteinCategory: String(source.proteinCategory || ""),
     ingredients,
     steps,
-    notes: (Array.isArray(source.notes) ? source.notes : []).map(note => String(note || "").trim()).filter(Boolean),
+    notes,
     specialNote: String(source.specialNote || "").trim()
   };
   currentModal = { recipe, original: null, dayKey: null, dayType: getRecipePreviewDayType(), slot: null, isNew: true };
   editMode = true;
   renderModalContent();
   document.getElementById("recipe-modal").classList.remove("hidden");
-  showToast("Ricetta proposta dall'assistente: controlla dosi e preparazione, poi salva");
+  showToast("Ricetta trovata sul web: controlla dosi e preparazione, poi salva");
 };
 
 function normalizeIngredientName(name) {
@@ -1817,7 +1830,7 @@ function renderSettings() {
       <label class="settings-row"><span><strong>Tema scuro</strong><small>Solo su questo dispositivo</small></span><input type="checkbox" ${appState.deviceSettings.darkMode ? "checked" : ""} onchange="toggleDarkMode(this.checked)"></label>
     </section>
 
-    ${window.PianoAssistant?.settingsSectionHtml?.() || ""}
+    ${window.PianoChat?.settingsSectionHtml?.() || ""}
 
     <div class="manual-heading"><p class="eyebrow">INDICAZIONI DI MELLER</p><h2>Manuale dieta e alternative</h2><p>Le alternative originali restano sempre consultabili nell'app.</p></div>
 
@@ -3171,7 +3184,50 @@ function renderModalContent() {
   setRecipeActionsOpen(false);
   document.getElementById("modal-edit-btn").textContent = "Modifica ricetta";
   document.getElementById("modal-save-btn").textContent = "Salva nel cloud";
+
+  const mellerNotice = document.getElementById("modal-meller-notice");
+  if (mellerNotice) mellerNotice.innerHTML = mellerNoticeHtml();
 }
+
+// Banner "dosi non adattate alle grammature del dott. Meller": elenca le dosi
+// che superano il riferimento del pasto e offre l'adattamento con un click.
+function mellerNoticeHtml() {
+  if (!currentModal || !window.PianoDomain?.checkMellerAdaptation) return "";
+  const check = PianoDomain.checkMellerAdaptation(currentModal.recipe);
+  if (check.adapted) return "";
+  const items = check.summary.slice(0, 4).map(item =>
+    `<li><span>${escapeHtml(item.ingredient)}</span><strong>${formatNumber(item.actual)}${item.unit === "ml" ? " ml" : " g"} → ${item.expected}${item.unit === "ml" ? " ml" : " g"}</strong></li>`
+  ).join("");
+  const more = check.summary.length > 4
+    ? `<li class="meller-notice-more">…e altre ${check.summary.length - 4} dosi fuori riferimento</li>`
+    : "";
+  return `
+    <div class="meller-notice" role="note">
+      <div class="meller-notice-head"><span aria-hidden="true">⚠️</span><div><strong>Dosi non adattate alle grammature del dott. Meller</strong><small>Riferimento per ${escapeHtml(getSlotMeta(currentModal.recipe.slot || "lunch").label.toLowerCase())} · pesi a crudo</small></div></div>
+      <ul class="meller-notice-list">${items}${more}</ul>
+      <button class="btn btn-outline meller-adapt-btn" type="button" onclick="adaptCurrentRecipeToMeller()">Adatta a Meller</button>
+    </div>`;
+}
+
+// Adatta con un click le dosi ai riferimenti del dott. Meller. In lettura
+// passa prima alla modifica (senza salvare nulla finché l'utente non conferma).
+window.adaptCurrentRecipeToMeller = function() {
+  if (!currentModal || !window.PianoDomain?.adaptRecipeToMeller) return;
+  if (!editMode) {
+    editMode = true;
+    currentModal.recipe = clone(currentModal.recipe);
+  }
+  captureEditState();
+  const result = PianoDomain.adaptRecipeToMeller(currentModal.recipe);
+  if (!result.changed) {
+    showToast("Le dosi rispettano già le grammature Meller");
+    renderModalContent();
+    return;
+  }
+  currentModal.recipe = result.recipe;
+  renderModalContent();
+  showToast("Dosi adattate a Meller ✅ Rivedi e salva");
+};
 
 function captureEditState() {
   if (!editMode || !currentModal) return;
@@ -3232,6 +3288,10 @@ async function saveRecipeEdit() {
   if (!recipe.ingredients.length || !recipe.steps.length) {
     showToast("Aggiungi almeno un ingrediente e un passaggio", true);
     return;
+  }
+  const mellerCheck = window.PianoDomain?.checkMellerAdaptation?.(recipe);
+  if (mellerCheck && !mellerCheck.adapted) {
+    showToast("⚠ Dosi non adattate a Meller: tocca “Adatta a Meller” per correggerle", true);
   }
   if (!currentModal.isNew && !recipe._original && currentModal.original) {
     const baseline = clone(currentModal.original);

@@ -1,37 +1,28 @@
 /*
- * Cloudflare Worker: broker gratuito per Gemini.
+ * Cloudflare Worker: ricerca di NUOVE ricette dal web per la chat AI.
  *
- * - POST /token: emette token temporanei per Gemini Live (conversazione vocale
- *   libera). Il Worker non fa da proxy per l'audio.
- * - POST /recipe: cerca una NUOVA ricetta dal web con l'API testuale di Gemini
- *   (Google Search grounding) e restituisce la ricetta pronta per il popup di
- *   importazione. Niente Gemini Live per le ricette.
+ * - POST /recipes: cerca ricette con le caratteristiche richieste dall'utente
+ *   usando l'API testuale di Gemini con Google Search grounding e restituisce
+ *   fino a 10 ricette candidate (nome, pasto, ingredienti, preparazione,
+ *   fonte) pronte per il popup di importazione della PWA.
  *
- * In entrambi i casi autentica l'utente Firebase e la GEMINI_API_KEY resta in
- * un secret Cloudflare, mai nel frontend.
+ * La GEMINI_API_KEY resta in un secret Cloudflare, mai nel frontend. Ogni
+ * richiesta è autenticata con il Firebase ID token dell'utente.
  */
 
 const FIREBASE_JWKS_URL = 'https://www.googleapis.com/service_accounts/v1/jwk/securetoken@system.gserviceaccount.com';
-const GEMINI_TOKEN_URL = 'https://generativelanguage.googleapis.com/v1beta/auth_tokens';
-// Endpoint REST per l'API testuale (generazione con grounding Google Search):
-// usato dall'endpoint /recipe per le nuove ricette dal web, SENZA Gemini Live.
+// Endpoint REST per l'API testuale con grounding Google Search.
 const GEMINI_GENERATE_URL = 'https://generativelanguage.googleapis.com/v1beta/models/{model}:generateContent';
-const DEFAULT_MODEL = 'gemini-3.1-flash-live-preview';
-// Modello testuale per la ricerca di ricette: gratuito, non è un modello Live.
 const DEFAULT_TEXT_MODEL = 'gemini-2.5-flash';
-// Il token effimero viene emesso SENZA vincolarlo a un modello: è il client
-// a scegliere il modello nel setup della WebSocket (primario o di riserva).
-// GEMINI_LIVE_MODEL/GEMINI_LIVE_FALLBACK_MODEL servono solo a validare il
-// modello richiesto dal client e a gestire il fallback in emissione.
-const MAX_TOKEN_MINUTES = 30;
 const RATE_LIMIT_WINDOW_MS = 15 * 60 * 1000;
-// 30 emissioni per finestra: il client riusa il token per le riconnessioni, quindi
-// il margine copre sessioni lunghe/schede multiple senza far scattare il 429.
-const MAX_TOKEN_REQUESTS_PER_WINDOW = 30;
+// 30 ricerche per finestra: più che sufficienti per un uso personale.
+const MAX_REQUESTS_PER_WINDOW = 30;
+const DEFAULT_MAX_RECIPES = 10;
+const SLOTS = ['breakfast', 'snack1', 'lunch', 'snack2', 'dinner'];
 
 let cachedJwks = null;
 let cachedJwksExpiresAt = 0;
-const tokenRequestWindows = new Map();
+const requestWindows = new Map();
 
 function json(body, status = 200, origin = '') {
   return new Response(JSON.stringify(body), {
@@ -63,8 +54,7 @@ function allowedOrigins(env) {
 
 function isAllowedOrigin(origin, env) {
   if (!origin) return false;
-  const configured = allowedOrigins(env);
-  return configured.includes(origin);
+  return allowedOrigins(env).includes(origin);
 }
 
 function base64UrlToBytes(value) {
@@ -76,11 +66,6 @@ function base64UrlToBytes(value) {
 
 function base64UrlToJson(value) {
   return JSON.parse(new TextDecoder().decode(base64UrlToBytes(value)));
-}
-
-function pemToDer(value) {
-  const base64 = value.replace(/-----BEGIN CERTIFICATE-----|-----END CERTIFICATE-----|\s/g, '');
-  return base64UrlToBytes(base64.replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, ''));
 }
 
 async function getJwks() {
@@ -106,6 +91,17 @@ async function importJwk(jwk) {
   );
 }
 
+async function verifySignature(jwk, encodedHeader, encodedPayload, encodedSignature) {
+  const key = await importJwk(jwk);
+  const valid = await crypto.subtle.verify(
+    { name: 'RSASSA-PKCS1-v1_5' },
+    key,
+    base64UrlToBytes(encodedSignature),
+    new TextEncoder().encode(`${encodedHeader}.${encodedPayload}`)
+  );
+  if (!valid) throw new Error('Firma Firebase non valida.');
+}
+
 async function verifyFirebaseIdToken(rawToken, env) {
   const token = String(rawToken || '').trim();
   const parts = token.split('.');
@@ -125,207 +121,155 @@ async function verifyFirebaseIdToken(rawToken, env) {
     throw new Error('Token Firebase scaduto o non ancora valido.');
   }
 
-  const keys = await getJwks();
-  const jwk = Array.isArray(keys) ? keys.find(item => item.kid === header.kid) : keys[header.kid];
+  let keys = await getJwks();
+  let jwk = Array.isArray(keys) ? keys.find(item => item.kid === header.kid) : keys[header.kid];
   if (!jwk) {
     cachedJwks = null;
     cachedJwksExpiresAt = 0;
-    const refreshed = await getJwks();
-    const refreshedKey = Array.isArray(refreshed) ? refreshed.find(item => item.kid === header.kid) : refreshed[header.kid];
-    if (!refreshedKey) throw new Error('Chiave Firebase non riconosciuta.');
-    return verifySignature(refreshedKey, encodedHeader, encodedPayload, encodedSignature, payload);
+    keys = await getJwks();
+    jwk = Array.isArray(keys) ? keys.find(item => item.kid === header.kid) : keys[header.kid];
+    if (!jwk) throw new Error('Chiave Firebase non riconosciuta.');
   }
-  return verifySignature(jwk, encodedHeader, encodedPayload, encodedSignature, payload);
-}
-
-async function verifySignature(jwk, encodedHeader, encodedPayload, encodedSignature, payload) {
-  const key = await importJwk(jwk);
-  const valid = await crypto.subtle.verify(
-    { name: 'RSASSA-PKCS1-v1_5' },
-    key,
-    base64UrlToBytes(encodedSignature),
-    new TextEncoder().encode(`${encodedHeader}.${encodedPayload}`)
-  );
-  if (!valid) throw new Error('Firma Firebase non valida.');
+  await verifySignature(jwk, encodedHeader, encodedPayload, encodedSignature);
   return payload;
 }
 
 function checkRateLimit(userId) {
   const now = Date.now();
-  // Il Map è intenzionalmente best-effort: gli isolate Cloudflare sono effimeri.
-  // Il limite vincolante del provider resta la quota Gemini del progetto.
-  for (const [key, window] of tokenRequestWindows) {
-    if (window.resetAt <= now) tokenRequestWindows.delete(key);
+  for (const [key, window] of requestWindows) {
+    if (window.resetAt <= now) requestWindows.delete(key);
   }
-  const current = tokenRequestWindows.get(userId);
+  const current = requestWindows.get(userId);
   if (!current || current.resetAt <= now) {
-    tokenRequestWindows.set(userId, { count: 1, resetAt: now + RATE_LIMIT_WINDOW_MS });
+    requestWindows.set(userId, { count: 1, resetAt: now + RATE_LIMIT_WINDOW_MS });
     return { allowed: true, retryAfter: 0 };
   }
-  if (current.count >= MAX_TOKEN_REQUESTS_PER_WINDOW) {
+  if (current.count >= MAX_REQUESTS_PER_WINDOW) {
     return { allowed: false, retryAfter: Math.max(1, Math.ceil((current.resetAt - now) / 1000)) };
   }
   current.count += 1;
   return { allowed: true, retryAfter: 0 };
 }
 
-function modelName(env) {
-  return String(env.GEMINI_LIVE_MODEL || DEFAULT_MODEL).replace(/^models\//, '');
-}
-
-// Modello che il client può chiedere in alternativa (es. quando il modello
-// principale risponde 1011 quota / 1008 modello ritirato). Facoltativo.
-function fallbackModelName(env) {
-  return String(env.GEMINI_LIVE_FALLBACK_MODEL || '').replace(/^models\//, '').trim();
-}
-
-// Modello testuale per la ricerca di ricette dal web (endpoint /recipe).
 function textModelName(env) {
   return String(env.GEMINI_TEXT_MODEL || DEFAULT_TEXT_MODEL).replace(/^models\//, '').trim();
 }
 
-// Il client invia nel body il modello desiderato: viene accettato SOLO se
-// coincide con il modello principale o con quello di riserva configurati,
-// altrimenti si emette il token per il modello principale.
-async function resolveModel(request, env) {
-  const allowed = [modelName(env), fallbackModelName(env)].filter(Boolean);
-  try {
-    const body = await request.json();
-    const requested = String(body?.model || '').replace(/^models\//, '').trim();
-    if (requested && allowed.includes(requested)) return requested;
-  } catch (_) {}
-  return modelName(env);
-}
-
-async function createEphemeralToken(env, modelOverride) {
-  const now = Date.now();
-  const expiresAt = new Date(now + MAX_TOKEN_MINUTES * 60 * 1000).toISOString();
-  const newSessionExpireTime = new Date(now + 60 * 1000).toISOString();
-  const requested = modelOverride || modelName(env);
-  // Il token NON viene vincolato a un modello (niente bidiGenerateContentSetup
-  // né fieldMask nella richiesta ad auth_tokens): secondo l'API ufficiale, se
-  // il setup è assente il setup effettivo della sessione è quello inviato dal
-  // client sulla WebSocket. Così un solo token vale per qualunque modello e
-  // il client può passare al modello di riserva senza una nuova emissione.
-  // Se Gemini rifiuta di emettere il token per il modello richiesto, si prova
-  // subito il modello di riserva configurato prima di restituire un errore.
-  const attempts = [...new Set([requested, fallbackModelName(env)].filter(Boolean))];
-  let lastError = null;
-  for (const model of attempts) {
-    try {
-      const response = await fetch(GEMINI_TOKEN_URL, {
-        method: 'POST',
-        headers: {
-          'content-type': 'application/json',
-          'x-goog-api-key': String(env.GEMINI_API_KEY || '')
-        },
-        body: JSON.stringify({
-          // uses:0 = nessun limite di utilizzi per il token (resta valido
-          // fino a expireTime): le riconnessioni della stessa sessione non
-          // consumano una nuova emissione.
-          uses: 0,
-          expireTime: expiresAt,
-          newSessionExpireTime
-        })
-      });
-      const body = await response.json().catch(() => ({}));
-      if (!response.ok) {
-        throw new Error(body?.error?.message || body?.message || `Gemini non ha emesso il token per ${model}.`);
-      }
-      const token = body.name || body.token?.name || body.token || body.accessToken;
-      if (!token) throw new Error('Risposta Gemini senza token temporaneo.');
-      return { token, expiresAt, model };
-    } catch (error) {
-      lastError = error;
-      console.warn(`Token Gemini non emesso per ${model}: ${error.message}`);
-    }
-  }
-  throw lastError;
-}
-
-// ---------------------------------------------------------------------
-// Endpoint /recipe: nuove ricette dal web con l'API testuale di Gemini
-// (Google Search grounding), SENZA Gemini Live. Stesso schema import_recipe
-// del client, così la ricetta torna pronta per il popup di importazione.
-// ---------------------------------------------------------------------
-
-const RECIPE_TOOL = {
-  name: 'import_recipe',
-  description: 'Prepara una NUOVA ricetta trovata sul web per importarla nel ricettario. Si usa solo su richiesta esplicita dell’utente di una nuova ricetta. Quantità già adattate alle linee guida del dott. Meller; l’app apre il popup di importazione.',
+const RECIPES_TOOL = {
+  name: 'search_recipes',
+  description: 'Restituisce le ricette trovate sul web per la richiesta dell’utente, ordinate per pertinenza.',
   parameters: {
     type: 'OBJECT',
     properties: {
-      name: { type: 'STRING', description: 'Nome della ricetta' },
-      slot: { type: 'STRING', enum: ['breakfast', 'snack1', 'lunch', 'snack2', 'dinner'], description: 'Pasto di appartenenza' },
-      emoji: { type: 'STRING', description: 'Emoji rappresentativa (opzionale)' },
-      ingredients: {
+      recipes: {
         type: 'ARRAY',
-        description: 'Ingredienti con dose per una persona',
+        description: 'Elenco delle ricette trovate (fino a 10).',
         items: {
           type: 'OBJECT',
           properties: {
-            name: { type: 'STRING', description: 'Nome ingrediente' },
-            quantity: { type: 'STRING', description: 'Dose con unità, es. "150 g" oppure "q.b."' }
+            name: { type: 'STRING', description: 'Nome della ricetta in italiano' },
+            slot: { type: 'STRING', enum: SLOTS, description: 'Pasto di appartenenza (breakfast, snack1, lunch, snack2, dinner)' },
+            emoji: { type: 'STRING', description: 'Emoji rappresentativa (opzionale)' },
+            ingredients: {
+              type: 'ARRAY',
+              description: 'Ingredienti con dose per una persona',
+              items: {
+                type: 'OBJECT',
+                properties: {
+                  name: { type: 'STRING', description: 'Nome ingrediente' },
+                  quantity: { type: 'STRING', description: 'Dose con unità, es. "150 g" oppure "q.b."' }
+                },
+                required: ['name', 'quantity']
+              }
+            },
+            steps: { type: 'ARRAY', items: { type: 'STRING' }, description: 'Preparazione: un passaggio per elemento' },
+            notes: { type: 'ARRAY', items: { type: 'STRING' }, description: 'Note opzionali' },
+            sourceUrl: { type: 'STRING', description: 'URL della fonte usata da Google Search' },
+            sourceTitle: { type: 'STRING', description: 'Titolo della fonte' }
           },
-          required: ['name', 'quantity']
+          required: ['name', 'ingredients', 'steps']
         }
-      },
-      steps: { type: 'ARRAY', items: { type: 'STRING' }, description: 'Preparazione: un passaggio per elemento' },
-      notes: { type: 'ARRAY', items: { type: 'STRING' }, description: 'Note opzionali' }
+      }
     },
-    required: ['name', 'ingredients', 'steps']
+    required: ['recipes']
   }
 };
 
-function recipeSystemInstruction() {
+function recipesSystemInstruction() {
   return [
     'Sei Piano, l’aiuto-cuoco della webapp Piano Nutrizionale.',
-    'Rispondi SOLO con la chiamata di funzione import_recipe: nessun altro testo.',
-    'Usa Google Search per trovare una ricetta adatta alla richiesta dell’utente.',
-    'La ricetta è per una persona e deve rispettare i massimi del dott. Meller: pollame 200 g, manzo 150 g, maiale 100 g, pesce 250 g, legumi 240 g, uova 180 g, pasta/riso 90 g, gnocchi 250 g, patate 450 g, pane 120 g, olio EVO 10 g, miele 20 g, marmellata 30 g, yogurt 200 g, latte 250 g, formaggi 60 g, crackers 40 g, frutta fresca 250 g, frutta secca 20 g.',
-    'Ogni ingrediente deve avere una dose con unità (es. "150 g", "2 cucchiai" oppure "q.b.").',
-    'Scrivi tutto in italiano: nome, slot (breakfast/snack1/lunch/snack2/dinner), emoji, ingredienti, passaggi di preparazione e note.'
+    'Rispondi SOLO con la chiamata di funzione search_recipes: nessun altro testo.',
+    'Usa Google Search per trovare ricette reali adatte alla richiesta dell’utente.',
+    'Proponi fino a 10 ricette diverse e pertinenti, in italiano, ordinate dalla più pertinente.',
+    'Ogni ricetta è per una persona e va costruita con ingredienti e dosi plausibili per una porzione (es. "150 g", "2 cucchiai", "q.b."), coerenti con i massimi del dott. Meller: pollame 200 g, manzo 150 g, maiale 100 g, pesce 250 g, legumi 240 g, uova 180 g, pasta/riso 90 g, gnocchi 250 g, patate 450 g, pane 120 g, olio EVO 10 g, miele 20 g, marmellata 30 g, yogurt 200 g, latte 250 g, formaggi 60 g, crackers 40 g, frutta fresca 250 g, frutta secca 20 g.',
+    'Indica sempre il pasto di appartenenza (slot: breakfast/snack1/lunch/snack2/dinner), ingredienti con dose, e una preparazione essenziale a passaggi.',
+    'Compila sourceUrl e sourceTitle con la fonte reale restituita da Google Search.',
+    'Se non trovi ricette adatte, restituisci comunque la chiamata con un elenco vuoto.'
   ].join('\n');
 }
 
-// Estrae il functionCall import_recipe dalla risposta generateContent.
-function extractRecipeFunctionCall(data) {
+function extractRecipesFunctionCall(data) {
   const parts = data?.candidates?.[0]?.content?.parts || [];
   for (const part of parts) {
-    if (part?.functionCall?.name === 'import_recipe') return part.functionCall;
+    if (part?.functionCall?.name === 'search_recipes') return part.functionCall;
   }
   return null;
 }
 
-// Normalizza gli argomenti del functionCall in una ricetta pulita per il client.
-function normalizeRecipeFromArgs(args = {}) {
+function normalizeRecipe(item) {
+  const name = String(item?.name || '').trim();
+  const ingredients = (Array.isArray(item?.ingredients) ? item.ingredients : [])
+    .map(ing => ({
+      name: String(ing?.name || '').trim(),
+      quantity: String(ing?.quantity || '').trim()
+    }))
+    .filter(ing => ing.name);
+  const steps = (Array.isArray(item?.steps) ? item.steps : []).map(step => String(step || '').trim()).filter(Boolean);
+  const notes = (Array.isArray(item?.notes) ? item.notes : []).map(note => String(note || '').trim()).filter(Boolean);
+  const slot = SLOTS.includes(String(item?.slot || '')) ? String(item.slot) : 'lunch';
+  let sourceUrl = '';
+  try {
+    const parsed = new URL(String(item?.sourceUrl || ''));
+    if (['http:', 'https:'].includes(parsed.protocol)) sourceUrl = parsed.href;
+  } catch (_) {}
   return {
-    name: String(args.name || '').trim(),
-    slot: String(args.slot || '').trim(),
-    emoji: String(args.emoji || '').trim(),
-    ingredients: (Array.isArray(args.ingredients) ? args.ingredients : [])
-      .map(item => ({
-        name: String(item?.name || '').trim(),
-        quantity: String(item?.quantity || '').trim()
-      }))
-      .filter(item => item.name),
-    steps: (Array.isArray(args.steps) ? args.steps : []).map(step => String(step || '').trim()).filter(Boolean),
-    notes: (Array.isArray(args.notes) ? args.notes : []).map(note => String(note || '').trim()).filter(Boolean)
+    name: name || 'Ricetta',
+    slot,
+    emoji: String(item?.emoji || '').trim(),
+    ingredients,
+    steps,
+    notes,
+    sourceUrl,
+    sourceTitle: String(item?.sourceTitle || '').trim()
   };
 }
 
-// Restituisce la ricetta pronta oppure null quando Gemini non produce la chiamata.
-function parseRecipeFromResponse(data) {
-  const call = extractRecipeFunctionCall(data);
-  if (!call) return null;
-  const recipe = normalizeRecipeFromArgs(call.args);
-  if (!recipe.name || !recipe.ingredients.length) return null;
-  return recipe;
+function parseRecipesFromResponse(data, maxRecipes) {
+  const call = extractRecipesFunctionCall(data);
+  const rawRecipes = Array.isArray(call?.args?.recipes) ? call.args.recipes : [];
+  return rawRecipes
+    .map(normalizeRecipe)
+    .filter(recipe => recipe.name && recipe.ingredients.length)
+    .slice(0, Math.max(1, Math.min(Number(maxRecipes) || DEFAULT_MAX_RECIPES, 10)));
 }
 
-// Chiama l'API REST generateContent con Google Search grounding e
-// functionDeclarations [import_recipe].
-async function generateRecipeContent(env, query) {
+function extractSources(data) {
+  const chunks = data?.candidates?.[0]?.groundingMetadata?.groundingChunks || [];
+  const sources = chunks.map(chunk => ({
+    title: chunk?.web?.title || '',
+    url: chunk?.web?.uri || chunk?.web?.url || ''
+  })).filter(source => {
+    try {
+      const parsed = new URL(source.url);
+      return ['http:', 'https:'].includes(parsed.protocol);
+    } catch (_) {
+      return false;
+    }
+  });
+  return [...new Map(sources.map(source => [source.url, source])).values()].slice(0, 10);
+}
+
+async function generateRecipesContent(env, query, maxRecipes) {
   const apiKey = String(env.GEMINI_API_KEY || '').trim();
   if (!apiKey) throw new Error('GEMINI_API_KEY non configurata nel Worker.');
   const model = textModelName(env);
@@ -334,13 +278,13 @@ async function generateRecipeContent(env, query) {
     method: 'POST',
     headers: { 'content-type': 'application/json' },
     body: JSON.stringify({
-      contents: [{ role: 'user', parts: [{ text: query }] }],
-      systemInstruction: { parts: [{ text: recipeSystemInstruction() }] },
+      contents: [{ role: 'user', parts: [{ text: `L’utente chiede: ${query}. Proponi fino a ${maxRecipes} ricette.` }] }],
+      systemInstruction: { parts: [{ text: recipesSystemInstruction() }] },
       tools: [
         { googleSearch: {} },
-        { functionDeclarations: [RECIPE_TOOL] }
+        { functionDeclarations: [RECIPES_TOOL] }
       ],
-      generationConfig: { temperature: 0.4, maxOutputTokens: 1500 }
+      generationConfig: { temperature: 0.5, maxOutputTokens: 4000 }
     })
   });
   const data = await response.json().catch(() => ({}));
@@ -350,27 +294,27 @@ async function generateRecipeContent(env, query) {
   return data;
 }
 
-// Handler dell'endpoint /recipe: autenticazione e rate-limit sono già stati
-// applicati dal fetch principale (stesso budget di 30 richieste/15 min).
-async function handleRecipe(request, env, origin) {
+async function handleRecipes(request, env, origin) {
   let body = {};
   try { body = await request.json(); } catch (_) {}
   const query = String(body?.query || '').trim();
   if (!query) return json({ error: 'Manca il testo della richiesta di ricetta.' }, 400, origin);
+  const maxRecipes = Math.max(1, Math.min(Number(body?.maxRecipes) || DEFAULT_MAX_RECIPES, 10));
 
   let data;
   try {
-    data = await generateRecipeContent(env, query);
+    data = await generateRecipesContent(env, query, maxRecipes);
   } catch (error) {
     console.error(error);
-    return json({ error: error.message || 'Gemini non ha risposto alla richiesta di ricetta.' }, 502, origin);
+    return json({ error: error.message || 'Gemini non ha risposto alla ricerca delle ricette.' }, 502, origin);
   }
 
-  const recipe = parseRecipeFromResponse(data);
-  if (!recipe) {
-    return json({ error: 'Non sono riuscito a comporre una ricetta valida. Riprova con una richiesta diversa.' }, 422, origin);
+  const recipes = parseRecipesFromResponse(data, maxRecipes);
+  const sources = extractSources(data);
+  if (!recipes.length) {
+    return json({ error: 'Non sono riuscito a trovare ricette valide. Riprova con una richiesta diversa.' }, 422, origin);
   }
-  return json({ recipe }, 200, origin);
+  return json({ recipes, sources }, 200, origin);
 }
 
 export default {
@@ -382,7 +326,7 @@ export default {
     }
     if (!isAllowedOrigin(origin, env)) return json({ error: 'Origine non autorizzata.' }, 403, '');
     const pathname = new URL(request.url).pathname;
-    if (pathname !== '/token' && pathname !== '/recipe') return json({ error: 'Endpoint non trovato.' }, 404, origin);
+    if (pathname !== '/recipes') return json({ error: 'Endpoint non trovato.' }, 404, origin);
     if (request.method !== 'POST') return json({ error: 'Metodo non consentito.' }, 405, origin);
 
     const authorization = request.headers.get('Authorization') || '';
@@ -409,28 +353,16 @@ export default {
       });
     }
 
-    try {
-      if (pathname === '/recipe') return await handleRecipe(request, env, origin);
-      const model = await resolveModel(request, env);
-      const token = await createEphemeralToken(env, model);
-      return json(token, 200, origin);
-    } catch (error) {
-      console.error(error);
-      return json({ error: error.message || 'Gemini non disponibile in questo momento.' }, 502, origin);
-    }
+    return handleRecipes(request, env, origin);
   }
 };
 
 // Export per i test unitari (node --test): il default export resta l'handler.
 export {
-  createEphemeralToken,
-  fallbackModelName,
-  modelName,
-  resolveModel,
   textModelName,
-  extractRecipeFunctionCall,
-  normalizeRecipeFromArgs,
-  parseRecipeFromResponse,
-  generateRecipeContent,
-  handleRecipe
+  normalizeRecipe,
+  parseRecipesFromResponse,
+  extractSources,
+  generateRecipesContent,
+  handleRecipes
 };

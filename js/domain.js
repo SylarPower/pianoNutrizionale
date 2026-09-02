@@ -1427,6 +1427,156 @@ const PROTEIN_CATEGORY_LABELS = {
     return { plan: nextPlan, counts, warnings, seed: seedUsed, pairs };
   }
 
+  // ---------------------------------------------------------------------
+  // Grammature del dott. Meller per pasto e giorno A/R.
+  //
+  // Valori a crudo tratti dal manuale (js/data.js → MELLER_GUIDE): servono a
+  // segnalare e correggere con un click le ricette importate, nuove o
+  // modificate quando le dosi superano il riferimento del proprio pasto.
+  // L'ordine delle regole conta: la prima che combacia con il nome
+  // dell'ingrediente vince (es. "fiocchi di latte" → formaggi, non latte).
+  // ---------------------------------------------------------------------
+
+  const MELLER_GRAMMATURE = [
+    // Carboidrati
+    { family: 'avena', label: 'Avena', match: /avena|porridge|oatmeal/, slots: { breakfast: { training: 40, rest: 40 } } },
+    { family: 'cereali', label: 'Cereali', match: /corn flakes|muesli|granola|cereali|fiocchi(?!\s+di\s+latte)/, slots: { breakfast: { training: 50, rest: 50 } } },
+    { family: 'gnocchi', label: 'Gnocchi', match: /gnocch/, slots: { lunch: { training: 250, rest: 190 } } },
+    { family: 'polenta', label: 'Polenta', match: /polenta/, slots: { lunch: { training: 430, rest: 340 } } },
+    { family: 'piadina', label: 'Piadina', match: /piadina|tortilla/, slots: { lunch: { training: 110, rest: 80 } } },
+    { family: 'pseudo', label: 'Quinoa/Grano saraceno/Amaranto', match: /quinoa|grano saraceno|amaranto/, slots: { lunch: { training: 80, rest: 60 } } },
+    { family: 'couscous', label: 'Cous cous', match: /cous.?cous/, slots: { lunch: { training: 80, rest: 60 } } },
+    { family: 'farroorzo', label: 'Farro/Orzo', match: /\b(farro|orzo)\b/, slots: { lunch: { training: 90, rest: 70 } } },
+    { family: 'pasta', label: 'Pasta', match: /pasta|spaghetti|penne|rigatoni|linguine|tagliatelle|lasagne|trofie|fusilli/, slots: { lunch: { training: 90, rest: 70 } } },
+    { family: 'riso', label: 'Riso', match: /\briso\b|risotto/, slots: { lunch: { training: 90, rest: 70 } } },
+    { family: 'crackers', label: 'Crackers/Grissini/Crostini', match: /cracker|grissin|crostin/, slots: { snack1: { training: 30, rest: 30 }, snack2: { training: 30, rest: 30 }, lunch: { training: 70, rest: 60 }, dinner: { training: 40, rest: 40 } } },
+    { family: 'patate', label: 'Patate', match: /patat/, slots: { lunch: { training: 450, rest: 350 }, dinner: { training: 230, rest: 230 } } },
+    { family: 'pane', label: 'Pane', match: /\bpane\b|fette biscottate/, slots: { lunch: { training: 120, rest: 90 }, dinner: { training: 60, rest: 60 } } },
+    // Proteine e latticini
+    { family: 'pollame', label: 'Pollame', match: /pollo|tacchino|faraona|pollame/, slots: { lunch: { training: 200, rest: 200 }, dinner: { training: 200, rest: 200 } } },
+    { family: 'manzo', label: 'Manzo/Vitello', match: /manzo|vitello|roastbeef|hamburger/, slots: { lunch: { training: 150, rest: 150 }, dinner: { training: 150, rest: 150 } } },
+    { family: 'maiale', label: 'Maiale', match: /maiale|lonza|pork/, slots: { lunch: { training: 100, rest: 100 }, dinner: { training: 100, rest: 100 } } },
+    { family: 'salumi', label: 'Affettati/Salumi', match: /affettat|prosciutto|salume|salumi|speck|bresaola|mortadella|salame|wurstel|salsiccia/, slots: { lunch: { training: 100, rest: 100 }, dinner: { training: 100, rest: 100 } } },
+    { family: 'pesceOmega', label: 'Pesce azzurro/omega-3', match: /salmone|sgombro|sardine?|aringa|alice|acciug/, slots: { lunch: { training: 100, rest: 100 }, dinner: { training: 100, rest: 100 } } },
+    { family: 'molluschi', label: 'Crostacei/Molluschi', match: /gamber|crostace|mollusch|calamar|polpo|seppi|cozze|vongole/, slots: { lunch: { training: 300, rest: 300 }, dinner: { training: 300, rest: 300 } } },
+    { family: 'tonno', label: 'Tonno', match: /tonno/, slots: { lunch: { training: 150, rest: 150 }, dinner: { training: 150, rest: 150 } } },
+    { family: 'pesceBianco', label: 'Pesce', match: /merluzzo|nasello|sogliola|orata|branzino|spigola|trota|platessa|\bpesce\b/, slots: { lunch: { training: 250, rest: 250 }, dinner: { training: 250, rest: 250 } } },
+    { family: 'legumi', label: 'Legumi', match: /legumi|ceci|lenticch|fagiol|pisell|soia|tofu|tempeh|legumott/, slots: { lunch: { training: 240, rest: 240 }, dinner: { training: 240, rest: 240 } } },
+    { family: 'uova', label: 'Uova', match: /\buov|albume|tuorlo/, slots: { breakfast: { training: 60, rest: 60 }, lunch: { training: 180, rest: 180 }, dinner: { training: 180, rest: 180 } } },
+    { family: 'formaggi', label: 'Formaggi', match: /formaggi|parmigiano|grana|pecorino|mozzarella|ricotta|stracchino|scamorza|feta|emmental|montasio|caprino|crescenza|robiola|fiocchi di latte/, slots: { lunch: { training: 50, rest: 50 }, dinner: { training: 50, rest: 50 } } },
+    { family: 'latte', label: 'Latte', match: /\blatte\b/, slots: { breakfast: { training: 250, rest: 250 } } },
+    { family: 'yogurt', label: 'Yogurt/Kefir', match: /yogurt|kefir|skyr/, slots: { breakfast: { training: 100, rest: 100 }, snack2: { training: 150, rest: 150 } } },
+    // Condimenti, dolcificanti e frutta
+    { family: 'olio', label: 'Olio EVO', match: /olio|extravergine|evo\b/, slots: { lunch: { training: 10, rest: 10 }, dinner: { training: 10, rest: 10 } } },
+    { family: 'miele', label: 'Miele/Sciroppo', match: /miele|sciroppo/, slots: { breakfast: { training: 10, rest: 10 }, snack2: { training: 15, rest: 15 } } },
+    { family: 'marmellata', label: 'Marmellata', match: /marmellata|confettura|composta/, slots: { breakfast: { training: 15, rest: 15 }, snack2: { training: 20, rest: 20 } } },
+    { family: 'fruttasecca', label: 'Frutta secca', match: /frutta secca|mandorle|noci|nocciole|arachidi|anacardi|pistacchi|pinoli|semi di|uvetta|datteri/, slots: { snack2: { training: 20, rest: 20 } } },
+    { family: 'frutta', label: 'Frutta fresca', match: /frutta fresca|mela|mele|banana|pera|arancia|kiwi|fragol|pesca|albicocc|uva|mango|ananas|melone|anguria|cachi|cilieg|mirtill|lampon|macedonia|clementin|mandarin|prugn|susin/, slots: { snack1: { training: 250, rest: 250 }, snack2: { training: 250, rest: 250 } } }
+  ];
+
+  // Riferimento Meller per un ingrediente (prima regola che combacia), oppure
+  // null quando l'alimento non ha una grammatura definita (verdura, spezie,
+  // q.b., ecc.). Verdura e alimenti liberi non vengono mai segnalati.
+  function mellerRuleForIngredient(name) {
+    const value = aliasKey(name);
+    if (!value) return null;
+    return MELLER_GRAMMATURE.find(rule => rule.match.test(value)) || null;
+  }
+
+  // Grammatura di riferimento per pasto + giorno A/R (training/rest).
+  function mellerReferenceAmount(rule, slot, dayType) {
+    const bySlot = rule?.slots?.[slot];
+    if (!bySlot) return null;
+    const amount = bySlot[dayType];
+    return amount != null ? amount : (bySlot.training != null ? bySlot.training : null);
+  }
+
+  // Quantità numerica confrontabile: solo grammi/millilitri (o misure da
+  // cucina già convertite in grammi da parseSimpleAmount). I pezzi ("2 pz"),
+  // il q.b. e i valori opachi vengono ignorati per non creare falsi positivi.
+  function mellerComparableAmount(raw) {
+    const parsed = parseSimpleAmount(raw);
+    if (!parsed || parsed.skip || parsed.free || parsed.opaque) return null;
+    if (parsed.unit !== 'g' && parsed.unit !== 'ml') return null;
+    if (!Number.isFinite(parsed.value) || parsed.value <= 0) return null;
+    return { value: parsed.value, unit: parsed.unit };
+  }
+
+  const MELLER_PORTION_KEYS = [
+    ['manTraining', 'training'], ['manRest', 'rest'],
+    ['ipoTraining', 'training'], ['ipoRest', 'rest']
+  ];
+
+  // Verifica se una ricetta rispetta le grammature Meller del proprio pasto.
+  // Restituisce { adapted, issues, summary }: `adapted` è true quando nessuna
+  // dose supera il riferimento; `summary` aggrega le segnalazioni per
+  // ingrediente (pronta per la UI).
+  function checkMellerAdaptation(recipe) {
+    const slot = recipe?.slot && SLOTS.includes(recipe.slot) ? recipe.slot : 'lunch';
+    const issues = [];
+    (recipe?.ingredients || []).forEach(ingredient => {
+      const rule = mellerRuleForIngredient(ingredient?.name);
+      if (!rule) return;
+      const portions = normalizePortions(ingredient?.portions || {});
+      MELLER_PORTION_KEYS.forEach(([key, dayType]) => {
+        const expected = mellerReferenceAmount(rule, slot, dayType);
+        if (expected == null) return;
+        const amount = mellerComparableAmount(portions[key]);
+        if (!amount || amount.value <= expected) return;
+        issues.push({
+          ingredient: ingredient.name,
+          family: rule.family,
+          label: rule.label,
+          portion: key,
+          dayType,
+          expected,
+          actual: Math.round(amount.value * 100) / 100,
+          unit: amount.unit
+        });
+      });
+    });
+
+    const summary = [];
+    issues.forEach(issue => {
+      let entry = summary.find(item => item.ingredient === issue.ingredient);
+      if (!entry) {
+        entry = { ingredient: issue.ingredient, label: issue.label, family: issue.family, actual: issue.actual, expected: issue.expected, unit: issue.unit };
+        summary.push(entry);
+      } else if (issue.actual > entry.actual) {
+        entry.actual = issue.actual;
+        entry.expected = issue.expected;
+        entry.unit = issue.unit;
+      }
+    });
+
+    return { adapted: issues.length === 0, issues, summary };
+  }
+
+  // Adatta con un click: riporta ai riferimenti Meller le dosi che superano
+  // il massimo del proprio pasto e giorno A/R. Le dosi già corrette o non
+  // numeriche restano invariate. Restituisce una copia della ricetta.
+  function adaptRecipeToMeller(recipe) {
+    const next = deepClone(recipe);
+    const report = [];
+    (next.ingredients || []).forEach(ingredient => {
+      const rule = mellerRuleForIngredient(ingredient.name);
+      if (!rule) return;
+      const portions = ingredient.portions || {};
+      MELLER_PORTION_KEYS.forEach(([key, dayType]) => {
+        const expected = mellerReferenceAmount(rule, next.slot && SLOTS.includes(next.slot) ? next.slot : 'lunch', dayType);
+        if (expected == null) return;
+        const raw = String(portions[key] ?? '');
+        const amount = mellerComparableAmount(raw);
+        if (!amount || amount.value <= expected) return;
+        const unit = amount.unit === 'ml' ? ' ml' : ' g';
+        const nextAmount = `${expected}${unit}`;
+        report.push({ ingredient: ingredient.name, portion: key, from: raw, to: nextAmount });
+        portions[key] = nextAmount;
+      });
+    });
+    return { recipe: next, report, changed: report.length > 0 };
+  }
+
   return {
     VERSION,
     DAYS,
@@ -1490,6 +1640,11 @@ const PROTEIN_CATEGORY_LABELS = {
     inferProteinCategoryFromIngredients,
     catalogHasLegacyFrequency,
     isFishRecipe,
+    MELLER_GRAMMATURE,
+    mellerRuleForIngredient,
+    mellerReferenceAmount,
+    checkMellerAdaptation,
+    adaptRecipeToMeller,
     mulberry32,
     hashString,
     generateWeek
