@@ -4,7 +4,7 @@
 const test = require('node:test');
 const assert = require('node:assert/strict');
 
-const WORKER_PATH = '../cloudflare/assistant-worker/src/index.js';
+const WORKER_PATH = '../cloudflare/ai-worker/src/index.js';
 
 async function loadWorker() {
   return import(WORKER_PATH);
