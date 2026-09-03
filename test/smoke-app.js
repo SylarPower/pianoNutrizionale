@@ -385,6 +385,60 @@ assert.equal(appState.recipes.length, recipesBeforeDuplicate, 'la copia non entr
 assert.equal(appState.plan.days.monday.lunch, 'L1', 'la ricetta duplicata non finisce nel piano settimanale');
 closeRecipeModal();
 
+// ---- Operazioni sul pasto dal dettaglio ricetta ----
+// Aprendo la ricetta da una casella della Settimana, il foglio "Altre azioni"
+// deve offrire anche sostituisci/scambia/copia; dal Ricettario no, perché non
+// c'è un pasto del piano a cui applicarle.
+{
+  const planActions = document.getElementById('modal-plan-actions');
+  openRecipeModal('L1', 'monday', 'lunch');
+  assert.equal(currentModal.planSlot, 'lunch', 'slot del piano memorizzato');
+  assert.equal(planActions.classList.contains('hidden'), false, 'azioni sul pasto visibili dalla Settimana');
+  assert.equal(document.getElementById('modal-more-btn').classList.contains('hidden'), false, '"Altro" disponibile');
+
+  // Anche su uno spuntino: le operazioni sul pasto non dipendono dalle
+  // grammature, valgono per qualunque casella del piano.
+  openRecipeModal('L1', 'monday', 'snack1');
+  assert.equal(currentModal.planSlot, 'snack1', 'anche gli spuntini hanno operazioni sul pasto');
+  assert.equal(currentModal.slot, null, 'lo slot di adattamento resta nullo fuori da pranzo/cena');
+  assert.equal(planActions.classList.contains('hidden'), false, 'azioni sul pasto visibili anche negli spuntini');
+
+  // Dal Ricettario (nessun giorno) il gruppo resta nascosto.
+  openRecipeModal('L1');
+  assert.equal(currentModal.planSlot, null);
+  assert.equal(planActions.classList.contains('hidden'), true, 'nessuna operazione sul pasto dal Ricettario');
+
+  // In modifica il gruppo sparisce, come le altre azioni secondarie.
+  openRecipeModal('L1', 'monday', 'lunch');
+  editMode = true;
+  renderModalContent();
+  assert.equal(planActions.classList.contains('hidden'), true, 'niente operazioni sul pasto in modifica');
+  editMode = false;
+  renderModalContent();
+  assert.equal(planActions.classList.contains('hidden'), false);
+
+  // Il pulsante chiude la ricetta e apre il flusso del pasto giusto.
+  const originalOpenSwap = global.openSwapModal;
+  let swapTarget = null;
+  global.openSwapModal = (day, slot) => { swapTarget = { day, slot }; };
+  document.getElementById('modal-plan-replace-btn')._fire('click', {});
+  assert.deepEqual(swapTarget, { day: 'monday', slot: 'lunch' }, 'sostituisci usa giorno e slot della casella aperta');
+  assert.equal(document.getElementById('recipe-modal').classList.contains('hidden'), true, 'la ricetta si chiude');
+  global.openSwapModal = originalOpenSwap;
+
+  openRecipeModal('L1', 'tuesday', 'dinner');
+  document.getElementById('modal-plan-swap-btn')._fire('click', {});
+  assert.deepEqual({ day: mealActionsTarget.day, slot: mealActionsTarget.slot }, { day: 'tuesday', slot: 'dinner' }, 'scambia punta alla casella aperta');
+  assert.match(document.getElementById('meal-target-list')._innerHTML, /Scambia con un altro giorno/, 'lista di scambio mostrata');
+  closeMealActions();
+
+  openRecipeModal('L1', 'monday', 'lunch');
+  document.getElementById('modal-plan-copy-btn')._fire('click', {});
+  assert.deepEqual({ day: mealActionsTarget.day, slot: mealActionsTarget.slot }, { day: 'monday', slot: 'lunch' }, 'copia punta alla casella aperta');
+  assert.match(document.getElementById('meal-target-list')._innerHTML, /Copia/i, 'lista di copia mostrata');
+  closeMealActions();
+}
+
 // Il modal si chiude solo se il primo click parte fuori dal contenuto.
 openRecipeModal('L1');
 const recipeModal = document.getElementById('recipe-modal');
@@ -530,6 +584,38 @@ closeMellerAlternatives();
 assert.equal(document.getElementById('meller-alternatives-modal').classList.contains('hidden'), true, 'popup chiuso');
 openMellerAlternatives('Zucchine');
 assert.equal(document.getElementById('meller-alternatives-modal').classList.contains('hidden'), true, 'la verdura non apre il popup');
+
+// Spuntini e merende: nessuna equivalenza. I crackers dello spuntino valgono
+// 30g fissi e non si scambiano con 90g di pasta, quindi non sono tappabili.
+['breakfast', 'snack1', 'snack2'].forEach(slot => {
+  currentModal = { recipe: { id: 'S', slot, ingredients: [], steps: [] }, dayType: 'training' };
+  ['Crackers', 'Pane', 'Yogurt greco', 'Fiocchi di latte', 'Uova'].forEach(name => {
+    assert.equal(
+      getMellerAlternativesForIngredient(name), null,
+      `${name} non ha equivalenze in ${slot}`
+    );
+  });
+  openMellerAlternatives('Crackers');
+  assert.equal(
+    document.getElementById('meller-alternatives-modal').classList.contains('hidden'), true,
+    `il popup non si apre in ${slot}`
+  );
+});
+
+// Gli stessi ingredienti restano tappabili a pranzo e a cena.
+['lunch', 'dinner'].forEach(slot => {
+  currentModal = { recipe: { id: 'S', slot, ingredients: [], steps: [] }, dayType: 'training' };
+  assert.ok(getMellerAlternativesForIngredient('Crackers'), `crackers tappabili in ${slot}`);
+  assert.ok(getMellerAlternativesForIngredient('Petto di pollo'), `pollo tappabile in ${slot}`);
+});
+
+// Cross-slot: conta il pasto di DESTINAZIONE, non quello della ricetta. Una
+// ricetta da pranzo servita come spuntino non mostra le equivalenze.
+currentModal = { recipe: { id: 'S', slot: 'lunch', ingredients: [], steps: [] }, slot: 'dinner', dayType: 'training' };
+assert.ok(getMellerAlternativesForIngredient('Crackers'), 'pranzo → cena: equivalenze attive');
+currentModal = { recipe: { id: 'S', slot: 'lunch', ingredients: [], steps: [] }, slot: 'snack1', dayType: 'training' };
+assert.equal(getMellerAlternativesForIngredient('Crackers'), null, 'pranzo → spuntino: nessuna equivalenza');
+currentModal = null;
 
 // Riconoscimento degli ingredienti: ogni famiglia delle tabelle alternative è
 // raggiungibile dal popup con un nome reale.

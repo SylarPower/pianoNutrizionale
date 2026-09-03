@@ -458,6 +458,16 @@
   // sempre quelle di riposo. La cena e tutte le proteine restano invariate.
   // Con `dayType: 'both'` (Impostazioni, nessuna giornata di contesto) la
   // tabella dei carboidrati mostra entrambe le colonne di pranzo.
+  // Pasti in cui le equivalenze Meller hanno senso. Il manuale costruisce le
+  // alternative sul rapporto pranzo/cena: negli spuntini e nelle merende le
+  // dosi sono fisse e non intercambiabili (crackers 30g nello spuntino non
+  // diventano 90g di pasta), quindi lì il popup non si apre.
+  const MELLER_ALTERNATIVE_SLOTS = ['lunch', 'dinner'];
+
+  function mellerSlotHasAlternatives(slot) {
+    return MELLER_ALTERNATIVE_SLOTS.includes(String(slot || ''));
+  }
+
   function mellerAlternativeGroups(dayType) {
     const day = normalizeMellerDayType(dayType);
     const both = day === 'both';
@@ -2100,6 +2110,8 @@ const PROTEIN_CATEGORY_LABELS = {
     mellerMaxAmount,
     mellerAlternativeFamilies,
     mellerAlternativeGroups,
+    mellerSlotHasAlternatives,
+    MELLER_ALTERNATIVE_SLOTS,
     mellerFamiliesInText,
     mellerAlternativesText,
     mellerGuidelinesText,

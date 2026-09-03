@@ -258,6 +258,11 @@ mantengono a cena la stessa dose del pranzo e non vengono mai trasformate.
   **giornata visualizzata**: `training` mostra `Alimento | Pranzo A | Cena`,
   `rest` mostra `Alimento | Pranzo R | Cena`, `both` (Impostazioni, nessuna
   giornata di contesto) mostra entrambe le colonne pranzo.
+- `mellerSlotHasAlternatives(slot)` → le equivalenze valgono **solo a pranzo e a
+  cena**. Il manuale costruisce le alternative sul rapporto pranzo/cena: negli
+  spuntini, nelle merende e a colazione le dosi sono fisse (crackers 30 g) e non
+  intercambiabili, quindi il popup non si apre. Nelle ricette cross-slot conta
+  il pasto di **destinazione**, non quello della ricetta.
 
 ## Sicurezza e privacy
 

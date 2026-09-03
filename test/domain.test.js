@@ -1666,6 +1666,27 @@ test('Meller regressione: cous cous 40g a cena è già adattato', () => {
   assert.equal(d.adaptRecipeToMeller(dinner).changed, false);
 });
 
+test('Meller popup: le equivalenze esistono solo a pranzo e a cena', () => {
+  // Il manuale costruisce le alternative sul rapporto pranzo/cena. Negli
+  // spuntini e nelle merende le dosi sono fisse (crackers 30 g) e non
+  // scambiabili con 90 g di pasta: lì il popup non deve aprirsi.
+  assert.deepEqual(d.MELLER_ALTERNATIVE_SLOTS, ['lunch', 'dinner']);
+  assert.equal(d.mellerSlotHasAlternatives('lunch'), true);
+  assert.equal(d.mellerSlotHasAlternatives('dinner'), true);
+  ['breakfast', 'snack1', 'snack2'].forEach(slot => {
+    assert.equal(d.mellerSlotHasAlternatives(slot), false, `${slot} non ha equivalenze`);
+  });
+  assert.equal(d.mellerSlotHasAlternatives(null), false, 'senza slot niente equivalenze');
+  assert.equal(d.mellerSlotHasAlternatives('non-valido'), false);
+
+  // I crackers restano un carboidrato con dosi proprie negli spuntini: è la
+  // tabella di scambio a non applicarsi, non la grammatura.
+  const crackers = d.mellerGrammatureFor('crackers');
+  assert.equal(crackers.slots.snack1.training, 30, 'crackers 30 g nello spuntino');
+  assert.equal(crackers.slots.lunch.training, 70, 'crackers 70 g a pranzo A');
+  assert.equal(d.isMellerCarbIngredient('Crackers'), true);
+});
+
 test('Meller popup: tabelle alternative con colonne e righe attese', () => {
   // Il popup segue la giornata visualizzata: in allenamento le dosi A, in
   // riposo le dosi R. La guida in Impostazioni ('both') le mostra affiancate.

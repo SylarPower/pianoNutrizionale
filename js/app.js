@@ -1789,7 +1789,21 @@ function getMellerAlternativesDayType() {
   return ["training", "rest"].includes(dayType) ? dayType : "both";
 }
 
-function getMellerAlternativesForIngredient(ingredientName, dayType = getMellerAlternativesDayType()) {
+// Pasto di riferimento delle equivalenze: quello di destinazione se la ricetta
+// è mostrata in uno slot diverso dal proprio (cross-slot), altrimenti quello
+// della ricetta. Nel Ricettario, senza contesto di piano, vale recipe.slot.
+function getMellerAlternativesSlot() {
+  return currentModal?.slot || currentModal?.recipe?.slot || null;
+}
+
+function getMellerAlternativesForIngredient(ingredientName, dayType = getMellerAlternativesDayType(), slot = getMellerAlternativesSlot()) {
+  // Le equivalenze esistono solo a pranzo e a cena: negli spuntini e nelle
+  // merende le grammature del manuale sono fisse (crackers 30g) e non hanno
+  // una tabella di scambio, quindi l'ingrediente non è tappabile.
+  const slotAllowed = window.PianoDomain?.mellerSlotHasAlternatives
+    ? PianoDomain.mellerSlotHasAlternatives(slot)
+    : ["lunch", "dinner"].includes(slot);
+  if (!slotAllowed) return null;
   // Le tabelle sono derivate dalla fonte unica per la giornata richiesta: a
   // pranzo le dosi dei carboidrati cambiano tra allenamento e riposo.
   const guide = window.PianoDomain?.mellerAlternativeGroups
@@ -1805,7 +1819,7 @@ function getMellerAlternativesForIngredient(ingredientName, dayType = getMellerA
   if (isCarb && !isProtein) groups = [guide.carbohydrates];
   else if (!isCarb && isProtein) groups = [guide.proteins];
   else groups = [guide.carbohydrates, guide.proteins];
-  return { groups, isCarb, isProtein, dayType };
+  return { groups, isCarb, isProtein, dayType, slot };
 }
 function shouldHighlightMellerRow(rowLabel, ingredientName) {
   const rowNorm = normalizeIngredientName(rowLabel);
@@ -3071,6 +3085,31 @@ function setupModal() {
   document.getElementById("modal-export-btn").addEventListener("click", exportCurrentRecipe);
   document.getElementById("modal-share-btn").addEventListener("click", () => openShareDialog(currentModal?.recipe?.id));
   document.getElementById("modal-delete-btn").addEventListener("click", deleteCurrentRecipe);
+  // Operazioni sul pasto direttamente dal dettaglio ricetta: evitano di
+  // chiudere la ricetta e ricercare la casella nella griglia della settimana.
+  document.getElementById("modal-plan-replace-btn")?.addEventListener("click", () => runPlanActionFromRecipe(target => {
+    openSwapModal(target.day, target.slot);
+  }));
+  document.getElementById("modal-plan-swap-btn")?.addEventListener("click", () => runPlanActionFromRecipe(target => {
+    openMealActions(target.day, target.slot);
+    renderMealSwapList();
+  }));
+  document.getElementById("modal-plan-copy-btn")?.addEventListener("click", () => runPlanActionFromRecipe(target => {
+    openMealActions(target.day, target.slot);
+    renderMealCopyList();
+  }));
+}
+
+// Le operazioni sul pasto vivono nella Settimana e ragionano su giorno + slot:
+// dal dettaglio ricetta si chiude la modale e si riusa lo stesso flusso, senza
+// duplicare la logica di scambio/copia.
+function runPlanActionFromRecipe(action) {
+  const day = currentModal?.dayKey;
+  const slot = currentModal?.planSlot;
+  if (!day || !slot) return;
+  setRecipeActionsOpen(false);
+  closeRecipeModal();
+  action({ day, slot });
 }
 
 function setRecipeActionsOpen(open) {
@@ -3130,7 +3169,11 @@ window.openRecipeModal = function(recipeId, dayKey = null, slot = null) {
     original: clone(recipe),
     dayKey: DAY_ORDER.includes(dayKey) ? dayKey : null,
     dayType: DAY_ORDER.includes(dayKey) ? getDayType(dayKey) : getRecipePreviewDayType(),
+    // `slot` guida l'adattamento cross-slot delle dosi ed esiste solo per
+    // pranzo e cena; `planSlot` è la casella reale del piano (anche colazione
+    // e spuntini) e serve alle operazioni sul pasto.
     slot: ["lunch", "dinner"].includes(slot) ? slot : null,
+    planSlot: MEAL_SLOTS.some(item => item.id === slot) ? slot : null,
     isNew: false
   };
   editMode = false;
@@ -3273,10 +3316,15 @@ function renderModalContent() {
   document.getElementById("modal-revert-btn").classList.toggle("hidden", editMode || !recipe._original);
   document.getElementById("modal-delete-btn").classList.toggle("hidden", editMode || currentModal.isNew);
   document.getElementById("modal-cancel-edit-btn").classList.toggle("hidden", !editMode);
+  // Operazioni sul pasto: solo quando la ricetta è aperta da una casella del
+  // piano (dalla Settimana), non dal Ricettario né su una ricetta nuova.
+  const planActions = document.getElementById("modal-plan-actions");
+  const hasPlanTarget = Boolean(currentModal.dayKey && currentModal.planSlot && !currentModal.isNew);
+  planActions?.classList.toggle("hidden", editMode || !hasPlanTarget);
   // "Altro" ha senso solo se nel foglio resta almeno un'azione disponibile.
   document.getElementById("modal-more-btn").classList.toggle(
     "hidden",
-    editMode || (currentModal.isNew && !recipe._original)
+    editMode || (currentModal.isNew && !recipe._original && !hasPlanTarget)
   );
   setRecipeActionsOpen(false);
   document.getElementById("modal-edit-btn").textContent = "Modifica ricetta";

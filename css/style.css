@@ -614,10 +614,15 @@ input[type="checkbox"], input[type="radio"] { accent-color: var(--primary); widt
  * fissa in basso + foglio "Altre azioni" (vedi media query 520px). */
 .modal-footer-primary,
 .modal-more,
-.modal-more-sheet { display: contents; }
+.modal-more-sheet,
+.modal-more-group { display: contents; }
 .modal-more-backdrop,
 .modal-more-title,
+.modal-more-subtitle,
 #modal-more-btn { display: none; }
+/* Il gruppo sparisce con display: contents, quindi .hidden va applicato ai
+ * figli: altrimenti i pulsanti resterebbero visibili fuori dal piano. */
+.modal-more-group.hidden > * { display: none !important; }
 .batch-modal { padding: 16px; border-radius: 13px; background: var(--accent-soft); }
 .batch-modal ol { margin: 14px 0 14px 20px; }
 .batch-modal li { margin: 7px 0; }
@@ -1026,6 +1031,17 @@ body.dark-mode .batch-task-status.fresh {
     letter-spacing: .1em;
     text-transform: uppercase;
   }
+  /* Operazioni sul pasto: blocco a sé, separato dalle azioni sulla ricetta. */
+  .modal-more-group { display: flex; flex-direction: column; gap: 9px; }
+  .modal-more-group.hidden { display: none; }
+  .modal-more-subtitle {
+    display: block;
+    margin-top: 4px;
+    color: var(--text-muted);
+    font-size: .68rem;
+    font-weight: 750;
+  }
+  .modal-more-group + #modal-export-btn { margin-top: 6px; }
   #recipe-modal .modal-footer .modal-more .btn {
     flex: 0 0 auto;
     width: 100%;
