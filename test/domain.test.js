@@ -1525,10 +1525,15 @@ test('Meller fonte unica: CARB_REFERENCE deriva dalle grammature', () => {
 });
 
 test('Meller fonte unica: le alternative della guida derivano dalla tabella', () => {
-  const carbs = Object.fromEntries(d.MELLER_GUIDE.alternatives.carbohydrates.rows);
-  assert.equal(d.MELLER_GUIDE.alternatives.carbohydrates.title, 'Carboidrati · riferimento Pasta/Riso 70g a pranzo, 40g a cena');
-  assert.equal(carbs['Gnocchi di patate'], '190g');
-  assert.equal(carbs['Patate'], '350g');
+  // La guida in Impostazioni mostra entrambe le giornate: Alimento | Pranzo A |
+  // Pranzo R | Cena. I popup mostrano invece la sola giornata visualizzata.
+  const carbGroup = d.MELLER_GUIDE.alternatives.carbohydrates;
+  assert.deepEqual(carbGroup.columns, ['Alimento', 'Pranzo A', 'Pranzo R', 'Cena']);
+  assert.equal(carbGroup.title, 'Carboidrati · riferimento Pasta/Riso 90g a pranzo A, 70g a pranzo R, 40g a cena');
+  const carbs = Object.fromEntries(carbGroup.rows.map(row => [row[0], row.slice(1)]));
+  assert.deepEqual(carbs['Pasta, Riso'], ['90g', '70g', '40g']);
+  assert.deepEqual(carbs['Gnocchi di patate'], ['250g', '190g', '120g']);
+  assert.deepEqual(carbs['Patate'], ['450g', '350g', '230g']);
   const proteins = Object.fromEntries(d.MELLER_GUIDE.alternatives.proteins.rows);
   assert.equal(d.MELLER_GUIDE.alternatives.proteins.title, 'Proteine · riferimento Pollame 200g');
   assert.equal(proteins['Fiocchi di latte / Uova intere'], '180g', 'fiocchi di latte corretti a 180g');
@@ -1661,18 +1666,54 @@ test('Meller regressione: cous cous 40g a cena è già adattato', () => {
   assert.equal(d.adaptRecipeToMeller(dinner).changed, false);
 });
 
+test('Meller popup: le equivalenze esistono solo a pranzo e a cena', () => {
+  // Il manuale costruisce le alternative sul rapporto pranzo/cena. Negli
+  // spuntini e nelle merende le dosi sono fisse (crackers 30 g) e non
+  // scambiabili con 90 g di pasta: lì il popup non deve aprirsi.
+  assert.deepEqual(d.MELLER_ALTERNATIVE_SLOTS, ['lunch', 'dinner']);
+  assert.equal(d.mellerSlotHasAlternatives('lunch'), true);
+  assert.equal(d.mellerSlotHasAlternatives('dinner'), true);
+  ['breakfast', 'snack1', 'snack2'].forEach(slot => {
+    assert.equal(d.mellerSlotHasAlternatives(slot), false, `${slot} non ha equivalenze`);
+  });
+  assert.equal(d.mellerSlotHasAlternatives(null), false, 'senza slot niente equivalenze');
+  assert.equal(d.mellerSlotHasAlternatives('non-valido'), false);
+
+  // I crackers restano un carboidrato con dosi proprie negli spuntini: è la
+  // tabella di scambio a non applicarsi, non la grammatura.
+  const crackers = d.mellerGrammatureFor('crackers');
+  assert.equal(crackers.slots.snack1.training, 30, 'crackers 30 g nello spuntino');
+  assert.equal(crackers.slots.lunch.training, 70, 'crackers 70 g a pranzo A');
+  assert.equal(d.isMellerCarbIngredient('Crackers'), true);
+});
+
 test('Meller popup: tabelle alternative con colonne e righe attese', () => {
+  // Il popup segue la giornata visualizzata: in allenamento le dosi A, in
+  // riposo le dosi R. La guida in Impostazioni ('both') le mostra affiancate.
+  const training = d.mellerAlternativeGroups('training');
+  assert.deepEqual(training.carbohydrates.columns, ['Alimento', 'Pranzo A', 'Cena'], 'colonne carboidrati allenamento');
+  assert.equal(training.carbohydrates.title, 'Carboidrati · giorno di allenamento · riferimento Pasta/Riso 90g a pranzo, 40g a cena');
+  assert.deepEqual(training.carbohydrates.rows[0], ['Pasta, Riso', '90g', '40g']);
+  assert.deepEqual(training.carbohydrates.rows[1], ['Gnocchi di patate', '250g', '120g']);
+  assert.ok(training.carbohydrates.rows.every(row => row.length === 3), 'allenamento: 3 celle per riga');
+
+  const rest = d.mellerAlternativeGroups('rest');
+  assert.deepEqual(rest.carbohydrates.columns, ['Alimento', 'Pranzo R', 'Cena'], 'colonne carboidrati riposo');
+  assert.equal(rest.carbohydrates.title, 'Carboidrati · giorno di riposo · riferimento Pasta/Riso 70g a pranzo, 40g a cena');
+  assert.deepEqual(rest.carbohydrates.rows[0], ['Pasta, Riso', '70g', '40g']);
+  assert.deepEqual(rest.carbohydrates.rows[1], ['Gnocchi di patate', '190g', '120g']);
+
+  // Le proteine non cambiano con la giornata: colonna unica in tutti i casi.
+  [training, rest, d.mellerAlternativeGroups('both')].forEach(groups => {
+    assert.deepEqual(groups.proteins.columns, ['Alimento', 'Pranzo e cena'], 'colonne proteine');
+    assert.ok(groups.proteins.rows.every(row => row.length === 2), 'ogni riga proteine ha 2 celle');
+  });
+
   const carbs = d.MELLER_GUIDE.alternatives.carbohydrates;
   const proteins = d.MELLER_GUIDE.alternatives.proteins;
-  assert.deepEqual(carbs.columns, ['Alimento', 'Pranzo', 'Cena'], 'colonne carboidrati');
-  assert.deepEqual(proteins.columns, ['Alimento', 'Pranzo'], 'colonne proteine');
   assert.equal(carbs.kind, 'carbs');
   assert.equal(proteins.kind, 'proteins');
-  assert.equal(carbs.title, 'Carboidrati · riferimento Pasta/Riso 70g a pranzo, 40g a cena');
-  assert.deepEqual(carbs.rows[0], ['Pasta, Riso', '70g', '40g']);
-  assert.deepEqual(carbs.rows[1], ['Gnocchi di patate', '190g', '120g']);
-  assert.ok(carbs.rows.every(row => row.length === 3), 'ogni riga carboidrati ha 3 celle');
-  assert.ok(proteins.rows.every(row => row.length === 2), 'ogni riga proteine ha 2 celle');
+  assert.ok(carbs.rows.every(row => row.length === 4), 'la guida mostra entrambe le giornate');
 
   const carbLabels = carbs.rows.map(row => row[0]);
   ['Pasta, Riso', 'Gnocchi di patate', 'Farro, Orzo', 'Quinoa, Grano Saraceno, Amaranto', 'Cous cous',
@@ -1912,14 +1953,17 @@ test('Meller fonte unica: CARB_REFERENCE copre le famiglie carboidrati del trava
 
 test('CSS equivalenze Meller: colonne stabili per carboidrati e proteine', () => {
   const css = fs.readFileSync(path.join(ROOT, 'css/style.css'), 'utf8');
-  // Carboidrati: Alimento | Pranzo | Cena (3 colonne), anche su mobile.
-  assert.match(css, /\.alternative-table\.meller-carbs > div \{ display: grid; grid-template-columns: minmax\(0, 1fr\) 72px 72px;/, 'griglia carboidrati a 3 colonne');
-  // Proteine: Alimento | Pranzo (2 colonne), anche su mobile.
-  assert.match(css, /\.alternative-table\.meller-proteins > div \{ display: grid; grid-template-columns: minmax\(0, 1fr\) 72px;/, 'griglia proteine a 2 colonne');
+  // Il numero di colonne dipende dalla giornata mostrata, quindi la griglia è
+  // guidata dalla classe cols-N emessa insieme alla tabella:
+  // 2 = proteine, 3 = popup di una giornata, 4 = guida con A e R affiancate.
+  assert.match(css, /\.alternative-table\.cols-2 > div \{ display: grid; grid-template-columns: minmax\(0, 1fr\) 72px;/, 'griglia a 2 colonne');
+  assert.match(css, /\.alternative-table\.cols-3 > div \{ display: grid; grid-template-columns: minmax\(0, 1fr\) 72px 72px;/, 'griglia a 3 colonne');
+  assert.match(css, /\.alternative-table\.cols-4 > div \{ display: grid; grid-template-columns: minmax\(0, 1fr\) 66px 66px 66px;/, 'griglia a 4 colonne');
   const mobile = css.slice(css.lastIndexOf('@media (max-width: 520px)'));
-  assert.match(mobile, /\.alternative-table\.meller-carbs > div \{ grid-template-columns: minmax\(0, 1fr\) 56px 56px;/, 'colonne carboidrati su mobile');
-  assert.match(mobile, /\.alternative-table\.meller-proteins > div \{ grid-template-columns: minmax\(0, 1fr\) 56px;/, 'colonne proteine su mobile');
-  // Il layout non deve presupporre due celle per riga: le celle in eccesso
+  assert.match(mobile, /\.alternative-table\.cols-2 > div \{ grid-template-columns: minmax\(0, 1fr\) 56px;/, '2 colonne su mobile');
+  assert.match(mobile, /\.alternative-table\.cols-3 > div \{ grid-template-columns: minmax\(0, 1fr\) 56px 56px;/, '3 colonne su mobile');
+  assert.match(mobile, /\.alternative-table\.cols-4 > div \{ grid-template-columns: minmax\(0, 1fr\) 48px 48px 48px;/, '4 colonne su mobile');
+  // Il layout non deve presupporre un numero fisso di celle: quelle in eccesso
   // vanno a capo invece di rompere la griglia.
-  assert.match(css, /\.alternative-table\.meller-proteins > div > :nth-child\(n\+3\) \{ grid-column: 1 \/ -1;/, 'celle in eccesso gestite');
+  assert.match(css, /\.alternative-table\.cols-2 > div > :nth-child\(n\+3\),/, 'celle in eccesso gestite');
 });

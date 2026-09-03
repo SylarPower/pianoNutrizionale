@@ -7,7 +7,9 @@ const fs = require('node:fs');
 const path = require('node:path');
 
 const WORKER_PATH = '../cloudflare/ai-worker/src/index.js';
-// Fonte unica delle regole Meller, condivisa con il Worker.
+// Fonte unica delle regole Meller: vive SOLO nell'app. Il Worker non la
+// importa e non la riceve, così resta un file singolo deployabile dalla
+// dashboard Cloudflare con un copia-incolla.
 const PIANO_DOMAIN = require('../js/domain.js');
 
 async function loadWorker() {
@@ -29,18 +31,18 @@ function geminiOk(recipes) {
 
 test('Worker: modello testuale di default e prefisso models/ rimosso', async () => {
   const { textModelName } = await loadWorker();
-  assert.equal(textModelName({}), 'gemini-3.6-flash', 'default gemini-3.6-flash');
+  assert.equal(textModelName({}), 'gemini-3.5-flash', 'default gemini-3.5-flash');
   assert.equal(textModelName({ GEMINI_TEXT_MODEL: 'models/gemini-2.0-flash' }), 'gemini-2.0-flash');
 });
 
 test('Worker: lista modelli con fallback in ordine e senza duplicati', async () => {
   const { textModelList } = await loadWorker();
   const list = textModelList({});
-  assert.equal(list[0], 'gemini-3.6-flash');
-  assert.deepEqual(list.slice(1), ['gemini-3.5-flash', 'gemini-3.1-flash-lite', 'gemini-2.5-flash-lite']);
-  const custom = textModelList({ GEMINI_TEXT_MODEL: 'gemini-3.5-flash' });
-  assert.equal(custom[0], 'gemini-3.5-flash');
-  assert.equal(custom.filter(model => model === 'gemini-3.5-flash').length, 1, 'nessun duplicato');
+  assert.equal(list[0], 'gemini-3.5-flash');
+  assert.deepEqual(list.slice(1), ['gemini-3.6-flash', 'gemini-3.1-flash-lite', 'gemini-2.5-flash-lite']);
+  const custom = textModelList({ GEMINI_TEXT_MODEL: 'gemini-3.6-flash' });
+  assert.equal(custom[0], 'gemini-3.6-flash');
+  assert.equal(custom.filter(model => model === 'gemini-3.6-flash').length, 1, 'nessun duplicato');
 });
 
 test('Worker: riconosce gli errori di modello ritentabili', async () => {
@@ -63,10 +65,10 @@ test('Worker: quota esaurita sul primo modello → fallback sul secondo', async 
     }
     return geminiOk([{ name: 'Pollo e riso', ingredients: [{ name: 'Pollo', quantity: '200 g' }], steps: ['Step'] }]);
   };
-  const data = await generateRecipesContent({ GEMINI_API_KEY: 'k' }, 'pollo', 10, 'lunch', [], '', '');
+  const data = await generateRecipesContent({ GEMINI_API_KEY: 'k' }, 'pollo', 10, 'lunch', []);
   assert.equal(used.length, 2, 'secondo tentativo eseguito');
-  assert.match(used[0], /gemini-3\.6-flash/);
-  assert.match(used[1], /gemini-3\.5-flash/);
+  assert.match(used[0], /gemini-3\.5-flash/);
+  assert.match(used[1], /gemini-3\.6-flash/);
   assert.ok(data.candidates, 'risposta del modello di fallback');
 });
 
@@ -74,7 +76,7 @@ test('Worker: se tutti i modelli falliscono restituisce il messaggio italiano su
   const { generateRecipesContent } = await loadWorker();
   global.fetch = async () => ({ ok: false, status: 429, json: async () => ({ error: { message: 'quota exceeded' } }) });
   await assert.rejects(
-    () => generateRecipesContent({ GEMINI_API_KEY: 'k' }, 'pollo', 10, 'lunch', [], '', ''),
+    () => generateRecipesContent({ GEMINI_API_KEY: 'k' }, 'pollo', 10, 'lunch', []),
     error => {
       assert.match(error.message, /quota gratuita di Gemini/i);
       assert.match(error.message, /ai\.dev\/rate-limit/);
@@ -83,7 +85,7 @@ test('Worker: se tutti i modelli falliscono restituisce il messaggio italiano su
   );
 });
 
-test('Worker /recipes: inoltra slot, excludeNames, guidelines e mealStructure', async () => {
+test('Worker /recipes: inoltra slot ed excludeNames, senza grammature Meller', async () => {
   const { handleRecipes } = await loadWorker();
   let lastBody = null;
   global.fetch = async (url, init) => {
@@ -95,8 +97,10 @@ test('Worker /recipes: inoltra slot, excludeNames, guidelines e mealStructure', 
       query: 'ricetta con pollo e riso per cena',
       slot: 'dinner',
       excludeNames: ['Pollo al curry'],
+      // Campi legacy: il Worker li ignora, non devono finire nel prompt.
       guidelines: 'pollame 200 g',
-      mealStructure: 'cena: proteine + verdure'
+      mealStructure: 'cena: proteine + verdure',
+      alternatives: PIANO_DOMAIN.mellerAlternativesText()
     })
   };
   const response = await handleRecipes(request, { GEMINI_API_KEY: 'k' }, 'https://app');
@@ -106,27 +110,14 @@ test('Worker /recipes: inoltra slot, excludeNames, guidelines e mealStructure', 
   assert.equal(body.sources.length, 1);
   const systemText = lastBody.systemInstruction.parts[0].text;
   const userText = lastBody.contents[0].parts[0].text;
-  assert.match(systemText, /pollame 200 g/, 'guidelines inoltrate');
-  assert.match(systemText, /cena: proteine \+ verdure/, 'struttura pasto inoltrata');
   assert.match(systemText, /"dinner"/, 'slot obbligatorio nel system prompt');
   assert.match(systemText, /Pollo al curry/, 'ricette escluse nel system prompt');
   assert.match(userText, /Pollo al curry/, 'ricette escluse nel testo utente');
+  assert.doesNotMatch(systemText, /pollame 200 g/i, 'le guidelines legacy non entrano nel prompt');
+  assert.doesNotMatch(systemText, /cena: proteine \+ verdure/i, 'la struttura pasto legacy non entra nel prompt');
+  assert.doesNotMatch(systemText, /pranzo allenamento \d+ g/i, 'nessuna grammatura Meller nel prompt');
   assert.ok(lastBody.tools[0].googleSearch, 'Google Search grounding attivo');
   assert.equal(lastBody.tools[1].functionDeclarations[0].name, 'search_recipes');
-});
-
-test('Worker /recipes: senza guidelines usa i massimi Meller di fallback', async () => {
-  const { handleRecipes } = await loadWorker();
-  let lastBody = null;
-  global.fetch = async (url, init) => {
-    lastBody = JSON.parse(init.body);
-    return geminiOk([{ name: 'Pollo e riso', ingredients: [{ name: 'Pollo', quantity: '200 g' }], steps: ['Step'] }]);
-  };
-  const response = await handleRecipes({ json: async () => ({ query: 'pollo' }) }, { GEMINI_API_KEY: 'k' }, 'https://app');
-  assert.equal(response.status, 200);
-  const systemText = lastBody.systemInstruction.parts[0].text;
-  assert.match(systemText, /pollame 200 g/);
-  assert.match(systemText, /frutta secca 20 g/);
 });
 
 test('Worker: parseRecipesFromResponse forza lo slot richiesto e limita a 10', async () => {
@@ -201,118 +192,87 @@ test('Worker /recipes: senza chiamata Gemini risponde 422 con messaggio italiano
 });
 
 // ---------------------------------------------------------------------
-// Fonte unica Meller condivisa tra frontend e Worker.
+// Separazione dei ruoli: il Worker cerca, l'app applica Meller.
 // ---------------------------------------------------------------------
 
 const CARB_FAMILIES_ATTESE = ['pasta', 'riso', 'gnocchi', 'farroorzo', 'pseudo', 'couscous', 'pane', 'piadina', 'crackers', 'polenta', 'patate'];
 const PROTEIN_FAMILIES_ATTESE = ['pollame', 'manzo', 'maiale', 'salumi', 'molluschi', 'pesceBianco', 'tonno', 'pesceOmega', 'fiocchiLatte', 'uova', 'formaggi', 'legumi', 'legumotti'];
 const sortedUnique = list => [...new Set(list)].sort();
 
-test('Worker: importa la fonte unica e non ha liste Meller hardcoded', async () => {
+test('Worker: nessuna regola Meller nel codice e nessun import locale', async () => {
   const source = fs.readFileSync(path.join(__dirname, WORKER_PATH), 'utf8');
-  assert.match(source, /import PianoDomain from '\.\.\/\.\.\/\.\.\/js\/domain\.js';/, 'il Worker importa js/domain.js');
-  assert.doesNotMatch(source, /DEFAULT_GUIDELINES/, 'nessuna costante parziale DEFAULT_GUIDELINES');
-  assert.doesNotMatch(source, /DEFAULT_MEAL_STRUCTURE/, 'nessuna struttura pasti hardcoded');
-  assert.doesNotMatch(source, /pollame 200 g, manzo 150 g/, 'nessuna lista di grammature scritta a mano');
-  const { MELLER_ALTERNATIVES_FALLBACK } = await loadWorker();
-  assert.equal(MELLER_ALTERNATIVES_FALLBACK, PIANO_DOMAIN.mellerAlternativesText(), 'fallback generato dalla fonte condivisa');
-  assert.equal(MELLER_ALTERNATIVES_FALLBACK, PIANO_DOMAIN.mellerAlternativesText(), 'stesse famiglie e stessi valori del frontend');
+  // Deployabile dalla dashboard Cloudflare: un file singolo, zero import
+  // relativi da risolvere con un bundler.
+  assert.doesNotMatch(source, /^\s*import\s+[^\n]*from\s+'\.\.?\//m, 'nessun import da file locali');
+  assert.doesNotMatch(source, /MELLER_/, 'nessuna costante Meller nel Worker');
+  assert.doesNotMatch(source, /pranzo allenamento/i, 'nessuna grammatura A/R nel Worker');
+  assert.doesNotMatch(source, /pollame 200 g/i, 'nessuna lista di grammature scritta a mano');
+  assert.doesNotMatch(source, /DEFAULT_GUIDELINES|DEFAULT_MEAL_STRUCTURE/, 'nessuna guida nutrizionale hardcoded');
+  const worker = await loadWorker();
+  assert.equal(worker.MELLER_ALTERNATIVES_FALLBACK, undefined, 'nessun fallback Meller esportato');
+  assert.equal(typeof worker.recipesSystemInstruction, 'function');
 });
 
-test('Worker /recipes: inoltra al modello il testo completo delle alternative', async () => {
-  const { handleRecipes } = await loadWorker();
-  let lastBody = null;
-  global.fetch = async (url, init) => {
-    lastBody = JSON.parse(init.body);
-    return geminiOk([{ name: 'Pollo e riso', ingredients: [{ name: 'Pollo', quantity: '200 g' }], steps: ['Step'] }]);
-  };
-  const alternatives = PIANO_DOMAIN.mellerAlternativesText();
-  const response = await handleRecipes({
-    json: async () => ({ query: 'ricetta con pollo e riso', slot: 'dinner', alternatives })
-  }, { GEMINI_API_KEY: 'k' }, 'https://app');
-  assert.equal(response.status, 200);
-  const systemText = lastBody.systemInstruction.parts[0].text;
-  assert.ok(systemText.includes(alternatives), 'il testo completo inviato dal frontend finisce nel prompt');
-});
-
-test('Worker /recipes: senza alternatives usa il fallback completo della fonte unica', async () => {
-  const { handleRecipes } = await loadWorker();
-  let lastBody = null;
-  global.fetch = async (url, init) => {
-    lastBody = JSON.parse(init.body);
-    return geminiOk([{ name: 'Pollo e riso', ingredients: [{ name: 'Pollo', quantity: '200 g' }], steps: ['Step'] }]);
-  };
-  const response = await handleRecipes({ json: async () => ({ query: 'pollo' }) }, { GEMINI_API_KEY: 'k' }, 'https://app');
-  assert.equal(response.status, 200);
-  const systemText = lastBody.systemInstruction.parts[0].text;
-  // Tutte le famiglie carboidrati e proteine, con le grammature canoniche.
-  const inFallback = PIANO_DOMAIN.mellerFamiliesInText(systemText);
-  assert.deepEqual(sortedUnique(inFallback.carbohydrates), sortedUnique(CARB_FAMILIES_ATTESE), 'tutti i carboidrati nel prompt');
-  assert.deepEqual(sortedUnique(inFallback.proteins), sortedUnique(PROTEIN_FAMILIES_ATTESE), 'tutte le proteine nel prompt');
-  ['pasta/riso', 'gnocchi', 'farro/orzo', 'quinoa/grano saraceno/amaranto', 'cous cous', 'pane', 'piadina',
-    'crackers', 'polenta', 'patate', 'pollame', 'manzo', 'maiale', 'affettati/salumi', 'crostacei/molluschi',
-    'pesce bianco', 'tonno', 'omega-3', 'fiocchi di latte', 'uova', 'formaggi', 'legumi', 'legumotti']
-    .forEach(token => assert.ok(systemText.toLowerCase().includes(token), `prompt contiene "${token}"`));
-  assert.match(systemText, /Patate: pranzo allenamento 450 g, pranzo riposo 350 g, cena 230 g\./);
-  assert.match(systemText, /Gnocchi di patate: pranzo allenamento 250 g, pranzo riposo 190 g, cena 120 g\./);
-  assert.match(systemText, /Legumotti Barilla: 80 g\./);
-});
-
-test('Worker: il prompt di sistema dà le istruzioni Meller obbligatorie', async () => {
-  const { recipesSystemInstruction, MELLER_PROMPT_RULES } = await loadWorker();
-  const systemText = recipesSystemInstruction('', '', 'dinner', [], '');
+test('Worker: il prompt chiede le 10 ricette più pertinenti con le dosi della fonte', async () => {
+  const { recipesSystemInstruction } = await loadWorker();
+  const systemText = recipesSystemInstruction('dinner', []);
   [
-    'Usa esclusivamente le grammature Meller fornite.',
-    'A cena sono ammessi tutti i carboidrati presenti nella tabella, non solo pane, crackers e patate.',
-    'Per i carboidrati usa la dose cena indicata nella tabella.',
-    'Non trasformare le proteine secondo la regola dei carboidrati.',
-    'Mantieni le dosi proteiche indicate dal manuale.'
+    'Usa Google Search per trovare ricette reali adatte alla richiesta dell’utente.',
+    'Proponi fino a 10 ricette in italiano, ordinate dalla più pertinente: contano l’aderenza agli ingredienti richiesti e al tipo di pasto.',
+    'Riporta gli ingredienti e le dosi COSÌ COME sono indicati dalla fonte, per una persona: non riscalare, non arrotondare, non adattare le quantità ad alcuna dieta.',
+    'Preferisci ricette di fonti diverse tra loro ed evita varianti quasi identiche della stessa ricetta.'
   ].forEach(rule => assert.ok(systemText.includes(rule), `istruzione presente: ${rule}`));
-  assert.deepEqual(MELLER_PROMPT_RULES.length, 5);
   assert.match(systemText, /"dinner"/, 'slot richiesto nel prompt');
+  // Nessuna dieta nel prompt: le grammature restano un fatto dell'app.
+  // L'unico numero ammesso è l'esempio di formato dell'unità di misura.
+  assert.doesNotMatch(systemText, /meller/i, 'il modello non sa nulla di Meller');
+  assert.doesNotMatch(systemText, /pranzo allenamento|pranzo riposo/i, 'nessuna dose A/R imposta al modello');
+  const doses = systemText.match(/\d+\s?g\b/g) || [];
+  assert.deepEqual(doses, ['150 g'], 'solo l’esempio di unità, nessuna grammatura prescritta');
 });
 
-test('Meller allineamento fonte unica: popup, grammature, testo AI e fallback Worker', async () => {
-  const { MELLER_ALTERNATIVES_FALLBACK } = await loadWorker();
+test('App: il confronto con le grammature Meller avviene sulle ricette ricevute', () => {
+  // Il controllo che il Worker non fa più deve esistere lato app, sulla
+  // stessa fonte unica usata da popup e ricettario.
   const canonical = group => sortedUnique(
     PIANO_DOMAIN.mellerFamiliesForGroup(group, { withLunchAndDinner: true })
   );
-  const canonicalCarbs = canonical('carb');
-  const canonicalProteins = canonical('protein');
-  assert.deepEqual(canonicalCarbs, sortedUnique(CARB_FAMILIES_ATTESE));
-  assert.deepEqual(canonicalProteins, sortedUnique(PROTEIN_FAMILIES_ATTESE));
+  assert.deepEqual(canonical('carb'), sortedUnique(CARB_FAMILIES_ATTESE));
+  assert.deepEqual(canonical('protein'), sortedUnique(PROTEIN_FAMILIES_ATTESE));
 
-  // 1. famiglie delle alternative mostrate nei popup (righe + riferimento);
-  const popupCarbs = sortedUnique(PIANO_DOMAIN.MELLER_CARB_ALTERNATIVES
-    .flatMap(entry => [entry.family, ...(entry.also || [])])
-    .concat(PIANO_DOMAIN.MELLER_GUIDE.alternatives.carbohydrates.reference.families));
-  const popupProteins = sortedUnique(PIANO_DOMAIN.MELLER_PROTEIN_ALTERNATIVES
-    .map(entry => entry.family)
-    .concat(PIANO_DOMAIN.MELLER_GUIDE.alternatives.proteins.reference.families));
-  // 2. famiglie nelle grammature canoniche;
-  // 3. famiglie nel testo passato al backend;
-  const aiText = PIANO_DOMAIN.mellerFamiliesInText(PIANO_DOMAIN.mellerAlternativesText());
-  // 4. famiglie nel fallback del Worker.
-  const workerFallback = PIANO_DOMAIN.mellerFamiliesInText(MELLER_ALTERNATIVES_FALLBACK);
+  const recipe = {
+    id: 'websearch', slot: 'dinner', name: 'Pollo e patate dal web',
+    ingredients: [
+      { name: 'Petto di pollo', portions: { ipoTraining: '300 g', ipoRest: '300 g', manTraining: '300 g', manRest: '300 g' } },
+      { name: 'Patate', portions: { ipoTraining: '600 g', ipoRest: '600 g', manTraining: '600 g', manRest: '600 g' } }
+    ],
+    steps: ['Cuoci tutto']
+  };
+  const check = PIANO_DOMAIN.checkMellerAdaptation(recipe);
+  assert.equal(check.adapted, false, 'le dosi della fonte sono fuori riferimento');
+  const byIngredient = Object.fromEntries(check.summary.map(item => [item.ingredient, item]));
+  assert.equal(byIngredient['Petto di pollo'].expected, 200, 'pollame a cena: 200 g');
+  assert.equal(byIngredient['Patate'].expected, 230, 'patate a cena: 230 g');
 
-  [
-    ['popup carboidrati', popupCarbs],
-    ['testo AI carboidrati', sortedUnique(aiText.carbohydrates)],
-    ['fallback Worker carboidrati', sortedUnique(workerFallback.carbohydrates)]
-  ].forEach(([surface, families]) => assert.deepEqual(families, canonicalCarbs, surface));
-  [
-    ['popup proteine', popupProteins],
-    ['testo AI proteine', sortedUnique(aiText.proteins)],
-    ['fallback Worker proteine', sortedUnique(workerFallback.proteins)]
-  ].forEach(([surface, families]) => assert.deepEqual(families, canonicalProteins, surface));
+  // Correzione con un click: adaptRecipeToMeller riscrive solo gli eccessi.
+  const adapted = PianoDomainAdapt(recipe);
+  assert.equal(adapted.changed, true);
+  assert.equal(adapted.recipe.ingredients[0].portions.manTraining, '200 g');
+  assert.equal(adapted.recipe.ingredients[1].portions.manTraining, '230 g');
+  assert.equal(PIANO_DOMAIN.checkMellerAdaptation(adapted.recipe).adapted, true, 'dopo la correzione è aderente');
+});
 
-  // Le grammature del fallback Worker sono quelle della fonte canonica.
-  PIANO_DOMAIN.MELLER_ALTERNATIVES.carbohydrates.forEach(item => {
-    const line = `^${item.label.replace(/[.*+?^${}()|[\]\\/]/g, '\\$&')}: pranzo allenamento ${item.lunchTraining} g, pranzo riposo ${item.lunchRest} g, cena ${item.dinner} g\\.$`;
-    assert.match(MELLER_ALTERNATIVES_FALLBACK, new RegExp(line, 'm'), `${item.label} nel fallback Worker`);
-  });
-  PIANO_DOMAIN.MELLER_ALTERNATIVES.proteins.forEach(item => {
-    const line = `^${item.label.replace(/[.*+?^${}()|[\]\\/]/g, '\\$&')}: ${item.lunchTraining} g\\.$`;
-    assert.match(MELLER_ALTERNATIVES_FALLBACK, new RegExp(line, 'm'), `${item.label} nel fallback Worker`);
-  });
+function PianoDomainAdapt(recipe) {
+  return PIANO_DOMAIN.adaptRecipeToMeller(JSON.parse(JSON.stringify(recipe)));
+}
+
+test('Ricerca web: il frontend non invia grammature al Worker', () => {
+  const source = fs.readFileSync(path.join(__dirname, '../js/web-search.js'), 'utf8');
+  const body = source.slice(source.indexOf('body: JSON.stringify({'), source.indexOf('})\n      });'));
+  assert.doesNotMatch(body, /alternatives|guidelines|mealStructure/, 'nessun campo Meller nella richiesta');
+  assert.match(body, /excludeNames/, 'le ricette già viste restano nella richiesta');
+  // Il confronto e la correzione vivono nella schermata dei risultati.
+  assert.match(source, /checkMellerAdaptation/, 'discrepanze calcolate nell’app');
+  assert.match(source, /adaptRecipeToMeller/, 'correzione con un click nell’app');
+  assert.match(source, /importRecipesFromWebSearchBulk/, 'importazione in blocco disponibile');
 });

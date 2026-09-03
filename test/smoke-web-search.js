@@ -1,7 +1,8 @@
 'use strict';
 /* Smoke browser-like della ricerca ricette online: modale, invio del form,
- * schede risultato, apertura del popup di importazione e "Altre 10 ricette"
- * con esclusione delle ricette già mostrate. Nessuna rete reale. */
+ * schede risultato con le discrepanze Meller calcolate nell'app, correzione
+ * con un click, importazione singola e in blocco, "Altre 10 ricette" con
+ * esclusione delle ricette già mostrate. Nessuna rete reale. */
 const fs = require('node:fs');
 const path = require('node:path');
 const vm = require('node:vm');
@@ -16,13 +17,9 @@ const dom = new JSDOM('<!doctype html><html><body></body></html>', {
 const window = dom.window;
 
 window.PIANO_WEB_SEARCH_CONFIG = { recipesEndpoint: 'https://worker.test/recipes', language: 'it-IT', maxRecipes: 10 };
-// Lo stub espone le tre funzioni della fonte unica usate da js/web-search.js:
-// `alternatives` è il testo completo delle famiglie Meller per il modello AI.
-window.PianoDomain = {
-  mellerAlternativesText: () => 'ALTERNATIVE CARBOIDRATI MELLER:\nPasta, Riso: pranzo allenamento 90 g, pranzo riposo 70 g, cena 40 g.',
-  mellerGuidelinesText: () => 'pollame 200 g',
-  mellerMealStructureText: () => 'pranzo: proteine + carboidrati + verdure'
-};
+// La fonte unica Meller NON viene più inviata al Worker: serve alla schermata
+// dei risultati per segnalare le discrepanze e correggerle con un click.
+window.PianoDomain = require('../js/domain.js');
 window.firebase = { auth: () => ({ currentUser: { getIdToken: async () => 'fake-token' } }) };
 window.appState = { user: { email: 'mario@utenti.pianonutrizionale.app' }, recipes: [], recipesById: {} };
 window.escapeHtml = value => String(value ?? '')
@@ -33,6 +30,11 @@ const toasts = [];
 window.showToast = (message, isError) => toasts.push({ message, isError });
 const imported = [];
 window.importRecipeFromWebSearch = recipe => imported.push(recipe);
+const bulkImports = [];
+window.importRecipesFromWebSearchBulk = async list => {
+  bulkImports.push(list.map(recipe => recipe.name));
+  return true;
+};
 
 const calls = [];
 function recipeBatch(prefix) {
@@ -40,7 +42,9 @@ function recipeBatch(prefix) {
     name: `${prefix} ${i + 1}`,
     slot: 'lunch',
     emoji: '🍛',
-    ingredients: [{ name: 'Pollo', quantity: '200 g' }, { name: 'Riso', quantity: '90 g' }],
+    // Dosi della fonte volutamente sopra i riferimenti Meller (pollame 200 g,
+    // riso 70 g a pranzo nel giorno di riposo): l'app deve accorgersene.
+    ingredients: [{ name: 'Pollo', quantity: '300 g' }, { name: 'Riso', quantity: '150 g' }],
     steps: ['Cuoci il pollo', 'Aggiungi il riso'],
     notes: [],
     sourceUrl: 'https://example.com/ricetta',
@@ -87,21 +91,54 @@ const wait = () => new Promise(resolve => setTimeout(resolve, 0));
   assert.match(calls[0].body.query, /pranzo/i, 'query con il tipo di pasto');
   assert.equal(calls[0].body.slot, 'lunch', 'slot inviato');
   assert.deepEqual(calls[0].body.excludeNames, [], 'prima ricerca senza esclusioni');
-  assert.equal(calls[0].body.guidelines, 'pollame 200 g', 'guidelines Meller inviate');
-  assert.equal(
-    calls[0].body.alternatives,
-    window.PianoDomain.mellerAlternativesText(),
-    'testo completo delle alternative Meller inviato al Worker'
-  );
-  assert.match(calls[0].body.alternatives, /ALTERNATIVE CARBOIDRATI MELLER/, 'campo alternatives derivato da PianoDomain');
-  assert.match(calls[0].body.mealStructure, /pranzo:/, 'struttura dei pasti inviata');
+  assert.equal(calls[0].body.guidelines, undefined, 'nessuna guideline Meller inviata al modello');
+  assert.equal(calls[0].body.alternatives, undefined, 'nessuna grammatura Meller inviata al modello');
+  assert.equal(calls[0].body.mealStructure, undefined, 'nessuna struttura pasti inviata al modello');
+  assert.equal(calls[0].body.maxRecipes, 10, 'le prime 10 ricette per pertinenza');
 
   const cards = window.document.querySelectorAll('.websearch-card');
   assert.equal(cards.length, 10, '10 schede ricetta');
   assert.match(cards[0].textContent, /Ricetta 1/);
 
-  // ---- Apertura + importazione ----
-  cards[0].dispatchEvent(new window.Event('click'));
+  // ---- Discrepanze Meller segnalate dall'app ----
+  assert.equal(window.document.querySelectorAll('.websearch-meller').length, 10, 'avviso Meller su ogni scheda fuori riferimento');
+  assert.match(cards[0].textContent, /dosi non aderenti alle grammature del dott\. Meller/, 'discrepanze descritte');
+  assert.match(cards[0].textContent, /300 g → 200 g/, 'pollame riportato a 200 g');
+  // La ricetta ha una sola dose per ingrediente: si applica il riferimento più
+  // restrittivo (pranzo di riposo, 70 g), valido anche in giornata A.
+  assert.match(cards[0].textContent, /150 g → 70 g/, 'riso riportato alla dose di pranzo più restrittiva');
+  assert.match(window.document.querySelector('.websearch-count').textContent, /10<\/strong> hanno dosi fuori|10 hanno dosi fuori/, 'conteggio delle ricette da correggere');
+
+  // ---- Correzione con un click sulla singola scheda ----
+  cards[0].querySelector('.websearch-meller-fix').dispatchEvent(new window.Event('click'));
+  const fixedCard = window.document.querySelector('.websearch-card');
+  assert.match(fixedCard.textContent, /Ricetta 1/, 'la scheda resta al suo posto');
+  assert.match(fixedCard.textContent, /✓ Meller/, 'scheda marcata come adattata');
+  assert.equal(fixedCard.querySelector('.websearch-meller'), null, 'avviso rimosso dopo la correzione');
+  assert.match(fixedCard.textContent, /Pollo 200 g/, 'dose del pollo corretta nell’anteprima');
+  assert.equal(window.document.querySelectorAll('.websearch-meller').length, 9, 'restano le altre 9 da correggere');
+
+  // ---- Correzione di tutte le ricette ----
+  [...window.document.querySelectorAll('.websearch-actions .btn')]
+    .find(button => /Correggi tutte/.test(button.textContent))
+    .dispatchEvent(new window.Event('click'));
+  assert.equal(window.document.querySelectorAll('.websearch-meller').length, 0, 'nessuna discrepanza residua');
+  assert.equal(window.document.querySelectorAll('.websearch-meller-ok').length, 10, 'tutte le schede adattate');
+
+  // ---- Importazione in blocco ----
+  const importAll = [...window.document.querySelectorAll('.websearch-actions .btn')]
+    .find(button => /Importa tutte/.test(button.textContent));
+  assert.ok(importAll, 'pulsante di importazione in blocco presente');
+  assert.match(importAll.textContent, /\(10\)/, 'conteggio nel pulsante');
+  importAll.dispatchEvent(new window.Event('click'));
+  for (let i = 0; i < 10; i += 1) await wait();
+  assert.equal(bulkImports.length, 1, 'una sola importazione in blocco');
+  assert.equal(bulkImports[0].length, 10, 'tutte e 10 le ricette importate insieme');
+  assert.equal(modal.classList.contains('hidden'), true, 'modale chiusa dopo l’importazione in blocco');
+
+  // ---- Apertura + importazione singola ----
+  window.PianoWebSearch.open();
+  window.document.querySelector('.websearch-card [data-action="open"]').dispatchEvent(new window.Event('click'));
   assert.equal(imported.length, 1, 'popup di importazione aperto');
   assert.equal(imported[0].name, 'Ricetta 1');
   assert.equal(modal.classList.contains('hidden'), true, 'modale chiusa dopo l’apertura della ricetta');
@@ -116,7 +153,7 @@ const wait = () => new Promise(resolve => setTimeout(resolve, 0));
 
   assert.equal(calls.length, 2, 'seconda POST eseguita');
   assert.equal(calls[1].body.excludeNames.length, 10, 'ricette già mostrate escluse');
-  assert.equal(calls[1].body.alternatives, window.PianoDomain.mellerAlternativesText(), 'alternative inviate anche nella seconda ricerca');
+  assert.equal(calls[1].body.alternatives, undefined, 'nessuna grammatura nemmeno nella seconda ricerca');
   assert.ok(calls[1].body.excludeNames.includes('Ricetta 1'));
   assert.equal(window.document.querySelectorAll('.websearch-card').length, 10, 'nuove 10 schede');
   assert.match(window.document.querySelector('.websearch-card').textContent, /Extra 1/);
