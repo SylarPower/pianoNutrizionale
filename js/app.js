@@ -289,7 +289,6 @@ function showLogin() {
   document.getElementById("app-container")?.classList.add("hidden");
   document.querySelector(".bottom-nav")?.classList.add("hidden");
   document.getElementById("global-header-container")?.remove();
-  window.PianoChat?.setAvailability?.(false);
   clearLoading();
   setTimeout(() => document.getElementById("login-username")?.focus(), 50);
 }
@@ -299,7 +298,6 @@ function showApp() {
   document.getElementById("login-screen")?.classList.add("hidden");
   document.getElementById("app-container")?.classList.remove("hidden");
   document.querySelector(".bottom-nav")?.classList.remove("hidden");
-  window.PianoChat?.setAvailability?.(true);
   // Anche l'avvio rapido da cache deve chiudere l'overlay: in quel percorso
   // loadUserData() è silenzioso e il suo finally non chiama clearLoading().
   clearLoading();
@@ -1039,6 +1037,7 @@ function renderRecipes() {
     <div class="page-heading recipes-heading">
       <div><p class="eyebrow">${appState.recipes.length} ricette · sincronizzate nel cloud</p><h1>Ricettario</h1><p>Puoi creare, esportare, importare e condividere le ricette del tuo account.</p></div>
       <div class="recipe-toolbar">
+        <button class="btn btn-primary" onclick="window.PianoWebSearch.open()">🌐 Cerca nel web</button>
         <button class="btn btn-outline" onclick="openIncomingShares()">📥 Ricevute</button>
         <label class="btn btn-outline file-import-button">Importa<input type="file" accept="application/json,.json" onchange="prepareRecipeImport(this.files[0]); this.value='' "></label>
         <button class="btn btn-outline" onclick="exportAllRecipes()">Esporta</button>
@@ -1047,7 +1046,7 @@ function renderRecipes() {
         <button class="btn btn-primary" onclick="createNewRecipe()">+ Nuova</button>
       </div>
     </div>
-    ${appState.recipes.length ? `<label class="search-box"><span>⌕</span><input id="recipe-search" type="search" value="${escapeAttr(recipeLibraryState.searchQuery)}" placeholder="Cerca ricetta, categoria o ingrediente…" oninput="filterRecipeCards(this.value)"><button type="button" id="recipe-search-clear" class="search-clear-btn ${recipeLibraryState.searchQuery ? "" : "hidden"}" onclick="clearRecipeSearch()" aria-label="Cancella ricerca" title="Cancella ricerca">×</button></label><p id="recipe-search-empty" class="text-muted recipe-search-empty hidden">Nessuna ricetta trovata. Prova con un altro nome, ingrediente o categoria.</p>${MEAL_SLOTS.map(slot => recipeSectionHtml(slot.label, appState.recipes.filter(recipe => recipe.slot === slot.id), slot)).join("")}` : `<div class="empty-state recipe-empty-state"><span>🍲</span><h2>Il tuo ricettario è vuoto</h2><p>Puoi creare la prima ricetta manualmente, importare un file JSON o attendere una condivisione da un altro utente.</p><button class="btn btn-primary" onclick="createNewRecipe()">+ Crea la prima ricetta</button></div>`}
+    ${appState.recipes.length ? `<label class="search-box"><span>⌕</span><input id="recipe-search" type="search" value="${escapeAttr(recipeLibraryState.searchQuery)}" placeholder="Cerca ricetta, categoria o ingrediente…" oninput="filterRecipeCards(this.value)"><button type="button" id="recipe-search-clear" class="search-clear-btn ${recipeLibraryState.searchQuery ? "" : "hidden"}" onclick="clearRecipeSearch()" aria-label="Cancella ricerca" title="Cancella ricerca">×</button></label><p id="recipe-search-empty" class="text-muted recipe-search-empty hidden">Nessuna ricetta trovata. Prova con un altro nome, ingrediente o categoria.</p>${MEAL_SLOTS.map(slot => recipeSectionHtml(slot.label, appState.recipes.filter(recipe => recipe.slot === slot.id), slot)).join("")}` : `<div class="empty-state recipe-empty-state"><span>🍲</span><h2>Il tuo ricettario è vuoto</h2><p>Puoi creare la prima ricetta manualmente, importare un file JSON o attendere una condivisione da un altro utente.</p><button class="btn btn-primary" onclick="window.PianoWebSearch.open()">🌐 Cerca nel web</button><button class="btn btn-primary" onclick="createNewRecipe()">+ Crea la prima ricetta</button></div>`}
   `;
   if (appState.recipes.length) filterRecipeCards(recipeLibraryState.searchQuery, { persist: false });
 }
@@ -1184,12 +1183,12 @@ window.duplicateRecipe = function(recipeId = currentModal?.recipe?.id) {
   document.getElementById("recipe-modal").classList.remove("hidden");
 };
 
-// Importazione di una ricetta proposta dalla chat AI (ricerca web): si riusa
+// Importazione di una ricetta trovata con la ricerca web: si riusa
 // il popup ricetta già esistente. Le dosi arrivano così come trovate sul web;
 // il banner "non adattata a Meller" e il pulsante "Adatta a Meller" permettono
 // di riportarle alle grammature del manuale con un click, poi si salva nel
 // cloud con il normale pulsante di salvataggio.
-window.importRecipeFromChat = function(data = {}) {
+window.importRecipeFromWebSearch = function(data = {}) {
   const source = data && typeof data === "object" ? data : {};
   const slot = MEAL_SLOTS.some(item => item.id === source.slot) ? source.slot : "lunch";
   const quantityFor = quantity => {
@@ -1830,7 +1829,7 @@ function renderSettings() {
       <label class="settings-row"><span><strong>Tema scuro</strong><small>Solo su questo dispositivo</small></span><input type="checkbox" ${appState.deviceSettings.darkMode ? "checked" : ""} onchange="toggleDarkMode(this.checked)"></label>
     </section>
 
-    ${window.PianoChat?.settingsSectionHtml?.() || ""}
+    ${window.PianoWebSearch?.settingsSectionHtml?.() || ""}
 
     <div class="manual-heading"><p class="eyebrow">INDICAZIONI DI MELLER</p><h2>Manuale dieta e alternative</h2><p>Le alternative originali restano sempre consultabili nell'app.</p></div>
 

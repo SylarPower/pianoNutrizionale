@@ -1,5 +1,5 @@
 /*
- * Cloudflare Worker: ricerca di NUOVE ricette dal web per la chat AI.
+ * Cloudflare Worker: ricerca di NUOVE ricette dal web per la PWA.
  *
  * - POST /recipes: cerca ricette con le caratteristiche richieste dall'utente
  *   usando l'API testuale di Gemini con Google Search grounding e restituisce
@@ -14,6 +14,10 @@ const FIREBASE_JWKS_URL = 'https://www.googleapis.com/service_accounts/v1/jwk/se
 // Endpoint REST per l'API testuale con grounding Google Search.
 const GEMINI_GENERATE_URL = 'https://generativelanguage.googleapis.com/v1beta/models/{model}:generateContent';
 const DEFAULT_TEXT_MODEL = 'gemini-3.6-flash';
+// Se il modello principale è esaurito/non disponibile si passa al successivo.
+const FALLBACK_TEXT_MODELS = ['gemini-3.5-flash', 'gemini-3.1-flash-lite', 'gemini-2.5-flash-lite'];
+const MAX_EXCLUDED_NAMES = 30;
+const MAX_TEXT_FIELD_LENGTH = 2000;
 const RATE_LIMIT_WINDOW_MS = 15 * 60 * 1000;
 // 30 ricerche per finestra: più che sufficienti per un uso personale.
 const MAX_REQUESTS_PER_WINDOW = 30;
@@ -155,6 +159,17 @@ function textModelName(env) {
   return String(env.GEMINI_TEXT_MODEL || DEFAULT_TEXT_MODEL).replace(/^models\//, '').trim();
 }
 
+function textModelList(env) {
+  const primary = textModelName(env);
+  return [primary, ...FALLBACK_TEXT_MODELS].filter((model, index, list) => model && list.indexOf(model) === index);
+}
+
+function isRetryableModelError(message, status) {
+  if (status === 429 || status === 404) return true;
+  const text = String(message || '').toLowerCase();
+  return /quota|billing|no longer available|not found|deprecated|unavailable|not supported|rate limit/.test(text);
+}
+
 const RECIPES_TOOL = {
   name: 'search_recipes',
   description: 'Restituisce le ricette trovate sul web per la richiesta dell’utente, ordinate per pertinenza.',
@@ -195,17 +210,25 @@ const RECIPES_TOOL = {
   }
 };
 
-function recipesSystemInstruction() {
+const DEFAULT_GUIDELINES = 'pollame 200 g, manzo 150 g, maiale 100 g, pesce 250 g, legumi 240 g, uova 180 g, pasta/riso 90 g, gnocchi 250 g, patate 450 g, pane 120 g, olio EVO 10 g, miele 20 g, marmellata 30 g, yogurt 200 g, latte 250 g, formaggi 60 g, crackers 40 g, frutta fresca 250 g, frutta secca 20 g';
+const DEFAULT_MEAL_STRUCTURE = 'colazione: carboidrati + proteine leggere; spuntini: frutta, yogurt o frutta secca; pranzo e cena: una fonte proteica + un carboidrato + verdure con olio EVO a crudo';
+
+function recipesSystemInstruction(guidelines, mealStructure, slot, excludeNames) {
+  const excluded = (Array.isArray(excludeNames) ? excludeNames : []).filter(Boolean);
   return [
-    'Sei Piano, l’aiuto-cuoco della webapp Piano Nutrizionale.',
+    'Sei l’aiuto-cuoco della webapp Piano Nutrizionale: trovi NUOVE ricette dal web.',
     'Rispondi SOLO con la chiamata di funzione search_recipes: nessun altro testo.',
     'Usa Google Search per trovare ricette reali adatte alla richiesta dell’utente.',
     'Proponi fino a 10 ricette diverse e pertinenti, in italiano, ordinate dalla più pertinente.',
-    'Ogni ricetta è per una persona e va costruita con ingredienti e dosi plausibili per una porzione (es. "150 g", "2 cucchiai", "q.b."), coerenti con i massimi del dott. Meller: pollame 200 g, manzo 150 g, maiale 100 g, pesce 250 g, legumi 240 g, uova 180 g, pasta/riso 90 g, gnocchi 250 g, patate 450 g, pane 120 g, olio EVO 10 g, miele 20 g, marmellata 30 g, yogurt 200 g, latte 250 g, formaggi 60 g, crackers 40 g, frutta fresca 250 g, frutta secca 20 g.',
-    'Indica sempre il pasto di appartenenza (slot: breakfast/snack1/lunch/snack2/dinner), ingredienti con dose, e una preparazione essenziale a passaggi.',
+    `Ogni ricetta è per una persona, con dosi plausibili per una porzione (es. "150 g", "2 cucchiai", "q.b.") e coerenti con i massimi del dott. Meller: ${String(guidelines || '').trim() || DEFAULT_GUIDELINES}.`,
+    `Rispetta la struttura dei pasti: ${String(mealStructure || '').trim() || DEFAULT_MEAL_STRUCTURE}.`,
+    slot
+      ? `Tutte le ricette devono appartenere OBBLIGATORIAMENTE al pasto "${slot}": imposta slot="${slot}" su ogni ricetta.`
+      : 'Indica sempre il pasto di appartenenza (slot: breakfast/snack1/lunch/snack2/dinner).',
+    excluded.length ? `Escludi tassativamente queste ricette già proposte: ${excluded.join('; ')}.` : '',
     'Compila sourceUrl e sourceTitle con la fonte reale restituita da Google Search.',
     'Se non trovi ricette adatte, restituisci comunque la chiamata con un elenco vuoto.'
-  ].join('\n');
+  ].filter(Boolean).join('\n');
 }
 
 function extractRecipesFunctionCall(data) {
@@ -216,7 +239,7 @@ function extractRecipesFunctionCall(data) {
   return null;
 }
 
-function normalizeRecipe(item) {
+function normalizeRecipe(item, defaultSlot) {
   const name = String(item?.name || '').trim();
   const ingredients = (Array.isArray(item?.ingredients) ? item.ingredients : [])
     .map(ing => ({
@@ -226,7 +249,9 @@ function normalizeRecipe(item) {
     .filter(ing => ing.name);
   const steps = (Array.isArray(item?.steps) ? item.steps : []).map(step => String(step || '').trim()).filter(Boolean);
   const notes = (Array.isArray(item?.notes) ? item.notes : []).map(note => String(note || '').trim()).filter(Boolean);
-  const slot = SLOTS.includes(String(item?.slot || '')) ? String(item.slot) : 'lunch';
+  const slot = SLOTS.includes(String(item?.slot || ''))
+    ? String(item.slot)
+    : (SLOTS.includes(String(defaultSlot || '')) ? String(defaultSlot) : 'lunch');
   let sourceUrl = '';
   try {
     const parsed = new URL(String(item?.sourceUrl || ''));
@@ -244,12 +269,14 @@ function normalizeRecipe(item) {
   };
 }
 
-function parseRecipesFromResponse(data, maxRecipes) {
+function parseRecipesFromResponse(data, maxRecipes, defaultSlot) {
   const call = extractRecipesFunctionCall(data);
   const rawRecipes = Array.isArray(call?.args?.recipes) ? call.args.recipes : [];
+  const wantedSlot = SLOTS.includes(String(defaultSlot || '')) ? String(defaultSlot) : '';
   return rawRecipes
-    .map(normalizeRecipe)
+    .map(item => normalizeRecipe(item, wantedSlot))
     .filter(recipe => recipe.name && recipe.ingredients.length)
+    .filter(recipe => !wantedSlot || recipe.slot === wantedSlot)
     .slice(0, Math.max(1, Math.min(Number(maxRecipes) || DEFAULT_MAX_RECIPES, 10)));
 }
 
@@ -269,17 +296,20 @@ function extractSources(data) {
   return [...new Map(sources.map(source => [source.url, source])).values()].slice(0, 10);
 }
 
-async function generateRecipesContent(env, query, maxRecipes) {
-  const apiKey = String(env.GEMINI_API_KEY || '').trim();
-  if (!apiKey) throw new Error('GEMINI_API_KEY non configurata nel Worker.');
-  const model = textModelName(env);
+async function callGemini(apiKey, model, query, maxRecipes, slot, excludeNames, guidelines, mealStructure) {
+  const excluded = (Array.isArray(excludeNames) ? excludeNames : []).filter(Boolean);
+  const userText = [
+    `L’utente chiede: ${query}. Proponi fino a ${maxRecipes} ricette.`,
+    slot ? `Tutte le ricette devono essere per il pasto "${slot}".` : '',
+    excluded.length ? `Escludi queste ricette già mostrate: ${excluded.join('; ')}.` : ''
+  ].filter(Boolean).join(' ');
   const url = `${GEMINI_GENERATE_URL.replace('{model}', encodeURIComponent(model))}?key=${encodeURIComponent(apiKey)}`;
   const response = await fetch(url, {
     method: 'POST',
     headers: { 'content-type': 'application/json' },
     body: JSON.stringify({
-      contents: [{ role: 'user', parts: [{ text: `L’utente chiede: ${query}. Proponi fino a ${maxRecipes} ricette.` }] }],
-      systemInstruction: { parts: [{ text: recipesSystemInstruction() }] },
+      contents: [{ role: 'user', parts: [{ text: userText }] }],
+      systemInstruction: { parts: [{ text: recipesSystemInstruction(guidelines, mealStructure, slot, excluded) }] },
       tools: [
         { googleSearch: {} },
         { functionDeclarations: [RECIPES_TOOL] }
@@ -289,9 +319,34 @@ async function generateRecipesContent(env, query, maxRecipes) {
   });
   const data = await response.json().catch(() => ({}));
   if (!response.ok) {
-    throw new Error(data?.error?.message || data?.message || `Gemini ha risposto ${response.status}.`);
+    const message = data?.error?.message || data?.message || `Gemini ha risposto ${response.status}.`;
+    const error = new Error(message);
+    error.status = response.status;
+    error.retryable = isRetryableModelError(message, response.status);
+    throw error;
   }
   return data;
+}
+
+async function generateRecipesContent(env, query, maxRecipes, slot, excludeNames, guidelines, mealStructure) {
+  const apiKey = String(env.GEMINI_API_KEY || '').trim();
+  if (!apiKey) throw new Error('GEMINI_API_KEY non configurata nel Worker.');
+  const models = textModelList(env);
+  let lastError = null;
+  for (const model of models) {
+    try {
+      return await callGemini(apiKey, model, query, maxRecipes, slot, excludeNames, guidelines, mealStructure);
+    } catch (error) {
+      lastError = error;
+      if (!error?.retryable) throw error;
+      console.error(`Modello ${model} non disponibile: ${error.message}`);
+    }
+  }
+  throw new Error('La quota gratuita di Gemini è esaurita oppure la fatturazione del progetto Google non è attiva. Riprova più tardi (la quota si azzera da sola) o verifica limiti e fatturazione su ai.dev/rate-limit.');
+}
+
+function cleanText(value) {
+  return String(value || '').trim().slice(0, MAX_TEXT_FIELD_LENGTH);
 }
 
 async function handleRecipes(request, env, origin) {
@@ -300,16 +355,23 @@ async function handleRecipes(request, env, origin) {
   const query = String(body?.query || '').trim();
   if (!query) return json({ error: 'Manca il testo della richiesta di ricetta.' }, 400, origin);
   const maxRecipes = Math.max(1, Math.min(Number(body?.maxRecipes) || DEFAULT_MAX_RECIPES, 10));
+  const slot = SLOTS.includes(String(body?.slot || '')) ? String(body.slot) : '';
+  const excludeNames = (Array.isArray(body?.excludeNames) ? body.excludeNames : [])
+    .map(name => cleanText(name))
+    .filter(Boolean)
+    .slice(0, MAX_EXCLUDED_NAMES);
+  const guidelines = cleanText(body?.guidelines);
+  const mealStructure = cleanText(body?.mealStructure);
 
   let data;
   try {
-    data = await generateRecipesContent(env, query, maxRecipes);
+    data = await generateRecipesContent(env, query, maxRecipes, slot, excludeNames, guidelines, mealStructure);
   } catch (error) {
     console.error(error);
     return json({ error: error.message || 'Gemini non ha risposto alla ricerca delle ricette.' }, 502, origin);
   }
 
-  const recipes = parseRecipesFromResponse(data, maxRecipes);
+  const recipes = parseRecipesFromResponse(data, maxRecipes, slot);
   const sources = extractSources(data);
   if (!recipes.length) {
     return json({ error: 'Non sono riuscito a trovare ricette valide. Riprova con una richiesta diversa.' }, 422, origin);
@@ -360,6 +422,10 @@ export default {
 // Export per i test unitari (node --test): il default export resta l'handler.
 export {
   textModelName,
+  textModelList,
+  isRetryableModelError,
+  callGemini,
+  recipesSystemInstruction,
   normalizeRecipe,
   parseRecipesFromResponse,
   extractSources,
