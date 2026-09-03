@@ -465,6 +465,78 @@ assert.match(document.getElementById('view-settings').innerHTML, /Backup e annul
 assert.match(document.getElementById('view-settings').innerHTML, /Importazioni che sostituiscono tutte le ricette/);
 assert.match(document.getElementById('view-settings').innerHTML, /Nessun backup/);
 
+// ---- Popup e tabelle delle alternative Meller (fonte unica js/domain.js) ----
+// Le Impostazioni mostrano le due tabelle: carboidrati a 3 colonne
+// (Alimento | Pranzo | Cena) e proteine a 2 colonne (Alimento | Pranzo).
+{
+  const settingsHtml = document.getElementById('view-settings').innerHTML;
+  assert.match(settingsHtml, /alternative-table meller-carbs/, 'tabella carboidrati nelle Impostazioni');
+  assert.match(settingsHtml, /alternative-table meller-proteins/, 'tabella proteine nelle Impostazioni');
+  assert.match(settingsHtml, /Carboidrati · riferimento Pasta\/Riso 70g a pranzo, 40g a cena/, 'titolo derivato dalla tabella');
+  assert.match(settingsHtml, /<strong>Alimento<\/strong><strong>Pranzo<\/strong><strong>Cena<\/strong>/, 'intestazione carboidrati a 3 colonne');
+  assert.match(settingsHtml, /<strong>Alimento<\/strong><strong>Pranzo<\/strong>(?!<strong>Cena)/, 'intestazione proteine a 2 colonne');
+  assert.match(settingsHtml, /Gnocchi di patate<\/span><strong>190g<\/strong><strong>120g<\/strong>/, 'riga gnocchi pranzo R + cena');
+  assert.match(settingsHtml, /Legumotti Barilla<\/span><strong>80g<\/strong>/, 'riga legumotti solo pranzo');
+  assert.match(settingsHtml, /Fiocchi di latte \/ Uova intere<\/span><strong>180g<\/strong>/, 'riga fiocchi di latte 180g');
+  assert.equal((settingsHtml.match(/<strong>Cena<\/strong>/g) || []).length, 1, 'una sola colonna Cena: la tabella proteine ne resta priva');
+}
+
+// Popup al tocco di un ingrediente: la tabella mostrata dipende dalla famiglia
+// canonica, non da una regex locale.
+setupMellerModal();
+openMellerAlternatives('Pasta integrale');
+{
+  const popupHtml = document.getElementById('meller-modal-body')._innerHTML;
+  assert.match(popupHtml, /alternative-table meller-carbs/, 'popup carboidrati per la pasta');
+  assert.doesNotMatch(popupHtml, /meller-proteins/, 'nessuna tabella proteine per un carboidrato');
+  assert.match(popupHtml, /<strong>Alimento<\/strong><strong>Pranzo<\/strong><strong>Cena<\/strong>/, 'colonne Alimento | Pranzo | Cena');
+  assert.match(popupHtml, /meller-highlight/, 'riga della pasta evidenziata');
+  assert.match(popupHtml, /Cous cous<\/span><strong>60g<\/strong><strong>40g<\/strong>/, 'riga cous cous presente');
+  assert.equal(document.getElementById('meller-modal-subtitle').textContent, 'Carboidrati equivalenti · riferimento Pasta/Riso 70g a pranzo, 40g a cena');
+}
+openMellerAlternatives('Petto di pollo');
+{
+  const popupHtml = document.getElementById('meller-modal-body')._innerHTML;
+  assert.match(popupHtml, /alternative-table meller-proteins/, 'popup proteine per il pollo');
+  assert.doesNotMatch(popupHtml, /meller-carbs/, 'nessuna tabella carboidrati per una proteina');
+  assert.doesNotMatch(popupHtml, /<strong>Cena<\/strong>/, 'la tabella proteine resta a due colonne');
+  assert.match(popupHtml, /Affettati sgrassati \/ Salumi magri<\/span><strong>100g<\/strong>/, 'salumi 100g');
+  assert.match(popupHtml, /Uova intere<\/span><strong>180g<\/strong>/, 'uova 180g');
+  assert.match(popupHtml, /Legumotti Barilla<\/span><strong>80g<\/strong>/, 'legumotti 80g');
+  assert.equal(document.getElementById('meller-modal-subtitle').textContent, 'Proteine equivalenti · riferimento Pollame 200g');
+}
+closeMellerAlternatives();
+assert.equal(document.getElementById('meller-alternatives-modal').classList.contains('hidden'), true, 'popup chiuso');
+openMellerAlternatives('Zucchine');
+assert.equal(document.getElementById('meller-alternatives-modal').classList.contains('hidden'), true, 'la verdura non apre il popup');
+
+// Riconoscimento degli ingredienti: ogni famiglia delle tabelle alternative è
+// raggiungibile dal popup con un nome reale.
+{
+  const carbNames = ['Pasta', 'Riso', 'Gnocchi', 'Farro', 'Orzo', 'Quinoa', 'Grano saraceno', 'Amaranto',
+    'Cous cous', 'Pane', 'Piadina', 'Crackers', 'Grissini', 'Crostini', 'Polenta', 'Patate'];
+  carbNames.forEach(name => {
+    assert.equal(isMellerCarbIngredient(name), true, `${name} apre le equivalenze carboidrati`);
+    assert.equal(isMellerProteinIngredient(name), false, `${name} non è una proteina`);
+  });
+  const proteinNames = ['Maiale', 'Affettati', 'Salumi', 'Fiocchi di latte', 'Uova', 'Legumotti',
+    'Petto di pollo', 'Manzo', 'Merluzzo', 'Tonno', 'Salmone', 'Gamberi', 'Montasio', 'Lenticchie'];
+  proteinNames.forEach(name => {
+    assert.equal(isMellerProteinIngredient(name), true, `${name} apre le equivalenze proteiche`);
+    assert.equal(isMellerCarbIngredient(name), false, `${name} non è un carboidrato`);
+  });
+  ['Zucchine', 'Basilico', 'Olio EVO'].forEach(name => {
+    assert.equal(getMellerAlternativesForIngredient(name), null, `${name} non ha equivalenze Meller`);
+  });
+  // Le etichette delle tabelle sono riconoscibili dal popup (stessa famiglia).
+  PianoDomain.MELLER_CARB_ALTERNATIVES.forEach(entry => {
+    assert.ok(isMellerCarbIngredient(entry.label), `etichetta tabella riconosciuta: ${entry.label}`);
+  });
+  PianoDomain.MELLER_PROTEIN_ALTERNATIVES.forEach(entry => {
+    assert.ok(isMellerProteinIngredient(entry.label.split(' / ')[0]), `etichetta tabella riconosciuta: ${entry.label}`);
+  });
+}
+
 // ---- Prezzi condivisi (Spesa Smart): rendering delle tre schede ----
 // Nello smoke non c'è un Firestore reale: la rubrica prezzi arriva da uno stub
 // e l'archivio viene precompilato per non scatenare caricamenti asincroni.

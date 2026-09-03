@@ -3,8 +3,12 @@
  * Importa direttamente il modulo ES: nessuna rete reale, fetch viene stubbato. */
 const test = require('node:test');
 const assert = require('node:assert/strict');
+const fs = require('node:fs');
+const path = require('node:path');
 
 const WORKER_PATH = '../cloudflare/ai-worker/src/index.js';
+// Fonte unica delle regole Meller, condivisa con il Worker.
+const PIANO_DOMAIN = require('../js/domain.js');
 
 async function loadWorker() {
   return import(WORKER_PATH);
@@ -194,4 +198,121 @@ test('Worker /recipes: senza chiamata Gemini risponde 422 con messaggio italiano
   const body = await response.json();
   assert.equal(response.status, 422);
   assert.match(body.error, /non sono riuscito|ricette valide/i);
+});
+
+// ---------------------------------------------------------------------
+// Fonte unica Meller condivisa tra frontend e Worker.
+// ---------------------------------------------------------------------
+
+const CARB_FAMILIES_ATTESE = ['pasta', 'riso', 'gnocchi', 'farroorzo', 'pseudo', 'couscous', 'pane', 'piadina', 'crackers', 'polenta', 'patate'];
+const PROTEIN_FAMILIES_ATTESE = ['pollame', 'manzo', 'maiale', 'salumi', 'molluschi', 'pesceBianco', 'tonno', 'pesceOmega', 'fiocchiLatte', 'uova', 'formaggi', 'legumi', 'legumotti'];
+const sortedUnique = list => [...new Set(list)].sort();
+
+test('Worker: importa la fonte unica e non ha liste Meller hardcoded', async () => {
+  const source = fs.readFileSync(path.join(__dirname, WORKER_PATH), 'utf8');
+  assert.match(source, /import PianoDomain from '\.\.\/\.\.\/\.\.\/js\/domain\.js';/, 'il Worker importa js/domain.js');
+  assert.doesNotMatch(source, /DEFAULT_GUIDELINES/, 'nessuna costante parziale DEFAULT_GUIDELINES');
+  assert.doesNotMatch(source, /DEFAULT_MEAL_STRUCTURE/, 'nessuna struttura pasti hardcoded');
+  assert.doesNotMatch(source, /pollame 200 g, manzo 150 g/, 'nessuna lista di grammature scritta a mano');
+  const { MELLER_ALTERNATIVES_FALLBACK } = await loadWorker();
+  assert.equal(MELLER_ALTERNATIVES_FALLBACK, PIANO_DOMAIN.mellerAlternativesText(), 'fallback generato dalla fonte condivisa');
+  assert.equal(MELLER_ALTERNATIVES_FALLBACK, PIANO_DOMAIN.mellerAlternativesText(), 'stesse famiglie e stessi valori del frontend');
+});
+
+test('Worker /recipes: inoltra al modello il testo completo delle alternative', async () => {
+  const { handleRecipes } = await loadWorker();
+  let lastBody = null;
+  global.fetch = async (url, init) => {
+    lastBody = JSON.parse(init.body);
+    return geminiOk([{ name: 'Pollo e riso', ingredients: [{ name: 'Pollo', quantity: '200 g' }], steps: ['Step'] }]);
+  };
+  const alternatives = PIANO_DOMAIN.mellerAlternativesText();
+  const response = await handleRecipes({
+    json: async () => ({ query: 'ricetta con pollo e riso', slot: 'dinner', alternatives })
+  }, { GEMINI_API_KEY: 'k' }, 'https://app');
+  assert.equal(response.status, 200);
+  const systemText = lastBody.systemInstruction.parts[0].text;
+  assert.ok(systemText.includes(alternatives), 'il testo completo inviato dal frontend finisce nel prompt');
+});
+
+test('Worker /recipes: senza alternatives usa il fallback completo della fonte unica', async () => {
+  const { handleRecipes } = await loadWorker();
+  let lastBody = null;
+  global.fetch = async (url, init) => {
+    lastBody = JSON.parse(init.body);
+    return geminiOk([{ name: 'Pollo e riso', ingredients: [{ name: 'Pollo', quantity: '200 g' }], steps: ['Step'] }]);
+  };
+  const response = await handleRecipes({ json: async () => ({ query: 'pollo' }) }, { GEMINI_API_KEY: 'k' }, 'https://app');
+  assert.equal(response.status, 200);
+  const systemText = lastBody.systemInstruction.parts[0].text;
+  // Tutte le famiglie carboidrati e proteine, con le grammature canoniche.
+  const inFallback = PIANO_DOMAIN.mellerFamiliesInText(systemText);
+  assert.deepEqual(sortedUnique(inFallback.carbohydrates), sortedUnique(CARB_FAMILIES_ATTESE), 'tutti i carboidrati nel prompt');
+  assert.deepEqual(sortedUnique(inFallback.proteins), sortedUnique(PROTEIN_FAMILIES_ATTESE), 'tutte le proteine nel prompt');
+  ['pasta/riso', 'gnocchi', 'farro/orzo', 'quinoa/grano saraceno/amaranto', 'cous cous', 'pane', 'piadina',
+    'crackers', 'polenta', 'patate', 'pollame', 'manzo', 'maiale', 'affettati/salumi', 'crostacei/molluschi',
+    'pesce bianco', 'tonno', 'omega-3', 'fiocchi di latte', 'uova', 'formaggi', 'legumi', 'legumotti']
+    .forEach(token => assert.ok(systemText.toLowerCase().includes(token), `prompt contiene "${token}"`));
+  assert.match(systemText, /Patate: pranzo allenamento 450 g, pranzo riposo 350 g, cena 230 g\./);
+  assert.match(systemText, /Gnocchi di patate: pranzo allenamento 250 g, pranzo riposo 190 g, cena 120 g\./);
+  assert.match(systemText, /Legumotti Barilla: 80 g\./);
+});
+
+test('Worker: il prompt di sistema dà le istruzioni Meller obbligatorie', async () => {
+  const { recipesSystemInstruction, MELLER_PROMPT_RULES } = await loadWorker();
+  const systemText = recipesSystemInstruction('', '', 'dinner', [], '');
+  [
+    'Usa esclusivamente le grammature Meller fornite.',
+    'A cena sono ammessi tutti i carboidrati presenti nella tabella, non solo pane, crackers e patate.',
+    'Per i carboidrati usa la dose cena indicata nella tabella.',
+    'Non trasformare le proteine secondo la regola dei carboidrati.',
+    'Mantieni le dosi proteiche indicate dal manuale.'
+  ].forEach(rule => assert.ok(systemText.includes(rule), `istruzione presente: ${rule}`));
+  assert.deepEqual(MELLER_PROMPT_RULES.length, 5);
+  assert.match(systemText, /"dinner"/, 'slot richiesto nel prompt');
+});
+
+test('Meller allineamento fonte unica: popup, grammature, testo AI e fallback Worker', async () => {
+  const { MELLER_ALTERNATIVES_FALLBACK } = await loadWorker();
+  const canonical = group => sortedUnique(
+    PIANO_DOMAIN.mellerFamiliesForGroup(group, { withLunchAndDinner: true })
+  );
+  const canonicalCarbs = canonical('carb');
+  const canonicalProteins = canonical('protein');
+  assert.deepEqual(canonicalCarbs, sortedUnique(CARB_FAMILIES_ATTESE));
+  assert.deepEqual(canonicalProteins, sortedUnique(PROTEIN_FAMILIES_ATTESE));
+
+  // 1. famiglie delle alternative mostrate nei popup (righe + riferimento);
+  const popupCarbs = sortedUnique(PIANO_DOMAIN.MELLER_CARB_ALTERNATIVES
+    .flatMap(entry => [entry.family, ...(entry.also || [])])
+    .concat(PIANO_DOMAIN.MELLER_GUIDE.alternatives.carbohydrates.reference.families));
+  const popupProteins = sortedUnique(PIANO_DOMAIN.MELLER_PROTEIN_ALTERNATIVES
+    .map(entry => entry.family)
+    .concat(PIANO_DOMAIN.MELLER_GUIDE.alternatives.proteins.reference.families));
+  // 2. famiglie nelle grammature canoniche;
+  // 3. famiglie nel testo passato al backend;
+  const aiText = PIANO_DOMAIN.mellerFamiliesInText(PIANO_DOMAIN.mellerAlternativesText());
+  // 4. famiglie nel fallback del Worker.
+  const workerFallback = PIANO_DOMAIN.mellerFamiliesInText(MELLER_ALTERNATIVES_FALLBACK);
+
+  [
+    ['popup carboidrati', popupCarbs],
+    ['testo AI carboidrati', sortedUnique(aiText.carbohydrates)],
+    ['fallback Worker carboidrati', sortedUnique(workerFallback.carbohydrates)]
+  ].forEach(([surface, families]) => assert.deepEqual(families, canonicalCarbs, surface));
+  [
+    ['popup proteine', popupProteins],
+    ['testo AI proteine', sortedUnique(aiText.proteins)],
+    ['fallback Worker proteine', sortedUnique(workerFallback.proteins)]
+  ].forEach(([surface, families]) => assert.deepEqual(families, canonicalProteins, surface));
+
+  // Le grammature del fallback Worker sono quelle della fonte canonica.
+  PIANO_DOMAIN.MELLER_ALTERNATIVES.carbohydrates.forEach(item => {
+    const line = `^${item.label.replace(/[.*+?^${}()|[\]\\/]/g, '\\$&')}: pranzo allenamento ${item.lunchTraining} g, pranzo riposo ${item.lunchRest} g, cena ${item.dinner} g\\.$`;
+    assert.match(MELLER_ALTERNATIVES_FALLBACK, new RegExp(line, 'm'), `${item.label} nel fallback Worker`);
+  });
+  PIANO_DOMAIN.MELLER_ALTERNATIVES.proteins.forEach(item => {
+    const line = `^${item.label.replace(/[.*+?^${}()|[\]\\/]/g, '\\$&')}: ${item.lunchTraining} g\\.$`;
+    assert.match(MELLER_ALTERNATIVES_FALLBACK, new RegExp(line, 'm'), `${item.label} nel fallback Worker`);
+  });
 });

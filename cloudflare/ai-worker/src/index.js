@@ -8,7 +8,16 @@
  *
  * La GEMINI_API_KEY resta in un secret Cloudflare, mai nel frontend. Ogni
  * richiesta è autenticata con il Firebase ID token dell'utente.
+ *
+ * GRAMMATURE MELLER — FONTE UNICA: il Worker importa `js/domain.js`, lo stesso
+ * modulo che nel browser espone `window.PianoDomain`. Nessuna lista parziale è
+ * duplicata qui: il testo completo delle alternative arriva dal frontend nel
+ * campo `alternatives` e, se manca, il fallback è generato dalla stessa fonte.
+ * Per questo la pubblicazione va fatta con `npx wrangler deploy` (che include
+ * il modulo condiviso nel bundle), non con il solo copia-incolla di index.js.
  */
+
+import PianoDomain from '../../../js/domain.js';
 
 const FIREBASE_JWKS_URL = 'https://www.googleapis.com/service_accounts/v1/jwk/securetoken@system.gserviceaccount.com';
 // Endpoint REST per l'API testuale con grounding Google Search.
@@ -18,6 +27,9 @@ const DEFAULT_TEXT_MODEL = 'gemini-3.6-flash';
 const FALLBACK_TEXT_MODELS = ['gemini-3.5-flash', 'gemini-3.1-flash-lite', 'gemini-2.5-flash-lite'];
 const MAX_EXCLUDED_NAMES = 30;
 const MAX_TEXT_FIELD_LENGTH = 2000;
+// Il testo completo delle alternative Meller è più lungo degli altri campi:
+// limite dedicato, generoso rispetto alla fonte canonica (~2 kB).
+const MAX_ALTERNATIVES_LENGTH = 8000;
 const RATE_LIMIT_WINDOW_MS = 15 * 60 * 1000;
 // 30 ricerche per finestra: più che sufficienti per un uso personale.
 const MAX_REQUESTS_PER_WINDOW = 30;
@@ -210,18 +222,39 @@ const RECIPES_TOOL = {
   }
 };
 
-const DEFAULT_GUIDELINES = 'pollame 200 g, manzo 150 g, maiale 100 g, pesce 250 g, legumi 240 g, uova 180 g, pasta/riso 90 g, gnocchi 250 g, patate 450 g, pane 120 g, olio EVO 10 g, miele 20 g, marmellata 30 g, yogurt 200 g, latte 250 g, formaggi 60 g, crackers 40 g, frutta fresca 250 g, frutta secca 20 g';
-const DEFAULT_MEAL_STRUCTURE = 'colazione: carboidrati + proteine leggere; spuntini: frutta, yogurt o frutta secca; pranzo e cena: una fonte proteica + un carboidrato + verdure con olio EVO a crudo';
+// Fallback COMPLETI generati dalla fonte unica condivisa col frontend
+// (js/domain.js): stesse famiglie, stessi valori, nessuna copia scritta a mano.
+const MELLER_ALTERNATIVES_FALLBACK = PianoDomain.mellerAlternativesText();
+const MELLER_GUIDELINES_FALLBACK = PianoDomain.mellerGuidelinesText();
+const MELLER_MEAL_STRUCTURE_FALLBACK = PianoDomain.mellerMealStructureText();
 
-function recipesSystemInstruction(guidelines, mealStructure, slot, excludeNames) {
+// Istruzioni esplicite su come usare la tabella Meller nel prompt.
+const MELLER_PROMPT_RULES = [
+  'Usa esclusivamente le grammature Meller fornite.',
+  'A cena sono ammessi tutti i carboidrati presenti nella tabella, non solo pane, crackers e patate.',
+  'Per i carboidrati usa la dose cena indicata nella tabella.',
+  'Non trasformare le proteine secondo la regola dei carboidrati.',
+  'Mantieni le dosi proteiche indicate dal manuale.'
+];
+
+// Testo completo delle alternative Meller per il prompt: quello inviato dal
+// frontend oppure, se manca, il fallback generato dalla stessa fonte condivisa.
+function mellerAlternativesForPrompt(alternatives) {
+  const received = String(alternatives || '').trim();
+  return (received || MELLER_ALTERNATIVES_FALLBACK).slice(0, MAX_ALTERNATIVES_LENGTH);
+}
+
+function recipesSystemInstruction(guidelines, mealStructure, slot, excludeNames, alternatives) {
   const excluded = (Array.isArray(excludeNames) ? excludeNames : []).filter(Boolean);
   return [
     'Sei l’aiuto-cuoco della webapp Piano Nutrizionale: trovi NUOVE ricette dal web.',
     'Rispondi SOLO con la chiamata di funzione search_recipes: nessun altro testo.',
     'Usa Google Search per trovare ricette reali adatte alla richiesta dell’utente.',
     'Proponi fino a 10 ricette diverse e pertinenti, in italiano, ordinate dalla più pertinente.',
-    `Ogni ricetta è per una persona, con dosi plausibili per una porzione (es. "150 g", "2 cucchiai", "q.b.") e coerenti con i massimi del dott. Meller: ${String(guidelines || '').trim() || DEFAULT_GUIDELINES}.`,
-    `Rispetta la struttura dei pasti: ${String(mealStructure || '').trim() || DEFAULT_MEAL_STRUCTURE}.`,
+    `GRAMMATURE MELLER COMPLETE — tutte le famiglie di carboidrati e proteine con pranzo allenamento, pranzo riposo e cena:\n${mellerAlternativesForPrompt(alternatives)}`,
+    ...MELLER_PROMPT_RULES,
+    `Ogni ricetta è per una persona, con dosi plausibili per una porzione (es. "150 g", "2 cucchiai", "q.b.") e coerenti con i massimi del dott. Meller: ${String(guidelines || '').trim() || MELLER_GUIDELINES_FALLBACK}.`,
+    `Rispetta la struttura dei pasti: ${String(mealStructure || '').trim() || MELLER_MEAL_STRUCTURE_FALLBACK}.`,
     slot
       ? `Tutte le ricette devono appartenere OBBLIGATORIAMENTE al pasto "${slot}": imposta slot="${slot}" su ogni ricetta.`
       : 'Indica sempre il pasto di appartenenza (slot: breakfast/snack1/lunch/snack2/dinner).',
@@ -296,7 +329,7 @@ function extractSources(data) {
   return [...new Map(sources.map(source => [source.url, source])).values()].slice(0, 10);
 }
 
-async function callGemini(apiKey, model, query, maxRecipes, slot, excludeNames, guidelines, mealStructure) {
+async function callGemini(apiKey, model, query, maxRecipes, slot, excludeNames, guidelines, mealStructure, alternatives) {
   const excluded = (Array.isArray(excludeNames) ? excludeNames : []).filter(Boolean);
   const userText = [
     `L’utente chiede: ${query}. Proponi fino a ${maxRecipes} ricette.`,
@@ -309,7 +342,7 @@ async function callGemini(apiKey, model, query, maxRecipes, slot, excludeNames, 
     headers: { 'content-type': 'application/json' },
     body: JSON.stringify({
       contents: [{ role: 'user', parts: [{ text: userText }] }],
-      systemInstruction: { parts: [{ text: recipesSystemInstruction(guidelines, mealStructure, slot, excluded) }] },
+      systemInstruction: { parts: [{ text: recipesSystemInstruction(guidelines, mealStructure, slot, excluded, alternatives) }] },
       tools: [
         { googleSearch: {} },
         { functionDeclarations: [RECIPES_TOOL] }
@@ -328,14 +361,14 @@ async function callGemini(apiKey, model, query, maxRecipes, slot, excludeNames, 
   return data;
 }
 
-async function generateRecipesContent(env, query, maxRecipes, slot, excludeNames, guidelines, mealStructure) {
+async function generateRecipesContent(env, query, maxRecipes, slot, excludeNames, guidelines, mealStructure, alternatives) {
   const apiKey = String(env.GEMINI_API_KEY || '').trim();
   if (!apiKey) throw new Error('GEMINI_API_KEY non configurata nel Worker.');
   const models = textModelList(env);
   let lastError = null;
   for (const model of models) {
     try {
-      return await callGemini(apiKey, model, query, maxRecipes, slot, excludeNames, guidelines, mealStructure);
+      return await callGemini(apiKey, model, query, maxRecipes, slot, excludeNames, guidelines, mealStructure, alternatives);
     } catch (error) {
       lastError = error;
       if (!error?.retryable) throw error;
@@ -362,10 +395,13 @@ async function handleRecipes(request, env, origin) {
     .slice(0, MAX_EXCLUDED_NAMES);
   const guidelines = cleanText(body?.guidelines);
   const mealStructure = cleanText(body?.mealStructure);
+  // Campo completo inviato dal frontend (PianoDomain.mellerAlternativesText()).
+  // Se manca, il prompt usa il fallback generato dalla stessa fonte condivisa.
+  const alternatives = String(body?.alternatives || '').trim().slice(0, MAX_ALTERNATIVES_LENGTH);
 
   let data;
   try {
-    data = await generateRecipesContent(env, query, maxRecipes, slot, excludeNames, guidelines, mealStructure);
+    data = await generateRecipesContent(env, query, maxRecipes, slot, excludeNames, guidelines, mealStructure, alternatives);
   } catch (error) {
     console.error(error);
     return json({ error: error.message || 'Gemini non ha risposto alla ricerca delle ricette.' }, 502, origin);
@@ -421,6 +457,9 @@ export default {
 
 // Export per i test unitari (node --test): il default export resta l'handler.
 export {
+  MELLER_ALTERNATIVES_FALLBACK,
+  MELLER_PROMPT_RULES,
+  mellerAlternativesForPrompt,
   textModelName,
   textModelList,
   isRetryableModelError,

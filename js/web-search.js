@@ -110,6 +110,11 @@
           language: getConfig().language || 'it-IT',
           maxRecipes: Number(getConfig().maxRecipes) || 10,
           excludeNames: (Array.isArray(excludeNames) ? excludeNames : []).slice(0, 30),
+          // Fonte unica Meller: `alternatives` è il testo COMPLETO delle
+          // famiglie carboidrati/proteine con le grammature A/R e cena.
+          // `guidelines` e `mealStructure` restano per compatibilità e derivano
+          // dalla stessa tabella di js/domain.js.
+          alternatives: root.PianoDomain?.mellerAlternativesText?.() || '',
           guidelines: root.PianoDomain?.mellerGuidelinesText?.() || '',
           mealStructure: root.PianoDomain?.mellerMealStructureText?.() || ''
         })
