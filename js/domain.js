@@ -243,6 +243,7 @@
   const MELLER_CARB_ALTERNATIVES = [
     { label: 'Gnocchi di patate', family: 'gnocchi' },
     { label: 'Farro, Orzo', family: 'farroorzo' },
+    { label: 'Cous cous', family: 'couscous' },
     { label: 'Quinoa, Grano Saraceno, Amaranto', family: 'pseudo' },
     { label: 'Pane', family: 'pane' },
     { label: 'Piadina', family: 'piadina' },
