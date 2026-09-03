@@ -315,42 +315,41 @@ test('trasforma carboidrato pranzo -> cena (pane 120g -> 60g)', () => {
   assert.equal(adapted.portions.manRest, '60g');
 });
 
-test('pranzo -> cena: la pasta resta pasta e diventa il 50% della dose pranzo A', () => {
+test('pranzo -> cena: la pasta resta pasta e usa la dose cena Meller', () => {
   const pasta = ingredient('Pasta di semola', { ipoTraining: '90g', ipoRest: '70g', manTraining: '90g', manRest: '70g' });
   const adapted = d.adaptIngredientForSlot(pasta, 'lunch', 'dinner');
   assert.equal(adapted.name, 'Pasta di semola');
   assert.equal(adapted.ingredientId, 'pasta-di-semola');
-  assert.equal(adapted.portions.manTraining, '50g'); // 90g -> 45g -> 50g
-  assert.equal(adapted.portions.manRest, '50g');
-  assert.equal(adapted.portions.ipoTraining, '50g');
-  assert.equal(adapted.portions.ipoRest, '50g');
+  assert.equal(adapted.portions.manTraining, '40g'); // tabella: pranzo R 70g -> cena 40g
+  assert.equal(adapted.portions.manRest, '40g');
+  assert.equal(adapted.portions.ipoTraining, '40g');
+  assert.equal(adapted.portions.ipoRest, '40g');
 });
 
-test('pranzo -> cena: 50% della dose personalizzata, arrotondata alla decina', () => {
-  // Esempio utente: pranzo A 470g -> cena 235g -> 240g.
+test('pranzo -> cena: dose cena dalla tabella', () => {
+  // La dose cena viene dalla tabella, non dalla dose personalizzata.
   const patate = ingredient('Patate', { ipoTraining: '—', ipoRest: '—', manTraining: '470g', manRest: '350g' });
   const adapted = d.adaptIngredientForSlot(patate, 'lunch', 'dinner');
   assert.equal(adapted.name, 'Patate');
-  assert.equal(adapted.portions.manTraining, '240g');
-  assert.equal(adapted.portions.manRest, '240g');
+  assert.equal(adapted.portions.manTraining, '230g');
+  assert.equal(adapted.portions.manRest, '230g');
 });
 
-test('cena -> pranzo: 200% della dose cena A, pranzo R col rapporto esistente', () => {
-  // Esempio utente: cena A 232g -> pranzo A 464g -> 470g.
+test('cena -> pranzo: pranzo A/R dalla tabella', () => {
+  // Il ritorno legge pranzo A/R dalla tabella.
   const patate = ingredient('Patate', { ipoTraining: '—', ipoRest: '—', manTraining: '232g', manRest: '232g' });
   const adapted = d.adaptIngredientForSlot(patate, 'dinner', 'lunch');
   assert.equal(adapted.name, 'Patate');
-  assert.equal(adapted.portions.manTraining, '470g');
-  // Il rapporto pranzo esistente Patate (350/450 ≈ 0,78) resta applicato al pranzo R.
-  assert.equal(adapted.portions.manRest, '370g');
+  assert.equal(adapted.portions.manTraining, '450g');
+  assert.equal(adapted.portions.manRest, '350g');
 });
 
-test('pranzo -> cena: trofie e cous cous restano lo stesso carboidrato al 50%', () => {
+test('pranzo -> cena: trofie e cous cous usano la dose cena Meller', () => {
   const trofie = ingredient('Trofie secche', { ipoTraining: '90g', ipoRest: '70g', manTraining: '90g', manRest: '70g' });
   const adaptedT = d.adaptIngredientForSlot(trofie, 'lunch', 'dinner');
   assert.equal(adaptedT.name, 'Trofie secche');
-  assert.equal(adaptedT.portions.manTraining, '50g');
-  assert.equal(adaptedT.portions.manRest, '50g');
+  assert.equal(adaptedT.portions.manTraining, '40g');
+  assert.equal(adaptedT.portions.manRest, '40g');
 
   const couscous = ingredient('Cous cous', { ipoTraining: '80g', ipoRest: '60g', manTraining: '80g', manRest: '60g' });
   const adaptedC = d.adaptIngredientForSlot(couscous, 'lunch', 'dinner');
@@ -395,7 +394,7 @@ test('lista spesa: pasta di pranzo spostato a cena resta pasta al 50%', () => {
     ], 'Altro pesce e molluschi')
   };
   const list = d.aggregateShopping(planWith(days), recipesById, { monday: ['dinner'] }, 'man', {});
-  assert.equal(list.find(e => e.ingredientId === 'pasta').totals.g, 50); // 90g -> 45g -> 50g
+  assert.equal(list.find(e => e.ingredientId === 'pasta').totals.g, 40); // dose cena dalla tabella
   assert.equal(list.find(e => e.ingredientId === 'tuna').totals.g, 150); // proteina invariata
   assert.ok(!list.find(e => e.ingredientId === 'bread'), 'nessuna conversione in pane');
 });
@@ -571,7 +570,7 @@ test('sumPortionStrings: numeriche sommate, opache concatenate', () => {
 
 test('batch doppia porzione con ricetta di pranzo spostata a cena (cross-slot)', () => {
   // Una ricetta di PRANZO (pasta) messa anche a cena: la dose di cena resta
-  // pasta al 50% (90g -> 50g), la dose di pranzo resta nativa (90g). Essendo
+  // pasta alla dose Meller (90g -> 40g), la dose di pranzo resta nativa (90g). Essendo
   // lo stesso carboidrato le dosi si sommano.
   const days = {
     monday: { type: 'training', dinner: 'C2', lunch: 'ALTRO' },
@@ -581,7 +580,7 @@ test('batch doppia porzione con ricetta di pranzo spostata a cena (cross-slot)',
   const batch = d.commonRecipeBatch('monday', planWith(days), recipesById, 'man');
   assert.ok(batch);
   const carb = batch.tasks.find(t => t.label === 'Pasta');
-  assert.equal(carb.quantity, '140g'); // 50g cena + 90g pranzo
+  assert.equal(carb.quantity, '130g'); // 40g cena + 90g pranzo
 });
 
 // ---- Copia e scambio pasti ----
@@ -1459,6 +1458,33 @@ test('Meller: una ricetta già adattata non viene segnalata né modificata', () 
   assert.equal(d.adaptRecipeToMeller(pranzo).changed, false);
 });
 
+test('Meller carboidrati: cena sempre 2/3 del pranzo R e A uguale a R', () => {
+  const carbFamilies = ['gnocchi', 'polenta', 'piadina', 'pseudo', 'couscous', 'farroorzo', 'pasta', 'riso', 'crackers', 'patate', 'pane'];
+  carbFamilies.forEach(family => {
+    const rule = d.MELLER_GRAMMATURE.find(item => item.family === family);
+    assert.ok(rule.slots.lunch && rule.slots.dinner, `${family} ha pranzo e cena`);
+    assert.equal(rule.slots.dinner.training, Math.floor(rule.slots.lunch.rest * 2 / 3 / 10) * 10, family);
+    assert.equal(rule.slots.dinner.training, rule.slots.dinner.rest, `${family} cena A/R`);
+  });
+  const confirmed = { pane: 60, crackers: 40, patate: 230, polenta: 220, piadina: 50, pasta: 40 };
+  Object.entries(confirmed).forEach(([family, value]) => assert.equal(d.MELLER_GRAMMATURE.find(rule => rule.family === family).slots.dinner.rest, value));
+});
+
+test('Meller regressione: pasta a cena viene controllata e adattata', () => {
+  const dinner = recipe('M1', 'Pasta 500g', 'dinner', [ingredient('Pasta', mportion('500g'))]);
+  assert.equal(d.checkMellerAdaptation(dinner).summary[0].expected, 40);
+  assert.equal(d.adaptRecipeToMeller(dinner).recipe.ingredients[0].portions.manTraining, '40 g');
+});
+
+test('Meller travaso patate: tabella pranzo A/R e cena unica', () => {
+  const lunchToDinner = d.adaptIngredientForSlot(ingredient('Patate', mportion('450g')), 'lunch', 'dinner');
+  const dinnerToLunch = d.adaptIngredientForSlot(ingredient('Patate', mportion('230g')), 'dinner', 'lunch');
+  assert.equal(lunchToDinner.portions.manTraining, '230g');
+  assert.equal(lunchToDinner.portions.manRest, '230g');
+  assert.equal(dinnerToLunch.portions.manTraining, '450g');
+  assert.equal(dinnerToLunch.portions.manRest, '350g');
+});
+
 // ---------------------------------------------------------------------
 // Manuale Meller a fonte unica: tutto deriva da MELLER_GRAMMATURE.
 // ---------------------------------------------------------------------
@@ -1480,7 +1506,7 @@ test('Meller fonte unica: DEFAULT_CONSTRAINTS derivano dalle frequenze proteiche
 test('Meller fonte unica: CARB_REFERENCE deriva dalle grammature', () => {
   const pasta = d.carbSourceForName('Pasta integrale');
   assert.deepEqual(pasta.pranzo, { training: 90, rest: 70 }, 'pasta a pranzo 90/70');
-  assert.equal(pasta.cena, null, 'la pasta non ha un riferimento di cena');
+  assert.deepEqual(pasta.cena, { training: 40, rest: 40 });
   const pane = d.carbSourceForName('Pane di segale');
   assert.deepEqual(pane.pranzo, { training: 120, rest: 90 });
   assert.deepEqual(pane.cena, { training: 60, rest: 60 }, 'pane a cena 60/60');
@@ -1491,7 +1517,7 @@ test('Meller fonte unica: CARB_REFERENCE deriva dalle grammature', () => {
 
 test('Meller fonte unica: le alternative della guida derivano dalla tabella', () => {
   const carbs = Object.fromEntries(d.MELLER_GUIDE.alternatives.carbohydrates.rows);
-  assert.equal(d.MELLER_GUIDE.alternatives.carbohydrates.title, 'Carboidrati · riferimento Pasta/Riso 70g');
+  assert.equal(d.MELLER_GUIDE.alternatives.carbohydrates.title, 'Carboidrati · riferimento Pasta/Riso 70g a pranzo, 40g a cena');
   assert.equal(carbs['Gnocchi di patate'], '190g');
   assert.equal(carbs['Patate'], '350g');
   const proteins = Object.fromEntries(d.MELLER_GUIDE.alternatives.proteins.rows);

@@ -206,7 +206,7 @@ appState.plan.batchTemplates = [];
 appState.plan.days.tuesday.lunch = 'D1';
 openBatchModal('monday');
 assert.match(batchModalList.innerHTML, /Ingredienti · dosi totali/, 'dosi totali integrate nella ricetta completa');
-assert.match(batchModalList.innerHTML, /230g/, 'dose cena e pranzo sommata');
+assert.match(batchModalList.innerHTML, /160g/, 'dose cena e pranzo sommata');
 assert.doesNotMatch(batchModalList.innerHTML, /Doppia porzione|Pranzo di Martedì|tra 1 giorno/, 'testi ridondanti assenti per cena e pranzo successivo');
 closeBatchModal();
 appState.plan.batchTemplates = originalTemplates;

@@ -83,16 +83,23 @@
 
   const MELLER_GRAMMATURE = [
     // Carboidrati
+    // Cena = floor(pranzo RIPOSO * 2/3 / 10) * 10, uguale in A e R.
+    // Verifica Meller: pane 90→60, crackers 60→40, patate 350→230,
+    // polenta 340→220, piadina 80→50, pasta/riso 70→40.
+    // Questi sono valori cena derivati (gnocchi 120, farro/orzo 40,
+    // pseudo 40, couscous 40); le inverse cena→pranzo non si calcolano:
+    // si rileggono pranzo A/R dalla tabella, perché il floor non è invertibile
+    // (230*2=460, mentre il valore reale è 450).
     { family: 'avena', label: 'Avena', match: /avena|porridge|oatmeal/, slots: { breakfast: { training: 40, rest: 40 } } },
     { family: 'cereali', label: 'Cereali', match: /corn flakes|muesli|granola|cereali|fiocchi(?!\s+di\s+latte)/, slots: { breakfast: { training: 50, rest: 50 } } },
-    { family: 'gnocchi', label: 'Gnocchi', match: /gnocch/, slots: { lunch: { training: 250, rest: 190 } } },
-    { family: 'polenta', label: 'Polenta', match: /polenta/, slots: { lunch: { training: 430, rest: 340 } } },
-    { family: 'piadina', label: 'Piadina', match: /piadina|tortilla/, slots: { lunch: { training: 110, rest: 80 } } },
-    { family: 'pseudo', label: 'Quinoa/Grano saraceno/Amaranto', match: /quinoa|grano saraceno|amaranto/, slots: { lunch: { training: 80, rest: 60 } } },
-    { family: 'couscous', label: 'Cous cous', match: /cous.?cous/, slots: { lunch: { training: 80, rest: 60 } } },
-    { family: 'farroorzo', label: 'Farro/Orzo', match: /\b(farro|orzo)\b/, slots: { lunch: { training: 90, rest: 70 } } },
-    { family: 'pasta', label: 'Pasta', match: /pasta|spaghetti|penne|rigatoni|linguine|tagliatelle|lasagne|trofie|fusilli/, slots: { lunch: { training: 90, rest: 70 } } },
-    { family: 'riso', label: 'Riso', match: /\briso\b|risotto/, slots: { lunch: { training: 90, rest: 70 } } },
+    { family: 'gnocchi', label: 'Gnocchi', match: /gnocch/, slots: { lunch: { training: 250, rest: 190 }, dinner: { training: 120, rest: 120 } } },
+    { family: 'polenta', label: 'Polenta', match: /polenta/, slots: { lunch: { training: 430, rest: 340 }, dinner: { training: 220, rest: 220 } } },
+    { family: 'piadina', label: 'Piadina', match: /piadina|tortilla/, slots: { lunch: { training: 110, rest: 80 }, dinner: { training: 50, rest: 50 } } },
+    { family: 'pseudo', label: 'Quinoa/Grano saraceno/Amaranto', match: /quinoa|grano saraceno|amaranto/, slots: { lunch: { training: 80, rest: 60 }, dinner: { training: 40, rest: 40 } } },
+    { family: 'couscous', label: 'Cous cous', match: /cous.?cous/, slots: { lunch: { training: 80, rest: 60 }, dinner: { training: 40, rest: 40 } } },
+    { family: 'farroorzo', label: 'Farro/Orzo', match: /\b(farro|orzo)\b/, slots: { lunch: { training: 90, rest: 70 }, dinner: { training: 40, rest: 40 } } },
+    { family: 'pasta', label: 'Pasta', match: /pasta|spaghetti|penne|rigatoni|linguine|tagliatelle|lasagne|trofie|fusilli/, slots: { lunch: { training: 90, rest: 70 }, dinner: { training: 40, rest: 40 } } },
+    { family: 'riso', label: 'Riso', match: /\briso\b|risotto/, slots: { lunch: { training: 90, rest: 70 }, dinner: { training: 40, rest: 40 } } },
     { family: 'crackers', label: 'Crackers/Grissini/Crostini', match: /cracker|grissin|crostin/, slots: { snack1: { training: 30, rest: 30 }, snack2: { training: 30, rest: 30 }, lunch: { training: 70, rest: 60 }, dinner: { training: 40, rest: 40 } } },
     { family: 'patate', label: 'Patate', match: /patat/, slots: { lunch: { training: 450, rest: 350 }, dinner: { training: 230, rest: 230 } } },
     { family: 'pane', label: 'Pane', match: /\bpane\b|fette biscottate/, slots: { lunch: { training: 120, rest: 90 }, dinner: { training: 60, rest: 60 } } },
@@ -174,7 +181,7 @@
       'spuntino mattina: frutta fresca con una quota proteica (crackers solo nel giorno di allenamento)',
       'pranzo: un carboidrato + una fonte proteica + verdura + olio EVO a crudo',
       'merenda: yogurt con miele o marmellata, oppure crackers o frutta secca',
-      'cena: una fonte proteica + pane o un carboidrato ridotto + verdura + olio EVO a crudo'
+      'cena: una fonte proteica + qualsiasi carboidrato in dose ridotta (circa 2/3 della dose del pranzo di riposo) + verdura + olio EVO a crudo'
     ].join('; ');
   }
 
@@ -197,7 +204,7 @@
   // prima di patate).
   const CARB_FAMILIES = [
     { key: 'gnocchi', family: 'gnocchi', label: 'Gnocchi di patate' },
-    { key: 'polenta', family: 'polenta', label: 'Polenta cotta', dinner: { training: 220, rest: 220 } },
+    { key: 'polenta', family: 'polenta', label: 'Polenta cotta' },
     { key: 'piadina', family: 'piadina', label: 'Piadina', match: /piadina/ },
     { key: 'pseudo', family: 'pseudo', label: 'Quinoa/Grano saraceno/Amaranto' },
     { key: 'couscous', family: 'couscous', label: 'Cous cous' },
@@ -214,7 +221,7 @@
     return CARB_FAMILIES.map(item => {
       const rule = mellerGrammatureFor(item.family);
       const lunch = rule?.slots?.lunch || null;
-      const dinner = item.dinner !== undefined ? item.dinner : (rule?.slots?.dinner || null);
+      const dinner = rule?.slots?.dinner || null;
       return {
         key: item.key,
         match: item.match || rule?.match,
@@ -241,10 +248,11 @@
 
   // label = etichetta del manuale; family+day scelgono il valore in tabella.
   const MELLER_CARB_ALTERNATIVES = [
+    { label: 'Pasta, Riso', family: 'pasta' },
     { label: 'Gnocchi di patate', family: 'gnocchi' },
     { label: 'Farro, Orzo', family: 'farroorzo' },
-    { label: 'Cous cous', family: 'couscous' },
     { label: 'Quinoa, Grano Saraceno, Amaranto', family: 'pseudo' },
+    { label: 'Cous cous', family: 'couscous' },
     { label: 'Pane', family: 'pane' },
     { label: 'Piadina', family: 'piadina' },
     { label: 'Crackers, Grissini, Crostini', family: 'crackers' },
@@ -254,21 +262,27 @@
 
   const MELLER_PROTEIN_ALTERNATIVES = [
     { label: 'Manzo, tagli magri', family: 'manzo' },
-    { label: 'Maiale, tagli magri / Affettati sgrassati', family: 'maiale' },
+    { label: 'Maiale, tagli magri', family: 'maiale' },
+    { label: 'Affettati sgrassati / Salumi magri', family: 'salumi' },
     { label: 'Crostacei, Molluschi', family: 'molluschi' },
     { label: 'Merluzzo / Nasello / Sogliola', family: 'pesceBianco' },
     { label: 'Pesce in scatola al naturale', family: 'tonno' },
     { label: "Pesce in scatola sott'olio / Salmone / Sgombro", family: 'pesceOmega' },
     { label: 'Fiocchi di latte / Uova intere', family: 'fiocchiLatte' },
+    { label: 'Uova intere', family: 'uova' },
     { label: 'Montasio / Grana', family: 'formaggi' },
     { label: 'Legumi in scatola o bolliti', family: 'legumi' },
     { label: 'Legumotti Barilla', family: 'legumotti' }
   ];
 
-  function alternativeRows(entries, dayType) {
+  function alternativeRows(entries, dayType, includeDinner = false) {
     return entries.map(entry => {
-      const amount = mellerGrammatureFor(entry.family)?.slots?.lunch?.[dayType];
-      return [entry.label, Number.isFinite(amount) ? `${amount}g` : '—'];
+      const slots = mellerGrammatureFor(entry.family)?.slots || {};
+      const lunch = slots.lunch?.[dayType];
+      const dinner = slots.dinner?.rest;
+      const row = [entry.label, Number.isFinite(lunch) ? `${lunch}g` : '—'];
+      if (includeDinner) row.push(Number.isFinite(dinner) ? `${dinner}g` : '—');
+      return row;
     });
   }
 
@@ -295,7 +309,7 @@
           { title: 'Spuntino mattina', lines: ['Frutta fresca 250g, crackers 30g, proteine 30g'] },
           { title: 'Pranzo', lines: ['Pasta/riso 90g (alternative: gnocchi 250g, farro 90g, quinoa 80g, pane 120g, patate 450g)', 'Pollame 200g (alternative: manzo 150g, maiale 100g, merluzzo 250g, uova 180g)', 'Verdura 200g', 'Olio EVO 10g'] },
           { title: 'Merenda', lines: ["Opzione 1: yogurt greco 0% 150g + miele/sciroppo d'acero 15g oppure marmellata 20g", 'Opzione 2: crackers 30g oppure frutta secca oleosa 20g'] },
-          { title: 'Cena', lines: ['Pollame 200g (alternative: manzo 150g, pesce 250g, legumi 240g)', 'Pane 60g (alternative: crackers 40g, patate 230g)', 'Verdura 200g', 'Olio EVO 10g'] }
+          { title: 'Cena', lines: ['Pollame 200g (alternative: manzo 150g, pesce 250g, legumi 240g)', 'Pane 60g (alternative: crackers 40g, patate 230g, pasta/riso 40g, gnocchi 120g, farro/orzo 40g, quinoa 40g, cous cous 40g, piadina 50g, polenta 220g)', 'Verdura 200g', 'Olio EVO 10g'] }
         ]
       },
       restDay: {
@@ -306,13 +320,13 @@
           { title: 'Spuntino mattina', lines: ['Frutta fresca 250g, proteine 30g; niente crackers'] },
           { title: 'Pranzo', lines: ['Pasta/riso 70g (alternative: gnocchi 190g, farro 70g, quinoa 60g, pane 90g, patate 350g)', 'Pollame 200g', 'Verdura 200g', 'Olio EVO 10g'] },
           { title: 'Merenda', lines: ["Opzione 1: yogurt greco 0% 150g + miele/sciroppo d'acero 15g oppure marmellata 20g", 'Opzione 2: crackers 30g oppure frutta secca oleosa 20g'] },
-          { title: 'Cena', lines: ['Pollame 200g', 'Pane 60g (alternative: crackers 40g, patate 230g)', 'Verdura 200g', 'Olio EVO 10g'] }
+          { title: 'Cena', lines: ['Pollame 200g', 'Pane 60g (alternative: crackers 40g, patate 230g, pasta/riso 40g, gnocchi 120g, farro/orzo 40g, quinoa 40g, cous cous 40g, piadina 50g, polenta 220g)', 'Verdura 200g', 'Olio EVO 10g'] }
         ]
       },
       alternatives: {
         carbohydrates: {
-          title: `Carboidrati · riferimento Pasta/Riso ${pastaRest}g`,
-          rows: alternativeRows(MELLER_CARB_ALTERNATIVES, 'rest')
+          title: `Carboidrati · riferimento Pasta/Riso ${pastaRest}g a pranzo, ${mellerGrammatureFor('pasta')?.slots?.dinner?.rest}g a cena`,
+          rows: alternativeRows(MELLER_CARB_ALTERNATIVES, 'rest', true)
         },
         proteins: {
           title: `Proteine · riferimento Pollame ${poultryTraining}g`,
@@ -815,42 +829,30 @@ function portionFor(ingredient, profile, dayType, slot, recipeSlot) {
     return null;
   }
 
-  // Trasforma le porzioni di un carboidrato quando la sua ricetta viene
-  // collocata nel pasto opposto (pranzo <-> cena):
-  //  - pranzo -> cena: 50% della dose pranzo allenamento dell'uomo, arrotondata
-  //    alla decina per eccesso; stessa dose per cena A e R.
-  //  - cena -> pranzo: 200% della dose cena allenamento dell'uomo per il pranzo A;
-  //    il pranzo R mantiene il rapporto carboidrati A/R esistente.
-  // Il carboidrato resta lo stesso (nessuna conversione in pane/patate/...).
+  // Trasforma le porzioni di un carboidrato tra pranzo e cena. La cena usa
+  // sempre la dose esplicita in MELLER_GRAMMATURE; il fallback per un alimento
+  // non ancora censito conserva le proporzioni storiche (2/3 del pranzo R,
+  // oppure 200%/150% per il ritorno), arrotondate alla decina per eccesso.
   function crossSlotCarbPortions(ingredient, nativeSlot, assignedSlot) {
     if (!ingredient || !isPranzoCenaCross(nativeSlot, assignedSlot)) return null;
     const source = carbSourceForName(ingredient.name);
     if (!source) return null;
-    const base = carbBaseAmount(ingredient, source, nativeSlot);
+    const base = carbBaseAmount(ingredient, source || { pranzo: null, cena: null }, nativeSlot);
     if (!base) return null;
 
     if (assignedSlot === 'dinner') {
-      const value = roundUpToTen(base.value * 0.5);
+      const value = source?.cena?.rest ?? Math.floor((source?.pranzo?.rest ?? base.value) * 2 / 3 / 10) * 10;
       if (!value) return null;
       const amount = carbAmountText(value, base.unit);
-      return {
-        ipoTraining: amount, ipoRest: amount,
-        manTraining: amount, manRest: amount
-      };
+      return { ipoTraining: amount, ipoRest: amount, manTraining: amount, manRest: amount };
     }
 
-    const trainingValue = roundUpToTen(base.value * 2);
-    if (!trainingValue) return null;
-    const existingRatio = source.pranzo && Number(source.pranzo.training) > 0
-      ? Number(source.pranzo.rest) / Number(source.pranzo.training)
-      : 1;
-    const restValue = roundUpToTen(trainingValue * existingRatio);
+    const trainingValue = source?.pranzo?.training ?? roundUpToTen(base.value * 2);
+    const restValue = source?.pranzo?.rest ?? roundUpToTen(base.value * 1.5);
+    if (!trainingValue || !restValue) return null;
     const training = carbAmountText(trainingValue, base.unit);
     const rest = carbAmountText(restValue, base.unit);
-    return {
-      ipoTraining: training, ipoRest: rest,
-      manTraining: training, manRest: rest
-    };
+    return { ipoTraining: training, ipoRest: rest, manTraining: training, manRest: rest };
   }
 
   // Adatta un ingrediente carboidrato quando la sua ricetta viene collocata nel
