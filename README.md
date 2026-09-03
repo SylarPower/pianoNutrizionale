@@ -25,6 +25,7 @@ WebApp PWA privata per gestire colazioni, spuntini, pranzi, cene, batch cooking 
 - lista della spesa aggregata per `ingredientId` con profili Uomo, Donna IPO e Coppia, ordine delle categorie locale e **ordine degli alimenti dentro ogni categoria condiviso nell'household** (salvato nel documento spesa come mappa `itemOrder` categoria → ingredientId, con frecce ↑/↓ e scorciatoie A→Z / Ripristina);
 - PWA offline con shell versionata, aggiornamento one-tap e fallback offline comprensibile;
 - alternative alimentari di Meller sempre consultabili nelle Impostazioni;
+- **manuale Meller single source in `js/domain.js`**: grammature per pasto e giorno A/R, frequenze proteiche e massimi per porzione vivono in un solo file (`MELLER_GRAMMATURE`, `MELLER_PROTEIN_FREQUENCIES`, `MELLER_RECIPE_MAX_AMOUNTS`); da lì derivano i vincoli del generatore, il riferimento carboidrati, la guida delle Impostazioni e il prompt della ricerca ricette online: per aggiornare un valore si tocca solo `js/domain.js`;
 - **registro prezzi condiviso** (scheda Prezzi): un unico database tra tutti gli utenti per registrare i prezzi nei negozi (con barcode Open Food Facts), confrontare il prezzo normalizzato €/kg tra negozi con indicazione del migliore (ricerca prodotto con suggerimenti live mentre si digita, prodotti recenti a un tocco, navigazione da tastiera), giudizio rispetto allo storico (minimo storico / affare / caro), suggerimento del nome prodotto già in archivio quando quello scannerizzato è una variante più lunga ("Cereali di grano duro" → "Cereali"), archivio con modifica delle proprie voci e importazione/esportazione di backup JSON (incluso il vecchio formato "Spesa Smart");
 - **pagina negozio** (Prezzi → Negozi): per ogni negozio l'ultimo prezzo registrato di ogni prodotto, con indicazione di dove quel prodotto costa meno (🏆 miglior prezzo, scostamento % rispetto al migliore, "solo qui");
 - **ricerca ricette online dal Ricettario**: il pulsante "🌐 Cerca nel web" apre una modale in cui indichi ingredienti essenziali (obbligatori), tipo di pasto (obbligatorio) e preferenze facoltative; l'AI restituisce fino a 10 ricette aderenti alle grammature del dott. Meller, ognuna apribile nel popup classico e importabile nel ricettario, con il pulsante "Altre 10 ricette" che ripete la ricerca escludendo quelle già viste; le ricette importate, nuove o modificate non adattate alle grammature del dott. Meller vengono segnalate e si correggono con un click; setup gratuito documentato in [`docs/AI_WEB_SEARCH.md`](docs/AI_WEB_SEARCH.md);
@@ -32,7 +33,7 @@ WebApp PWA privata per gestire colazioni, spuntini, pranzi, cene, batch cooking 
 
 ## Dove si trovano i dati
 
-Le ricette non sono hardcoded nel repository GitHub. Il codice contiene soltanto interfaccia, regole di visualizzazione, servizi di dominio puri (`js/domain.js`) e manuale di Meller.
+Le ricette non sono hardcoded nel repository GitHub. Il codice contiene soltanto interfaccia, regole di visualizzazione, servizi di dominio puri (`js/domain.js`) e il manuale di Meller, di cui `js/domain.js` è la fonte unica.
 
 Finché l'account è indipendente, i dati si trovano nei documenti privati:
 

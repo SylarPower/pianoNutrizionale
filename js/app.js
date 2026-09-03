@@ -2544,16 +2544,19 @@ const GENERATOR_PREFS_DEFAULTS = {
   maxRepeats: 2,
   allowCrossSlot: false,
   slots: { breakfast: true, snack1: true, lunch: true, snack2: true, dinner: true },
-constraints: {
-  legumesMin: 3, legumesMax: 14,
-  omegaMin: 2, omegaMax: 3,
-  poultryMin: 1, poultryMax: 2,
-  beefMin: 0, beefMax: 1,
-  curedMeatsMin: 0, curedMeatsMax: 1,
-  dairyMin: 1, dairyMax: 2,
-  eggsMin: 1, eggsMax: 2,
-  otherFishMin: 1, otherFishMax: 2
-}
+  // Fonte unica delle frequenze proteiche: js/domain.js.
+  constraints: window.PianoDomain?.DEFAULT_CONSTRAINTS
+    ? { ...window.PianoDomain.DEFAULT_CONSTRAINTS }
+    : {
+      legumesMin: 3, legumesMax: 14,
+      omegaMin: 2, omegaMax: 3,
+      poultryMin: 1, poultryMax: 2,
+      beefMin: 0, beefMax: 1,
+      curedMeatsMin: 0, curedMeatsMax: 1,
+      dairyMin: 1, dairyMax: 2,
+      eggsMin: 1, eggsMax: 2,
+      otherFishMin: 1, otherFishMax: 2
+    }
 };
 
 // Versione della struttura delle preferenze del generatore: serve per

@@ -118,7 +118,8 @@ global.firebase = {
   auth: authFn
 };
 
-for (const file of ['js/data.js', 'js/firebase.js']) {
+// js/domain.js va caricato per primo: js/data.js legge MELLER_GUIDE da PianoDomain.
+for (const file of ['js/domain.js', 'js/data.js', 'js/firebase.js']) {
   vm.runInThisContext(fs.readFileSync(path.join(ROOT, file), 'utf8'), { filename: file });
 }
 assert.equal(initFirebase(), true);
