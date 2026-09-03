@@ -7,8 +7,10 @@ compatibility_date = "2026-08-30"
 [vars]
 FIREBASE_PROJECT_ID = "piano-nutrizionale"
 # Modello testuale per la ricerca di nuove ricette dal web via /recipes
-# con Google Search grounding.
-GEMINI_TEXT_MODEL = "gemini-3.6-flash"
+# con Google Search grounding. 3.5 Flash: quota gratuita più ampia e latenza
+# inferiore, stessa resa sulle ricette. Il Worker ha comunque il fallback
+# automatico sugli altri modelli Flash se questo non è disponibile.
+GEMINI_TEXT_MODEL = "gemini-3.5-flash"
 # Origini senza slash finale, separate da virgola.
 # Aggiungi il tuo dominio personale se lo userai.
 ALLOWED_ORIGINS = "https://sylarpower.github.io,https://piano-nutrizionale.web.app,http://localhost:8000,http://127.0.0.1:8000"

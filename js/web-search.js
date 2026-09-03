@@ -104,19 +104,15 @@
         method: 'POST',
         headers: { Authorization: `Bearer ${idToken}`, Accept: 'application/json', 'Content-Type': 'application/json' },
         credentials: 'omit',
+        // Nessuna grammatura Meller viene inviata al modello: la ricerca
+        // riguarda solo i criteri dell'utente (ingredienti, pasto, preferenze).
+        // Il confronto con il manuale avviene nell'app sulle ricette ricevute.
         body: JSON.stringify({
           query,
           slot: cleanSlot,
           language: getConfig().language || 'it-IT',
           maxRecipes: Number(getConfig().maxRecipes) || 10,
-          excludeNames: (Array.isArray(excludeNames) ? excludeNames : []).slice(0, 30),
-          // Fonte unica Meller: `alternatives` è il testo COMPLETO delle
-          // famiglie carboidrati/proteine con le grammature A/R e cena.
-          // `guidelines` e `mealStructure` restano per compatibilità e derivano
-          // dalla stessa tabella di js/domain.js.
-          alternatives: root.PianoDomain?.mellerAlternativesText?.() || '',
-          guidelines: root.PianoDomain?.mellerGuidelinesText?.() || '',
-          mealStructure: root.PianoDomain?.mellerMealStructureText?.() || ''
+          excludeNames: (Array.isArray(excludeNames) ? excludeNames : []).slice(0, 30)
         })
       });
       let body = null;
@@ -296,6 +292,90 @@
     renderResults();
   }
 
+  // -----------------------------------------------------------------------
+  // Confronto con le grammature Meller (lato app, non lato modello)
+  // -----------------------------------------------------------------------
+
+  // La ricetta arriva dal web con `ingredients: [{ name, quantity }]`; il
+  // dominio ragiona su `portions` A/R per profilo. Qui si costruisce la forma
+  // attesa da checkMellerAdaptation/adaptRecipeToMeller: la dose della fonte
+  // vale per tutte e quattro le combinazioni profilo × giorno.
+  function toDomainRecipe(recipe) {
+    const quantity = value => {
+      const clean = String(value ?? '').trim();
+      return clean || '—';
+    };
+    return {
+      id: 'websearch',
+      slot: SLOTS.some(item => item.id === recipe?.slot) ? recipe.slot : 'lunch',
+      name: String(recipe?.name || 'Ricetta'),
+      ingredients: (Array.isArray(recipe?.ingredients) ? recipe.ingredients : []).map(item => ({
+        name: String(item?.name || '').trim() || 'Ingrediente',
+        portions: {
+          ipoTraining: quantity(item?.quantity),
+          ipoRest: quantity(item?.quantity),
+          manTraining: quantity(item?.quantity),
+          manRest: quantity(item?.quantity)
+        }
+      })),
+      steps: (Array.isArray(recipe?.steps) ? recipe.steps : []).map(step => String(step || ''))
+    };
+  }
+
+  // Scostamenti rispetto al manuale Meller per il pasto della ricetta.
+  // La ricetta trovata sul web ha UNA sola dose per ingrediente, mentre il
+  // manuale distingue allenamento e riposo: si mostra (e si applica) il
+  // riferimento più restrittivo, così la dose va bene in entrambe le giornate.
+  // Restituisce null quando non c'è nulla da segnalare: le schede restano pulite.
+  function mellerCheckFor(recipe) {
+    const check = root.PianoDomain?.checkMellerAdaptation?.(toDomainRecipe(recipe));
+    if (!check || check.adapted || !check.issues?.length) return null;
+    const rows = [];
+    check.issues.forEach(issue => {
+      const row = rows.find(item => item.ingredient === issue.ingredient);
+      if (!row) {
+        rows.push({ ingredient: issue.ingredient, actual: issue.actual, expected: issue.expected, unit: issue.unit });
+        return;
+      }
+      row.actual = Math.max(row.actual, issue.actual);
+      row.expected = Math.min(row.expected, issue.expected);
+    });
+    return { rows };
+  }
+
+  // Applica le correzioni Meller alla ricetta MOSTRATA (formato web:
+  // `quantity` per ingrediente), riusando l'adattamento del dominio: un solo
+  // algoritmo per popup, ricettario e ricerca online.
+  function adaptRecipeQuantities(recipe) {
+    const check = mellerCheckFor(recipe);
+    if (!check) return null;
+    const byIngredient = new Map(check.rows.map(row => [row.ingredient, row]));
+    return {
+      ...recipe,
+      ingredients: (Array.isArray(recipe.ingredients) ? recipe.ingredients : []).map(item => {
+        const row = byIngredient.get(String(item?.name || '').trim() || 'Ingrediente');
+        return row ? { ...item, quantity: `${row.expected}${row.unit === 'ml' ? ' ml' : ' g'}` } : item;
+      })
+    };
+  }
+
+  function mellerNoticeHtml(check) {
+    if (!check) return '';
+    const items = check.rows.slice(0, 3).map(row => {
+      const unit = row.unit === 'ml' ? ' ml' : ' g';
+      return `<li><span>${escape(row.ingredient)}</span><strong>${row.actual}${unit} → ${row.expected}${unit}</strong></li>`;
+    }).join('');
+    const more = check.rows.length > 3
+      ? `<li class="websearch-meller-more">…e altre ${check.rows.length - 3} dosi fuori riferimento</li>`
+      : '';
+    return `
+      <div class="websearch-meller">
+        <p class="websearch-meller-head"><span aria-hidden="true">⚠️</span> ${check.rows.length} dos${check.rows.length === 1 ? 'e non aderente' : 'i non aderenti'} alle grammature del dott. Meller</p>
+        <ul class="websearch-meller-list">${items}${more}</ul>
+        <button type="button" class="btn btn-outline websearch-meller-fix" data-action="adapt">Correggi dosi Meller</button>
+      </div>`;
+  }
+
   function recipeCardHtml(recipe, index) {
     const emoji = String(recipe?.emoji || '').trim() || '🍽️';
     const ingredients = Array.isArray(recipe?.ingredients) ? recipe.ingredients : [];
@@ -305,18 +385,25 @@
       .filter(Boolean).join(' · ');
     const url = safeUrl(recipe?.sourceUrl);
     const sourceTitle = String(recipe?.sourceTitle || '').trim() || 'Fonte';
+    const check = mellerCheckFor(recipe);
+    const badge = recipe?._mellerAdapted
+      ? `<span class="websearch-meller-ok" title="Dosi riportate alle grammature del dott. Meller">✓ Meller</span>`
+      : (check ? `<span class="websearch-meller-flag" title="Dosi non aderenti alle grammature del dott. Meller">⚠</span>` : '');
     return `
-      <article class="websearch-card" role="button" tabindex="0" data-index="${index}">
-        <div class="websearch-card-head">
-          <span class="websearch-card-emoji">${escape(emoji)}</span>
-          <div>
-            <strong>${escape(recipe?.name || 'Ricetta')}</strong>
-            <small>${escape(slotLabel(recipe?.slot))} · ${ingredients.length} ingredienti · ${steps.length} passaggi</small>
+      <article class="websearch-card${check ? ' has-meller-notice' : ''}" data-index="${index}">
+        <div class="websearch-card-open" role="button" tabindex="0" data-action="open">
+          <div class="websearch-card-head">
+            <span class="websearch-card-emoji">${escape(emoji)}</span>
+            <div>
+              <strong>${escape(recipe?.name || 'Ricetta')}${badge}</strong>
+              <small>${escape(slotLabel(recipe?.slot))} · ${ingredients.length} ingredienti · ${steps.length} passaggi</small>
+            </div>
           </div>
+          ${preview ? `<p>${escape(preview)}</p>` : ''}
         </div>
-        ${preview ? `<p>${escape(preview)}</p>` : ''}
+        ${mellerNoticeHtml(check)}
         <div class="websearch-card-foot">
-          <span class="websearch-open-hint">Apri e importa →</span>
+          <span class="websearch-open-hint" data-action="open">Apri e importa →</span>
           ${url ? `<a class="websearch-card-source" href="${escape(url)}" target="_blank" rel="noopener noreferrer">${escape(sourceTitle)}</a>` : ''}
         </div>
       </article>`;
@@ -328,9 +415,14 @@
       ui.results.innerHTML = '';
       return;
     }
+    const withIssues = state.recipes.filter(recipe => mellerCheckFor(recipe)).length;
     ui.results.innerHTML = `
       ${state.recipes.map(recipeCardHtml).join('')}
-      <p class="websearch-count">${state.recipes.length} ricette trovate: tocca una scheda per aprirla e importarla.</p>
+      <p class="websearch-count">${state.recipes.length} ricette trovate: tocca una scheda per aprirla e importarla.${withIssues ? ` <strong>${withIssues}</strong> hanno dosi fuori dalle grammature Meller.` : ''}</p>
+      <div class="websearch-actions">
+        ${withIssues ? `<button type="button" class="btn btn-outline" data-action="adapt-all">✓ Correggi tutte (Meller)</button>` : ''}
+        <button type="button" class="btn btn-primary" data-action="import-all">⤓ Importa tutte (${state.recipes.length})</button>
+      </div>
       <div class="websearch-actions">
         <button type="button" class="btn btn-outline" data-action="more">↻ Altre 10 ricette</button>
         <button type="button" class="btn btn-outline" data-action="edit">← Modifica ricerca</button>
@@ -339,17 +431,30 @@
     ui.results.querySelectorAll('.websearch-card').forEach(card => {
       const index = Number(card.getAttribute('data-index'));
       const activate = () => openRecipe(state.recipes[index]);
-      card.addEventListener('click', activate);
-      card.addEventListener('keydown', event => {
-        if (event.key === 'Enter' || event.key === ' ' || event.key === 'Spacebar') {
-          event.preventDefault();
-          activate();
-        }
+      card.querySelectorAll('[data-action="open"]').forEach(target => {
+        target.addEventListener('click', activate);
+        target.addEventListener('keydown', event => {
+          if (event.key === 'Enter' || event.key === ' ' || event.key === 'Spacebar') {
+            event.preventDefault();
+            activate();
+          }
+        });
+      });
+      // Correzione con un click della singola ricetta: la scheda si aggiorna
+      // sul posto, senza aprire il popup e senza rifare la ricerca.
+      const fix = card.querySelector('[data-action="adapt"]');
+      if (fix) fix.addEventListener('click', event => {
+        event.stopPropagation();
+        adaptRecipeAt(index);
       });
     });
     ui.results.querySelectorAll('.websearch-card-source').forEach(link => {
       link.addEventListener('click', event => event.stopPropagation());
     });
+    const adaptAll = ui.results.querySelector('[data-action="adapt-all"]');
+    if (adaptAll) adaptAll.addEventListener('click', adaptAllRecipes);
+    const importAll = ui.results.querySelector('[data-action="import-all"]');
+    if (importAll) importAll.addEventListener('click', importAllRecipes);
     const more = ui.results.querySelector('[data-action="more"]');
     if (more) more.addEventListener('click', () => runSearch({ excludeNames: state.seenNames.slice() }));
     const edit = ui.results.querySelector('[data-action="edit"]');
@@ -358,6 +463,64 @@
       renderResults();
       try { ui.ingredients.focus(); } catch (_) {}
     });
+  }
+
+  // -----------------------------------------------------------------------
+  // Correzione Meller e importazione
+  // -----------------------------------------------------------------------
+
+  function adaptRecipeAt(index) {
+    const recipe = state.recipes[index];
+    if (!recipe) return;
+    const adapted = adaptRecipeQuantities(recipe);
+    if (!adapted) {
+      toast('Le dosi rispettano già le grammature Meller');
+      return;
+    }
+    state.recipes[index] = { ...adapted, _mellerAdapted: true };
+    renderResults();
+    toast('Dosi adattate alle grammature Meller ✅');
+  }
+
+  function adaptAllRecipes() {
+    let changed = 0;
+    state.recipes = state.recipes.map(recipe => {
+      const adapted = adaptRecipeQuantities(recipe);
+      if (!adapted) return recipe;
+      changed += 1;
+      return { ...adapted, _mellerAdapted: true };
+    });
+    renderResults();
+    toast(changed
+      ? `${changed} ricett${changed === 1 ? 'a adattata' : 'e adattate'} alle grammature Meller ✅`
+      : 'Nessuna dose da correggere');
+  }
+
+  // Importazione in blocco: salva tutte le ricette mostrate nel ricettario in
+  // una sola scrittura, senza passare dal popup una per una.
+  async function importAllRecipes() {
+    const recipes = state.recipes.slice();
+    if (!recipes.length) return;
+    if (typeof root.importRecipesFromWebSearchBulk !== 'function') {
+      toast('Importazione in blocco non disponibile in questa schermata.', true);
+      return;
+    }
+    const button = ui.results?.querySelector('[data-action="import-all"]');
+    if (button) {
+      button.disabled = true;
+      button.textContent = 'Importazione…';
+    }
+    try {
+      const imported = await root.importRecipesFromWebSearchBulk(recipes);
+      if (imported) closeModal();
+    } catch (error) {
+      toast(error?.message || 'Importazione non riuscita', true);
+    } finally {
+      if (button) {
+        button.disabled = false;
+        button.textContent = `⤓ Importa tutte (${recipes.length})`;
+      }
+    }
   }
 
   function openRecipe(recipe) {
@@ -370,32 +533,13 @@
     toast('Popup ricetta non disponibile in questa schermata.', true);
   }
 
-  // -----------------------------------------------------------------------
-  // Impostazioni
-  // -----------------------------------------------------------------------
-
-  function settingsSectionHtml() {
-    const configured = hasEndpoint();
-    return `
-      <section class="settings-section websearch-settings-section">
-        <div class="websearch-settings-icon">🌐</div>
-        <div class="websearch-settings-copy">
-          <p class="eyebrow">AI · RICERCA RICETTE</p>
-          <h2>Cerca ricette nel web</h2>
-          <p>${configured
-            ? 'Il Worker è configurato: dal Ricettario tocca “Cerca nel web”, indica ingredienti e pasto e ricevi fino a 10 ricette aderenti alle grammature del dott. Meller.'
-            : 'Worker non configurato: inserisci l’URL /recipes in js/web-search-config.js e pubblica il Worker Cloudflare gratuito.'}</p>
-          <small>La chiave Gemini resta nel Worker: la webapp invia solo la richiesta autenticata con il tuo account.</small>
-        </div>
-        <button class="btn ${configured ? 'btn-primary' : 'btn-outline'}" type="button" onclick="window.PianoWebSearch.open()">${configured ? 'Cerca nel web' : 'Configura e prova'}</button>
-      </section>`;
-  }
+  // La ricerca ricette vive SOLO nel Ricettario ("🌐 Cerca nel web"): nelle
+  // Impostazioni non esiste più alcuna sezione AI.
 
   root.PianoWebSearch = {
     init: ensureUi,
     open: openModal,
     close: closeModal,
-    settingsSectionHtml,
     isOpen: () => state.open,
     _state: state,
     _search: searchRecipes

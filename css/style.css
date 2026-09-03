@@ -733,6 +733,10 @@ input[type="checkbox"], input[type="radio"] { accent-color: var(--primary); widt
 .incoming-share-actions .btn { min-height: 38px; padding: 6px 10px; font-size: .76rem; }
 
 /* Tema scuro */
+/* Tema AMOLED: nero puro (#000) su OLED significa pixel spenti. Tutte le
+   variabili del tema chiaro vengono ridefinite qui, comprese quelle di
+   accento: sui fondi neri i colori originali (pensati per il bianco) non
+   avevano contrasto sufficiente. */
 html.dark-mode {
   color-scheme: dark;
 
@@ -749,9 +753,14 @@ html.dark-mode {
   --primary-strong: #8AF0BA;
   --primary-soft: #071B11;
 
+  --accent: #E6A976;
   --accent-soft: #211207;
+  --rest: #8FBEDA;
   --rest-soft: #07131B;
+  --danger: #F2818A;
   --danger-soft: #200709;
+  --success: #6EE7A5;
+  --warning: #E0A860;
 
   --shadow: none;
 
@@ -855,6 +864,65 @@ body.dark-mode .login-card {
   color: #FFFFFF;
   border-color: #202020;
   box-shadow: none;
+}
+
+/* Accesso in AMOLED: niente sfondo verde acceso, il nero puro copre tutta la
+   schermata anche prima che l'utente sia autenticato. */
+body.dark-mode .login-screen {
+  background: #000000;
+}
+
+body.dark-mode .login-decoration {
+  background: rgba(110, 231, 165, .05);
+}
+
+/* Header e barra inferiore: superfici nere, non il verde del tema chiaro. */
+body.dark-mode .global-header {
+  color: #FFFFFF;
+}
+
+body.dark-mode .global-header select {
+  border-color: #282828;
+  background: #080808;
+  color: #FFFFFF;
+}
+
+body.dark-mode .header-account {
+  color: var(--text-muted);
+}
+
+/* Banner PWA "nuova versione": in AMOLED resta scuro con bordo verde. */
+body.dark-mode .sw-update-banner {
+  background: #080808;
+  border: 1px solid #232323;
+  color: #FFFFFF;
+  box-shadow: none;
+}
+
+body.dark-mode .sw-update-banner button {
+  background: var(--primary);
+  color: #04120B;
+}
+
+/* Suggerimento batch nella sostituzione: la versione chiara usava #ffe6d3. */
+body.dark-mode .swap-item.batch-suggestion-item:hover,
+body.dark-mode .swap-item.batch-suggestion-item.selected {
+  background: rgba(214, 138, 74, .24);
+}
+
+/* Testo su fondo pieno: in AMOLED il primario è chiaro, serve testo scuro. */
+body.dark-mode .btn-primary,
+body.dark-mode .today-badge,
+body.dark-mode .account-avatar,
+body.dark-mode .batch-task-status.today,
+body.dark-mode .price-unit-btn.active,
+body.dark-mode .price-filter-pill.active,
+body.dark-mode .price-winner-card {
+  color: #04120B;
+}
+
+body.dark-mode .batch-task-status.fresh {
+  color: #041018;
 }
 
 /* Responsive */
@@ -1886,9 +1954,25 @@ body.dark-mode .meller-notice-list li strong { color: #E6A976; }
 
 .websearch-results { display: flex; flex-direction: column; gap: 9px; margin-top: 14px; }
 .websearch-results:empty { margin-top: 0; }
-.websearch-card { padding: 12px 13px; border: 1px solid var(--line); border-radius: 15px; background: var(--surface); text-align: left; cursor: pointer; transition: border .15s, box-shadow .15s; }
+.websearch-card { padding: 12px 13px; border: 1px solid var(--line); border-radius: 15px; background: var(--surface); text-align: left; transition: border .15s, box-shadow .15s; }
 .websearch-card:hover,
-.websearch-card:focus-visible { border-color: var(--primary); box-shadow: var(--shadow); outline: 0; }
+.websearch-card:focus-within { border-color: var(--primary); box-shadow: var(--shadow); outline: 0; }
+.websearch-card-open { cursor: pointer; }
+.websearch-card-open:focus-visible { outline: 2px solid var(--primary); outline-offset: 3px; border-radius: 10px; }
+
+/* Scostamenti rispetto alle grammature Meller: calcolati nell'app sulle
+   ricette trovate (il modello non riceve le grammature) e correggibili con un
+   click, sulla singola scheda o su tutte insieme. */
+.websearch-meller-flag { margin-left: 6px; color: var(--warning); font-size: .8rem; }
+.websearch-meller-ok { margin-left: 6px; color: var(--success); font-size: .7rem; font-weight: 800; }
+.websearch-meller { margin: 9px 0 8px; padding: 9px 11px; border: 1px solid rgba(186,118,40,.28); border-radius: 11px; background: var(--accent-soft); }
+.websearch-meller-head { color: var(--warning); font-size: .74rem; font-weight: 800; }
+.websearch-meller-list { margin: 6px 0 8px; padding: 0; list-style: none; display: grid; gap: 3px; }
+.websearch-meller-list li { display: flex; justify-content: space-between; gap: 10px; font-size: .74rem; }
+.websearch-meller-list li span { color: var(--text-muted); overflow-wrap: anywhere; }
+.websearch-meller-list li strong { white-space: nowrap; }
+.websearch-meller-more { color: var(--text-muted); font-style: italic; }
+.websearch-meller-fix { width: 100%; min-height: 36px; font-size: .76rem; }
 .websearch-card-head { display: flex; align-items: center; gap: 10px; }
 .websearch-card-emoji { font-size: 1.4rem; }
 .websearch-card-head div { min-width: 0; }
@@ -1904,19 +1988,9 @@ body.dark-mode .meller-notice-list li strong { color: #E6A976; }
 .websearch-actions { display: flex; gap: 9px; margin-top: 4px; }
 .websearch-actions .btn { flex: 1; }
 
-.websearch-settings-section { display: flex; align-items: center; gap: 13px; }
-.websearch-settings-icon { display: grid; place-items: center; flex: 0 0 auto; width: 40px; height: 40px; border-radius: 14px; background: var(--primary); color: #fff; font-size: 1.2rem; box-shadow: 0 5px 14px rgba(36,90,67,.2); }
-.websearch-settings-copy { flex: 1; min-width: 0; }
-.websearch-settings-copy h2 { margin: 2px 0 3px; }
-.websearch-settings-copy p:not(.eyebrow) { color: var(--text-muted); font-size: .83rem; }
-.websearch-settings-copy small { display: block; margin-top: 3px; color: var(--text-muted); font-size: .7rem; }
-.websearch-settings-section > .btn { flex: 0 0 auto; }
-
 @media (max-width: 620px) {
   .web-search-content { padding: 18px; border-radius: 20px; }
   .websearch-actions { flex-direction: column; }
-  .websearch-settings-section { align-items: flex-start; flex-wrap: wrap; }
-  .websearch-settings-section > .btn { margin-left: 53px; }
 }
 
 @media (prefers-reduced-motion: reduce) {
@@ -1927,25 +2001,30 @@ body.dark-mode .meller-notice-list li strong { color: #E6A976; }
 body.dark-mode .websearch-field input,
 body.dark-mode .websearch-field select,
 body.dark-mode .websearch-card { background: #000; border-color: #242424; }
-body.dark-mode .websearch-settings-icon { background: #1f5a40; }
 body.dark-mode .websearch-error { border-color: #5a2626; }
+body.dark-mode .websearch-meller { background: rgba(214,138,74,.1); border-color: rgba(214,138,74,.42); }
 
-/* Tabelle equivalenze Meller: colonne stabili decise dal tipo di tabella, non
- * dalla lunghezza della riga. Carboidrati = Alimento | Pranzo | Cena (3
- * colonne), proteine = Alimento | Pranzo (2 colonne): così una riga con un
- * numero di celle diverso non sposta le colonne né rompe il rendering. */
-.alternative-table.meller-carbs > div { display: grid; grid-template-columns: minmax(0, 1fr) 72px 72px; gap: 16px; align-items: center; }
-.alternative-table.meller-proteins > div { display: grid; grid-template-columns: minmax(0, 1fr) 72px; gap: 16px; align-items: center; }
+/* Tabelle equivalenze Meller: colonne stabili decise dalla classe `cols-N`
+ * generata dal numero reale di intestazioni, non dalla lunghezza della riga.
+ *   - popup di una giornata: Alimento | Pranzo A (o R) | Cena  → cols-3
+ *   - Impostazioni (nessuna giornata): Alimento | Pranzo A | Pranzo R | Cena → cols-4
+ *   - proteine (dose unica pranzo/cena): Alimento | Pranzo e cena → cols-2
+ * Così una riga con un numero di celle diverso non sposta le colonne. */
+.alternative-table.cols-2 > div { display: grid; grid-template-columns: minmax(0, 1fr) 72px; gap: 16px; align-items: center; }
+.alternative-table.cols-3 > div { display: grid; grid-template-columns: minmax(0, 1fr) 72px 72px; gap: 16px; align-items: center; }
+.alternative-table.cols-4 > div { display: grid; grid-template-columns: minmax(0, 1fr) 66px 66px 66px; gap: 12px; align-items: center; }
 .alternative-table.meller-carbs > div strong,
 .alternative-table.meller-proteins > div strong { text-align: right; }
 /* Cella inattesa oltre le colonne previste: va a capo su tutta la larghezza. */
-.alternative-table.meller-carbs > div > :nth-child(n+4),
-.alternative-table.meller-proteins > div > :nth-child(n+3) { grid-column: 1 / -1; text-align: left; }
+.alternative-table.cols-2 > div > :nth-child(n+3),
+.alternative-table.cols-3 > div > :nth-child(n+4),
+.alternative-table.cols-4 > div > :nth-child(n+5) { grid-column: 1 / -1; text-align: left; }
 .alternative-table .alternative-head { background: var(--surface-alt); color: var(--text-muted); font-size: .72rem; text-transform: uppercase; letter-spacing: .04em; }
 .alternative-table .alternative-head strong:first-child { text-align: left; }
 @media (max-width: 520px) {
-  .alternative-table.meller-carbs > div { grid-template-columns: minmax(0, 1fr) 56px 56px; gap: 8px; padding-left: 9px; padding-right: 9px; }
-  .alternative-table.meller-proteins > div { grid-template-columns: minmax(0, 1fr) 56px; gap: 8px; padding-left: 9px; padding-right: 9px; }
+  .alternative-table.cols-2 > div { grid-template-columns: minmax(0, 1fr) 56px; gap: 8px; padding-left: 9px; padding-right: 9px; }
+  .alternative-table.cols-3 > div { grid-template-columns: minmax(0, 1fr) 56px 56px; gap: 8px; padding-left: 9px; padding-right: 9px; }
+  .alternative-table.cols-4 > div { grid-template-columns: minmax(0, 1fr) 48px 48px 48px; gap: 6px; padding-left: 9px; padding-right: 9px; }
   .alternative-table.meller-carbs > div span,
   .alternative-table.meller-proteins > div span { overflow-wrap: anywhere; }
 }

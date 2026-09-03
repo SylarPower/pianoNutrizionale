@@ -429,16 +429,69 @@
     ].join('\n');
   }
 
-  // Righe delle tabelle dei popup: carboidrati = pranzo riposo + cena,
-  // proteine = dose di pranzo (identica a cena).
+  // Righe delle tabelle delle alternative. `dayType` sceglie la colonna del
+  // pranzo: 'training' (giorno A), 'rest' (giorno R) oppure 'both' per le
+  // Impostazioni, dove non esiste una giornata di contesto e servono entrambe.
+  // La cena è identica nei due giorni, quindi resta una colonna sola.
   function alternativeRows(entries, { dayType, includeDinner = false }) {
+    const gram = value => (Number.isFinite(value) ? `${value}g` : '—');
     return entries.map(entry => {
       const item = describeAlternative(entry);
-      const lunch = dayType === 'training' ? item.lunchTraining : item.lunchRest;
-      const row = [entry.label, Number.isFinite(lunch) ? `${lunch}g` : '—'];
-      if (includeDinner) row.push(Number.isFinite(item.dinner) ? `${item.dinner}g` : '—');
+      const row = [entry.label];
+      if (dayType === 'both') row.push(gram(item.lunchTraining), gram(item.lunchRest));
+      else row.push(gram(dayType === 'training' ? item.lunchTraining : item.lunchRest));
+      if (includeDinner) row.push(gram(item.dinner));
       return row;
     });
+  }
+
+  // Etichette del giorno usate nei titoli delle tabelle.
+  const MELLER_DAY_LABELS = { training: 'giorno di allenamento', rest: 'giorno di riposo' };
+
+  function normalizeMellerDayType(dayType) {
+    return dayType === 'rest' ? 'rest' : (dayType === 'both' ? 'both' : 'training');
+  }
+
+  // Tabelle delle alternative per la giornata che si sta visualizzando.
+  // A pranzo le dosi dei carboidrati cambiano tra giorno di allenamento (A) e
+  // giorno di riposo (R): il popup deve mostrare quelle del giorno aperto, non
+  // sempre quelle di riposo. La cena e tutte le proteine restano invariate.
+  // Con `dayType: 'both'` (Impostazioni, nessuna giornata di contesto) la
+  // tabella dei carboidrati mostra entrambe le colonne di pranzo.
+  function mellerAlternativeGroups(dayType) {
+    const day = normalizeMellerDayType(dayType);
+    const both = day === 'both';
+    const carbReference = MELLER_ALTERNATIVES.carbohydrates[0];
+    const proteinReference = MELLER_ALTERNATIVES.proteins[0];
+    const carbLunch = day === 'rest' ? carbReference.lunchRest : carbReference.lunchTraining;
+    const dayNote = both ? '' : ` · ${MELLER_DAY_LABELS[day]}`;
+    const carbReferenceText = both
+      ? `Pasta/Riso ${carbReference.lunchTraining}g a pranzo A, ${carbReference.lunchRest}g a pranzo R, ${carbReference.dinner}g a cena`
+      : `Pasta/Riso ${carbLunch}g a pranzo, ${carbReference.dinner}g a cena`;
+    const lunchColumns = both ? ['Pranzo A', 'Pranzo R'] : [day === 'training' ? 'Pranzo A' : 'Pranzo R'];
+    return {
+      carbohydrates: {
+        kind: 'carbs',
+        dayType: day,
+        columns: ['Alimento', ...lunchColumns, 'Cena'],
+        title: `Carboidrati${dayNote} · riferimento ${carbReferenceText}`,
+        subtitle: `Carboidrati equivalenti${dayNote} · riferimento ${carbReferenceText}`,
+        note: 'A cena è ammesso qualsiasi carboidrato di questa tabella, con la dose cena indicata.',
+        reference: { label: 'Pasta/Riso', families: carbReference.families },
+        rows: alternativeRows(MELLER_CARB_ALTERNATIVES, { dayType: day, includeDinner: true })
+      },
+      proteins: {
+        kind: 'proteins',
+        dayType: day,
+        columns: ['Alimento', 'Pranzo e cena'],
+        title: `Proteine · riferimento ${proteinReference.label} ${proteinReference.lunchTraining}g`,
+        subtitle: `Proteine equivalenti · riferimento ${proteinReference.label} ${proteinReference.lunchTraining}g`,
+        note: 'Le proteine mantengono la stessa dose a pranzo e a cena, nel giorno di allenamento e in quello di riposo.',
+        reference: { label: proteinReference.label, families: proteinReference.families },
+        // Le dosi proteiche non cambiano mai: una sola colonna, identica in A e R.
+        rows: alternativeRows(MELLER_PROTEIN_ALTERNATIVES, { dayType: 'training' })
+      }
+    };
   }
 
   function proteinFrequencyText(item) {
@@ -488,26 +541,10 @@
           { title: 'Cena', lines: [`Pollame ${proteinReference.lunchTraining}g`, carbDinnerLine, 'Verdura 200g', 'Olio EVO 10g'] }
         ]
       },
-      alternatives: {
-        carbohydrates: {
-          kind: 'carbs',
-          columns: ['Alimento', 'Pranzo', 'Cena'],
-          title: `Carboidrati · riferimento Pasta/Riso ${carbReference.lunchRest}g a pranzo, ${carbReference.dinner}g a cena`,
-          subtitle: `Carboidrati equivalenti · riferimento Pasta/Riso ${carbReference.lunchRest}g a pranzo, ${carbReference.dinner}g a cena`,
-          note: 'A cena è ammesso qualsiasi carboidrato di questa tabella, con la dose cena indicata.',
-          reference: { label: 'Pasta/Riso', families: carbReference.families },
-          rows: alternativeRows(MELLER_CARB_ALTERNATIVES, { dayType: 'rest', includeDinner: true })
-        },
-        proteins: {
-          kind: 'proteins',
-          columns: ['Alimento', 'Pranzo'],
-          title: `Proteine · riferimento ${proteinReference.label} ${proteinReference.lunchTraining}g`,
-          subtitle: `Proteine equivalenti · riferimento ${proteinReference.label} ${proteinReference.lunchTraining}g`,
-          note: 'Le proteine mantengono a cena la stessa dose prevista a pranzo.',
-          reference: { label: proteinReference.label, families: proteinReference.families },
-          rows: alternativeRows(MELLER_PROTEIN_ALTERNATIVES, { dayType: 'training' })
-        }
-      },
+      // Impostazioni: nessuna giornata di contesto, quindi la tabella dei
+      // carboidrati mostra entrambe le colonne di pranzo (A e R). I popup
+      // aperti da una giornata usano invece mellerAlternativeGroups(dayType).
+      alternatives: mellerAlternativeGroups('both'),
       proteinFrequencies: MELLER_PROTEIN_FREQUENCIES.map(item => [item.label, proteinFrequencyText(item)]),
       faq: [
         'Punta a un consumo di almeno 2-2,5 litri di acqua al giorno.',
@@ -2062,6 +2099,7 @@ const PROTEIN_CATEGORY_LABELS = {
     mellerFamilyToken,
     mellerMaxAmount,
     mellerAlternativeFamilies,
+    mellerAlternativeGroups,
     mellerFamiliesInText,
     mellerAlternativesText,
     mellerGuidelinesText,

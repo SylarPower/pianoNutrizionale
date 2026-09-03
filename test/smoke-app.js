@@ -400,6 +400,7 @@ assert.equal(recipeModal.classList.contains('hidden'), true, 'click iniziato fuo
 // documenti: con una cache locale valida loadUserData NON deve eseguire anche
 // le .get() iniziali. In modalità personale (nessun listener) le .get()
 // devono restare, altrimenti l'app non carica nulla.
+let backupChecks = Promise.resolve();
 const startupChecks = (async () => {
   const originals = {
     prepareDataScope: global.prepareDataScope,
@@ -466,45 +467,65 @@ assert.match(document.getElementById('view-settings').innerHTML, /Importazioni c
 assert.match(document.getElementById('view-settings').innerHTML, /Nessun backup/);
 
 // ---- Popup e tabelle delle alternative Meller (fonte unica js/domain.js) ----
-// Le Impostazioni mostrano le due tabelle: carboidrati a 3 colonne
-// (Alimento | Pranzo | Cena) e proteine a 2 colonne (Alimento | Pranzo).
+// Le Impostazioni non hanno una giornata di riferimento, quindi mostrano
+// entrambe le colonne pranzo: Alimento | Pranzo A | Pranzo R | Cena.
 {
   const settingsHtml = document.getElementById('view-settings').innerHTML;
-  assert.match(settingsHtml, /alternative-table meller-carbs/, 'tabella carboidrati nelle Impostazioni');
-  assert.match(settingsHtml, /alternative-table meller-proteins/, 'tabella proteine nelle Impostazioni');
-  assert.match(settingsHtml, /Carboidrati · riferimento Pasta\/Riso 70g a pranzo, 40g a cena/, 'titolo derivato dalla tabella');
-  assert.match(settingsHtml, /<strong>Alimento<\/strong><strong>Pranzo<\/strong><strong>Cena<\/strong>/, 'intestazione carboidrati a 3 colonne');
-  assert.match(settingsHtml, /<strong>Alimento<\/strong><strong>Pranzo<\/strong>(?!<strong>Cena)/, 'intestazione proteine a 2 colonne');
-  assert.match(settingsHtml, /Gnocchi di patate<\/span><strong>190g<\/strong><strong>120g<\/strong>/, 'riga gnocchi pranzo R + cena');
-  assert.match(settingsHtml, /Legumotti Barilla<\/span><strong>80g<\/strong>/, 'riga legumotti solo pranzo');
+  assert.match(settingsHtml, /alternative-table meller-carbs cols-4/, 'tabella carboidrati a 4 colonne nelle Impostazioni');
+  assert.match(settingsHtml, /alternative-table meller-proteins cols-2/, 'tabella proteine a 2 colonne nelle Impostazioni');
+  assert.match(settingsHtml, /Carboidrati · riferimento Pasta\/Riso 90g a pranzo A, 70g a pranzo R, 40g a cena/, 'titolo derivato dalla tabella');
+  assert.match(settingsHtml, /<strong>Alimento<\/strong><strong>Pranzo A<\/strong><strong>Pranzo R<\/strong><strong>Cena<\/strong>/, 'intestazione carboidrati con entrambe le giornate');
+  assert.match(settingsHtml, /<strong>Alimento<\/strong><strong>Pranzo e cena<\/strong>/, 'intestazione proteine a colonna unica');
+  assert.match(settingsHtml, /Gnocchi di patate<\/span><strong>250g<\/strong><strong>190g<\/strong><strong>120g<\/strong>/, 'riga gnocchi A + R + cena');
+  assert.match(settingsHtml, /Legumotti Barilla<\/span><strong>80g<\/strong>/, 'riga legumotti dose unica');
   assert.match(settingsHtml, /Fiocchi di latte \/ Uova intere<\/span><strong>180g<\/strong>/, 'riga fiocchi di latte 180g');
   assert.equal((settingsHtml.match(/<strong>Cena<\/strong>/g) || []).length, 1, 'una sola colonna Cena: la tabella proteine ne resta priva');
 }
 
 // Popup al tocco di un ingrediente: la tabella mostrata dipende dalla famiglia
-// canonica, non da una regex locale.
+// canonica e dalla GIORNATA della ricetta aperta.
 setupMellerModal();
+
+// Giornata di allenamento: a pranzo devono comparire le dosi A (pasta 90g).
+currentModal = { recipe: { id: 'X', slot: 'lunch', ingredients: [], steps: [] }, dayType: 'training' };
 openMellerAlternatives('Pasta integrale');
 {
   const popupHtml = document.getElementById('meller-modal-body')._innerHTML;
-  assert.match(popupHtml, /alternative-table meller-carbs/, 'popup carboidrati per la pasta');
+  assert.match(popupHtml, /alternative-table meller-carbs cols-3/, 'popup carboidrati per la pasta');
   assert.doesNotMatch(popupHtml, /meller-proteins/, 'nessuna tabella proteine per un carboidrato');
-  assert.match(popupHtml, /<strong>Alimento<\/strong><strong>Pranzo<\/strong><strong>Cena<\/strong>/, 'colonne Alimento | Pranzo | Cena');
+  assert.match(popupHtml, /<strong>Alimento<\/strong><strong>Pranzo A<\/strong><strong>Cena<\/strong>/, 'colonne Alimento | Pranzo A | Cena');
+  assert.doesNotMatch(popupHtml, /Pranzo R/, 'in allenamento non si mostrano le dosi di riposo');
   assert.match(popupHtml, /meller-highlight/, 'riga della pasta evidenziata');
-  assert.match(popupHtml, /Cous cous<\/span><strong>60g<\/strong><strong>40g<\/strong>/, 'riga cous cous presente');
-  assert.equal(document.getElementById('meller-modal-subtitle').textContent, 'Carboidrati equivalenti · riferimento Pasta/Riso 70g a pranzo, 40g a cena');
+  assert.match(popupHtml, /Pasta, Riso<\/span><strong>90g<\/strong><strong>40g<\/strong>/, 'pasta con la dose di allenamento');
+  assert.match(popupHtml, /Cous cous<\/span><strong>80g<\/strong><strong>40g<\/strong>/, 'cous cous con la dose di allenamento');
+  assert.equal(document.getElementById('meller-modal-subtitle').textContent, 'Carboidrati equivalenti · giorno di allenamento · riferimento Pasta/Riso 90g a pranzo, 40g a cena');
 }
-openMellerAlternatives('Petto di pollo');
+
+// Giornata di riposo: stesse righe, dosi R (pasta 70g).
+currentModal = { recipe: { id: 'X', slot: 'lunch', ingredients: [], steps: [] }, dayType: 'rest' };
+openMellerAlternatives('Pasta integrale');
 {
   const popupHtml = document.getElementById('meller-modal-body')._innerHTML;
-  assert.match(popupHtml, /alternative-table meller-proteins/, 'popup proteine per il pollo');
+  assert.match(popupHtml, /<strong>Alimento<\/strong><strong>Pranzo R<\/strong><strong>Cena<\/strong>/, 'colonne Alimento | Pranzo R | Cena');
+  assert.match(popupHtml, /Pasta, Riso<\/span><strong>70g<\/strong><strong>40g<\/strong>/, 'pasta con la dose di riposo');
+  assert.match(popupHtml, /Cous cous<\/span><strong>60g<\/strong><strong>40g<\/strong>/, 'cous cous con la dose di riposo');
+  assert.equal(document.getElementById('meller-modal-subtitle').textContent, 'Carboidrati equivalenti · giorno di riposo · riferimento Pasta/Riso 70g a pranzo, 40g a cena');
+}
+
+// Le proteine non cambiano con la giornata: colonna unica in entrambi i casi.
+['training', 'rest'].forEach(dayType => {
+  currentModal = { recipe: { id: 'X', slot: 'lunch', ingredients: [], steps: [] }, dayType };
+  openMellerAlternatives('Petto di pollo');
+  const popupHtml = document.getElementById('meller-modal-body')._innerHTML;
+  assert.match(popupHtml, /alternative-table meller-proteins cols-2/, `popup proteine (${dayType})`);
   assert.doesNotMatch(popupHtml, /meller-carbs/, 'nessuna tabella carboidrati per una proteina');
-  assert.doesNotMatch(popupHtml, /<strong>Cena<\/strong>/, 'la tabella proteine resta a due colonne');
+  assert.match(popupHtml, /<strong>Alimento<\/strong><strong>Pranzo e cena<\/strong>/, 'colonna unica per le proteine');
   assert.match(popupHtml, /Affettati sgrassati \/ Salumi magri<\/span><strong>100g<\/strong>/, 'salumi 100g');
   assert.match(popupHtml, /Uova intere<\/span><strong>180g<\/strong>/, 'uova 180g');
   assert.match(popupHtml, /Legumotti Barilla<\/span><strong>80g<\/strong>/, 'legumotti 80g');
   assert.equal(document.getElementById('meller-modal-subtitle').textContent, 'Proteine equivalenti · riferimento Pollame 200g');
-}
+});
+currentModal = null;
 closeMellerAlternatives();
 assert.equal(document.getElementById('meller-alternatives-modal').classList.contains('hidden'), true, 'popup chiuso');
 openMellerAlternatives('Zucchine');
@@ -758,10 +779,59 @@ assert.equal(
   true
 );
 
+// ---- Backup e annullamento: stato "pronto" e ripristino ----
+// Gira dopo startupChecks, che sostituisce temporaneamente readLocalJson.
+backupChecks = startupChecks.then(async () => {
+  renderSettings();
+  const emptyHtml = document.getElementById('view-settings').innerHTML;
+  assert.doesNotMatch(emptyHtml, /Annulla ultima modifica/, 'nessun pulsante senza backup');
+  assert.match(emptyHtml, /Appena esegui una di queste operazioni/, 'testo di stato vuoto');
+
+  writeLocalJson('backup_meta', {
+    operation: 'Eliminazione ricette',
+    description: '3 ricette eliminate',
+    createdAt: new Date('2026-02-03T10:30:00Z').toISOString()
+  });
+  renderSettings();
+  const readyHtml = document.getElementById('view-settings').innerHTML;
+  assert.match(readyHtml, /backup-status ready/, 'badge "Backup pronto"');
+  assert.match(readyHtml, /Eliminazione ricette/, 'operazione salvata mostrata');
+  assert.match(readyHtml, /3 ricette eliminate/, 'descrizione mostrata');
+  assert.match(readyHtml, /onclick="undoLastModification\(\)"/, 'pulsante di annullamento presente');
+
+  // Ripristino: restoreBackupAtomic riporta lo stato e consuma il punto di ripristino.
+  const originalRestore = global.restoreBackupAtomic;
+  const originalConfirm = global.confirm;
+  // Nello smoke non c'è un utente autenticato: i listener realtime non
+  // possono partire e non fanno parte di ciò che si sta verificando.
+  const originalSync = global.startAccountRealtimeSync;
+  const originalLocation = global.location;
+  global.startAccountRealtimeSync = () => {};
+  global.location = { hash: '#settings' };
+  global.confirm = () => true;
+  global.restoreBackupAtomic = async () => ({
+    catalog: { recipes: [R('L7', 'Ricetta ripristinata', 'lunch', 'Uova')] },
+    plan,
+    shoppingList: getDefaultShoppingList()
+  });
+  try {
+    await undoLastModification();
+    assert.equal(appState.recipes.some(recipe => recipe.id === 'L7'), true, 'catalogo ripristinato dal backup');
+    assert.equal(readLocalJson('backup_meta', null), null, 'punto di ripristino consumato');
+    renderSettings();
+    assert.match(document.getElementById('view-settings').innerHTML, /Nessun backup/, 'sezione tornata vuota');
+  } finally {
+    global.restoreBackupAtomic = originalRestore;
+    global.startAccountRealtimeSync = originalSync;
+    global.location = originalLocation;
+    global.confirm = originalConfirm;
+  }
+});
+
 clearTimeout(priceHistoryTimer);
 priceHistoryTimer = null;
 
-startupChecks.then(() => {
+Promise.all([startupChecks, backupChecks]).then(() => {
   console.log('SMOKE OK — tutti i percorsi di rendering eseguiti senza errori');
 }, error => {
   console.error(error);

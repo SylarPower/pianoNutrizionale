@@ -269,19 +269,42 @@ function bindModalOutsideClose(modalId, onClose) {
   modal.addEventListener("touchcancel", resetClose);
 }
 
+// Chiave locale NON legata all'account: replica il flag "Tema scuro" delle
+// impostazioni dispositivo così la schermata di accesso, l'overlay di
+// caricamento e il primo paint dopo un refresh partono già nel tema giusto,
+// prima che Firebase risolva la sessione e carichi le preferenze dell'utente.
+const THEME_BOOT_KEY = "pn_theme";
+
+function readBootTheme() {
+  try { return localStorage.getItem(THEME_BOOT_KEY) === "dark"; } catch (_) { return false; }
+}
+
+function writeBootTheme(isDark) {
+  try { localStorage.setItem(THEME_BOOT_KEY, isDark ? "dark" : "light"); } catch (_) {}
+}
+
+// Tema chiaro (default) oppure AMOLED (nero puro). Le variabili colore vivono
+// in css/style.css sotto `html.dark-mode`: qui si commuta solo la classe, su
+// <html> e su <body>, così anche login e overlay seguono il tema.
 function applyTheme(isDark) {
-  document.documentElement.classList.toggle("dark-mode", isDark);
-  document.body.classList.toggle("dark-mode", isDark);
+  const dark = Boolean(isDark);
+  document.documentElement?.classList.toggle("dark-mode", dark);
+  document.body?.classList.toggle("dark-mode", dark);
+  writeBootTheme(dark);
 
   const themeMeta = document.querySelector('meta[name="theme-color"]');
 
   if (themeMeta) {
     themeMeta.setAttribute(
       "content",
-      isDark ? "#000000" : "#245A43"
+      dark ? "#000000" : "#245A43"
     );
   }
 }
+
+// Applicato subito al caricamento dello script (prima di DOMContentLoaded e
+// molto prima dell'auth): evita il lampo di tema chiaro al riavvio della PWA.
+applyTheme(readBootTheme());
 
 function showLogin() {
   document.body.classList.add("auth-locked");
@@ -1183,12 +1206,11 @@ window.duplicateRecipe = function(recipeId = currentModal?.recipe?.id) {
   document.getElementById("recipe-modal").classList.remove("hidden");
 };
 
-// Importazione di una ricetta trovata con la ricerca web: si riusa
-// il popup ricetta già esistente. Le dosi arrivano così come trovate sul web;
-// il banner "non adattata a Meller" e il pulsante "Adatta a Meller" permettono
-// di riportarle alle grammature del manuale con un click, poi si salva nel
-// cloud con il normale pulsante di salvataggio.
-window.importRecipeFromWebSearch = function(data = {}) {
+// Conversione di una ricetta trovata sul web nello schema del catalogo. Le
+// dosi restano quelle della fonte: l'adattamento alle grammature Meller è una
+// scelta esplicita dell'utente (banner nel popup, "Correggi dosi Meller" nella
+// ricerca), non una trasformazione silenziosa.
+function recipeFromWebSearch(data = {}, idSuffix = "") {
   const source = data && typeof data === "object" ? data : {};
   const slot = MEAL_SLOTS.some(item => item.id === source.slot) ? source.slot : "lunch";
   const quantityFor = quantity => {
@@ -1213,8 +1235,8 @@ window.importRecipeFromWebSearch = function(data = {}) {
     if (["http:", "https:"].includes(parsed.protocol)) sourceUrl = parsed.href;
   } catch (_) {}
   if (sourceUrl) notes.push(`Fonte: ${sourceUrl}`);
-  const recipe = {
-    id: `U${Date.now()}`,
+  return {
+    id: `U${Date.now()}${idSuffix}`,
     slot,
     name: String(source.name || "Ricetta").trim() || "Ricetta",
     emoji: String(source.emoji || "").trim() || getSlotMeta(slot).emoji,
@@ -1224,11 +1246,53 @@ window.importRecipeFromWebSearch = function(data = {}) {
     notes,
     specialNote: String(source.specialNote || "").trim()
   };
+}
+
+// Importazione di UNA ricetta trovata con la ricerca web: si riusa il popup
+// ricetta già esistente. Le dosi arrivano così come trovate sul web; il banner
+// "non adattata a Meller" e il pulsante "Adatta a Meller" permettono di
+// riportarle alle grammature del manuale con un click, poi si salva nel cloud
+// con il normale pulsante di salvataggio.
+window.importRecipeFromWebSearch = function(data = {}) {
+  const recipe = recipeFromWebSearch(data);
   currentModal = { recipe, original: null, dayKey: null, dayType: getRecipePreviewDayType(), slot: null, isNew: true };
   editMode = true;
   renderModalContent();
   document.getElementById("recipe-modal").classList.remove("hidden");
   showToast("Ricetta trovata sul web: controlla dosi e preparazione, poi salva");
+};
+
+// Importazione IN BLOCCO delle ricette trovate sul web: si aggiungono a quelle
+// esistenti (mai sostituzione) in una sola scrittura del catalogo. Gli ID
+// duplicati vengono rinominati da mergeRecipeCatalogs, come per l'import JSON.
+window.importRecipesFromWebSearchBulk = async function(list = []) {
+  const incoming = (Array.isArray(list) ? list : [])
+    .map((item, index) => recipeFromWebSearch(item, `-${index}`));
+  if (!incoming.length) {
+    showToast("Nessuna ricetta da importare", true);
+    return false;
+  }
+  const notAdapted = incoming.filter(recipe =>
+    window.PianoDomain?.checkMellerAdaptation?.(recipe)?.adapted === false).length;
+  const mellerNote = notAdapted
+    ? `\n\n⚠ ${notAdapted} ricett${notAdapted === 1 ? "a ha dosi non aderenti" : "e hanno dosi non aderenti"} alle grammature del dott. Meller: potrai correggerle dal ricettario (badge ⚠ → "Adatta a Meller").`
+    : "";
+  if (!confirm(`Importare ${incoming.length} ricett${incoming.length === 1 ? "a" : "e"} nel ricettario, insieme a quelle esistenti?${mellerNote}`)) return false;
+  setLoading("Importazione delle ricette trovate…");
+  try {
+    const nextRecipes = PianoDomain.mergeRecipeCatalogs(appState.recipes, incoming);
+    await saveRecipeCatalog(nextRecipes);
+    setRecipes(nextRecipes);
+    if (window.location.hash === "#recipes") renderRecipes();
+    showToast(`${incoming.length} ricett${incoming.length === 1 ? "a importata" : "e importate"} ✅`);
+    return true;
+  } catch (error) {
+    console.error(error);
+    showToast(error.message || "Importazione non riuscita", true);
+    return false;
+  } finally {
+    clearLoading();
+  }
 };
 
 function normalizeIngredientName(name) {
@@ -1717,8 +1781,20 @@ function isMellerCarbIngredient(name) {
 function isMellerProteinIngredient(name) {
   return window.PianoDomain?.isMellerProteinIngredient?.(name) === true;
 }
-function getMellerAlternativesForIngredient(ingredientName) {
-  const guide = typeof MELLER_GUIDE !== "undefined" ? MELLER_GUIDE.alternatives : null;
+// Giornata di riferimento delle equivalenze Meller: quella della ricetta
+// aperta (giorno del piano oppure A/R scelto nell'anteprima del ricettario).
+// Senza contesto (Impostazioni) restano visibili entrambe le colonne pranzo.
+function getMellerAlternativesDayType() {
+  const dayType = currentModal?.dayType;
+  return ["training", "rest"].includes(dayType) ? dayType : "both";
+}
+
+function getMellerAlternativesForIngredient(ingredientName, dayType = getMellerAlternativesDayType()) {
+  // Le tabelle sono derivate dalla fonte unica per la giornata richiesta: a
+  // pranzo le dosi dei carboidrati cambiano tra allenamento e riposo.
+  const guide = window.PianoDomain?.mellerAlternativeGroups
+    ? PianoDomain.mellerAlternativeGroups(dayType)
+    : (typeof MELLER_GUIDE !== "undefined" ? MELLER_GUIDE.alternatives : null);
   if (!guide) return null;
   const isCarb = isMellerCarbIngredient(ingredientName);
   const isProtein = isMellerProteinIngredient(ingredientName);
@@ -1729,7 +1805,7 @@ function getMellerAlternativesForIngredient(ingredientName) {
   if (isCarb && !isProtein) groups = [guide.carbohydrates];
   else if (!isCarb && isProtein) groups = [guide.proteins];
   else groups = [guide.carbohydrates, guide.proteins];
-  return { groups, isCarb, isProtein };
+  return { groups, isCarb, isProtein, dayType };
 }
 function shouldHighlightMellerRow(rowLabel, ingredientName) {
   const rowNorm = normalizeIngredientName(rowLabel);
@@ -1744,11 +1820,11 @@ function shouldHighlightMellerRow(rowLabel, ingredientName) {
 // (`columns`), così il rendering non dipende dalla lunghezza delle righe.
 function mellerTableColumns(group) {
   if (Array.isArray(group?.columns) && group.columns.length) return group.columns;
-  return isMellerCarbGroup(group) ? ['Alimento', 'Pranzo', 'Cena'] : ['Alimento', 'Pranzo'];
+  return isMellerCarbGroup(group) ? ['Alimento', 'Pranzo', 'Cena'] : ['Alimento', 'Pranzo e cena'];
 }
 function isMellerCarbGroup(group) {
   if (group?.kind) return group.kind === 'carbs';
-  return group === MELLER_GUIDE.alternatives.carbohydrates || (group?.rows || []).some(row => row.length === 3);
+  return group === MELLER_GUIDE.alternatives.carbohydrates || (group?.rows || []).some(row => row.length >= 3);
 }
 function mellerTableHtmlWithHighlight(group, ingredientName) {
   const isCarb = isMellerCarbGroup(group);
@@ -1757,7 +1833,7 @@ function mellerTableHtmlWithHighlight(group, ingredientName) {
     const highlight = shouldHighlightMellerRow(row[0], ingredientName);
     return `<div class="${highlight ? "meller-highlight" : ""}">${row.map((cell, index) => index === 0 ? `<span>${escapeHtml(cell)}</span>` : `<strong>${escapeHtml(cell)}</strong>`).join("")}</div>`;
   }).join("");
-  return `<div class="alternative-table${isCarb ? " meller-carbs" : " meller-proteins"}"><h3>${escapeHtml(group.title)}</h3><div class="alternative-head">${headers.map(escapeHtml).map(header => `<strong>${header}</strong>`).join("")}</div>${rows}</div>`;
+  return `<div class="alternative-table${isCarb ? " meller-carbs" : " meller-proteins"} cols-${headers.length}"><h3>${escapeHtml(group.title)}</h3><div class="alternative-head">${headers.map(escapeHtml).map(header => `<strong>${header}</strong>`).join("")}</div>${rows}</div>`;
 }
 function setupMellerModal() {
   if (document.getElementById("meller-alternatives-modal")) return;
@@ -1778,9 +1854,10 @@ window.openMellerAlternatives = function(ingredientName) {
   const { groups, isCarb, isProtein } = data;
   document.getElementById("meller-modal-title").textContent = ingredientName;
   let subtitle = "";
-  // Sottotitoli derivati dalla fonte unica (nessun valore scritto qui).
-  if (isCarb && !isProtein) subtitle = MELLER_GUIDE.alternatives.carbohydrates.subtitle;
-  else if (!isCarb && isProtein) subtitle = MELLER_GUIDE.alternatives.proteins.subtitle;
+  // Sottotitoli derivati dalla fonte unica per la giornata aperta: nessun
+  // valore e nessuna etichetta di giorno scritti qui.
+  if (isCarb && !isProtein) subtitle = groups[0].subtitle;
+  else if (!isCarb && isProtein) subtitle = groups[0].subtitle;
   else subtitle = "Equivalenze disponibili per questo ingrediente";
   document.getElementById("meller-modal-subtitle").textContent = subtitle;
   const body = document.getElementById("meller-modal-body");
@@ -1804,7 +1881,10 @@ function alternativesTableHtml(group) {
   const isCarb = isMellerCarbGroup(group);
   const headers = mellerTableColumns(group);
   const rows = group.rows.map(row => `<div>${row.map((cell, index) => index === 0 ? `<span>${escapeHtml(cell)}</span>` : `<strong>${escapeHtml(cell)}</strong>`).join('')}</div>`).join('');
-  return `<div class="alternative-table${isCarb ? ' meller-carbs' : ' meller-proteins'}"><h3>${escapeHtml(group.title)}</h3><div class="alternative-head">${headers.map(header => `<strong>${escapeHtml(header)}</strong>`).join('')}</div>${rows}</div>`;
+  // `cols-N` allinea la griglia al numero reale di colonne: nelle Impostazioni
+  // i carboidrati ne hanno quattro (Alimento | Pranzo A | Pranzo R | Cena),
+  // nei popup di una giornata tre.
+  return `<div class="alternative-table${isCarb ? ' meller-carbs' : ' meller-proteins'} cols-${headers.length}"><h3>${escapeHtml(group.title)}</h3><div class="alternative-head">${headers.map(header => `<strong>${escapeHtml(header)}</strong>`).join('')}</div>${rows}</div>`;
 }
 
 function settingsAccordion(title, content, open = false) {
@@ -1845,8 +1925,6 @@ function renderSettings() {
       <h2>Aspetto</h2>
       <label class="settings-row"><span><strong>Tema scuro</strong><small>Solo su questo dispositivo</small></span><input type="checkbox" ${appState.deviceSettings.darkMode ? "checked" : ""} onchange="toggleDarkMode(this.checked)"></label>
     </section>
-
-    ${window.PianoWebSearch?.settingsSectionHtml?.() || ""}
 
     <div class="manual-heading"><p class="eyebrow">INDICAZIONI DI MELLER</p><h2>Manuale dieta e alternative</h2><p>Le alternative originali restano sempre consultabili nell'app.</p></div>
 
