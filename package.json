@@ -5,8 +5,8 @@
   "description": "WebApp PWA privata per piano nutrizionale, ricette e lista della spesa.",
   "scripts": {
     "test": "node --test test/*.test.js",
-    "smoke": "node test/smoke-app.js && node test/smoke-chat.js",
-    "syntax": "node --check js/domain.js && node --check js/data.js && node --check js/prices.js && node --check js/firebase.js && node --check js/app.js && node --check js/chat-config.js && node --check js/chat-domain.js && node --check js/chat.js && node --check cloudflare/ai-worker/src/index.js && node --check sw.js"
+    "smoke": "node test/smoke-app.js && node test/smoke-web-search.js",
+    "syntax": "node --check js/domain.js && node --check js/data.js && node --check js/prices.js && node --check js/firebase.js && node --check js/app.js && node --check js/web-search-config.js && node --check js/web-search.js && node --check cloudflare/ai-worker/src/index.js && node --check sw.js"
   },
   "engines": {
     "node": ">=18"

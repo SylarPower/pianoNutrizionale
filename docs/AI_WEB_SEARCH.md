@@ -1,40 +1,76 @@
-# Chat AI — assistente testuale
+# Ricerca ricette online
 
-La chat AI di Piano Nutrizionale è **solo testuale**: un pulsante fluttuante apre
-una chat in cui puoi scrivere (o dettare con il microfono della tastiera nativa
-del telefono/browser). Non esiste più alcun riconoscimento o sintesi vocale
-in-app né Gemini Live.
+L'AI di Piano Nutrizionale serve **solo a trovare nuove ricette dal web**: non
+esiste più alcuna chat, né risposte generaliste, né voce in-app.
 
-## Cosa fa
+## Come si usa
 
-- **Domande sulla webapp** (piano della settimana, singolo pasto, lista della
-  spesa, batch cooking, guida e alternative di Meller, account): risposte
-  calcolate **localmente dai dati dell'app**, senza alcuna chiamata AI esterna,
-  gratis e funzionanti anche offline.
-- **Nuove ricette dal web**: l'unica richiesta che esce verso internet. Scrivi
-  ad esempio *"ricetta con pollo e riso"* o *"ricette con orata"*: l'AI cerca
-  sul web e propone **fino a 10 ricette pertinenti**. Ogni proposta si apre nel
-  popup classico con ingredienti e preparazione e può essere importata nel
-  ricettario con il normale pulsante di salvataggio.
-- **Grammature del dott. Meller**: le ricette importate, nuove o modificate che
-  non rispettano le grammature del manuale per il proprio pasto e giorno A/R
-  vengono **segnalate** (banner nel popup e badge ⚠ nel ricettario) e si
-  correggono con un click su **"Adatta a Meller"**.
+1. Apri il **Ricettario** e tocca il pulsante **🌐 Cerca nel web** (primo
+   pulsante della barra strumenti; è presente anche nello stato vuoto e nelle
+   Impostazioni).
+2. Compila il form della modale:
+   - **Ingredienti essenziali** (obbligatorio) — es. `pollo, riso, zucchine`;
+   - **Tipo di pasto** (obbligatorio) — colazione, spuntino mattina, pranzo,
+     spuntino pomeriggio, cena (default: pranzo);
+   - **Preferenze** (facoltativo) — es. `veloce`, `senza glutine`, `al forno`.
+3. Premi **🔎 Cerca**: il Worker interroga Gemini con Google Search grounding e
+   restituisce **fino a 10 ricette** del pasto scelto, aderenti alle grammature
+   del dott. Meller.
+4. Tocca una scheda (mouse, `Invio` o `Spazio`): si apre il **popup ricetta
+   classico** già in modalità modifica, con ingredienti, preparazione e la fonte
+   nelle note. Salvi con il normale pulsante **Salva nel cloud**.
+5. Il pulsante **↻ Altre 10 ricette** ripete la ricerca **escludendo le ricette
+   già mostrate**; **← Modifica ricerca** riporta al form.
 
-La chat non esegue modifiche: è in sola lettura. Le correzioni restano manuali.
+## Grammature del dott. Meller
+
+Il flusso Meller resta invariato: le ricette importate, nuove o modificate che
+non rispettano le grammature del manuale per pasto e giorno A/R vengono
+**segnalate** (banner nel popup e badge ⚠ nel ricettario) e si correggono con un
+click su **"Adatta a Meller"**. Il Worker riceve inoltre i massimi Meller e la
+struttura dei pasti (`PianoDomain.mellerGuidelinesText()` /
+`mellerMealStructureText()`) e li usa nel prompt di sistema, così le ricette
+arrivano già vicine alle dosi corrette.
 
 ## Architettura
 
-- `js/chat-domain.js` — dominio puro: interpreta il testo italiano e risolve
-  giorno/pasto/intento senza DOM né rete.
-- `js/chat.js` — interfaccia e motore della chat (`window.PianoChat`), risposte
-  locali e chiamata al Worker per la ricerca di ricette.
-- `js/chat-config.js` — configurazione pubblica (URL del Worker).
+- `js/web-search-config.js` — configurazione pubblica (URL del Worker, lingua,
+  numero massimo di ricette).
+- `js/web-search.js` — modale e logica di ricerca (`window.PianoWebSearch`):
+  form, chiamata al Worker, schede risultato, "Altre 10 ricette".
+- `js/app.js` — `importRecipeFromWebSearch(recipe)` riusa il popup ricetta
+  esistente per l'importazione.
 - `js/domain.js` — grammature Meller (`checkMellerAdaptation`,
   `adaptRecipeToMeller`) usate da popup e ricettario.
-- `cloudflare/ai-worker` — Worker con un solo endpoint `POST /recipes`
-  che interroga Gemini (API testuale, modello `gemini-3.6-flash` di default) con
-  Google Search grounding e restituisce le ricette candidate.
+- `cloudflare/ai-worker` — Worker con un solo endpoint `POST /recipes` che
+  interroga Gemini (modello `gemini-3.6-flash` di default) con Google Search
+  grounding e restituisce le ricette candidate.
+
+### Body della richiesta `POST /recipes`
+
+```json
+{
+  "query": "ricetta con pollo, riso per pranzo — veloce",
+  "slot": "lunch",
+  "language": "it-IT",
+  "maxRecipes": 10,
+  "excludeNames": ["Pollo al curry"],
+  "guidelines": "…massimi Meller…",
+  "mealStructure": "…struttura dei pasti…"
+}
+```
+
+Il Worker filtra le ricette restituite tenendo solo quelle dello `slot`
+richiesto e ne restituisce al massimo 10, insieme alle fonti.
+
+### Fallback automatico del modello
+
+Il Worker prova i modelli in ordine: `gemini-3.6-flash` (o `GEMINI_TEXT_MODEL`),
+poi `gemini-3.5-flash`, `gemini-3.1-flash-lite`, `gemini-2.5-flash-lite`. Se un
+modello risponde 429/404 o segnala quota, fatturazione, modello deprecato o non
+disponibile, si passa automaticamente al successivo. Se falliscono tutti, l'app
+mostra: *"La quota gratuita di Gemini è esaurita oppure la fatturazione del
+progetto Google non è attiva…"*.
 
 ## Configurazione gratuita
 
@@ -51,7 +87,7 @@ un errore comprensibile.
 
 1. Apri [Google AI Studio](https://aistudio.google.com/apikey).
 2. Crea una API key per il progetto desiderato.
-3. Non copiarla in `index.html`, `js/chat.js`, `js/chat-config.js` o in Git.
+3. Non copiarla in `index.html`, `js/web-search.js`, `js/web-search-config.js` o in Git.
 4. Tienila pronta per `wrangler secret put`.
 
 ### 2. Crea e pubblica il Worker
@@ -96,10 +132,10 @@ nella configurazione pubblica).
 
 ### 3. Inserisci l'URL nella PWA
 
-Apri `js/chat-config.js` e valorizza l'URL pubblico del Worker:
+Apri `js/web-search-config.js` e valorizza l'URL pubblico del Worker:
 
 ```js
-window.PIANO_AI_CONFIG = Object.freeze({
+window.PIANO_WEB_SEARCH_CONFIG = Object.freeze({
   recipesEndpoint: "https://piano-nutrizionale-ai.<account>.workers.dev/recipes",
   language: "it-IT",
   maxRecipes: 10
@@ -132,16 +168,16 @@ i "q.b." e le quantità non esprimibili in grammi.
 
 - il Worker accetta solo `POST /recipes` da origini configurate e verifica il
   Firebase ID token prima di interrogare Gemini;
-- l'app non salva audio, cronologie della chat o trascrizioni;
+- l'app non salva cronologie delle ricerche;
 - il contesto inviato al modello è la sola richiesta di ricetta dell'utente;
 - il free tier Gemini è soggetto alle condizioni Google sull'uso dei dati per
   migliorare i prodotti.
 
 ## Problemi comuni
 
-### `Per cercare nuove ricette serve il Worker Cloudflare`
-`recipesEndpoint` in `js/chat-config.js` è vuoto o errato. L'URL deve terminare
-con `/recipes`. Le domande su piano, ricette e spesa funzionano comunque.
+### `Per cercare ricette dal web serve il Worker Cloudflare`
+`recipesEndpoint` in `js/web-search-config.js` è vuoto o errato. L'URL deve
+terminare con `/recipes`.
 
 ### `Origine non autorizzata`
 L'origine aperta nel browser non compare in `ALLOWED_ORIGINS`, oppure c'è uno
@@ -159,5 +195,5 @@ testuale con Google Search grounding.
 
 ### Quota gratuita esaurita
 La webapp non effettua acquisti automatici. Verifica uso e limiti del progetto
-su <https://aistudio.google.com/rate-limit>; le domande sulla webapp restano
-sempre disponibili perché non usano Gemini.
+su <https://aistudio.google.com/rate-limit>. Il Worker prova prima tutti i
+modelli di fallback: solo se falliscono tutti mostra l'errore sulla quota.

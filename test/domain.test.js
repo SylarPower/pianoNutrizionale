@@ -1394,7 +1394,9 @@ const mportion = (manTraining, manRest = manTraining, ipoTraining = manTraining,
 });
 
 test('Meller: riconosce la famiglia e l\'ordine delle regole', () => {
-  assert.equal(d.mellerRuleForIngredient('Fiocchi di latte').family, 'formaggi');
+  assert.equal(d.mellerRuleForIngredient('Fiocchi di latte').family, 'fiocchiLatte', 'fiocchi di latte hanno una famiglia propria (180g)');
+  assert.equal(d.mellerRuleForIngredient('Legumotti Barilla').family, 'legumotti', 'i legumotti precedono i legumi (80g)');
+  assert.equal(d.mellerRuleForIngredient('Lenticchie').family, 'legumi');
   assert.equal(d.mellerRuleForIngredient('Latte parzialmente scremato').family, 'latte');
   assert.equal(d.mellerRuleForIngredient('Orata').family, 'pesceBianco');
   assert.equal(d.mellerRuleForIngredient('Salmone').family, 'pesceOmega');
@@ -1455,4 +1457,77 @@ test('Meller: una ricetta già adattata non viene segnalata né modificata', () 
   ]);
   assert.equal(d.checkMellerAdaptation(pranzo).adapted, true);
   assert.equal(d.adaptRecipeToMeller(pranzo).changed, false);
+});
+
+// ---------------------------------------------------------------------
+// Manuale Meller a fonte unica: tutto deriva da MELLER_GRAMMATURE.
+// ---------------------------------------------------------------------
+
+test('Meller fonte unica: DEFAULT_CONSTRAINTS derivano dalle frequenze proteiche', () => {
+  assert.deepEqual(d.DEFAULT_CONSTRAINTS, {
+    poultryMin: 1, poultryMax: 2,
+    beefMin: 0, beefMax: 1,
+    curedMeatsMin: 0, curedMeatsMax: 1,
+    omegaMin: 2, omegaMax: 3,
+    otherFishMin: 1, otherFishMax: 2,
+    dairyMin: 1, dairyMax: 2,
+    eggsMin: 1, eggsMax: 2,
+    legumesMin: 3, legumesMax: 14
+  });
+  assert.equal(d.MELLER_PROTEIN_FREQUENCIES.length, 8);
+});
+
+test('Meller fonte unica: CARB_REFERENCE deriva dalle grammature', () => {
+  const pasta = d.carbSourceForName('Pasta integrale');
+  assert.deepEqual(pasta.pranzo, { training: 90, rest: 70 }, 'pasta a pranzo 90/70');
+  assert.equal(pasta.cena, null, 'la pasta non ha un riferimento di cena');
+  const pane = d.carbSourceForName('Pane di segale');
+  assert.deepEqual(pane.pranzo, { training: 120, rest: 90 });
+  assert.deepEqual(pane.cena, { training: 60, rest: 60 }, 'pane a cena 60/60');
+  assert.equal(d.carbSourceForName('Gnocchi di patate').key, 'gnocchi', 'gnocchi prima di patate');
+  assert.equal(d.carbSourceForName('Trofie').label, 'Trofie');
+  assert.equal(d.carbSourceForName('Zucchine'), null);
+});
+
+test('Meller fonte unica: le alternative della guida derivano dalla tabella', () => {
+  const carbs = Object.fromEntries(d.MELLER_GUIDE.alternatives.carbohydrates.rows);
+  assert.equal(d.MELLER_GUIDE.alternatives.carbohydrates.title, 'Carboidrati · riferimento Pasta/Riso 70g');
+  assert.equal(carbs['Gnocchi di patate'], '190g');
+  assert.equal(carbs['Patate'], '350g');
+  const proteins = Object.fromEntries(d.MELLER_GUIDE.alternatives.proteins.rows);
+  assert.equal(d.MELLER_GUIDE.alternatives.proteins.title, 'Proteine · riferimento Pollame 200g');
+  assert.equal(proteins['Fiocchi di latte / Uova intere'], '180g', 'fiocchi di latte corretti a 180g');
+  assert.equal(proteins['Montasio / Grana'], '50g');
+  assert.equal(proteins['Legumotti Barilla'], '80g', 'legumotti corretti a 80g');
+  assert.equal(proteins['Legumi in scatola o bolliti'], '240g');
+});
+
+test('Meller fonte unica: le frequenze proteiche sono formattate correttamente', () => {
+  const rows = Object.fromEntries(d.MELLER_GUIDE.proteinFrequencies);
+  assert.equal(rows['Legumi e derivati'], 'Almeno 3 volte a settimana');
+  assert.equal(rows['Manzo e maiale'], 'Massimo 1 volta a settimana');
+  assert.equal(rows['Pollame'], '1-2 volte a settimana');
+});
+
+test('Meller fonte unica: i testi per il prompt del Worker contengono i massimi', () => {
+  const guidelines = d.mellerGuidelinesText();
+  assert.match(guidelines, /pollame 200 g/);
+  assert.match(guidelines, /olio EVO 10 g/);
+  assert.match(guidelines, /frutta secca 20 g/);
+  assert.match(d.mellerMealStructureText(), /pranzo:/);
+  assert.match(d.mellerMealStructureText(), /cena:/);
+});
+
+test('Meller fonte unica: fiocchi di latte 180g e legumotti 80g nelle ricette', () => {
+  const pranzo = recipe('X5', 'Fiocchi e legumotti', 'lunch', [
+    ingredient('Fiocchi di latte', mportion('180g')),
+    ingredient('Legumotti Barilla', mportion('80g'))
+  ]);
+  assert.equal(d.checkMellerAdaptation(pranzo).adapted, true, 'le nuove dosi non vengono segnalate');
+  const troppo = recipe('X6', 'Troppi legumotti', 'lunch', [
+    ingredient('Legumotti Barilla', mportion('240g'))
+  ]);
+  const check = d.checkMellerAdaptation(troppo);
+  assert.equal(check.adapted, false);
+  assert.equal(check.summary[0].expected, 80);
 });
