@@ -1740,11 +1740,13 @@ function shouldHighlightMellerRow(rowLabel, ingredientName) {
          rowTokens.some(tok => tok.length >= 4 && ingNorm.includes(tok));
 }
 function mellerTableHtmlWithHighlight(group, ingredientName) {
+  const isCarb = group === MELLER_GUIDE.alternatives.carbohydrates;
+  const headers = isCarb ? ['Alimento', 'Pranzo', 'Cena'] : ['Alimento', 'Pranzo'];
   const rows = group.rows.map(row => {
     const highlight = shouldHighlightMellerRow(row[0], ingredientName);
-    return `<div class="${highlight ? "meller-highlight" : ""}"><span>${escapeHtml(row[0])}</span><strong>${escapeHtml(row[1])}</strong></div>`;
+    return `<div class="${highlight ? "meller-highlight" : ""}">${row.map((cell, index) => index === 0 ? `<span>${escapeHtml(cell)}</span>` : `<strong>${escapeHtml(cell)}</strong>`).join("")}</div>`;
   }).join("");
-  return `<div class="alternative-table${group === MELLER_GUIDE.alternatives.carbohydrates ? " meller-carbs" : " meller-proteins"}"><h3>${escapeHtml(group.title)}</h3>${rows}</div>`;
+  return `<div class="alternative-table${isCarb ? " meller-carbs" : " meller-proteins"}"><h3>${escapeHtml(group.title)}</h3><div class="alternative-head">${headers.map(escapeHtml).map(header => `<strong>${header}</strong>`).join("")}</div>${rows}</div>`;
 }
 function setupMellerModal() {
   if (document.getElementById("meller-alternatives-modal")) return;
@@ -1787,7 +1789,10 @@ function guideDayHtml(dayGuide, tone) {
 }
 
 function alternativesTableHtml(group) {
-  return `<div class="alternative-table"><h3>${escapeHtml(group.title)}</h3>${group.rows.map(row => `<div><span>${escapeHtml(row[0])}</span><strong>${escapeHtml(row[1])}</strong></div>`).join("")}</div>`;
+  const isCarb = group.rows.some(row => row.length === 3);
+  const headers = isCarb ? ['Alimento', 'Pranzo', 'Cena'] : ['Alimento', 'Pranzo'];
+  const rows = group.rows.map(row => `<div>${row.map((cell, index) => index === 0 ? `<span>${escapeHtml(cell)}</span>` : `<strong>${escapeHtml(cell)}</strong>`).join('')}</div>`).join('');
+  return `<div class="alternative-table${isCarb ? ' meller-carbs' : ' meller-proteins'}"><h3>${escapeHtml(group.title)}</h3><div class="alternative-head">${headers.map(header => `<strong>${escapeHtml(header)}</strong>`).join('')}</div>${rows}</div>`;
 }
 
 function settingsAccordion(title, content, open = false) {
