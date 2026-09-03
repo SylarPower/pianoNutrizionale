@@ -109,8 +109,6 @@
     // pseudo 40, couscous 40); le inverse cena→pranzo non si calcolano:
     // si rileggono pranzo A/R dalla tabella, perché il floor non è invertibile
     // (230*2=460, mentre il valore reale è 450).
-    { family: 'avena', group: 'carb', label: 'Avena', match: /avena|porridge|oatmeal/, slots: { breakfast: { training: 40, rest: 40 } } },
-    { family: 'cereali', group: 'carb', label: 'Cereali', match: /corn flakes|muesli|granola|cereali|fiocchi(?!\s+di\s+latte)/, slots: { breakfast: { training: 50, rest: 50 } } },
     { family: 'gnocchi', group: 'carb', label: 'Gnocchi', match: /gnocch/, slots: { lunch: { training: 250, rest: 190 }, dinner: { training: 120, rest: 120 } } },
     { family: 'polenta', group: 'carb', label: 'Polenta', match: /polenta/, slots: { lunch: { training: 430, rest: 340 }, dinner: { training: 220, rest: 220 } } },
     { family: 'piadina', group: 'carb', label: 'Piadina', match: /piadina|tortilla/, slots: { lunch: { training: 110, rest: 80 }, dinner: { training: 50, rest: 50 } } },
@@ -119,7 +117,7 @@
     { family: 'farroorzo', group: 'carb', label: 'Farro/Orzo', match: /\b(farro|orzo)\b/, slots: { lunch: { training: 90, rest: 70 }, dinner: { training: 40, rest: 40 } } },
     { family: 'pasta', group: 'carb', label: 'Pasta', match: /pasta|spaghetti|penne|rigatoni|linguine|tagliatelle|lasagne|trofie|fusilli/, slots: { lunch: { training: 90, rest: 70 }, dinner: { training: 40, rest: 40 } } },
     { family: 'riso', group: 'carb', label: 'Riso', match: /\briso\b|risotto/, slots: { lunch: { training: 90, rest: 70 }, dinner: { training: 40, rest: 40 } } },
-    { family: 'crackers', group: 'carb', label: 'Crackers/Grissini/Crostini', match: /cracker|grissin|crostin/, slots: { snack1: { training: 30, rest: 30 }, snack2: { training: 30, rest: 30 }, lunch: { training: 70, rest: 60 }, dinner: { training: 40, rest: 40 } } },
+    { family: 'crackers', group: 'carb', label: 'Crackers/Grissini/Crostini', match: /cracker|grissin|crostin/, slots: { lunch: { training: 70, rest: 60 }, dinner: { training: 40, rest: 40 } } },
     { family: 'patate', group: 'carb', label: 'Patate', match: /patat/, slots: { lunch: { training: 450, rest: 350 }, dinner: { training: 230, rest: 230 } } },
     { family: 'pane', group: 'carb', label: 'Pane', match: /\bpane\b|fette biscottate|wasa/, slots: { lunch: { training: 120, rest: 90 }, dinner: { training: 60, rest: 60 } } },
     // Proteine e latticini
@@ -134,18 +132,12 @@
     // I legumotti hanno una grammatura propria: la regola precede i legumi.
     { family: 'legumotti', group: 'protein', label: 'Legumotti', match: /legumott/, slots: { lunch: { training: 80, rest: 80 }, dinner: { training: 80, rest: 80 } } },
     { family: 'legumi', group: 'protein', label: 'Legumi', match: /legumi|ceci|lenticch|fagiol|pisell|edamame|soia|tofu|tempeh/, slots: { lunch: { training: 240, rest: 240 }, dinner: { training: 240, rest: 240 } } },
-    { family: 'uova', group: 'protein', label: 'Uova', match: /\buov|albume|tuorlo/, slots: { breakfast: { training: 60, rest: 60 }, lunch: { training: 180, rest: 180 }, dinner: { training: 180, rest: 180 } } },
+    { family: 'uova', group: 'protein', label: 'Uova', match: /\buov|albume|tuorlo/, slots: { lunch: { training: 180, rest: 180 }, dinner: { training: 180, rest: 180 } } },
     // I fiocchi di latte seguono le uova (180 g), non i formaggi stagionati.
     { family: 'fiocchiLatte', group: 'protein', label: 'Fiocchi di latte', match: /fiocchi di latte/, slots: { lunch: { training: 180, rest: 180 }, dinner: { training: 180, rest: 180 } } },
     { family: 'formaggi', group: 'protein', label: 'Formaggi', match: /formaggi|parmigiano|grana|pecorino|mozzarella|ricotta|stracchino|scamorza|feta|emmental|montasio|caprino|crescenza|robiola/, slots: { lunch: { training: 50, rest: 50 }, dinner: { training: 50, rest: 50 } } },
-    { family: 'latte', group: 'dairy', label: 'Latte', match: /\blatte\b/, slots: { breakfast: { training: 250, rest: 250 } } },
-    { family: 'yogurt', group: 'dairy', label: 'Yogurt/Kefir', match: /yogurt|kefir|skyr/, slots: { breakfast: { training: 100, rest: 100 }, snack2: { training: 150, rest: 150 } } },
     // Condimenti, dolcificanti e frutta
     { family: 'olio', group: 'fat', label: 'Olio EVO', match: /olio|extravergine|evo\b/, slots: { lunch: { training: 10, rest: 10 }, dinner: { training: 10, rest: 10 } } },
-    { family: 'miele', group: 'sweet', label: 'Miele/Sciroppo', match: /miele|sciroppo/, slots: { breakfast: { training: 10, rest: 10 }, snack2: { training: 15, rest: 15 } } },
-    { family: 'marmellata', group: 'sweet', label: 'Marmellata', match: /marmellata|confettura|composta/, slots: { breakfast: { training: 15, rest: 15 }, snack2: { training: 20, rest: 20 } } },
-    { family: 'fruttasecca', group: 'fruit', label: 'Frutta secca', match: /frutta secca|mandorle|noci|nocciole|arachidi|anacardi|pistacchi|pinoli|semi di|uvetta|datteri/, slots: { snack2: { training: 20, rest: 20 } } },
-    { family: 'frutta', group: 'fruit', label: 'Frutta fresca', match: /frutta fresca|mela|mele|banana|pera|arancia|kiwi|fragol|pesca|albicocc|uva|mango|ananas|melone|anguria|cachi|cilieg|mirtill|lampon|macedonia|clementin|mandarin|prugn|susin/, slots: { snack1: { training: 250, rest: 250 }, snack2: { training: 250, rest: 250 } } }
   ];
 
   function mellerGrammatureFor(family) {
@@ -189,61 +181,6 @@
     { key: 'eggs', label: 'Uova', min: 1, max: 2 },
     { key: 'legumes', label: 'Legumi e derivati', min: 3, max: 14 }
   ];
-
-  // Massimi per porzione (una persona) usati nel prompt della ricerca ricette.
-  // NON sono una seconda tabella: ogni voce aggancia una famiglia canonica e
-  // l'importo deriva da MELLER_GRAMMATURE (dose massima tra pasti e giorni A/R).
-  // `manualAmount` resta solo dove il manuale indica una porzione più generosa
-  // della dose di riferimento giornaliera (alternative di colazione/merenda):
-  // sono valori del manuale, non copie delle grammature. Un massimo non può
-  // invece essere più basso di una dose in tabella, altrimenti il prompt
-  // contraddirebbe le grammature complete.
-  const MELLER_RECIPE_MAX_SOURCES = [
-    { label: 'pollame', family: 'pollame' },
-    { label: 'manzo', family: 'manzo' },
-    { label: 'maiale', family: 'maiale' },
-    { label: 'pesce', family: 'pesceBianco' },
-    { label: 'legumi', family: 'legumi' },
-    { label: 'uova', family: 'uova' },
-    { label: 'pasta/riso', family: 'pasta' },
-    { label: 'gnocchi', family: 'gnocchi' },
-    { label: 'patate', family: 'patate' },
-    { label: 'pane', family: 'pane' },
-    { label: 'olio EVO', family: 'olio' },
-    { label: 'miele', family: 'miele', manualAmount: 20 },
-    { label: 'marmellata', family: 'marmellata', manualAmount: 30 },
-    { label: 'yogurt', family: 'yogurt', manualAmount: 200 },
-    { label: 'latte', family: 'latte' },
-    { label: 'formaggi', family: 'formaggi', manualAmount: 60 },
-    { label: 'crackers', family: 'crackers' },
-    { label: 'frutta fresca', family: 'frutta' },
-    { label: 'frutta secca', family: 'fruttasecca' }
-  ];
-
-  function buildMellerRecipeMaxAmounts() {
-    return MELLER_RECIPE_MAX_SOURCES.map(item => {
-      const grams = item.manualAmount ?? mellerMaxAmount(item.family);
-      return { label: item.label, family: item.family, grams, amount: `${grams} g` };
-    });
-  }
-
-  const MELLER_RECIPE_MAX_AMOUNTS = buildMellerRecipeMaxAmounts();
-
-  // Massimi Meller in forma testuale per il prompt del Worker.
-  function mellerGuidelinesText() {
-    return MELLER_RECIPE_MAX_AMOUNTS.map(item => `${item.label} ${item.amount}`).join(', ');
-  }
-
-  // Struttura dei pasti in forma testuale per il prompt del Worker.
-  function mellerMealStructureText() {
-    return [
-      'colazione: carboidrati (avena o cereali) + una quota proteica leggera (yogurt, latte o uova) + marmellata o miele',
-      'spuntino mattina: frutta fresca con una quota proteica (crackers solo nel giorno di allenamento)',
-      'pranzo: un carboidrato + una fonte proteica + verdura + olio EVO a crudo',
-      'merenda: yogurt con miele o marmellata, oppure crackers o frutta secca',
-      'cena: una fonte proteica + qualsiasi carboidrato in dose ridotta (circa 2/3 della dose del pranzo di riposo) + verdura + olio EVO a crudo'
-    ].join('; ');
-  }
 
   // Vincoli di default del generatore: derivano dalle frequenze proteiche.
   function buildDefaultConstraints() {
@@ -529,6 +466,8 @@
         'Giorno di riposo: pasti bilanciati, quota carboidrati ridotta a pranzo e niente crackers nello spuntino mattutino.',
         'Preferire fonti di carboidrati non integrali prima e dopo un allenamento e nel carico; scelta libera negli altri momenti.'
       ],
+      // Colazione, spuntini e merenda descrivono le giornate tipo del
+      // manuale: non sono riferimenti verificabili né dosi per l'adattamento.
       trainingDay: {
         title: '1° giorno · Allenamento',
         macro: '1903 kcal · PRO 135g (28%) · FAT 55g (26%) · CHO 213g (44%)',
@@ -1991,15 +1930,27 @@ const PROTEIN_CATEGORY_LABELS = {
 
     const summary = [];
     issues.forEach(issue => {
-      let entry = summary.find(item => item.ingredient === issue.ingredient);
+      // Mantiene distinti scostamenti diversi dello stesso ingrediente e
+      // aggrega soltanto i profili (uomo/donna) con identica correzione.
+      let entry = summary.find(item =>
+        item.ingredient === issue.ingredient && item.expected === issue.expected &&
+        item.unit === issue.unit
+      );
       if (!entry) {
-        entry = { ingredient: issue.ingredient, label: issue.label, family: issue.family, actual: issue.actual, expected: issue.expected, unit: issue.unit };
+        entry = {
+          ingredient: issue.ingredient, label: issue.label, family: issue.family,
+          actual: issue.actual, expected: issue.expected, unit: issue.unit,
+          dayTypes: []
+        };
         summary.push(entry);
-      } else if (issue.actual > entry.actual) {
-        entry.actual = issue.actual;
-        entry.expected = issue.expected;
-        entry.unit = issue.unit;
       }
+      entry.actual = Math.max(entry.actual, issue.actual);
+      if (!entry.dayTypes.includes(issue.dayType)) entry.dayTypes.push(issue.dayType);
+    });
+    summary.forEach(entry => {
+      entry.dayTypeLabel = entry.dayTypes.length === 2
+        ? 'allenamento e riposo'
+        : (entry.dayTypes[0] === 'training' ? 'allenamento' : 'riposo');
     });
 
     return { adapted: issues.length === 0, issues, summary };
@@ -2098,7 +2049,6 @@ const PROTEIN_CATEGORY_LABELS = {
     MELLER_GROUP,
     MELLER_GUIDE,
     MELLER_PROTEIN_FREQUENCIES,
-    MELLER_RECIPE_MAX_AMOUNTS,
     MELLER_CARB_ALTERNATIVES,
     MELLER_PROTEIN_ALTERNATIVES,
     MELLER_PROTEIN_REFERENCE,
@@ -2114,8 +2064,6 @@ const PROTEIN_CATEGORY_LABELS = {
     MELLER_ALTERNATIVE_SLOTS,
     mellerFamiliesInText,
     mellerAlternativesText,
-    mellerGuidelinesText,
-    mellerMealStructureText,
     mellerRuleForIngredient,
     mellerGroupForIngredient,
     mellerFamilyForIngredient,
