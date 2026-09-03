@@ -1930,12 +1930,22 @@ body.dark-mode .websearch-card { background: #000; border-color: #242424; }
 body.dark-mode .websearch-settings-icon { background: #1f5a40; }
 body.dark-mode .websearch-error { border-color: #5a2626; }
 
-/* Tabelle equivalenze Meller: i carboidrati espongono anche la dose cena. */
-.alternative-table.meller-carbs > div { display: grid; grid-template-columns: minmax(0, 1fr) 72px 72px; align-items: center; }
-.alternative-table.meller-carbs > div strong { text-align: right; }
+/* Tabelle equivalenze Meller: colonne stabili decise dal tipo di tabella, non
+ * dalla lunghezza della riga. Carboidrati = Alimento | Pranzo | Cena (3
+ * colonne), proteine = Alimento | Pranzo (2 colonne): così una riga con un
+ * numero di celle diverso non sposta le colonne né rompe il rendering. */
+.alternative-table.meller-carbs > div { display: grid; grid-template-columns: minmax(0, 1fr) 72px 72px; gap: 16px; align-items: center; }
+.alternative-table.meller-proteins > div { display: grid; grid-template-columns: minmax(0, 1fr) 72px; gap: 16px; align-items: center; }
+.alternative-table.meller-carbs > div strong,
+.alternative-table.meller-proteins > div strong { text-align: right; }
+/* Cella inattesa oltre le colonne previste: va a capo su tutta la larghezza. */
+.alternative-table.meller-carbs > div > :nth-child(n+4),
+.alternative-table.meller-proteins > div > :nth-child(n+3) { grid-column: 1 / -1; text-align: left; }
 .alternative-table .alternative-head { background: var(--surface-alt); color: var(--text-muted); font-size: .72rem; text-transform: uppercase; letter-spacing: .04em; }
 .alternative-table .alternative-head strong:first-child { text-align: left; }
 @media (max-width: 520px) {
   .alternative-table.meller-carbs > div { grid-template-columns: minmax(0, 1fr) 56px 56px; gap: 8px; padding-left: 9px; padding-right: 9px; }
-  .alternative-table.meller-carbs > div span { overflow-wrap: anywhere; }
+  .alternative-table.meller-proteins > div { grid-template-columns: minmax(0, 1fr) 56px; gap: 8px; padding-left: 9px; padding-right: 9px; }
+  .alternative-table.meller-carbs > div span,
+  .alternative-table.meller-proteins > div span { overflow-wrap: anywhere; }
 }

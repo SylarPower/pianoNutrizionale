@@ -16,7 +16,10 @@ const dom = new JSDOM('<!doctype html><html><body></body></html>', {
 const window = dom.window;
 
 window.PIANO_WEB_SEARCH_CONFIG = { recipesEndpoint: 'https://worker.test/recipes', language: 'it-IT', maxRecipes: 10 };
+// Lo stub espone le tre funzioni della fonte unica usate da js/web-search.js:
+// `alternatives` è il testo completo delle famiglie Meller per il modello AI.
 window.PianoDomain = {
+  mellerAlternativesText: () => 'ALTERNATIVE CARBOIDRATI MELLER:\nPasta, Riso: pranzo allenamento 90 g, pranzo riposo 70 g, cena 40 g.',
   mellerGuidelinesText: () => 'pollame 200 g',
   mellerMealStructureText: () => 'pranzo: proteine + carboidrati + verdure'
 };
@@ -85,6 +88,13 @@ const wait = () => new Promise(resolve => setTimeout(resolve, 0));
   assert.equal(calls[0].body.slot, 'lunch', 'slot inviato');
   assert.deepEqual(calls[0].body.excludeNames, [], 'prima ricerca senza esclusioni');
   assert.equal(calls[0].body.guidelines, 'pollame 200 g', 'guidelines Meller inviate');
+  assert.equal(
+    calls[0].body.alternatives,
+    window.PianoDomain.mellerAlternativesText(),
+    'testo completo delle alternative Meller inviato al Worker'
+  );
+  assert.match(calls[0].body.alternatives, /ALTERNATIVE CARBOIDRATI MELLER/, 'campo alternatives derivato da PianoDomain');
+  assert.match(calls[0].body.mealStructure, /pranzo:/, 'struttura dei pasti inviata');
 
   const cards = window.document.querySelectorAll('.websearch-card');
   assert.equal(cards.length, 10, '10 schede ricetta');
@@ -106,6 +116,7 @@ const wait = () => new Promise(resolve => setTimeout(resolve, 0));
 
   assert.equal(calls.length, 2, 'seconda POST eseguita');
   assert.equal(calls[1].body.excludeNames.length, 10, 'ricette già mostrate escluse');
+  assert.equal(calls[1].body.alternatives, window.PianoDomain.mellerAlternativesText(), 'alternative inviate anche nella seconda ricerca');
   assert.ok(calls[1].body.excludeNames.includes('Ricetta 1'));
   assert.equal(window.document.querySelectorAll('.websearch-card').length, 10, 'nuove 10 schede');
   assert.match(window.document.querySelector('.websearch-card').textContent, /Extra 1/);

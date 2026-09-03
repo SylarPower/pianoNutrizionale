@@ -27,10 +27,44 @@ esiste più alcuna chat, né risposte generaliste, né voce in-app.
 Il flusso Meller resta invariato: le ricette importate, nuove o modificate che
 non rispettano le grammature del manuale per pasto e giorno A/R vengono
 **segnalate** (banner nel popup e badge ⚠ nel ricettario) e si correggono con un
-click su **"Adatta a Meller"**. Il Worker riceve inoltre i massimi Meller e la
-struttura dei pasti (`PianoDomain.mellerGuidelinesText()` /
-`mellerMealStructureText()`) e li usa nel prompt di sistema, così le ricette
-arrivano già vicine alle dosi corrette.
+click su **"Adatta a Meller"**.
+
+### Una sola fonte, frontend e Worker
+
+`js/domain.js` (`MELLER_GRAMMATURE`) è la **fonte unica** di famiglie e
+grammature. Da lì derivano:
+
+- le tabelle delle alternative dei popup e delle Impostazioni (`MELLER_GUIDE`);
+- il riconoscimento carboidrati/proteine degli ingredienti
+  (`isMellerCarbIngredient` / `isMellerProteinIngredient`);
+- i massimi per porzione (`mellerGuidelinesText()`) e la struttura dei pasti
+  (`mellerMealStructureText()`);
+- **`mellerAlternativesText()`**: il testo completo con tutte le famiglie di
+  carboidrati (pranzo allenamento, pranzo riposo, cena) e tutte le categorie
+  proteiche, più le regole del manuale (pesi a crudo, cena = ~2/3 del pranzo di
+  riposo arrotondato per difetto alla decina, cena A = cena R, proteine
+  invariate tra pranzo e cena).
+
+Il Worker Cloudflare **importa lo stesso file**
+(`import PianoDomain from '../../../js/domain.js'`): usa il campo `alternatives`
+inviato dal frontend e, se il campo manca, un fallback **generato dalla stessa
+fonte**, quindi identico. Nel Worker non esiste più alcuna lista parziale
+hardcoded (la vecchia costante `DEFAULT_GUIDELINES` è stata rimossa).
+
+Il prompt di sistema dice esplicitamente al modello:
+
+```text
+Usa esclusivamente le grammature Meller fornite.
+A cena sono ammessi tutti i carboidrati presenti nella tabella, non solo pane, crackers e patate.
+Per i carboidrati usa la dose cena indicata nella tabella.
+Non trasformare le proteine secondo la regola dei carboidrati.
+Mantieni le dosi proteiche indicate dal manuale.
+```
+
+Il test `test/web-search-worker.test.js` confronta programmaticamente le
+famiglie presenti nei popup, nelle grammature canoniche, nel testo AI e nel
+fallback del Worker: se una famiglia manca in una sola superficie il test
+fallisce.
 
 ## Architettura
 
@@ -40,11 +74,13 @@ arrivano già vicine alle dosi corrette.
   form, chiamata al Worker, schede risultato, "Altre 10 ricette".
 - `js/app.js` — `importRecipeFromWebSearch(recipe)` riusa il popup ricetta
   esistente per l'importazione.
-- `js/domain.js` — grammature Meller (`checkMellerAdaptation`,
-  `adaptRecipeToMeller`) usate da popup e ricettario.
+- `js/domain.js` — fonte unica delle grammature Meller (`MELLER_GRAMMATURE`,
+  `MELLER_GUIDE`, `mellerAlternativesText()`, `checkMellerAdaptation`,
+  `adaptRecipeToMeller`) usata da popup, ricettario e Worker.
 - `cloudflare/ai-worker` — Worker con un solo endpoint `POST /recipes` che
   interroga Gemini (modello `gemini-3.6-flash` di default) con Google Search
-  grounding e restituisce le ricette candidate.
+  grounding e restituisce le ricette candidate; importa `js/domain.js`, quindi
+  condivide col frontend la stessa fonte Meller.
 
 ### Body della richiesta `POST /recipes`
 
@@ -55,10 +91,16 @@ arrivano già vicine alle dosi corrette.
   "language": "it-IT",
   "maxRecipes": 10,
   "excludeNames": ["Pollo al curry"],
-  "guidelines": "…massimi Meller…",
+  "alternatives": "…testo completo delle alternative Meller (tutte le famiglie)…",
+  "guidelines": "…massimi Meller per porzione…",
   "mealStructure": "…struttura dei pasti…"
 }
 ```
+
+`alternatives`, `guidelines` e `mealStructure` derivano tutti da
+`js/domain.js`: `alternatives` è il campo completo usato nel prompt, gli altri
+due restano per compatibilità. Se `alternatives` manca, il Worker usa il
+fallback generato dalla stessa fonte.
 
 Il Worker filtra le ricette restituite tenendo solo quelle dello `slot`
 richiesto e ne restituisce al massimo 10, insieme alle fonti.
@@ -94,12 +136,21 @@ un errore comprensibile.
 
 Il Worker espone un solo endpoint: `POST /recipes`.
 
-**Dalla dashboard Cloudflare** (percorso senza terminale):
+> ⚠️ Il Worker importa il modulo condiviso `js/domain.js` (fonte unica delle
+> grammature Meller): la pubblicazione va fatta con **`npx wrangler deploy`**
+> dalla root del repository (o da `cloudflare/ai-worker`), così il bundler
+> include il modulo. Il copia-incolla del solo `index.js` nella dashboard non è
+> più sufficiente.
+
+**Dalla dashboard Cloudflare** (percorso senza terminale, solo se ricrei il
+modulo condiviso):
 
 1. Vai in **Workers & Pages → Create application → Worker**.
 2. Nome esattamente `piano-nutrizionale-ai`.
 3. Sostituisci il codice con il contenuto di
-   `cloudflare/ai-worker/src/index.js`.
+   `cloudflare/ai-worker/src/index.js` **e** aggiungi il modulo
+   `js/domain.js` con il percorso relativo atteso dall'import
+   (`../../../js/domain.js`); in alternativa usa `npx wrangler deploy`.
 4. In **Settings → Variables and Secrets → Add** (ambiente **Production**):
 
    | Tipo | Nome | Valore |
@@ -124,7 +175,7 @@ limite best-effort di 30 richieste ogni 15 minuti per utente.
 cd cloudflare/ai-worker
 npx wrangler login
 npx wrangler secret put GEMINI_API_KEY
-npx wrangler deploy
+npx wrangler deploy   # include nel bundle anche js/domain.js (fonte unica Meller)
 ```
 
 Per provare in locale: `npx wrangler dev` (il server locale non va inserito
@@ -159,6 +210,13 @@ manuale per **pasto e giorno A/R** (es. pasta 90 g a pranzo A / 70 g a pranzo R,
 pane 120/90 g a pranzo, 60 g a cena, pollame 200 g, pesce 250 g, legumi 240 g,
 olio EVO 10 g…). Verdura e alimenti liberi non vengono mai segnalati, così come
 i "q.b." e le quantità non esprimibili in grammi.
+
+A cena è ammesso **qualsiasi carboidrato della tabella**, non solo pane,
+crackers e patate: la dose cena è `floor(pranzo riposo × 2/3 / 10) × 10` ed è
+uguale nei giorni di allenamento e di riposo (pane 60 g, crackers 40 g, patate
+230 g, polenta 220 g, piadina 50 g, pasta/riso 40 g, gnocchi 120 g, farro/orzo
+40 g, quinoa/grano saraceno/amaranto 40 g, cous cous 40 g). Le proteine
+mantengono a cena la stessa dose del pranzo e non vengono mai trasformate.
 
 - `checkMellerAdaptation(recipe)` → segnala le dosi che superano il riferimento.
 - `adaptRecipeToMeller(recipe)` → riporta le dosi fuori riferimento al valore

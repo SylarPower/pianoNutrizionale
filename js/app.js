@@ -795,7 +795,7 @@ function renderWeek() {
               const recipe = getRecipe(planDay[slot.id]);
               return `<div class="week-meal">
                 <small>${escapeHtml(slot.shortLabel)}</small>
-                <button class="week-meal-name" onclick="openRecipeModal('${escapeAttr(recipe?.id || "")}', '${day}', '${slot.id}')">${escapeHtml(recipe?.emoji || "")} ${escapeHtml(recipe ? getRecipeDisplayName(recipe, planDay.type) : "Non disponibile")}${recipe && recipeIsCrossSlot(recipe, slot.id) ? ` <span class="cross-slot-badge" title="Carboidrati trasformati in percentuale per questo pasto">↻</span>` : ""}</button>
+                <button class="week-meal-name" onclick="openRecipeModal('${escapeAttr(recipe?.id || "")}', '${day}', '${slot.id}')">${escapeHtml(recipe?.emoji || "")} ${escapeHtml(recipe ? getRecipeDisplayName(recipe, planDay.type) : "Non disponibile")}${recipe && recipeIsCrossSlot(recipe, slot.id) ? ` <span class="cross-slot-badge" title="Carboidrati adattati alla dose Meller di questo pasto">↻</span>` : ""}</button>
                 <button class="btn-icon btn-swap" onclick="openMealActions('${day}', '${slot.id}')" title="Operazioni sul pasto" aria-label="Operazioni sul pasto">⋯</button>
               </div>`;
             }).join("")}
@@ -856,7 +856,7 @@ window.openSwapModal = function(dayKey, slot) {
   const batchSuggestionHtml = (() => {
     if (!batchRecipe) return "";
     const selected = batchRecipe.id === currentId;
-    const crossBadge = recipeIsCrossSlot(batchRecipe, slot) ? ` <span class="swap-cross-badge" title="Carboidrati trasformati in percentuale">↻</span>` : "";
+    const crossBadge = recipeIsCrossSlot(batchRecipe, slot) ? ` <span class="swap-cross-badge" title="Carboidrati adattati alla dose Meller di questo pasto">↻</span>` : "";
     return `<div class="batch-suggestion">
       <div class="batch-suggestion-title">🍳 Consiglio batch cooking</div>
       <button class="swap-item batch-suggestion-item ${selected ? "selected" : ""}" onclick="confirmSwap('${dayKey}', '${slot}', '${escapeAttr(batchRecipe.id)}')">
@@ -869,7 +869,7 @@ window.openSwapModal = function(dayKey, slot) {
 
   const sameSlotRecipes = appState.recipes.filter(recipe => recipe.slot === slot && recipe.id !== batchRecipe?.id);
   // Pranzo <-> cena: mostra anche le ricette del pasto opposto; i carboidrati
-  // verranno trasformati in percentuale (50% / 200%).
+  // verranno adattati alle dosi Meller del pasto di destinazione.
   const oppositeSlot = slot === "lunch" ? "dinner" : slot === "dinner" ? "lunch" : null;
   const oppositeSlotRecipes = oppositeSlot ? appState.recipes.filter(recipe => recipe.slot === oppositeSlot && recipe.id !== batchRecipe?.id) : [];
   const oppositeLabel = oppositeSlot ? getSlotMeta(oppositeSlot).label.toLowerCase() : "";
@@ -881,9 +881,9 @@ window.openSwapModal = function(dayKey, slot) {
   const swapItemHtml = (recipe, crossSlot = false) => {
     const selected = recipe.id === currentId;
     const hint = crossSlot
-      ? `Da ${escapeHtml(oppositeLabel)} · carboidrati trasformati in %`
+      ? `Da ${escapeHtml(oppositeLabel)} · carboidrati alla dose Meller del pasto`
       : escapeHtml(recipeProteinLabel(recipe));
-    const badge = crossSlot ? ` <span class="swap-cross-badge" title="Carboidrati trasformati in percentuale">↻</span>` : "";
+    const badge = crossSlot ? ` <span class="swap-cross-badge" title="Carboidrati adattati alla dose Meller di questo pasto">↻</span>` : "";
     return `<button class="swap-item ${selected ? "selected" : ""}" onclick="confirmSwap('${dayKey}', '${slot}', '${escapeAttr(recipe.id)}')"><span class="swap-code">${escapeHtml(recipe.id)}</span><span><strong>${escapeHtml(recipe.emoji || "🍲")} ${escapeHtml(getRecipeDisplayName(recipe, getDayType(dayKey)))}${badge}</strong><small>${hint}</small></span>${selected ? "<b>✓</b>" : ""}</button>`;
   };
 
@@ -891,7 +891,7 @@ window.openSwapModal = function(dayKey, slot) {
     ${batchSuggestionHtml}
     ${resetButton}
     ${sameSlotRecipes.map(recipe => swapItemHtml(recipe, false)).join("")}
-    ${oppositeSlotRecipes.length ? `<div class="swap-section-label">Dal pasto opposto (carboidrati trasformati in % al ${escapeHtml(slotMeta.label.toLowerCase())})</div>${oppositeSlotRecipes.map(recipe => swapItemHtml(recipe, true)).join("")}` : ""}
+    ${oppositeSlotRecipes.length ? `<div class="swap-section-label">Dal pasto opposto (carboidrati alla dose Meller del ${escapeHtml(slotMeta.label.toLowerCase())})</div>${oppositeSlotRecipes.map(recipe => swapItemHtml(recipe, true)).join("")}` : ""}
   `;
   modal.classList.remove("hidden");
 };
@@ -908,7 +908,7 @@ window.confirmSwap = async function(dayKey, slot, recipeId) {
   const recipe = getRecipe(recipeId);
   const crossSlot = recipeIsCrossSlot(recipe, slot);
   const baseMsg = "Sostituire questo pasto con la ricetta scelta? Frequenze e batch cooking potrebbero cambiare.";
-  const crossMsg = crossSlot ? "\n\nI carboidrati verranno trasformati in percentuale (pranzo → cena 50%, cena → pranzo 200%), arrotondati alla decina per eccesso. Le proteine, le uova e la verdura restano invariate." : "";
+  const crossMsg = crossSlot ? "\n\nI carboidrati verranno adattati alle grammature Meller del pasto di destinazione: a cena si usa la dose cena della tabella (circa 2/3 del pranzo di riposo, arrotondata per difetto alla decina), a pranzo si rileggono le dosi pranzo A/R. Le proteine, le uova e la verdura restano invariate." : "";
   if (!confirm(baseMsg + crossMsg)) return;
   appState.plan.days[dayKey][slot] = recipeId;
   try {
@@ -1708,13 +1708,14 @@ window.shareShopWhatsApp = async function() {
 };
 
 // ---- A4: Alternative Meller inline (tap ingrediente -> equivalenze) ----
+// La classificazione carboidrati/proteine arriva dalla fonte unica
+// (js/domain.js): popup, tabelle delle alternative e testo inviato al modello
+// AI riconoscono le stesse famiglie, senza regex duplicate qui.
 function isMellerCarbIngredient(name) {
-  const n = normalizeIngredientName(name);
-  return /(pasta|riso|gnocchi|farro|orzo|quinoa|grano saraceno|amaranto|pane|piadina|cracker|grissin|crostin|polenta|patat|avena|cereali|fette biscottate|wasa|cous)/i.test(n);
+  return window.PianoDomain?.isMellerCarbIngredient?.(name) === true;
 }
 function isMellerProteinIngredient(name) {
-  const n = normalizeIngredientName(name);
-  return /(pollo|tacchino|manzo|vitello|maiale|affettat|crostace|mollusc|gamber|calamar|polpo|seppia|merluzzo|nasello|sogliola|tonno|salmone|sgombro|pesce|uova|uovo|ricotta|mozzarella|caprino|feta|parmigiano|grana|montasio|fiocchi di latte|yogurt|skyr|kefir|legum|ceci|lenticch|fagiol|edamame|piselli|barilla|tofu)/i.test(n);
+  return window.PianoDomain?.isMellerProteinIngredient?.(name) === true;
 }
 function getMellerAlternativesForIngredient(ingredientName) {
   const guide = typeof MELLER_GUIDE !== "undefined" ? MELLER_GUIDE.alternatives : null;
@@ -1739,9 +1740,19 @@ function shouldHighlightMellerRow(rowLabel, ingredientName) {
   return ingTokens.some(tok => tok.length >= 4 && rowNorm.includes(tok)) ||
          rowTokens.some(tok => tok.length >= 4 && ingNorm.includes(tok));
 }
+// Colonne della tabella equivalenze: la fonte unica le dichiara nel gruppo
+// (`columns`), così il rendering non dipende dalla lunghezza delle righe.
+function mellerTableColumns(group) {
+  if (Array.isArray(group?.columns) && group.columns.length) return group.columns;
+  return isMellerCarbGroup(group) ? ['Alimento', 'Pranzo', 'Cena'] : ['Alimento', 'Pranzo'];
+}
+function isMellerCarbGroup(group) {
+  if (group?.kind) return group.kind === 'carbs';
+  return group === MELLER_GUIDE.alternatives.carbohydrates || (group?.rows || []).some(row => row.length === 3);
+}
 function mellerTableHtmlWithHighlight(group, ingredientName) {
-  const isCarb = group === MELLER_GUIDE.alternatives.carbohydrates;
-  const headers = isCarb ? ['Alimento', 'Pranzo', 'Cena'] : ['Alimento', 'Pranzo'];
+  const isCarb = isMellerCarbGroup(group);
+  const headers = mellerTableColumns(group);
   const rows = group.rows.map(row => {
     const highlight = shouldHighlightMellerRow(row[0], ingredientName);
     return `<div class="${highlight ? "meller-highlight" : ""}">${row.map((cell, index) => index === 0 ? `<span>${escapeHtml(cell)}</span>` : `<strong>${escapeHtml(cell)}</strong>`).join("")}</div>`;
@@ -1767,8 +1778,9 @@ window.openMellerAlternatives = function(ingredientName) {
   const { groups, isCarb, isProtein } = data;
   document.getElementById("meller-modal-title").textContent = ingredientName;
   let subtitle = "";
-  if (isCarb && !isProtein) subtitle = "Carboidrati equivalenti · riferimento Pasta/Riso 70g";
-  else if (!isCarb && isProtein) subtitle = "Proteine equivalenti · riferimento Pollame 200g";
+  // Sottotitoli derivati dalla fonte unica (nessun valore scritto qui).
+  if (isCarb && !isProtein) subtitle = MELLER_GUIDE.alternatives.carbohydrates.subtitle;
+  else if (!isCarb && isProtein) subtitle = MELLER_GUIDE.alternatives.proteins.subtitle;
   else subtitle = "Equivalenze disponibili per questo ingrediente";
   document.getElementById("meller-modal-subtitle").textContent = subtitle;
   const body = document.getElementById("meller-modal-body");
@@ -1789,8 +1801,8 @@ function guideDayHtml(dayGuide, tone) {
 }
 
 function alternativesTableHtml(group) {
-  const isCarb = group.rows.some(row => row.length === 3);
-  const headers = isCarb ? ['Alimento', 'Pranzo', 'Cena'] : ['Alimento', 'Pranzo'];
+  const isCarb = isMellerCarbGroup(group);
+  const headers = mellerTableColumns(group);
   const rows = group.rows.map(row => `<div>${row.map((cell, index) => index === 0 ? `<span>${escapeHtml(cell)}</span>` : `<strong>${escapeHtml(cell)}</strong>`).join('')}</div>`).join('');
   return `<div class="alternative-table${isCarb ? ' meller-carbs' : ' meller-proteins'}"><h3>${escapeHtml(group.title)}</h3><div class="alternative-head">${headers.map(header => `<strong>${escapeHtml(header)}</strong>`).join('')}</div>${rows}</div>`;
 }
@@ -3122,7 +3134,7 @@ function renderModalContent() {
     Opzionale: serve solo come fallback per ricette con ingredienti non riconoscibili.
   </small>
 </label></div>`
-    : `${escapeHtml(getSlotMeta(currentModal.slot || recipe.slot).label)} · ${dayTypeLabel} · ${escapeHtml(getProfileLabel())}${toggleHtml}${recipeIsCrossSlot(recipe, currentModal.slot) ? `<div class="modal-adapted-note">↻ Carboidrati trasformati in percentuale per il ${escapeHtml(getSlotMeta(currentModal.slot).label.toLowerCase())}</div>` : ""}`;
+    : `${escapeHtml(getSlotMeta(currentModal.slot || recipe.slot).label)} · ${dayTypeLabel} · ${escapeHtml(getProfileLabel())}${toggleHtml}${recipeIsCrossSlot(recipe, currentModal.slot) ? `<div class="modal-adapted-note">↻ Carboidrati alla dose Meller del ${escapeHtml(getSlotMeta(currentModal.slot).label.toLowerCase())}</div>` : ""}`;
 
   const ingredientList = document.getElementById("modal-ingredients-list");
   if (editMode) {
@@ -3141,7 +3153,7 @@ function renderModalContent() {
     });
     const hasMeller = items.some(({ ing }) => !!getMellerAlternativesForIngredient(ing.name));
     ingredientList.innerHTML = items.map(({ ing, adapted }) => {
-      const adaptedMark = adapted ? ` <small class="adapted-mark" title="Dose trasformata in percentuale per questo pasto">↻</small>` : "";
+      const adaptedMark = adapted ? ` <small class="adapted-mark" title="Dose adattata alla grammatura Meller di questo pasto">↻</small>` : "";
       if (getMellerAlternativesForIngredient(ing.name)) {
         return `<li class="meller-ingredient" onclick="openMellerAlternatives('${escapeAttr(ing.name)}')" title="Tocca per alternative Meller"><span>${escapeHtml(ing.name)} <small class="meller-hint">⇄</small></span>${getIngredientCoupleHtml(ing, dayType)}</li>`;
       }
