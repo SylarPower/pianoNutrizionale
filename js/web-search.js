@@ -5,7 +5,7 @@
  * modale in cui si indicano gli ingredienti essenziali (obbligatori), il tipo
  * di pasto (obbligatorio) e le eventuali preferenze. Il Worker Cloudflare
  * (endpoint /recipes) interroga Gemini con Google Search grounding e
- * restituisce fino a 10 ricette aderenti alle grammature del dott. Meller.
+ * restituisce fino a 10 ricette aderenti alle linee guida.
  * Ogni scheda apre il popup ricetta esistente per l'importazione; il pulsante
  * "Altre 10 ricette" ripete la ricerca escludendo le ricette già mostrate.
  */
@@ -155,7 +155,7 @@
           </div>
           <button type="button" id="websearch-close" class="btn-icon" aria-label="Chiudi">&times;</button>
         </div>
-        <p class="text-muted websearch-intro">Indica gli ingredienti essenziali e il pasto: troverò fino a 10 ricette aderenti alle grammature del dott. Meller, pronte da aprire e importare.</p>
+        <p class="text-muted websearch-intro">Indica gli ingredienti essenziali e il pasto: troverò fino a 10 ricette aderenti alle linee guida, pronte da aprire e importare.</p>
         <form id="websearch-form" class="websearch-form" novalidate>
           <label class="websearch-field">
             <span>Ingredienti essenziali *</span>
@@ -370,9 +370,9 @@
       : '';
     return `
       <div class="websearch-meller">
-        <p class="websearch-meller-head"><span aria-hidden="true">⚠️</span> ${check.rows.length} dos${check.rows.length === 1 ? 'e non aderente' : 'i non aderenti'} alle grammature del dott. Meller</p>
+        <p class="websearch-meller-head"><span aria-hidden="true">⚠️</span> ${check.rows.length} dos${check.rows.length === 1 ? 'e non aderente' : 'i non aderenti'} alle linee guida</p>
         <ul class="websearch-meller-list">${items}${more}</ul>
-        <button type="button" class="btn btn-outline websearch-meller-fix" data-action="adapt">Correggi dosi Meller</button>
+        <button type="button" class="btn btn-outline websearch-meller-fix" data-action="adapt">Correggi dosi</button>
       </div>`;
   }
 
@@ -387,8 +387,8 @@
     const sourceTitle = String(recipe?.sourceTitle || '').trim() || 'Fonte';
     const check = mellerCheckFor(recipe);
     const badge = recipe?._mellerAdapted
-      ? `<span class="websearch-meller-ok" title="Dosi riportate alle grammature del dott. Meller">✓ Meller</span>`
-      : (check ? `<span class="websearch-meller-flag" title="Dosi non aderenti alle grammature del dott. Meller">⚠</span>` : '');
+      ? `<span class="websearch-meller-ok" title="Dosi riportate alle linee guida">✓ Linee guida</span>`
+      : (check ? `<span class="websearch-meller-flag" title="Dosi non aderenti alle linee guida">⚠</span>` : '');
     return `
       <article class="websearch-card${check ? ' has-meller-notice' : ''}" data-index="${index}">
         <div class="websearch-card-open" role="button" tabindex="0" data-action="open">
@@ -418,9 +418,9 @@
     const withIssues = state.recipes.filter(recipe => mellerCheckFor(recipe)).length;
     ui.results.innerHTML = `
       ${state.recipes.map(recipeCardHtml).join('')}
-      <p class="websearch-count">${state.recipes.length} ricette trovate: tocca una scheda per aprirla e importarla.${withIssues ? ` <strong>${withIssues}</strong> hanno dosi fuori dalle grammature Meller.` : ''}</p>
+      <p class="websearch-count">${state.recipes.length} ricette trovate: tocca una scheda per aprirla e importarla.${withIssues ? ` <strong>${withIssues}</strong> hanno dosi fuori dalle linee guida.` : ''}</p>
       <div class="websearch-actions">
-        ${withIssues ? `<button type="button" class="btn btn-outline" data-action="adapt-all">✓ Correggi tutte (Meller)</button>` : ''}
+        ${withIssues ? `<button type="button" class="btn btn-outline" data-action="adapt-all">✓ Correggi tutte</button>` : ''}
         <button type="button" class="btn btn-primary" data-action="import-all">⤓ Importa tutte (${state.recipes.length})</button>
       </div>
       <div class="websearch-actions">
@@ -474,12 +474,12 @@
     if (!recipe) return;
     const adapted = adaptRecipeQuantities(recipe);
     if (!adapted) {
-      toast('Le dosi rispettano già le grammature Meller');
+      toast('Le dosi rispettano già le linee guida');
       return;
     }
     state.recipes[index] = { ...adapted, _mellerAdapted: true };
     renderResults();
-    toast('Dosi adattate alle grammature Meller ✅');
+    toast('Dosi adattate alle linee guida ✅');
   }
 
   function adaptAllRecipes() {
@@ -492,7 +492,7 @@
     });
     renderResults();
     toast(changed
-      ? `${changed} ricett${changed === 1 ? 'a adattata' : 'e adattate'} alle grammature Meller ✅`
+      ? `${changed} ricett${changed === 1 ? 'a adattata' : 'e adattate'} alle linee guida ✅`
       : 'Nessuna dose da correggere');
   }
 

@@ -818,7 +818,7 @@ function renderWeek() {
               const recipe = getRecipe(planDay[slot.id]);
               return `<div class="week-meal">
                 <small>${escapeHtml(slot.shortLabel)}</small>
-                <button class="week-meal-name" onclick="openRecipeModal('${escapeAttr(recipe?.id || "")}', '${day}', '${slot.id}')">${escapeHtml(recipe?.emoji || "")} ${escapeHtml(recipe ? getRecipeDisplayName(recipe, planDay.type) : "Non disponibile")}${recipe && recipeIsCrossSlot(recipe, slot.id) ? ` <span class="cross-slot-badge" title="Carboidrati adattati alla dose Meller di questo pasto">↻</span>` : ""}</button>
+                <button class="week-meal-name" onclick="openRecipeModal('${escapeAttr(recipe?.id || "")}', '${day}', '${slot.id}')">${escapeHtml(recipe?.emoji || "")} ${escapeHtml(recipe ? getRecipeDisplayName(recipe, planDay.type) : "Non disponibile")}${recipe && recipeIsCrossSlot(recipe, slot.id) ? ` <span class="cross-slot-badge" title="Carboidrati adattati alla dose prevista per questo pasto">↻</span>` : ""}</button>
                 <button class="btn-icon btn-swap" onclick="openMealActions('${day}', '${slot.id}')" title="Operazioni sul pasto" aria-label="Operazioni sul pasto">⋯</button>
               </div>`;
             }).join("")}
@@ -879,7 +879,7 @@ window.openSwapModal = function(dayKey, slot) {
   const batchSuggestionHtml = (() => {
     if (!batchRecipe) return "";
     const selected = batchRecipe.id === currentId;
-    const crossBadge = recipeIsCrossSlot(batchRecipe, slot) ? ` <span class="swap-cross-badge" title="Carboidrati adattati alla dose Meller di questo pasto">↻</span>` : "";
+    const crossBadge = recipeIsCrossSlot(batchRecipe, slot) ? ` <span class="swap-cross-badge" title="Carboidrati adattati alla dose prevista per questo pasto">↻</span>` : "";
     return `<div class="batch-suggestion">
       <div class="batch-suggestion-title">🍳 Consiglio batch cooking</div>
       <button class="swap-item batch-suggestion-item ${selected ? "selected" : ""}" onclick="confirmSwap('${dayKey}', '${slot}', '${escapeAttr(batchRecipe.id)}')">
@@ -892,7 +892,7 @@ window.openSwapModal = function(dayKey, slot) {
 
   const sameSlotRecipes = appState.recipes.filter(recipe => recipe.slot === slot && recipe.id !== batchRecipe?.id);
   // Pranzo <-> cena: mostra anche le ricette del pasto opposto; i carboidrati
-  // verranno adattati alle dosi Meller del pasto di destinazione.
+  // verranno adattati alle dosi previste per il pasto di destinazione.
   const oppositeSlot = slot === "lunch" ? "dinner" : slot === "dinner" ? "lunch" : null;
   const oppositeSlotRecipes = oppositeSlot ? appState.recipes.filter(recipe => recipe.slot === oppositeSlot && recipe.id !== batchRecipe?.id) : [];
   const oppositeLabel = oppositeSlot ? getSlotMeta(oppositeSlot).label.toLowerCase() : "";
@@ -904,9 +904,9 @@ window.openSwapModal = function(dayKey, slot) {
   const swapItemHtml = (recipe, crossSlot = false) => {
     const selected = recipe.id === currentId;
     const hint = crossSlot
-      ? `Da ${escapeHtml(oppositeLabel)} · carboidrati alla dose Meller del pasto`
+      ? `Da ${escapeHtml(oppositeLabel)} · carboidrati alla dose prevista per il pasto`
       : escapeHtml(recipeProteinLabel(recipe));
-    const badge = crossSlot ? ` <span class="swap-cross-badge" title="Carboidrati adattati alla dose Meller di questo pasto">↻</span>` : "";
+    const badge = crossSlot ? ` <span class="swap-cross-badge" title="Carboidrati adattati alla dose prevista per questo pasto">↻</span>` : "";
     return `<button class="swap-item ${selected ? "selected" : ""}" onclick="confirmSwap('${dayKey}', '${slot}', '${escapeAttr(recipe.id)}')"><span class="swap-code">${escapeHtml(recipe.id)}</span><span><strong>${escapeHtml(recipe.emoji || "🍲")} ${escapeHtml(getRecipeDisplayName(recipe, getDayType(dayKey)))}${badge}</strong><small>${hint}</small></span>${selected ? "<b>✓</b>" : ""}</button>`;
   };
 
@@ -914,7 +914,7 @@ window.openSwapModal = function(dayKey, slot) {
     ${batchSuggestionHtml}
     ${resetButton}
     ${sameSlotRecipes.map(recipe => swapItemHtml(recipe, false)).join("")}
-    ${oppositeSlotRecipes.length ? `<div class="swap-section-label">Dal pasto opposto (carboidrati alla dose Meller del ${escapeHtml(slotMeta.label.toLowerCase())})</div>${oppositeSlotRecipes.map(recipe => swapItemHtml(recipe, true)).join("")}` : ""}
+    ${oppositeSlotRecipes.length ? `<div class="swap-section-label">Dal pasto opposto (carboidrati alla dose prevista per ${escapeHtml(slotMeta.label.toLowerCase())})</div>${oppositeSlotRecipes.map(recipe => swapItemHtml(recipe, true)).join("")}` : ""}
   `;
   modal.classList.remove("hidden");
 };
@@ -931,7 +931,7 @@ window.confirmSwap = async function(dayKey, slot, recipeId) {
   const recipe = getRecipe(recipeId);
   const crossSlot = recipeIsCrossSlot(recipe, slot);
   const baseMsg = "Sostituire questo pasto con la ricetta scelta? Frequenze e batch cooking potrebbero cambiare.";
-  const crossMsg = crossSlot ? "\n\nI carboidrati verranno adattati alle grammature Meller del pasto di destinazione: a cena si usa la dose cena della tabella (circa 2/3 del pranzo di riposo, arrotondata per difetto alla decina), a pranzo si rileggono le dosi pranzo A/R. Le proteine, le uova e la verdura restano invariate." : "";
+  const crossMsg = crossSlot ? "\n\nI carboidrati verranno adattati alle linee guida del pasto di destinazione: a cena si usa la dose cena della tabella (circa 2/3 del pranzo di riposo, arrotondata per difetto alla decina), a pranzo si rileggono le dosi pranzo A/R. Le proteine, le uova e la verdura restano invariate." : "";
   if (!confirm(baseMsg + crossMsg)) return;
   appState.plan.days[dayKey][slot] = recipeId;
   try {
@@ -1088,7 +1088,7 @@ function recipeSectionHtml(title, recipes, slot) {
         <div class="recipe-grid">
           ${recipes.map(recipe => {
             const mellerFlag = window.PianoDomain?.checkMellerAdaptation?.(recipe)?.adapted === false
-              ? `<span class="meller-card-flag" title="Dosi non adattate alle grammature del dott. Meller">⚠</span>`
+              ? `<span class="meller-card-flag" title="Dosi fuori dalle linee guida">⚠</span>`
               : "";
             return `<button class="recipe-library-card" data-search="${escapeAttr(`${recipe.id} ${recipe.name} ${recipe.namesByDayType?.training || ""} ${recipe.namesByDayType?.rest || ""} ${recipeProteinLabel(recipe)} ${(recipe.ingredients || []).map(i => i.name).join(" ")}`.toLowerCase())}" onclick="openRecipeModal('${escapeAttr(recipe.id)}')"><span class="recipe-code">${escapeHtml(recipe.id)}</span>${mellerFlag}<span class="recipe-card-emoji">${escapeHtml(recipe.emoji || "🍲")}</span><strong>${escapeHtml(recipe.name)}</strong><small>${escapeHtml(recipeProteinLabel(recipe))}</small></button>`;
           }).join("")}
@@ -1207,8 +1207,8 @@ window.duplicateRecipe = function(recipeId = currentModal?.recipe?.id) {
 };
 
 // Conversione di una ricetta trovata sul web nello schema del catalogo. Le
-// dosi restano quelle della fonte: l'adattamento alle grammature Meller è una
-// scelta esplicita dell'utente (banner nel popup, "Correggi dosi Meller" nella
+// dosi restano quelle della fonte: l'adattamento alle linee guida è una
+// scelta esplicita dell'utente (banner nel popup, "Correggi dosi" nella
 // ricerca), non una trasformazione silenziosa.
 function recipeFromWebSearch(data = {}, idSuffix = "") {
   const source = data && typeof data === "object" ? data : {};
@@ -1250,8 +1250,8 @@ function recipeFromWebSearch(data = {}, idSuffix = "") {
 
 // Importazione di UNA ricetta trovata con la ricerca web: si riusa il popup
 // ricetta già esistente. Le dosi arrivano così come trovate sul web; il banner
-// "non adattata a Meller" e il pulsante "Adatta a Meller" permettono di
-// riportarle alle grammature del manuale con un click, poi si salva nel cloud
+// "fuori dalle linee guida" e il pulsante "Adatta alle linee guida" permettono di
+// riportarle alle linee guida con un click, poi si salva nel cloud
 // con il normale pulsante di salvataggio.
 window.importRecipeFromWebSearch = function(data = {}) {
   const recipe = recipeFromWebSearch(data);
@@ -1275,7 +1275,7 @@ window.importRecipesFromWebSearchBulk = async function(list = []) {
   const notAdapted = incoming.filter(recipe =>
     window.PianoDomain?.checkMellerAdaptation?.(recipe)?.adapted === false).length;
   const mellerNote = notAdapted
-    ? `\n\n⚠ ${notAdapted} ricett${notAdapted === 1 ? "a ha dosi non aderenti" : "e hanno dosi non aderenti"} alle grammature del dott. Meller: potrai correggerle dal ricettario (badge ⚠ → "Adatta a Meller").`
+    ? `\n\n⚠ ${notAdapted} ricett${notAdapted === 1 ? "a ha dosi non aderenti" : "e hanno dosi non aderenti"} alle linee guida: potrai correggerle dal ricettario (badge ⚠ → "Adatta alle linee guida").`
     : "";
   if (!confirm(`Importare ${incoming.length} ricett${incoming.length === 1 ? "a" : "e"} nel ricettario, insieme a quelle esistenti?${mellerNote}`)) return false;
   setLoading("Importazione delle ricette trovate…");
@@ -1854,9 +1854,9 @@ function setupMellerModal() {
   document.body.insertAdjacentHTML("beforeend", `
     <div id="meller-alternatives-modal" class="modal hidden" role="dialog" aria-modal="true" aria-labelledby="meller-modal-title">
       <div class="modal-content meller-modal-content">
-        <div class="modal-header"><div><p class="eyebrow">ALTERNATIVE MELLER</p><h2 id="meller-modal-title"></h2><p id="meller-modal-subtitle" class="text-muted"></p></div><button class="btn-icon" onclick="closeMellerAlternatives()" aria-label="Chiudi">&times;</button></div>
+        <div class="modal-header"><div><p class="eyebrow">ALTERNATIVE</p><h2 id="meller-modal-title"></h2><p id="meller-modal-subtitle" class="text-muted"></p></div><button class="btn-icon" onclick="closeMellerAlternatives()" aria-label="Chiudi">&times;</button></div>
         <div id="meller-modal-body"></div>
-        <p class="meller-modal-note text-muted">Equivalenze da <strong>Manuale Meller</strong> (pesi a crudo). Verdura sempre libera ~200g, non pesata.</p>
+        <p class="meller-modal-note text-muted">Equivalenze dalle <strong>linee guida</strong> (pesi a crudo). Verdura sempre libera ~200g, non pesata.</p>
         <div class="modal-footer"><button class="btn btn-primary full-width" onclick="closeMellerAlternatives()">Chiudi</button></div>
       </div>
     </div>`);
@@ -1940,12 +1940,12 @@ function renderSettings() {
       <label class="settings-row"><span><strong>Tema scuro</strong><small>Solo su questo dispositivo</small></span><input type="checkbox" ${appState.deviceSettings.darkMode ? "checked" : ""} onchange="toggleDarkMode(this.checked)"></label>
     </section>
 
-    <div class="manual-heading"><p class="eyebrow">INDICAZIONI DI MELLER</p><h2>Manuale dieta e alternative</h2><p>Le alternative originali restano sempre consultabili nell'app.</p></div>
+    <div class="manual-heading"><p class="eyebrow">LINEE GUIDA</p><h2>Dieta e alternative</h2><p>Le alternative originali restano sempre consultabili nell'app.</p></div>
 
     ${settingsAccordion("Struttura della dieta", `<ul class="guide-list">${MELLER_GUIDE.structure.map(item => `<li>${escapeHtml(item)}</li>`).join("")}</ul>`)}
     ${settingsAccordion("Giorno di allenamento", guideDayHtml(MELLER_GUIDE.trainingDay, "training"))}
     ${settingsAccordion("Giorno di riposo", guideDayHtml(MELLER_GUIDE.restDay, "rest"))}
-    ${settingsAccordion("Alternative alimentari di Meller", `<div class="alternatives-grid">${alternativesTableHtml(MELLER_GUIDE.alternatives.carbohydrates)}${alternativesTableHtml(MELLER_GUIDE.alternatives.proteins)}</div>`)}
+    ${settingsAccordion("Alternative alimentari", `<div class="alternatives-grid">${alternativesTableHtml(MELLER_GUIDE.alternatives.carbohydrates)}${alternativesTableHtml(MELLER_GUIDE.alternatives.proteins)}</div>`)}
     ${settingsAccordion("Frequenze proteiche", `<div class="alternative-table frequency-table">${MELLER_GUIDE.proteinFrequencies.map(row => `<div><span>${escapeHtml(row[0])}</span><strong>${escapeHtml(row[1])}</strong></div>`).join("")}</div>`)}
     ${settingsAccordion("Altre informazioni e FAQ", `<ul class="guide-list">${MELLER_GUIDE.faq.map(item => `<li>${escapeHtml(item)}</li>`).join("")}</ul>`)}
 
@@ -3255,7 +3255,7 @@ function renderModalContent() {
     Opzionale: serve solo come fallback per ricette con ingredienti non riconoscibili.
   </small>
 </label></div>`
-    : `${escapeHtml(getSlotMeta(currentModal.slot || recipe.slot).label)} · ${dayTypeLabel} · ${escapeHtml(getProfileLabel())}${toggleHtml}${recipeIsCrossSlot(recipe, currentModal.slot) ? `<div class="modal-adapted-note">↻ Carboidrati alla dose Meller del ${escapeHtml(getSlotMeta(currentModal.slot).label.toLowerCase())}</div>` : ""}`;
+    : `${escapeHtml(getSlotMeta(currentModal.slot || recipe.slot).label)} · ${dayTypeLabel} · ${escapeHtml(getProfileLabel())}${toggleHtml}${recipeIsCrossSlot(recipe, currentModal.slot) ? `<div class="modal-adapted-note">↻ Carboidrati alla dose prevista per ${escapeHtml(getSlotMeta(currentModal.slot).label.toLowerCase())}</div>` : ""}`;
 
   const ingredientList = document.getElementById("modal-ingredients-list");
   if (editMode) {
@@ -3274,12 +3274,12 @@ function renderModalContent() {
     });
     const hasMeller = items.some(({ ing }) => !!getMellerAlternativesForIngredient(ing.name));
     ingredientList.innerHTML = items.map(({ ing, adapted }) => {
-      const adaptedMark = adapted ? ` <small class="adapted-mark" title="Dose adattata alla grammatura Meller di questo pasto">↻</small>` : "";
+      const adaptedMark = adapted ? ` <small class="adapted-mark" title="Dose adattata alle linee guida di questo pasto">↻</small>` : "";
       if (getMellerAlternativesForIngredient(ing.name)) {
-        return `<li class="meller-ingredient" onclick="openMellerAlternatives('${escapeAttr(ing.name)}')" title="Tocca per alternative Meller"><span>${escapeHtml(ing.name)} <small class="meller-hint">⇄</small></span>${getIngredientCoupleHtml(ing, dayType)}</li>`;
+        return `<li class="meller-ingredient" onclick="openMellerAlternatives('${escapeAttr(ing.name)}')" title="Tocca per alternative"><span>${escapeHtml(ing.name)} <small class="meller-hint">⇄</small></span>${getIngredientCoupleHtml(ing, dayType)}</li>`;
       }
       return `<li><span>${escapeHtml(ing.name)}${adaptedMark}</span>${getIngredientCoupleHtml(ing, dayType)}</li>`;
-    }).join("") + (hasMeller ? `<li class="meller-footnote"><small>↑ Tocca carboidrati o proteine per le equivalenze Meller</small></li>` : "");
+    }).join("") + (hasMeller ? `<li class="meller-footnote"><small>↑ Tocca carboidrati o proteine per le equivalenze</small></li>` : "");
   }
 
   const prepList = document.getElementById("modal-prep-list");
@@ -3334,44 +3334,46 @@ function renderModalContent() {
   if (mellerNotice) mellerNotice.innerHTML = mellerNoticeHtml();
 }
 
-// Banner "dosi non adattate alle grammature del dott. Meller": elenca le dosi
+// Banner "dosi fuori dalle linee guida": elenca le dosi
 // che superano il riferimento del pasto e offre l'adattamento con un click.
 function mellerNoticeHtml() {
   if (!currentModal || !window.PianoDomain?.checkMellerAdaptation) return "";
   const check = PianoDomain.checkMellerAdaptation(currentModal.recipe);
   if (check.adapted) return "";
   const items = check.summary.slice(0, 4).map(item =>
-    `<li><span>${escapeHtml(item.ingredient)}</span><strong>${formatNumber(item.actual)}${item.unit === "ml" ? " ml" : " g"} → ${item.expected}${item.unit === "ml" ? " ml" : " g"}</strong></li>`
+    `<li><span>${escapeHtml(item.ingredient)} · ${escapeHtml(item.dayTypeLabel)}</span><strong>${formatNumber(item.actual)}${item.unit === "ml" ? " ml" : " g"} → ${item.expected}${item.unit === "ml" ? " ml" : " g"}</strong></li>`
   ).join("");
   const more = check.summary.length > 4
     ? `<li class="meller-notice-more">…e altre ${check.summary.length - 4} dosi fuori riferimento</li>`
     : "";
   return `
     <div class="meller-notice" role="note">
-      <div class="meller-notice-head"><span aria-hidden="true">⚠️</span><div><strong>Dosi non adattate alle grammature del dott. Meller</strong><small>Riferimento per ${escapeHtml(getSlotMeta(currentModal.recipe.slot || "lunch").label.toLowerCase())} · pesi a crudo</small></div></div>
+      <div class="meller-notice-head"><span aria-hidden="true">⚠️</span><div><strong>Dosi fuori dalle linee guida</strong><small>Riferimento per ${escapeHtml(getSlotMeta(currentModal.recipe.slot || "lunch").label.toLowerCase())} · pesi a crudo</small></div></div>
       <ul class="meller-notice-list">${items}${more}</ul>
-      <button class="btn btn-outline meller-adapt-btn" type="button" onclick="adaptCurrentRecipeToMeller()">Adatta a Meller</button>
+      <button class="btn btn-outline meller-adapt-btn" type="button" onclick="adaptCurrentRecipeToMeller()">Adatta alle linee guida</button>
     </div>`;
 }
 
-// Adatta con un click le dosi ai riferimenti del dott. Meller. In lettura
+// Adatta con un click le dosi alle linee guida. In lettura
 // passa prima alla modifica (senza salvare nulla finché l'utente non conferma).
 window.adaptCurrentRecipeToMeller = function() {
   if (!currentModal || !window.PianoDomain?.adaptRecipeToMeller) return;
-  if (!editMode) {
+  const wasEditing = editMode;
+  if (!wasEditing) {
     editMode = true;
     currentModal.recipe = clone(currentModal.recipe);
+  } else {
+    captureEditState();
   }
-  captureEditState();
   const result = PianoDomain.adaptRecipeToMeller(currentModal.recipe);
   if (!result.changed) {
-    showToast("Le dosi rispettano già le grammature Meller");
+    showToast("Le dosi rispettano già le linee guida");
     renderModalContent();
     return;
   }
   currentModal.recipe = result.recipe;
   renderModalContent();
-  showToast("Dosi adattate a Meller ✅ Rivedi e salva");
+  showToast("Dosi adattate alle linee guida ✅ Rivedi e salva");
 };
 
 function captureEditState() {
@@ -3436,7 +3438,7 @@ async function saveRecipeEdit() {
   }
   const mellerCheck = window.PianoDomain?.checkMellerAdaptation?.(recipe);
   if (mellerCheck && !mellerCheck.adapted) {
-    showToast("⚠ Dosi non adattate a Meller: tocca “Adatta a Meller” per correggerle", true);
+    showToast("⚠ Dosi fuori dalle linee guida: tocca “Adatta alle linee guida” per correggerle", true);
   }
   if (!currentModal.isNew && !recipe._original && currentModal.original) {
     const baseline = clone(currentModal.original);

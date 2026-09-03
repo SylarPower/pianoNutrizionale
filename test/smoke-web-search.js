@@ -102,7 +102,7 @@ const wait = () => new Promise(resolve => setTimeout(resolve, 0));
 
   // ---- Discrepanze Meller segnalate dall'app ----
   assert.equal(window.document.querySelectorAll('.websearch-meller').length, 10, 'avviso Meller su ogni scheda fuori riferimento');
-  assert.match(cards[0].textContent, /dosi non aderenti alle grammature del dott\. Meller/, 'discrepanze descritte');
+  assert.match(cards[0].textContent, /dosi non aderenti alle linee guida/, 'discrepanze descritte');
   assert.match(cards[0].textContent, /300 g → 200 g/, 'pollame riportato a 200 g');
   // La ricetta ha una sola dose per ingrediente: si applica il riferimento più
   // restrittivo (pranzo di riposo, 70 g), valido anche in giornata A.
@@ -113,7 +113,7 @@ const wait = () => new Promise(resolve => setTimeout(resolve, 0));
   cards[0].querySelector('.websearch-meller-fix').dispatchEvent(new window.Event('click'));
   const fixedCard = window.document.querySelector('.websearch-card');
   assert.match(fixedCard.textContent, /Ricetta 1/, 'la scheda resta al suo posto');
-  assert.match(fixedCard.textContent, /✓ Meller/, 'scheda marcata come adattata');
+  assert.match(fixedCard.textContent, /✓ Linee guida/, 'scheda marcata come adattata');
   assert.equal(fixedCard.querySelector('.websearch-meller'), null, 'avviso rimosso dopo la correzione');
   assert.match(fixedCard.textContent, /Pollo 200 g/, 'dose del pollo corretta nell’anteprima');
   assert.equal(window.document.querySelectorAll('.websearch-meller').length, 9, 'restano le altre 9 da correggere');

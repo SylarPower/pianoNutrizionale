@@ -177,6 +177,33 @@ appState.shopping = {
 };
 appState.deviceSettings = { portionProfile: 'man', darkMode: false, lastOpenDate: null };
 
+// Regressione: l'adattamento avviato dalla modalità lettura non deve catturare
+// input inesistenti e sovrascrivere i dati della ricetta con i fallback.
+const readModeRecipe = {
+  id: 'READ-ADAPT', name: 'Pasta speciale', emoji: '🍝', slot: 'lunch',
+  proteinCategory: 'Pollame',
+  ingredients: [
+    { name: 'Pasta integrale', portions: samePortion('120g') },
+    { name: 'Pepe nero', portions: samePortion('q.b.') }
+  ],
+  steps: ['Cuoci la pasta', 'Condisci con cura'],
+  specialNote: 'Non scuocere', notes: ['Usare pepe fresco']
+};
+setRecipes([...recipes, readModeRecipe]);
+openRecipeModal('READ-ADAPT');
+assert.equal(editMode, false, 'ricetta aperta in lettura');
+const beforeReadAdapt = clone(currentModal.recipe);
+adaptCurrentRecipeToMeller();
+assert.equal(editMode, true, 'dopo il click passa in modifica');
+for (const field of ['name', 'emoji', 'slot', 'proteinCategory', 'steps', 'specialNote', 'notes']) {
+  assert.deepEqual(currentModal.recipe[field], beforeReadAdapt[field], `${field} preservato`);
+}
+assert.equal(currentModal.recipe.ingredients[0].name, beforeReadAdapt.ingredients[0].name);
+assert.deepEqual(currentModal.recipe.ingredients[1], beforeReadAdapt.ingredients[1], 'ingrediente non adattato identico');
+assert.equal(currentModal.recipe.ingredients[0].portions.manTraining, '90 g');
+assert.equal(currentModal.recipe.ingredients[0].portions.manRest, '70 g');
+setRecipes(recipes);
+
 // ---- Percorsi di rendering ----
 renderGlobalHeader();
 renderWeek();
