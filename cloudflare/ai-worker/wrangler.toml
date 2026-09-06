@@ -2,15 +2,25 @@ name = "piano-nutrizionale-ai"
 main = "src/index.js"
 compatibility_date = "2026-08-30"
 
+# Log strutturati (JSON) del Worker visibili in Workers & Pages → Observability.
+# Non contengono mai GEMINI_API_KEY, header Authorization o token Firebase.
+[observability]
+enabled = true
+
 # Nessuna chiave segreta va inserita qui. GEMINI_API_KEY si aggiunge con:
 # npx wrangler secret put GEMINI_API_KEY
 [vars]
 FIREBASE_PROJECT_ID = "piano-nutrizionale"
 # Modello testuale per la ricerca di nuove ricette dal web via /recipes
-# con Google Search grounding. 3.5 Flash: quota gratuita più ampia e latenza
-# inferiore, stessa resa sulle ricette. Il Worker ha comunque il fallback
-# automatico sugli altri modelli Flash se questo non è disponibile.
-GEMINI_TEXT_MODEL = "gemini-3.5-flash"
+# (Google Search grounding + output JSON strutturato). Gemini 3.5 Flash-Lite è
+# GA, supporta grounding e structured outputs e nel piano gratuito del progetto
+# dispone di 15 RPM / 250K TPM / 500 RPD e 500 richieste di grounding al giorno.
+GEMINI_TEXT_MODEL = "gemini-3.5-flash-lite"
+# Unico fallback, usato solo per errori legati al modello (quota, ritiro,
+# grounding non disponibile). Lascia vuoto per disattivare il fallback.
+# gemini-3.6-flash (grounding 0/0 nel progetto) e gemini-2.5-flash-lite (non
+# più disponibile ai nuovi utenti) NON vanno reinseriti.
+GEMINI_FALLBACK_MODELS = "gemini-3.1-flash-lite"
 # Origini senza slash finale, separate da virgola.
 # Aggiungi il tuo dominio personale se lo userai.
 ALLOWED_ORIGINS = "https://sylarpower.github.io,https://piano-nutrizionale.web.app,http://localhost:8000,http://127.0.0.1:8000"

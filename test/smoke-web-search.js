@@ -161,6 +161,47 @@ const wait = () => new Promise(resolve => setTimeout(resolve, 0));
   window.PianoWebSearch.close();
   assert.equal(modal.classList.contains('hidden'), true, 'modale chiusa');
 
+  // ---- Errori del Worker distinti per `code`, non solo per status HTTP ----
+  const describe = window.PianoWebSearch._describeWorkerError;
+  const fakeResponse = (status, headers = {}) => ({ status, headers: { get: name => headers[name.toLowerCase()] ?? null } });
+  const workerLimit = describe(fakeResponse(429, { 'retry-after': '600' }), { error: 'Hai raggiunto il limite temporaneo di ricerche del Worker per il tuo account.', code: 'WORKER_RATE_LIMIT', retryAfter: 600 });
+  assert.match(workerLimit, /Troppe ricerche in poco tempo dal tuo account/, '429 del Worker → limite personale');
+  assert.match(workerLimit, /10 minuti/, 'retry-after tradotto in minuti');
+  const quota = describe(fakeResponse(429, { 'retry-after': '42' }), { error: 'Quota o rate limit Gemini raggiunti per gemini-3.5-flash-lite (HTTP 429 RESOURCE_EXHAUSTED): GenerateRequestsPerDayPerProjectPerModel-FreeTier. Riprova tra circa 42 secondi.', code: 'GEMINI_QUOTA', retryAfter: 42 });
+  assert.doesNotMatch(quota, /Troppe ricerche in poco tempo/, '429 per quota Gemini NON è il limite del Worker');
+  assert.match(quota, /gemini-3\.5-flash-lite/, 'la causa reale (modello) resta visibile');
+  const quotaZero = describe(fakeResponse(429), { error: 'Il progetto Google della API key non ha alcuna quota per gemini-3.5-flash-lite (limite 0). Il blocco è nel progetto/API key Google, non nel codice del Worker.', code: 'GEMINI_QUOTA' });
+  assert.match(quotaZero, /progetto\/API key Google/, 'quota zero spiegata come problema del progetto');
+  const configuration = describe(fakeResponse(502), { error: 'Il modello gemini-3.5-flash-lite (HTTP 400 FAILED_PRECONDITION) è stato ritirato da Google e non è più disponibile: aggiorna GEMINI_TEXT_MODEL nel Worker.', code: 'GEMINI_CONFIGURATION' });
+  assert.match(configuration, /problema di configurazione del servizio AI/, '502 di configurazione');
+  assert.match(configuration, /ritirato da Google/, 'dettaglio del Worker conservato');
+  const unavailable = describe(fakeResponse(502), { error: 'Gemini non ha risposto correttamente per gemini-3.5-flash-lite (HTTP 503 UNAVAILABLE).', code: 'GEMINI_UNAVAILABLE' });
+  assert.match(unavailable, /servizio AI non ha risposto/, '502 del provider');
+  const invalid = describe(fakeResponse(422), { error: 'Gemini non ha trovato ricette adatte alla richiesta: prova con altri ingredienti o preferenze.', code: 'GEMINI_INVALID_RESPONSE' });
+  assert.match(invalid, /altri ingredienti/, '422 → invito a cambiare ricerca');
+  assert.doesNotMatch(invalid, /configurazione|quota/i, 'il 422 non parla di quota o configurazione');
+  // Worker precedente senza `code`: il 429 generico resta comprensibile.
+  assert.match(describe(fakeResponse(429), null), /Troppe richieste in questo momento/);
+  assert.match(describe(fakeResponse(500), null), /non è disponibile \(500\)/);
+  assert.match(describe(fakeResponse(401), { error: 'Autenticazione richiesta.', code: 'UNAUTHENTICATED' }), /Autenticazione richiesta/);
+
+  // La modale mostra il messaggio del Worker così com'è stato descritto.
+  window.fetch = async () => ({
+    ok: false,
+    status: 429,
+    headers: { get: name => (name.toLowerCase() === 'retry-after' ? '42' : null) },
+    json: async () => ({ error: 'Quota o rate limit Gemini raggiunti per gemini-3.5-flash-lite (HTTP 429 RESOURCE_EXHAUSTED). Riprova tra circa 42 secondi.', code: 'GEMINI_QUOTA', retryAfter: 42 })
+  });
+  window.PianoWebSearch.open();
+  window.document.getElementById('websearch-form').dispatchEvent(new window.Event('submit'));
+  for (let i = 0; i < 10; i += 1) await wait();
+  const errorBox = window.document.getElementById('websearch-error');
+  assert.equal(errorBox.classList.contains('hidden'), false, 'errore mostrato');
+  assert.match(errorBox.textContent, /Quota o rate limit Gemini/, 'messaggio della quota Gemini');
+  assert.doesNotMatch(errorBox.textContent, /Troppe ricerche in poco tempo/, 'nessun messaggio del limite interno per la quota Gemini');
+  assert.equal(window.document.querySelectorAll('.websearch-card').length, 0, 'nessuna scheda su errore');
+  window.PianoWebSearch.close();
+
   console.log('smoke-web-search: OK');
 })().catch(error => {
   console.error(error);

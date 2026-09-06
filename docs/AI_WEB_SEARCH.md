@@ -95,8 +95,10 @@ invii i campi `alternatives` / `guidelines` / `mealStructure`.
   `MELLER_GUIDE`, `mellerAlternativeGroups`, `checkMellerAdaptation`,
   `adaptRecipeToMeller`).
 - `cloudflare/ai-worker` — Worker con un solo endpoint `POST /recipes` che
-  interroga Gemini (modello `gemini-3.5-flash` di default) con Google Search
-  grounding. **Nessun import di file locali**: è un file autosufficiente.
+  interroga Gemini (modello `gemini-3.5-flash-lite` di default) con Google
+  Search grounding e **output JSON strutturato** (`responseMimeType:
+  application/json` + `responseSchema`). **Nessun import di file locali**: è un
+  file autosufficiente.
 
 ### Body della richiesta `POST /recipes`
 
@@ -114,16 +116,88 @@ Nessun campo dietetico: la richiesta contiene solo i criteri dell'utente. Il
 Worker filtra le ricette restituite tenendo solo quelle dello `slot` richiesto e
 ne restituisce al massimo 10, insieme alle fonti.
 
-### Fallback automatico del modello
+### Come il Worker interroga Gemini
 
-Il Worker prova i modelli in ordine: `gemini-3.5-flash` (o `GEMINI_TEXT_MODEL`),
-poi `gemini-3.6-flash`, `gemini-3.1-flash-lite`, `gemini-2.5-flash-lite`.
-`gemini-3.5-flash` è il default perché su questo caso d'uso — ricerca con
-grounding e output strutturato breve — offre il miglior rapporto tra qualità,
-quota gratuita e latenza. Se un modello risponde 429/404 o segnala quota,
-fatturazione, modello deprecato o non disponibile, si passa automaticamente al
-successivo. Se falliscono tutti, l'app mostra: *"La quota gratuita di Gemini è
-esaurita oppure la fatturazione del progetto Google non è attiva…"*.
+Una sola chiamata `generateContent` con:
+
+- `tools: [{ googleSearch: {} }]` — **solo** Google Search grounding. La vecchia
+  combinazione `googleSearch` + `functionDeclarations` (function call
+  `search_recipes`) è stata rimossa: non va reintrodotta senza prova documentata
+  e testata che l'API la supporti, perché produceva risposte senza function call
+  e quindi 502/422 a catena.
+- `generationConfig.responseMimeType: "application/json"` +
+  `generationConfig.responseSchema` con lo schema `recipes[] { name, slot,
+  emoji, ingredients[] { name, quantity }, steps[], notes[], sourceUrl,
+  sourceTitle }`. La documentazione Gemini (sezione *Structured outputs with
+  tools*) indica che sui modelli Gemini 3 l'output strutturato è combinabile con
+  Google Search; `gemini-3.5-flash-lite` e `gemini-3.1-flash-lite` dichiarano
+  supporto sia a *Search grounding* sia a *Structured outputs*.
+- Chiave API nell'header `x-goog-api-key` (mai nell'URL `?key=`), nessun
+  `temperature`/`topP`/`topK` (deprecati da Google per Gemini 3).
+
+**Variante in due passaggi.** Se Google risponde che grounding e JSON
+strutturato non sono ammessi insieme (es. *"Tool use with a response mime type:
+'application/json' is unsupported"*, `structured_grounding_unsupported`), il
+Worker ripete la chiamata grounded chiedendo testo libero/JSON e, se il testo
+non è già JSON valido, esegue una seconda chiamata **senza grounding** che
+normalizza quel testo nello schema. L'esito viene ricordato per modello per 6
+ore (`mode: "grounded-text"` o `"grounded-text+normalize"` nella risposta). Le
+fonti provengono sempre e solo da `groundingMetadata.groundingChunks`: il Worker
+non inventa URL e scarta quelli non `http(s)`.
+
+**Parsing tollerante.** `parseRecipesFromResponse()` legge il JSON nel testo
+della risposta (diretto, dentro un code fence ```` ```json ````, immerso nel
+testo, array puro, risposta già oggetto) e recupera le ricette complete anche da
+un JSON troncato da `MAX_TOKENS`. `normalizeRecipe()` pulisce i campi, impone lo
+`slot` richiesto quando manca o non è valido e scarta le ricette di altri pasti;
+il risultato è al massimo di 10 ricette, senza duplicati né nomi già visti.
+
+### Modelli e fallback
+
+- Default: **`gemini-3.5-flash-lite`** (`GEMINI_TEXT_MODEL`). È GA dal 21 luglio
+  2026, senza data di ritiro, supporta grounding e structured outputs e nel
+  progetto gratuito dispone di 15 RPM / 250K TPM / 500 RPD e 500 richieste di
+  grounding al giorno (su Gemini 3 **ogni query di ricerca eseguita** dal modello
+  consuma una richiesta di grounding: una ricerca dell'app può valerne più di una).
+- Unico fallback: **`gemini-3.1-flash-lite`** (`GEMINI_FALLBACK_MODELS`,
+  lasciare vuoto per disattivarlo). Google ne ha annunciato il ritiro per il
+  7 maggio 2027 con `gemini-3.5-flash-lite` come sostituto.
+- Rimossi: `gemini-3.6-flash` (nessuna quota grounding nel progetto) e
+  `gemini-2.5-flash-lite` (Google risponde *"no longer available to new users"*).
+
+Il fallback scatta **solo** per errori legati al modello: quota/rate limit
+(429), modello ritirato o non trovato, grounding non disponibile, fatturazione
+disattivata, errori 5xx o di rete. Con API key non valida, permessi negati,
+regione non supportata o richiesta rifiutata il secondo modello non viene
+nemmeno provato. Per ogni ricerca il Worker fa al massimo 2 tentativi di modello
+e 4 chiamate Gemini in totale.
+
+### Codici di errore restituiti dal Worker
+
+Ogni errore è JSON `{ error, code, reason, attempts[] }` (più `retryAfter` e
+header `Retry-After` quando ha senso). Lo status HTTP e il `code` seguono la
+causa del **modello primario**; i fallback falliti sono elencati nel messaggio.
+
+| HTTP | `code` | Quando | `reason` |
+| --- | --- | --- | --- |
+| 429 | `WORKER_RATE_LIMIT` | limite interno del Worker (30 ricerche/15 min per utente), Gemini non viene chiamato | `worker_rate_limit` |
+| 429 | `GEMINI_QUOTA` | Google risponde 429 `RESOURCE_EXHAUSTED` per tutti i modelli provati | `quota` |
+| 502 | `GEMINI_CONFIGURATION` | modello ritirato/non trovato, grounding non disponibile, combinazione rifiutata, fatturazione disattivata, API key non valida o assente, permessi/regione | `model_retired`, `model_not_found`, `grounding_unavailable`, `structured_grounding_unsupported`, `unsupported_configuration`, `billing_disabled`, `invalid_api_key`, `missing_api_key`, `permission_denied`, `location_unsupported` |
+| 502 | `GEMINI_UNAVAILABLE` | errori 5xx o di rete di Google, budget di chiamate esaurito | `provider_error`, `network_error`, `call_budget_exhausted` |
+| 422 | `GEMINI_INVALID_RESPONSE` | Gemini ha risposto 200 ma senza ricette utilizzabili | `no_recipes`, `no_recipes_for_slot`, `malformed_response`, `blocked` |
+
+Il messaggio `error` cita sempre modello, status HTTP e status Google della
+causa reale (es. *"gemini-3.5-flash-lite (HTTP 429 RESOURCE_EXHAUSTED)"*) e il
+messaggio originale di Google: non esiste più la frase generica *"quota gratuita
+esaurita"*. Se Google indica **`limit: 0`** (`quotaValue: "0"`), il messaggio
+dice esplicitamente che il progetto/API key non ha alcuna quota per quel modello
+e che il blocco è lato Google, non nel codice.
+
+I log strutturati (`console.log` JSON, visibili in **Observability**) riportano
+per ogni chiamata modello, `httpStatus`, `errorCode`, `errorStatus`, `message`,
+`details` e classificazione. Non contengono mai `GEMINI_API_KEY`, l'header
+`Authorization`, il token Firebase né URL con `?key=`: ogni stringa passa da
+`redactSecrets()`.
 
 ## Configurazione gratuita
 
@@ -177,14 +251,18 @@ pubblica con un copia-incolla.
 ### Passo 4 — Variabili e segreto
 
 Torna alla pagina del Worker e vai in **Settings** → **Variables and Secrets**.
-Con **Add** inserisci queste quattro voci nell'ambiente **Production**:
+Con **Add** inserisci queste voci nell'ambiente **Production**:
 
 | Tipo | Nome | Valore |
 | --- | --- | --- |
 | Text | `FIREBASE_PROJECT_ID` | `piano-nutrizionale` |
-| Text | `GEMINI_TEXT_MODEL` | `gemini-3.5-flash` |
+| Text | `GEMINI_TEXT_MODEL` | `gemini-3.5-flash-lite` |
+| Text | `GEMINI_FALLBACK_MODELS` | `gemini-3.1-flash-lite` (facoltativa; vuota = nessun fallback) |
 | Text | `ALLOWED_ORIGINS` | `https://sylarpower.github.io,http://localhost:8000,http://127.0.0.1:8000,https://piano-nutrizionale.web.app` |
 | **Secret** | `GEMINI_API_KEY` | la chiave copiata al passo 1 |
+
+Se avevi impostato in precedenza `GEMINI_TEXT_MODEL = gemini-3.5-flash` (o un
+modello rimosso), aggiorna il valore: il Worker usa la variabile così com'è.
 
 Attenzione a `GEMINI_API_KEY`: scegli il tipo **Secret** (non *Text*), così il
 valore resta nascosto. Nel valore non devono esserci virgolette, spazi iniziali
@@ -289,13 +367,47 @@ premi **Deploy**.
 L'utente non è autenticato o la sessione Firebase è scaduta. Esci e accedi di
 nuovo.
 
-### `Non sono riuscito a trovare ricette valide` (422)
-Il Worker ha interpellato Gemini ma non ha ricevuto la chiamata `search_recipes`
-o nessuna ricetta valida. Riprova con una richiesta diversa; verifica che
-`GEMINI_TEXT_MODEL` sia impostato e che la chiave abbia accesso all'API
-testuale con Google Search grounding.
+### Nessuna ricetta valida (422, `GEMINI_INVALID_RESPONSE`)
+Gemini ha risposto correttamente ma il JSON non conteneva ricette utilizzabili
+(`reason`: `no_recipes`, `no_recipes_for_slot`, `malformed_response`,
+`blocked`). Non è un problema di quota né di configurazione: riprova con
+ingredienti o preferenze diversi.
 
-### Quota gratuita esaurita
-La webapp non effettua acquisti automatici. Verifica uso e limiti del progetto
-su <https://aistudio.google.com/rate-limit>. Il Worker prova prima tutti i
-modelli di fallback: solo se falliscono tutti mostra l'errore sulla quota.
+### Quota o rate limit Gemini (429, `GEMINI_QUOTA`)
+Google ha risposto `429 RESOURCE_EXHAUSTED` per il modello primario e per il
+fallback. Il messaggio riporta il modello, la quota violata (es.
+`GenerateRequestsPerDayPerProjectPerModel-FreeTier`) e l'attesa suggerita.
+Verifica uso e limiti del progetto su <https://aistudio.google.com/rate-limit>.
+Se il messaggio parla di **limite 0**, il progetto/API key non ha alcuna quota
+per quel modello: il blocco è lato Google (progetto senza quota gratuita per il
+modello, chiave di un altro progetto, restrizioni sulla chiave) e va risolto in
+AI Studio / Google Cloud, non nel codice. Prova di controprova: una chiamata
+testuale semplice a `gemini-3.5-flash-lite` con la stessa chiave, senza
+grounding, deve funzionare; se restituisce ancora quota zero il problema non è
+il Worker.
+
+### Troppe ricerche in poco tempo (429, `WORKER_RATE_LIMIT`)
+È il limite interno del Worker (30 ricerche ogni 15 minuti per utente), non la
+quota di Gemini: l'header `Retry-After` indica quando riprovare.
+
+### Errore di configurazione (502, `GEMINI_CONFIGURATION`)
+Il messaggio dice la causa: modello ritirato (*"no longer available"*) o
+inesistente → aggiorna `GEMINI_TEXT_MODEL`; grounding non disponibile per il
+modello; combinazione grounding + JSON rifiutata (il Worker passa da solo alla
+variante in due passaggi); fatturazione disattivata; API key non valida o
+assente → controlla il secret `GEMINI_API_KEY`.
+
+### Servizio AI non disponibile (502, `GEMINI_UNAVAILABLE`)
+Errore 5xx o di rete lato Google: riprova più tardi. I dettagli (status HTTP,
+`errorStatus`, messaggio originale) sono nei log Observability del Worker.
+
+### Per leggere i log
+Cloudflare → **Workers & Pages** → `piano-nutrizionale-ai` → **Logs** /
+**Observability**. Cerca gli eventi `gemini_error`, `recipes_failed`,
+`recipes_ok`: contengono modello, `httpStatus`, `errorCode`, `errorStatus`,
+messaggio e `details` di Google, mai chiavi o token.
+
+### Deploy da terminale (alternativa alla dashboard)
+Da `cloudflare/ai-worker`: `npx wrangler login`, `npx wrangler secret put
+GEMINI_API_KEY`, `npx wrangler deploy`. Le variabili non segrete vengono da
+`wrangler.toml`.
