@@ -85,6 +85,55 @@
   // Rete
   // -----------------------------------------------------------------------
 
+  function retryAfterSeconds(response, body) {
+    const fromBody = Number(body?.retryAfter);
+    if (Number.isFinite(fromBody) && fromBody > 0) return Math.ceil(fromBody);
+    const fromHeader = Number(response?.headers?.get?.('retry-after'));
+    if (Number.isFinite(fromHeader) && fromHeader > 0) return Math.ceil(fromHeader);
+    return 0;
+  }
+
+  function retryHint(seconds) {
+    if (!seconds) return 'Riprova più tardi.';
+    if (seconds < 90) return `Riprova tra circa ${seconds} secondi.`;
+    return `Riprova tra circa ${Math.ceil(seconds / 60)} minuti.`;
+  }
+
+  // Il Worker restituisce un campo `code` che distingue le cause: il limite
+  // interno del Worker (WORKER_RATE_LIMIT) non è la quota di Gemini
+  // (GEMINI_QUOTA), che a sua volta non è un errore di configurazione del
+  // provider (GEMINI_CONFIGURATION) né una risposta senza ricette
+  // (GEMINI_INVALID_RESPONSE). Il messaggio del Worker descrive già la causa
+  // reale: qui si aggiunge solo il contesto utile all'utente.
+  function describeWorkerError(response, body) {
+    const status = Number(response?.status) || 0;
+    const code = String(body?.code || '');
+    const detail = String(body?.error || '').trim();
+    const seconds = retryAfterSeconds(response, body);
+    switch (code) {
+      case 'WORKER_RATE_LIMIT':
+        return `Troppe ricerche in poco tempo dal tuo account: ${retryHint(seconds).toLowerCase()}`;
+      case 'GEMINI_QUOTA':
+        return `${detail || 'Quota Gemini esaurita o limite di richieste raggiunto.'} ${detail && /riprova/i.test(detail) ? '' : retryHint(seconds)}`.trim();
+      case 'GEMINI_CONFIGURATION':
+        return `Ricerca non disponibile per un problema di configurazione del servizio AI: ${detail || 'controlla il Worker Cloudflare e la chiave Gemini.'}`;
+      case 'GEMINI_UNAVAILABLE':
+        return `Il servizio AI non ha risposto: ${detail || 'riprova tra qualche minuto.'}`;
+      case 'GEMINI_INVALID_RESPONSE':
+        return detail || 'Non ho trovato ricette valide. Prova con altri ingredienti o preferenze.';
+      case 'UNAUTHENTICATED':
+        return detail || 'Sessione scaduta: esci e accedi di nuovo alla webapp.';
+      default:
+        break;
+    }
+    // Worker precedente senza `code`: si ragiona sullo status HTTP.
+    if (status === 429) return detail || `Troppe richieste in questo momento. ${retryHint(seconds)}`;
+    if (status === 422) return detail || 'Non ho trovato ricette valide. Prova con altri ingredienti o preferenze.';
+    if (status === 401) return detail || 'Sessione scaduta: esci e accedi di nuovo alla webapp.';
+    if (status >= 500) return detail || `Il servizio AI non è disponibile (${status}). Riprova più tardi.`;
+    return detail || `Ricerca delle ricette non riuscita (${status || 'errore di rete'}).`;
+  }
+
   async function searchRecipes({ ingredients, slot, note, excludeNames } = {}) {
     const cleanIngredients = String(ingredients || '').trim();
     const cleanSlot = SLOTS.some(item => item.id === slot) ? slot : 'lunch';
@@ -117,11 +166,8 @@
       });
       let body = null;
       try { body = await response.json(); } catch (_) {}
-      if (response.status === 429) {
-        return { error: 'Troppe ricerche in poco tempo: attendi qualche minuto e riprova.' };
-      }
       if (!response.ok) {
-        return { error: body?.error || `Ricerca delle ricette non riuscita (${response.status}).` };
+        return { error: describeWorkerError(response, body), code: String(body?.code || '') };
       }
       const recipes = Array.isArray(body?.recipes) ? body.recipes : [];
       if (!recipes.length) return { error: 'Non ho trovato ricette corrispondenti. Prova con altri ingredienti o preferenze.' };
@@ -542,7 +588,8 @@
     close: closeModal,
     isOpen: () => state.open,
     _state: state,
-    _search: searchRecipes
+    _search: searchRecipes,
+    _describeWorkerError: describeWorkerError
   };
 
   document.addEventListener('DOMContentLoaded', ensureUi);
