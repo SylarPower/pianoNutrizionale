@@ -1895,3 +1895,19 @@ test('CSS equivalenze Meller: colonne stabili per carboidrati e proteine', () =>
   // vanno a capo invece di rompere la griglia.
   assert.match(css, /\.alternative-table\.cols-2 > div > :nth-child\(n\+3\),/, 'celle in eccesso gestite');
 });
+
+test('CSS smartphone: titoli ricettario, profilo e tipo giornata non collassano', () => {
+  const css = fs.readFileSync(path.join(ROOT, 'css/style.css'), 'utf8');
+  const mobileStart = css.indexOf('@media (max-width: 520px)');
+  const mobileEnd = css.indexOf('/* ===== Schema 4', mobileStart);
+  const mobile = css.slice(mobileStart, mobileEnd);
+
+  assert.match(css, /\.recipe-section-name \{[\s\S]*?text-overflow: ellipsis;[\s\S]*?white-space: nowrap;/, 'titolo pasto sempre su una riga');
+  assert.match(css, /\.type-option \{[\s\S]*?min-height: 44px;/, 'selettori Allenamento e Riposo touch-safe');
+  assert.match(mobile, /\.day-type-control \{ display: grid; width: 100%; min-width: 0; \}/, 'selettore giornata a piena larghezza su smartphone');
+  assert.match(mobile, /\.recipe-toolbar \{ display: grid; grid-template-columns: repeat\(2, minmax\(0, 1fr\)\);/, 'azioni ricettario in griglia stabile');
+  assert.match(mobile, /\.profile-chip \{ margin-left: 0; \}/, 'profilo senza offset fragile');
+  assert.match(mobile, /\.recipe-count-full \{ display: none; \}/, 'conteggio esteso nascosto su smartphone');
+  assert.match(mobile, /\.recipe-count-compact \{ display: inline; \}/, 'conteggio compatto visibile su smartphone');
+  assert.match(css, /@media \(hover: none\) \{[\s\S]*?\.recipe-card-emoji, \.today-badge \{ animation: none; \}/, 'animazioni decorative disattivate sui touch device');
+});

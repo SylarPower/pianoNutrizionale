@@ -28,6 +28,7 @@ let currentModal = null;
 let editMode = false;
 let shopSettingsVisible = false;
 let toastTimeout = null;
+let toastRemoveTimeout = null;
 let stopHouseholdObserver = null;
 let stopSharedDataObserver = null;
 let activeHouseholdId = null;
@@ -125,8 +126,15 @@ function getIngredientDisplay(ingredient, dayType) {
 function getProfileLabel() {
   const profile = getPortionProfile();
   if (profile === "ipo") return "Donna · regime IPO";
-  if (profile === "couple") return "Uomo + donna IPO";
-  return "Uomo · dosi A/R";
+  if (profile === "couple") return "Coppia · uomo + donna IPO";
+  return "Uomo";
+}
+
+function getProfileChipLabel() {
+  const profile = getPortionProfile();
+  if (profile === "ipo") return { icon: "👩", label: "Profilo donna IPO" };
+  if (profile === "couple") return { icon: "👥", label: "Profilo coppia" };
+  return { icon: "👨", label: "Profilo uomo" };
 }
 
 function normalizeRecipeLibraryState(state = {}) {
@@ -227,11 +235,15 @@ function showToast(message, isError = false) {
     toast.className = "app-toast hidden";
     document.body.appendChild(toast);
   }
+  clearTimeout(toastTimeout);
+  clearTimeout(toastRemoveTimeout);
   toast.textContent = message;
   toast.classList.toggle("toast-error", isError);
-  toast.classList.remove("hidden");
-  clearTimeout(toastTimeout);
-  toastTimeout = setTimeout(() => toast.classList.add("hidden"), 2800);
+  toast.classList.remove("hidden", "toast-exit");
+  toastTimeout = setTimeout(() => {
+    toast.classList.add("toast-exit");
+    toastRemoveTimeout = setTimeout(() => toast.remove(), 250);
+  }, 2800);
 }
 
 function setLoading(message = "Caricamento…") {
@@ -364,6 +376,7 @@ function setupLoginForm() {
 async function loadUserData(user, { silent = false } = {}) {
   appState.user = user;
   if (!silent) setLoading("Sincronizzazione del piano personale…");
+  if (appStarted && window.location.hash === "#recipes") renderRecipes({ loading: true });
   try {
     // Prima individua l'eventuale household, poi le tre letture puntano in modo
     // trasparente ai documenti personali oppure a quelli condivisi.
@@ -410,6 +423,7 @@ async function loadUserData(user, { silent = false } = {}) {
   } catch (error) {
     console.error(error);
     if (silent) {
+      if (appStarted && window.location.hash === "#recipes") renderRecipes();
       showToast("Connessione assente: stai vedendo i dati salvati sul dispositivo.", true);
     } else {
       showApp();
@@ -556,17 +570,39 @@ function setupRouter() {
 // Ultima vista renderizzata: consente di far scorrere la settimana sul giorno
 // corrente solo quando la si apre, non a ogni re-render della stessa vista.
 let lastRenderedRoute = null;
+let routeTransitionTimer = null;
+let routeTransitionToken = 0;
+
+function revealRouteView(view, transitionToken, enteringWeek) {
+  view.classList.remove("view-exit");
+  view.classList.add("view-enter");
+  view.classList.remove("hidden");
+  const startEntrance = () => {
+    if (transitionToken !== routeTransitionToken) return;
+    view.classList.remove("view-enter");
+    if (enteringWeek) scrollWeekToToday();
+  };
+  if (typeof requestAnimationFrame === "function") requestAnimationFrame(startEntrance);
+  else startEntrance();
+}
 
 function handleRoute() {
   if (!appState.user || !appState.plan) return;
   const hash = window.location.hash || "#week";
+  const routeName = hash.slice(1);
+  const targetView = document.getElementById(`view-${routeName}`);
+  if (!targetView) return;
 
-  document.querySelectorAll(".view").forEach(view => view.classList.add("hidden"));
-  document.querySelectorAll(".nav-item").forEach(item => item.classList.remove("active"));
-  document.getElementById(`view-${hash.slice(1)}`)?.classList.remove("hidden");
-  document.getElementById(`nav-${hash.slice(1)}`)?.classList.add("active");
-
+  const views = [...document.querySelectorAll(".view")];
+  const outgoingView = views.find(view => view !== targetView && !view.classList.contains("hidden"));
+  const targetAlreadyVisible = !targetView.classList.contains("hidden");
   const enteringWeek = hash === "#week" && lastRenderedRoute !== "#week";
+  const transitionToken = ++routeTransitionToken;
+
+  clearTimeout(routeTransitionTimer);
+  document.querySelectorAll(".nav-item").forEach(item => item.classList.remove("active"));
+  document.getElementById(`nav-${routeName}`)?.classList.add("active");
+
   if (hash === "#week") renderWeek();
   if (hash === "#recipes") renderRecipes();
   if (hash === "#shop") renderShop();
@@ -574,7 +610,31 @@ function handleRoute() {
   if (hash === "#settings") renderSettings();
   lastRenderedRoute = hash;
 
-  if (enteringWeek) scrollWeekToToday();
+  if (!outgoingView) {
+    views.forEach(view => {
+      if (view !== targetView) view.classList.add("hidden");
+      view.classList.remove("view-exit");
+    });
+    if (targetAlreadyVisible) {
+      targetView.classList.remove("hidden", "view-enter", "view-exit");
+      if (enteringWeek) scrollWeekToToday();
+    } else {
+      revealRouteView(targetView, transitionToken, enteringWeek);
+    }
+    return;
+  }
+
+  outgoingView.classList.remove("view-enter");
+  outgoingView.classList.add("view-exit");
+  const reducedMotion = window.matchMedia?.("(prefers-reduced-motion: reduce)")?.matches;
+  routeTransitionTimer = setTimeout(() => {
+    if (transitionToken !== routeTransitionToken) return;
+    views.forEach(view => {
+      view.classList.add("hidden");
+      view.classList.remove("view-exit", "view-enter");
+    });
+    revealRouteView(targetView, transitionToken, enteringWeek);
+  }, reducedMotion ? 0 : 160);
 }
 
 function scrollWeekToToday() {
@@ -596,11 +656,11 @@ function renderGlobalHeader() {
   }
   const profile = getPortionProfile();
   header.innerHTML = `
-    <div class="header-brand"><span>🥗</span><strong>Piano</strong></div>
+    <div class="header-brand"><span class="header-brand-icon" aria-hidden="true">🥗</span><strong>Piano</strong></div>
     <select aria-label="Profilo porzioni" onchange="changePortionProfile(this.value)">
-      <option value="man" ${profile === "man" ? "selected" : ""}>👨 Uomo · A/R</option>
-      <option value="ipo" ${profile === "ipo" ? "selected" : ""}>👩 Donna · IPO</option>
-      <option value="couple" ${profile === "couple" ? "selected" : ""}>👥 Uomo + Donna IPO</option>
+      <option value="man" ${profile === "man" ? "selected" : ""}>👨 Profilo uomo</option>
+      <option value="ipo" ${profile === "ipo" ? "selected" : ""}>👩 Profilo donna IPO</option>
+      <option value="couple" ${profile === "couple" ? "selected" : ""}>👥 Profilo coppia</option>
     </select>
     <a href="#settings" class="header-account" title="Impostazioni" aria-label="Impostazioni">⚙️ ${escapeHtml(usernameFromUser(appState.user))}</a>
   `;
@@ -799,8 +859,19 @@ function renderWeekAnalysis() {
 function renderWeek() {
   const container = document.getElementById("view-week");
   const today = getTodayKey();
+  const profileChip = getProfileChipLabel();
   container.innerHTML = `
-    <div class="page-heading week-heading"><div><p class="eyebrow">Schema ottimizzato</p><h1>Piano settimanale</h1><p>Sab(R) · Dom(A) · Lun(A) · Mar(R) · Mer(A) · Gio(R) · Ven(A)</p></div><button class="btn btn-outline" onclick="openGeneratorModal()">✨ Genera settimana</button></div>
+    <div class="page-heading week-heading">
+      <div class="week-heading-copy">
+        <p class="eyebrow">Schema ottimizzato</p>
+        <h1>Piano settimanale</h1>
+        <p>Scegli Allenamento o Riposo in ogni giornata per adattare le dosi.</p>
+        <div class="week-heading-meta">
+          <span class="profile-chip"><span aria-hidden="true">${profileChip.icon}</span><strong>${escapeHtml(profileChip.label)}</strong></span>
+        </div>
+      </div>
+      <button class="btn btn-outline week-generate-btn" onclick="openGeneratorModal()">✨ Genera settimana</button>
+    </div>
     ${renderWeekAnalysis()}
     <div class="week-grid">
       ${DAY_ORDER.map(day => {
@@ -809,9 +880,9 @@ function renderWeek() {
           <article id="day-${day}" class="day-column ${day === today ? "current-day" : ""}">
             <div class="day-column-head">
               <div>${day === today ? `<span class="today-badge">OGGI</span>` : `<span class="recipe-code">GIORNO</span>`}<h2>${DAY_NAMES[day]}</h2></div>
-              <div class="day-type-control">
-                <button class="type-option training ${planDay.type === "training" ? "active" : ""}" onclick="changeDayType('${day}', 'training')">A</button>
-                <button class="type-option rest ${planDay.type === "rest" ? "active" : ""}" onclick="changeDayType('${day}', 'rest')">R</button>
+              <div class="day-type-control" aria-label="Tipo di giornata">
+                <button class="type-option training ${planDay.type === "training" ? "active" : ""}" onclick="changeDayType('${day}', 'training')" aria-pressed="${planDay.type === "training"}" title="Giornata di allenamento">Allenamento</button>
+                <button class="type-option rest ${planDay.type === "rest" ? "active" : ""}" onclick="changeDayType('${day}', 'rest')" aria-pressed="${planDay.type === "rest"}" title="Giornata di riposo">Riposo</button>
               </div>
             </div>
             ${MEAL_SLOTS.map(slot => {
@@ -845,7 +916,7 @@ function setupSwapModal() {
     <div id="swap-modal" class="modal hidden" role="dialog" aria-modal="true">
       <div class="modal-content swap-modal-content">
         <div class="modal-header"><div><p class="eyebrow">Piano personale</p><h2 id="swap-title">Sostituisci ricetta</h2></div><button class="btn-icon" onclick="closeSwapModal()">&times;</button></div>
-        <p class="text-muted">La sostituzione può cambiare frequenze e batch cooking. Le dosi A/R/IPO della ricetta restano invariate.</p>
+        <p class="text-muted">La sostituzione può cambiare frequenze e batch cooking. Le dosi per Allenamento, Riposo e regime IPO restano invariate.</p>
         <div id="swap-options-list" class="swap-options"></div>
       </div>
     </div>`);
@@ -931,7 +1002,7 @@ window.confirmSwap = async function(dayKey, slot, recipeId) {
   const recipe = getRecipe(recipeId);
   const crossSlot = recipeIsCrossSlot(recipe, slot);
   const baseMsg = "Sostituire questo pasto con la ricetta scelta? Frequenze e batch cooking potrebbero cambiare.";
-  const crossMsg = crossSlot ? "\n\nI carboidrati verranno adattati alle linee guida del pasto di destinazione: a cena si usa la dose cena della tabella (circa 2/3 del pranzo di riposo, arrotondata per difetto alla decina), a pranzo si rileggono le dosi pranzo A/R. Le proteine, le uova e la verdura restano invariate." : "";
+  const crossMsg = crossSlot ? "\n\nI carboidrati verranno adattati alle linee guida del pasto di destinazione: a cena si usa la dose cena della tabella (circa 2/3 del pranzo di riposo, arrotondata per difetto alla decina), a pranzo si rileggono le dosi previste per Allenamento o Riposo. Le proteine, le uova e la verdura restano invariate." : "";
   if (!confirm(baseMsg + crossMsg)) return;
   appState.plan.days[dayKey][slot] = recipeId;
   try {
@@ -1053,8 +1124,28 @@ window.confirmRestoreMeal = async function() {
   }
 };
 
-function renderRecipes() {
+function renderRecipes({ loading = false } = {}) {
   const container = document.getElementById("view-recipes");
+  if (!container) return;
+  if (loading) {
+    const skeletonCards = Array.from({ length: 6 }, () => `
+      <div class="recipe-skeleton" aria-hidden="true">
+        <div class="skeleton-line short"></div>
+        <div class="skeleton-line title"></div>
+        <div class="skeleton-line medium"></div>
+        <div class="skeleton-line chip"></div>
+      </div>`).join("");
+    container.setAttribute("aria-busy", "true");
+    container.innerHTML = `
+      <div class="page-heading recipes-heading">
+        <div><p class="eyebrow">Sincronizzazione in corso</p><h1>Ricettario</h1><p>Stiamo aggiornando le tue ricette.</p></div>
+      </div>
+      <div class="recipe-grid recipe-skeleton-grid">${skeletonCards}</div>
+    `;
+    return;
+  }
+
+  container.setAttribute("aria-busy", "false");
   const recipeLibraryState = getRecipeLibraryState();
   container.innerHTML = `
     <div class="page-heading recipes-heading">
@@ -1079,9 +1170,14 @@ function recipeSectionHtml(title, recipes, slot) {
   const isOpen = getRecipeLibraryState().openSections[slot.id];
   return `
     <section class="recipe-library-section" data-slot="${slot.id}">
-      <button class="recipe-section-toggle ${isOpen ? "" : "collapsed"}" onclick="toggleRecipeSection('${slot.id}', this)" aria-expanded="${isOpen ? "true" : "false"}">
-        <span class="section-title" style="margin:0"><span>${slot.emoji}</span><div><small>${recipes.length} proposte</small><h2>${escapeHtml(title)}</h2></div></span>
-        <b class="recipe-section-chevron">⌄</b>
+      <button class="recipe-section-toggle ${isOpen ? "" : "collapsed"}" onclick="toggleRecipeSection('${slot.id}', this)" aria-expanded="${isOpen ? "true" : "false"}" aria-controls="${sectionId}">
+        <span class="recipe-section-icon" aria-hidden="true">${slot.emoji}</span>
+        <span class="recipe-section-name" role="heading" aria-level="2">${escapeHtml(title)}</span>
+        <small class="recipe-section-count" aria-label="${recipes.length} ${recipes.length === 1 ? "ricetta" : "ricette"}">
+          <span class="recipe-count-full">${recipes.length} ${recipes.length === 1 ? "ricetta" : "ricette"}</span>
+          <span class="recipe-count-compact" aria-hidden="true">${recipes.length}</span>
+        </small>
+        <b class="recipe-section-chevron" aria-hidden="true">⌄</b>
       </button>
       <div id="${sectionId}" class="recipe-section-body ${isOpen ? "" : "hidden"}">
         <div class="recipe-grid">
@@ -2907,7 +3003,7 @@ function renderGeneratorPreview() {
     <div class="generator-diff">
       ${DAY_ORDER.map(day => {
         const dayChanges = changesByDay[day] || [];
-        return `<div class="generator-diff-day"><strong>${DAY_NAMES[day]} ${result.plan.days[day].type === "training" ? "(A)" : "(R)"}</strong>
+        return `<div class="generator-diff-day"><strong>${DAY_NAMES[day]} · ${result.plan.days[day].type === "training" ? "Allenamento" : "Riposo"}</strong>
           ${MEAL_SLOTS.map(slot => {
             const change = dayChanges.find(item => item.slot === slot.id);
             const to = change?.to ?? result.plan.days[day][slot.id];
@@ -3134,13 +3230,13 @@ function renderModalContent() {
     ? `<input id="edit-recipe-name" class="modal-title-input" value="${escapeAttr(recipe.name)}">`
     : `<span class="recipe-code">${escapeHtml(recipe.id)}</span> ${escapeHtml(recipe.emoji || "🍲")} ${escapeHtml(getRecipeDisplayName(recipe, dayType))}`;
   const dayTypeLabel = currentModal.dayKey
-    ? `${DAY_NAMES[currentModal.dayKey]} (${dayType === "training" ? "A" : "R"})`
-    : "anteprima";
+    ? `${DAY_NAMES[currentModal.dayKey]} · ${dayType === "training" ? "Allenamento" : "Riposo"}`
+    : "Anteprima";
   const canToggle = !currentModal.dayKey && getPortionProfile() !== "ipo";
   const toggleHtml = canToggle ? `
-    <span class="modal-daytype-toggle day-type-control" style="margin-left:8px">
-      <button class="type-option training ${dayType === "training" ? "active" : ""}" onclick="setModalDayType('training')" title="Allenamento">A</button>
-      <button class="type-option rest ${dayType === "rest" ? "active" : ""}" onclick="setModalDayType('rest')" title="Riposo">R</button>
+    <span class="modal-daytype-toggle day-type-control" aria-label="Dosi per tipo di giornata">
+      <button class="type-option training ${dayType === "training" ? "active" : ""}" onclick="setModalDayType('training')" aria-pressed="${dayType === "training"}">Allenamento</button>
+      <button class="type-option rest ${dayType === "rest" ? "active" : ""}" onclick="setModalDayType('rest')" aria-pressed="${dayType === "rest"}">Riposo</button>
     </span>` : "";
   document.getElementById("modal-time").innerHTML = editMode
     ? `<div class="edit-meta-grid"><label>Emoji<input id="edit-recipe-emoji" value="${escapeAttr(recipe.emoji || "🍲")}"></label><label>Tipo<select id="edit-recipe-slot">${MEAL_SLOTS.map(slot => `<option value="${slot.id}" ${recipe.slot === slot.id ? "selected" : ""}>${escapeHtml(slot.label)}</option>`).join("")}</select></label><label>
@@ -3165,14 +3261,14 @@ function renderModalContent() {
     Opzionale: serve solo come fallback per ricette con ingredienti non riconoscibili.
   </small>
 </label></div>`
-    : `${escapeHtml(getSlotMeta(currentModal.slot || recipe.slot).label)} · ${dayTypeLabel} · ${escapeHtml(getProfileLabel())}${toggleHtml}${recipeIsCrossSlot(recipe, currentModal.slot) ? `<div class="modal-adapted-note">↻ Carboidrati alla dose prevista per ${escapeHtml(getSlotMeta(currentModal.slot).label.toLowerCase())}</div>` : ""}`;
+    : `<div class="modal-context-row"><span>${escapeHtml(getSlotMeta(currentModal.slot || recipe.slot).label)} · ${escapeHtml(dayTypeLabel)} · ${escapeHtml(getProfileLabel())}</span>${toggleHtml}</div>${recipeIsCrossSlot(recipe, currentModal.slot) ? `<div class="modal-adapted-note">↻ Carboidrati alla dose prevista per ${escapeHtml(getSlotMeta(currentModal.slot).label.toLowerCase())}</div>` : ""}`;
 
   const ingredientList = document.getElementById("modal-ingredients-list");
   if (editMode) {
     ingredientList.innerHTML = recipe.ingredients.map((ingredient, index) => `
       <li class="edit-ingredient" data-index="${index}">
         <input id="edit-ing-name-${index}" aria-label="Ingrediente" value="${escapeAttr(ingredient.name)}">
-        <div class="portion-edit-grid"><label>IPO A<input id="edit-ing-ipo-training-${index}" value="${escapeAttr(getPortionValue(ingredient, "ipo", "training"))}"></label><label>IPO R<input id="edit-ing-ipo-rest-${index}" value="${escapeAttr(getPortionValue(ingredient, "ipo", "rest"))}"></label><label>Uomo A<input id="edit-ing-man-training-${index}" value="${escapeAttr(getPortionValue(ingredient, "man", "training"))}"></label><label>Uomo R<input id="edit-ing-man-rest-${index}" value="${escapeAttr(getPortionValue(ingredient, "man", "rest"))}"></label><button class="btn-icon remove-edit-item" onclick="removeIngredient(${index})">×</button></div>
+        <div class="portion-edit-grid"><label>IPO · Allenamento<input id="edit-ing-ipo-training-${index}" value="${escapeAttr(getPortionValue(ingredient, "ipo", "training"))}"></label><label>IPO · Riposo<input id="edit-ing-ipo-rest-${index}" value="${escapeAttr(getPortionValue(ingredient, "ipo", "rest"))}"></label><label>Uomo · Allenamento<input id="edit-ing-man-training-${index}" value="${escapeAttr(getPortionValue(ingredient, "man", "training"))}"></label><label>Uomo · Riposo<input id="edit-ing-man-rest-${index}" value="${escapeAttr(getPortionValue(ingredient, "man", "rest"))}"></label><button class="btn-icon remove-edit-item" onclick="removeIngredient(${index})">×</button></div>
       </li>`).join("") + `<li><button class="btn btn-outline full-width" onclick="addIngredient()">+ Aggiungi ingrediente</button></li>`;
   } else {
     const items = recipe.ingredients.map(ingredient => {
