@@ -6,8 +6,8 @@
  *
  * È inoltre la FONTE UNICA delle grammature di riferimento del manuale del
  * dott. Meller (MELLER_GRAMMATURE, frequenze proteiche, massimi per porzione):
- * da qui derivano i vincoli del generatore, il riferimento carboidrati, la
- * guida mostrata nella webapp e il prompt della ricerca ricette online. Sono
+ * da qui derivano i vincoli del generatore, il riferimento carboidrati e la
+ * guida mostrata nella webapp. Sono
  * valori di riferimento del manuale, mai dosaggi di ricette personali.
  */
 (function (root, factory) {
@@ -76,10 +76,7 @@
   //   - i vincoli del generatore (DEFAULT_CONSTRAINTS);
   //   - il riferimento carboidrati del travaso pranzo <-> cena (CARB_REFERENCE);
   //   - le tabelle di alternative dei popup e delle Impostazioni (MELLER_GUIDE);
-  //   - il riconoscimento carboidrati/proteine degli ingredienti (isMeller*);
-  //   - il testo completo passato al modello AI (mellerAlternativesText), usato
-  //     dal frontend E dal Worker Cloudflare, che importa questo stesso file:
-  //     una sola fonte effettiva, nessuna copia sincronizzata a mano.
+  //   - il riconoscimento carboidrati/proteine degli ingredienti (isMeller*).
   // Modifica SOLO qui: gli altri file leggono da PianoDomain.
   //
   // L'ordine delle regole conta: la prima che combacia con il nome
@@ -87,8 +84,7 @@
   //
   // `group` è la classificazione canonica della famiglia (carb / protein /
   // dairy / fat / sweet / fruit): decide quali famiglie entrano nelle tabelle
-  // delle alternative, nel testo AI e nei popup. Nessuna classificazione è
-  // duplicata altrove.
+  // delle alternative e nei popup. Nessuna classificazione è duplicata altrove.
   // =====================================================================
 
   const MELLER_GROUP = {
@@ -146,7 +142,7 @@
 
   // Famiglie canoniche di un gruppo. `withLunchAndDinner` limita l'elenco alle
   // famiglie che hanno sia la dose di pranzo sia quella di cena: sono quelle
-  // che entrano nelle tabelle delle alternative e nel testo per il modello AI.
+  // che entrano nelle tabelle delle alternative.
   function mellerFamiliesForGroup(group, { withLunchAndDinner = false } = {}) {
     return MELLER_GRAMMATURE
       .filter(rule => rule.group === group)
@@ -154,8 +150,8 @@
       .map(rule => rule.family);
   }
 
-  // Etichetta canonica (minuscola) di una famiglia: è la chiave usata nel testo
-  // per il modello AI, così il testo e la tabella condividono gli stessi nomi.
+  // Etichetta canonica (minuscola) di una famiglia: i testi derivati dalla
+  // tabella la usano per mantenere nomi coerenti in tutta la guida.
   function mellerFamilyToken(family) {
     return String(mellerGrammatureFor(family)?.label || family).toLowerCase();
   }
@@ -237,12 +233,11 @@
   const CARB_REFERENCE = buildCarbReference();
 
   // ---------------------------------------------------------------------
-  // Guida Meller mostrata nella webapp (js/data.js legge da qui) e testo
-  // completo inviato al modello AI.
+  // Guida Meller mostrata nella webapp (js/data.js legge da qui).
   //
   // I testi di struttura, giornata tipo e FAQ sono contenuti narrativi del
-  // manuale; le tabelle delle alternative, le frequenze proteiche e il testo AI
-  // sono DERIVATI da MELLER_GRAMMATURE e MELLER_PROTEIN_FREQUENCIES.
+  // manuale; le tabelle delle alternative e le frequenze proteiche sono
+  // DERIVATI da MELLER_GRAMMATURE e MELLER_PROTEIN_FREQUENCIES.
   //
   // NOTA: nelle giornate tipo le righe di pranzo e cena (dose di riferimento ed
   // elenco delle alternative) sono DERIVATE dalla tabella. Restano scritti a
@@ -282,13 +277,12 @@
     { label: 'Legumotti Barilla', family: 'legumotti' }
   ];
 
-  // Riferimento della tabella proteine: nei popup sta nel titolo, nel testo per
-  // il modello AI diventa una riga vera e propria (così il modello riceve anche
-  // il pollame con la sua grammatura).
+  // Riferimento della tabella proteine: nei popup sta nel titolo e nei testi
+  // narrativi resta la riga guida per il pollame con la sua grammatura.
   const MELLER_PROTEIN_REFERENCE = { label: 'Pollame', family: 'pollame' };
 
   // UNICA derivazione di una voce alternativa dalla tabella canonica: usata sia
-  // dalle righe dei popup sia dal testo per il modello AI.
+  // dalle righe dei popup sia dai testi narrativi della guida.
   // I carboidrati hanno pranzo A, pranzo R e cena (A === R); le proteine hanno
   // una dose sola, identica a pranzo e a cena (scelta del manuale).
   function describeAlternative(entry) {
@@ -297,7 +291,7 @@
     return {
       label: entry.label,
       families,
-      // Chiave testuale condivisa tra testo AI e test di allineamento: usa le
+      // Chiave testuale condivisa dai testi derivati dalla guida: usa le
       // etichette canoniche delle famiglie (es. "pasta/riso", "farro/orzo").
       token: families.map(mellerFamilyToken).join('/'),
       lunchTraining: rule?.slots?.lunch?.training ?? null,
@@ -316,55 +310,6 @@
 
   const MELLER_ALTERNATIVES = buildMellerAlternatives();
 
-  // Famiglie coperte dalle alternative (carboidrati e proteine): serve ai test
-  // di allineamento tra popup, tabella canonica, testo AI e fallback Worker.
-  function mellerAlternativeFamilies() {
-    return {
-      carbohydrates: MELLER_ALTERNATIVES.carbohydrates.flatMap(item => item.families),
-      proteins: MELLER_ALTERNATIVES.proteins.flatMap(item => item.families)
-    };
-  }
-
-  // Famiglie canoniche citate in un testo qualunque: serve ai test di
-  // allineamento tra popup, tabella, testo AI e fallback del Worker.
-  function mellerFamiliesInText(text) {
-    const value = String(text || '').toLowerCase();
-    const pick = group => mellerFamiliesForGroup(group, { withLunchAndDinner: true })
-      .filter(family => value.includes(mellerFamilyToken(family)));
-    return { carbohydrates: pick(MELLER_GROUP.CARB), proteins: pick(MELLER_GROUP.PROTEIN) };
-  }
-
-  // Regole che accompagnano le grammature nel testo per il modello AI.
-  const MELLER_AI_RULES = [
-    'I pesi sono riferiti agli alimenti a crudo.',
-    'A cena è ammesso qualsiasi carboidrato presente nella tabella.',
-    'La dose cena è circa 2/3 della dose del pranzo di riposo, arrotondata per difetto alla decina.',
-    'Cena A e cena R hanno la stessa dose.',
-    'Le proteine mantengono la dose prevista per pranzo anche a cena.'
-  ];
-
-  // Testo COMPLETO delle alternative Meller per il modello AI: ogni valore è
-  // letto da MELLER_GRAMMATURE, nessuna grammatura è scritta qui. Lo stesso
-  // testo viene inviato dal frontend (js/web-search.js) e usato dal Worker
-  // Cloudflare come fallback, perché il Worker importa questo modulo.
-  function mellerAlternativesText() {
-    const lines = (items, withDinner) => items.map(item => (withDinner
-      ? `${item.label}: pranzo allenamento ${item.lunchTraining} g, pranzo riposo ${item.lunchRest} g, cena ${item.dinner} g.`
-      : `${item.label}: ${item.lunchTraining} g.`));
-    const families = items => `Famiglie: ${items.map(item => item.token).join(', ')}.`;
-    return [
-      'ALTERNATIVE CARBOIDRATI MELLER:',
-      families(MELLER_ALTERNATIVES.carbohydrates),
-      ...lines(MELLER_ALTERNATIVES.carbohydrates, true),
-      '',
-      'ALTERNATIVE PROTEINE MELLER:',
-      families(MELLER_ALTERNATIVES.proteins),
-      ...lines(MELLER_ALTERNATIVES.proteins, false),
-      '',
-      'REGOLE MELLER:',
-      ...MELLER_AI_RULES
-    ].join('\n');
-  }
 
   // Righe delle tabelle delle alternative. `dayType` sceglie la colonna del
   // pranzo: 'training' (giorno A), 'rest' (giorno R) oppure 'both' per le
@@ -1857,8 +1802,8 @@ const PROTEIN_CATEGORY_LABELS = {
   }
 
   // Riconoscimento carboidrati/proteine usato dai popup delle equivalenze.
-  // Legge le `match` e i `group` della fonte canonica: popup, tabelle e testo
-  // per il modello AI classificano un ingrediente nello stesso identico modo.
+  // Legge le `match` e i `group` della fonte canonica: popup, tabelle e guida
+  // classificano un ingrediente nello stesso identico modo.
   function isMellerCarbIngredient(name) {
     return mellerGroupForIngredient(name) === MELLER_GROUP.CARB;
   }
@@ -2053,17 +1998,13 @@ const PROTEIN_CATEGORY_LABELS = {
     MELLER_PROTEIN_ALTERNATIVES,
     MELLER_PROTEIN_REFERENCE,
     MELLER_ALTERNATIVES,
-    MELLER_AI_RULES,
     mellerGrammatureFor,
     mellerFamiliesForGroup,
     mellerFamilyToken,
     mellerMaxAmount,
-    mellerAlternativeFamilies,
     mellerAlternativeGroups,
     mellerSlotHasAlternatives,
     MELLER_ALTERNATIVE_SLOTS,
-    mellerFamiliesInText,
-    mellerAlternativesText,
     mellerRuleForIngredient,
     mellerGroupForIngredient,
     mellerFamilyForIngredient,

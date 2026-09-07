@@ -1060,7 +1060,6 @@ function renderRecipes() {
     <div class="page-heading recipes-heading">
       <div><p class="eyebrow">${appState.recipes.length} ricette · sincronizzate nel cloud</p><h1>Ricettario</h1><p>Puoi creare, esportare, importare e condividere le ricette del tuo account.</p></div>
       <div class="recipe-toolbar">
-        <button class="btn btn-primary" onclick="window.PianoWebSearch.open()">🌐 Cerca nel web</button>
         <button class="btn btn-outline" onclick="openIncomingShares()">📥 Ricevute</button>
         <label class="btn btn-outline file-import-button">Importa<input type="file" accept="application/json,.json" onchange="prepareRecipeImport(this.files[0]); this.value='' "></label>
         <button class="btn btn-outline" onclick="exportAllRecipes()">Esporta</button>
@@ -1069,7 +1068,7 @@ function renderRecipes() {
         <button class="btn btn-primary" onclick="createNewRecipe()">+ Nuova</button>
       </div>
     </div>
-    ${appState.recipes.length ? `<label class="search-box"><span>⌕</span><input id="recipe-search" type="search" value="${escapeAttr(recipeLibraryState.searchQuery)}" placeholder="Cerca ricetta, categoria o ingrediente…" oninput="filterRecipeCards(this.value)"><button type="button" id="recipe-search-clear" class="search-clear-btn ${recipeLibraryState.searchQuery ? "" : "hidden"}" onclick="clearRecipeSearch()" aria-label="Cancella ricerca" title="Cancella ricerca">×</button></label><p id="recipe-search-empty" class="text-muted recipe-search-empty hidden">Nessuna ricetta trovata. Prova con un altro nome, ingrediente o categoria.</p>${MEAL_SLOTS.map(slot => recipeSectionHtml(slot.label, appState.recipes.filter(recipe => recipe.slot === slot.id), slot)).join("")}` : `<div class="empty-state recipe-empty-state"><span>🍲</span><h2>Il tuo ricettario è vuoto</h2><p>Puoi creare la prima ricetta manualmente, importare un file JSON o attendere una condivisione da un altro utente.</p><button class="btn btn-primary" onclick="window.PianoWebSearch.open()">🌐 Cerca nel web</button><button class="btn btn-primary" onclick="createNewRecipe()">+ Crea la prima ricetta</button></div>`}
+    ${appState.recipes.length ? `<label class="search-box"><span>⌕</span><input id="recipe-search" type="search" value="${escapeAttr(recipeLibraryState.searchQuery)}" placeholder="Cerca ricetta, categoria o ingrediente…" oninput="filterRecipeCards(this.value)"><button type="button" id="recipe-search-clear" class="search-clear-btn ${recipeLibraryState.searchQuery ? "" : "hidden"}" onclick="clearRecipeSearch()" aria-label="Cancella ricerca" title="Cancella ricerca">×</button></label><p id="recipe-search-empty" class="text-muted recipe-search-empty hidden">Nessuna ricetta trovata. Prova con un altro nome, ingrediente o categoria.</p>${MEAL_SLOTS.map(slot => recipeSectionHtml(slot.label, appState.recipes.filter(recipe => recipe.slot === slot.id), slot)).join("")}` : `<div class="empty-state recipe-empty-state"><span>🍲</span><h2>Il tuo ricettario è vuoto</h2><p>Puoi creare la prima ricetta manualmente, importare un file JSON o attendere una condivisione da un altro utente.</p><button class="btn btn-primary" onclick="createNewRecipe()">+ Crea la prima ricetta</button></div>`}
   `;
   if (appState.recipes.length) filterRecipeCards(recipeLibraryState.searchQuery, { persist: false });
 }
@@ -1204,95 +1203,6 @@ window.duplicateRecipe = function(recipeId = currentModal?.recipe?.id) {
   editMode = true;
   renderModalContent();
   document.getElementById("recipe-modal").classList.remove("hidden");
-};
-
-// Conversione di una ricetta trovata sul web nello schema del catalogo. Le
-// dosi restano quelle della fonte: l'adattamento alle linee guida è una
-// scelta esplicita dell'utente (banner nel popup, "Correggi dosi" nella
-// ricerca), non una trasformazione silenziosa.
-function recipeFromWebSearch(data = {}, idSuffix = "") {
-  const source = data && typeof data === "object" ? data : {};
-  const slot = MEAL_SLOTS.some(item => item.id === source.slot) ? source.slot : "lunch";
-  const quantityFor = quantity => {
-    const clean = String(quantity ?? "").trim();
-    return clean || "—";
-  };
-  const ingredients = (Array.isArray(source.ingredients) ? source.ingredients : [])
-    .map(item => ({
-      name: String(item?.name || "").trim() || "Ingrediente",
-      portions: {
-        ipoTraining: quantityFor(item?.quantity),
-        ipoRest: quantityFor(item?.quantity),
-        manTraining: quantityFor(item?.quantity),
-        manRest: quantityFor(item?.quantity)
-      }
-    }));
-  const steps = (Array.isArray(source.steps) ? source.steps : []).map(step => String(step || "").trim()).filter(Boolean);
-  const notes = (Array.isArray(source.notes) ? source.notes : []).map(note => String(note || "").trim()).filter(Boolean);
-  let sourceUrl = "";
-  try {
-    const parsed = new URL(String(source.sourceUrl || ""));
-    if (["http:", "https:"].includes(parsed.protocol)) sourceUrl = parsed.href;
-  } catch (_) {}
-  if (sourceUrl) notes.push(`Fonte: ${sourceUrl}`);
-  return {
-    id: `U${Date.now()}${idSuffix}`,
-    slot,
-    name: String(source.name || "Ricetta").trim() || "Ricetta",
-    emoji: String(source.emoji || "").trim() || getSlotMeta(slot).emoji,
-    proteinCategory: String(source.proteinCategory || ""),
-    ingredients,
-    steps,
-    notes,
-    specialNote: String(source.specialNote || "").trim()
-  };
-}
-
-// Importazione di UNA ricetta trovata con la ricerca web: si riusa il popup
-// ricetta già esistente. Le dosi arrivano così come trovate sul web; il banner
-// "fuori dalle linee guida" e il pulsante "Adatta alle linee guida" permettono di
-// riportarle alle linee guida con un click, poi si salva nel cloud
-// con il normale pulsante di salvataggio.
-window.importRecipeFromWebSearch = function(data = {}) {
-  const recipe = recipeFromWebSearch(data);
-  currentModal = { recipe, original: null, dayKey: null, dayType: getRecipePreviewDayType(), slot: null, isNew: true };
-  editMode = true;
-  renderModalContent();
-  document.getElementById("recipe-modal").classList.remove("hidden");
-  showToast("Ricetta trovata sul web: controlla dosi e preparazione, poi salva");
-};
-
-// Importazione IN BLOCCO delle ricette trovate sul web: si aggiungono a quelle
-// esistenti (mai sostituzione) in una sola scrittura del catalogo. Gli ID
-// duplicati vengono rinominati da mergeRecipeCatalogs, come per l'import JSON.
-window.importRecipesFromWebSearchBulk = async function(list = []) {
-  const incoming = (Array.isArray(list) ? list : [])
-    .map((item, index) => recipeFromWebSearch(item, `-${index}`));
-  if (!incoming.length) {
-    showToast("Nessuna ricetta da importare", true);
-    return false;
-  }
-  const notAdapted = incoming.filter(recipe =>
-    window.PianoDomain?.checkMellerAdaptation?.(recipe)?.adapted === false).length;
-  const mellerNote = notAdapted
-    ? `\n\n⚠ ${notAdapted} ricett${notAdapted === 1 ? "a ha dosi non aderenti" : "e hanno dosi non aderenti"} alle linee guida: potrai correggerle dal ricettario (badge ⚠ → "Adatta alle linee guida").`
-    : "";
-  if (!confirm(`Importare ${incoming.length} ricett${incoming.length === 1 ? "a" : "e"} nel ricettario, insieme a quelle esistenti?${mellerNote}`)) return false;
-  setLoading("Importazione delle ricette trovate…");
-  try {
-    const nextRecipes = PianoDomain.mergeRecipeCatalogs(appState.recipes, incoming);
-    await saveRecipeCatalog(nextRecipes);
-    setRecipes(nextRecipes);
-    if (window.location.hash === "#recipes") renderRecipes();
-    showToast(`${incoming.length} ricett${incoming.length === 1 ? "a importata" : "e importate"} ✅`);
-    return true;
-  } catch (error) {
-    console.error(error);
-    showToast(error.message || "Importazione non riuscita", true);
-    return false;
-  } finally {
-    clearLoading();
-  }
 };
 
 function normalizeIngredientName(name) {
@@ -1773,8 +1683,8 @@ window.shareShopWhatsApp = async function() {
 
 // ---- A4: Alternative Meller inline (tap ingrediente -> equivalenze) ----
 // La classificazione carboidrati/proteine arriva dalla fonte unica
-// (js/domain.js): popup, tabelle delle alternative e testo inviato al modello
-// AI riconoscono le stesse famiglie, senza regex duplicate qui.
+// (js/domain.js): popup, tabelle delle alternative e guida riconoscono le
+// stesse famiglie, senza regex duplicate qui.
 function isMellerCarbIngredient(name) {
   return window.PianoDomain?.isMellerCarbIngredient?.(name) === true;
 }
