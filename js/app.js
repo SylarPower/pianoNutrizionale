@@ -28,6 +28,7 @@ let currentModal = null;
 let editMode = false;
 let shopSettingsVisible = false;
 let toastTimeout = null;
+let toastRemoveTimeout = null;
 let stopHouseholdObserver = null;
 let stopSharedDataObserver = null;
 let activeHouseholdId = null;
@@ -227,11 +228,15 @@ function showToast(message, isError = false) {
     toast.className = "app-toast hidden";
     document.body.appendChild(toast);
   }
+  clearTimeout(toastTimeout);
+  clearTimeout(toastRemoveTimeout);
   toast.textContent = message;
   toast.classList.toggle("toast-error", isError);
-  toast.classList.remove("hidden");
-  clearTimeout(toastTimeout);
-  toastTimeout = setTimeout(() => toast.classList.add("hidden"), 2800);
+  toast.classList.remove("hidden", "toast-exit");
+  toastTimeout = setTimeout(() => {
+    toast.classList.add("toast-exit");
+    toastRemoveTimeout = setTimeout(() => toast.remove(), 250);
+  }, 2800);
 }
 
 function setLoading(message = "Caricamento…") {
@@ -364,6 +369,7 @@ function setupLoginForm() {
 async function loadUserData(user, { silent = false } = {}) {
   appState.user = user;
   if (!silent) setLoading("Sincronizzazione del piano personale…");
+  if (appStarted && window.location.hash === "#recipes") renderRecipes({ loading: true });
   try {
     // Prima individua l'eventuale household, poi le tre letture puntano in modo
     // trasparente ai documenti personali oppure a quelli condivisi.
@@ -410,6 +416,7 @@ async function loadUserData(user, { silent = false } = {}) {
   } catch (error) {
     console.error(error);
     if (silent) {
+      if (appStarted && window.location.hash === "#recipes") renderRecipes();
       showToast("Connessione assente: stai vedendo i dati salvati sul dispositivo.", true);
     } else {
       showApp();
@@ -556,17 +563,39 @@ function setupRouter() {
 // Ultima vista renderizzata: consente di far scorrere la settimana sul giorno
 // corrente solo quando la si apre, non a ogni re-render della stessa vista.
 let lastRenderedRoute = null;
+let routeTransitionTimer = null;
+let routeTransitionToken = 0;
+
+function revealRouteView(view, transitionToken, enteringWeek) {
+  view.classList.remove("view-exit");
+  view.classList.add("view-enter");
+  view.classList.remove("hidden");
+  const startEntrance = () => {
+    if (transitionToken !== routeTransitionToken) return;
+    view.classList.remove("view-enter");
+    if (enteringWeek) scrollWeekToToday();
+  };
+  if (typeof requestAnimationFrame === "function") requestAnimationFrame(startEntrance);
+  else startEntrance();
+}
 
 function handleRoute() {
   if (!appState.user || !appState.plan) return;
   const hash = window.location.hash || "#week";
+  const routeName = hash.slice(1);
+  const targetView = document.getElementById(`view-${routeName}`);
+  if (!targetView) return;
 
-  document.querySelectorAll(".view").forEach(view => view.classList.add("hidden"));
-  document.querySelectorAll(".nav-item").forEach(item => item.classList.remove("active"));
-  document.getElementById(`view-${hash.slice(1)}`)?.classList.remove("hidden");
-  document.getElementById(`nav-${hash.slice(1)}`)?.classList.add("active");
-
+  const views = [...document.querySelectorAll(".view")];
+  const outgoingView = views.find(view => view !== targetView && !view.classList.contains("hidden"));
+  const targetAlreadyVisible = !targetView.classList.contains("hidden");
   const enteringWeek = hash === "#week" && lastRenderedRoute !== "#week";
+  const transitionToken = ++routeTransitionToken;
+
+  clearTimeout(routeTransitionTimer);
+  document.querySelectorAll(".nav-item").forEach(item => item.classList.remove("active"));
+  document.getElementById(`nav-${routeName}`)?.classList.add("active");
+
   if (hash === "#week") renderWeek();
   if (hash === "#recipes") renderRecipes();
   if (hash === "#shop") renderShop();
@@ -574,7 +603,31 @@ function handleRoute() {
   if (hash === "#settings") renderSettings();
   lastRenderedRoute = hash;
 
-  if (enteringWeek) scrollWeekToToday();
+  if (!outgoingView) {
+    views.forEach(view => {
+      if (view !== targetView) view.classList.add("hidden");
+      view.classList.remove("view-exit");
+    });
+    if (targetAlreadyVisible) {
+      targetView.classList.remove("hidden", "view-enter", "view-exit");
+      if (enteringWeek) scrollWeekToToday();
+    } else {
+      revealRouteView(targetView, transitionToken, enteringWeek);
+    }
+    return;
+  }
+
+  outgoingView.classList.remove("view-enter");
+  outgoingView.classList.add("view-exit");
+  const reducedMotion = window.matchMedia?.("(prefers-reduced-motion: reduce)")?.matches;
+  routeTransitionTimer = setTimeout(() => {
+    if (transitionToken !== routeTransitionToken) return;
+    views.forEach(view => {
+      view.classList.add("hidden");
+      view.classList.remove("view-exit", "view-enter");
+    });
+    revealRouteView(targetView, transitionToken, enteringWeek);
+  }, reducedMotion ? 0 : 160);
 }
 
 function scrollWeekToToday() {
@@ -596,7 +649,7 @@ function renderGlobalHeader() {
   }
   const profile = getPortionProfile();
   header.innerHTML = `
-    <div class="header-brand"><span>🥗</span><strong>Piano</strong></div>
+    <div class="header-brand"><span class="header-brand-icon" aria-hidden="true">🥗</span><strong>Piano</strong></div>
     <select aria-label="Profilo porzioni" onchange="changePortionProfile(this.value)">
       <option value="man" ${profile === "man" ? "selected" : ""}>👨 Uomo · A/R</option>
       <option value="ipo" ${profile === "ipo" ? "selected" : ""}>👩 Donna · IPO</option>
@@ -1053,8 +1106,28 @@ window.confirmRestoreMeal = async function() {
   }
 };
 
-function renderRecipes() {
+function renderRecipes({ loading = false } = {}) {
   const container = document.getElementById("view-recipes");
+  if (!container) return;
+  if (loading) {
+    const skeletonCards = Array.from({ length: 6 }, () => `
+      <div class="recipe-skeleton" aria-hidden="true">
+        <div class="skeleton-line short"></div>
+        <div class="skeleton-line title"></div>
+        <div class="skeleton-line medium"></div>
+        <div class="skeleton-line chip"></div>
+      </div>`).join("");
+    container.setAttribute("aria-busy", "true");
+    container.innerHTML = `
+      <div class="page-heading recipes-heading">
+        <div><p class="eyebrow">Sincronizzazione in corso</p><h1>Ricettario</h1><p>Stiamo aggiornando le tue ricette.</p></div>
+      </div>
+      <div class="recipe-grid recipe-skeleton-grid">${skeletonCards}</div>
+    `;
+    return;
+  }
+
+  container.setAttribute("aria-busy", "false");
   const recipeLibraryState = getRecipeLibraryState();
   container.innerHTML = `
     <div class="page-heading recipes-heading">

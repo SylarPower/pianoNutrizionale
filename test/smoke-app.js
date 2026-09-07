@@ -206,6 +206,7 @@ setRecipes(recipes);
 
 // ---- Percorsi di rendering ----
 renderGlobalHeader();
+assert.match(document.getElementById('global-header-container').innerHTML, /header-brand-icon/, 'brand premium generato nell’header');
 renderWeek();
 
 // Batch cooking: la chip della settimana è cliccabile e apre la modale dosi.
@@ -240,7 +241,11 @@ appState.plan.batchTemplates = originalTemplates;
 appState.plan.days.tuesday.lunch = originalTuesdayLunch;
 
 renderWeek();
+renderRecipes({ loading: true });
+assert.equal((document.getElementById('view-recipes').innerHTML.match(/class="recipe-skeleton"/g) || []).length, 6, 'sei skeleton durante il caricamento ricette');
+assert.equal(document.getElementById('view-recipes')['aria-busy'], 'true', 'ricettario marcato come occupato durante la sincronizzazione');
 renderRecipes();
+assert.equal(document.getElementById('view-recipes')['aria-busy'], 'false', 'ricettario pronto dopo il render');
 assert.match(document.getElementById('view-recipes').innerHTML, /recipe-section-toggle collapsed/);
 assert.match(document.getElementById('view-recipes').innerHTML, /recipe-section-body hidden/);
 assert.match(document.getElementById('view-recipes').innerHTML, /recipe-search-clear/, 'ricerca ricette con pulsante rapido di reset');
