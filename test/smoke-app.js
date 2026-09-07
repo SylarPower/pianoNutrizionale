@@ -208,6 +208,15 @@ setRecipes(recipes);
 renderGlobalHeader();
 assert.match(document.getElementById('global-header-container').innerHTML, /header-brand-icon/, 'brand premium generato nell’header');
 renderWeek();
+const weekMarkup = document.getElementById('view-week').innerHTML;
+assert.match(weekMarkup, />Allenamento<\/button>/, 'tipo giornata Allenamento scritto per esteso');
+assert.match(weekMarkup, />Riposo<\/button>/, 'tipo giornata Riposo scritto per esteso');
+assert.doesNotMatch(weekMarkup, />[AR]<\/button>/, 'nessuna abbreviazione ambigua A/R nei selettori giornata');
+appState.deviceSettings.portionProfile = 'couple';
+renderWeek();
+assert.match(document.getElementById('view-week').innerHTML, /Profilo coppia/, 'profilo coppia visibile e contestualizzato');
+appState.deviceSettings.portionProfile = 'man';
+renderWeek();
 
 // Batch cooking: la chip della settimana è cliccabile e apre la modale dosi.
 assert.match(document.getElementById('view-week').innerHTML, /batch-chip-btn[^>]*openBatchModal\('monday'\)/, 'chip batch cliccabile nella colonna del giorno');
@@ -247,6 +256,9 @@ assert.equal(document.getElementById('view-recipes')['aria-busy'], 'true', 'rice
 renderRecipes();
 assert.equal(document.getElementById('view-recipes')['aria-busy'], 'false', 'ricettario pronto dopo il render');
 assert.match(document.getElementById('view-recipes').innerHTML, /recipe-section-toggle collapsed/);
+assert.match(document.getElementById('view-recipes').innerHTML, /recipe-section-name[^>]*role="heading"[^>]*>Pranzo<\/span>/, 'titolo pasto su elemento orizzontale dedicato');
+assert.match(document.getElementById('view-recipes').innerHTML, /recipe-count-compact[^>]*aria-hidden="true"/, 'conteggio compatto disponibile su smartphone');
+assert.match(document.getElementById('view-recipes').innerHTML, /aria-controls="recipe-section-lunch"/, 'accordion collegata semanticamente al contenuto');
 assert.match(document.getElementById('view-recipes').innerHTML, /recipe-section-body hidden/);
 assert.match(document.getElementById('view-recipes').innerHTML, /recipe-search-clear/, 'ricerca ricette con pulsante rapido di reset');
 
@@ -384,6 +396,8 @@ assert.doesNotMatch(exportedShopping, /Basilico[^\n]*mazzetto/);
 // manuale A/R resta memorizzata e riproposta alle aperture successive.
 openRecipeModal('L1');
 assert.equal(currentModal.dayType, 'training', 'default: Allenamento');
+assert.match(document.getElementById('modal-time').innerHTML, />Allenamento<\/button>/, 'toggle modale Allenamento scritto per esteso');
+assert.match(document.getElementById('modal-time').innerHTML, />Riposo<\/button>/, 'toggle modale Riposo scritto per esteso');
 setModalDayType('rest');
 assert.equal(currentModal.dayType, 'rest');
 assert.equal(appState.deviceSettings.recipePreviewDayType, 'rest', 'la scelta viene salvata nelle impostazioni dispositivo');
