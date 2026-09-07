@@ -1585,12 +1585,12 @@ test('Meller fonte unica: fiocchi di latte 180g e legumotti 80g nelle ricette', 
 });
 
 // ---------------------------------------------------------------------
-// Fonte unica Meller: grammature, popup, testo AI e superfici derivate.
+// Fonte unica Meller: grammature, popup e superfici derivate.
 // ---------------------------------------------------------------------
 
-// Famiglie che ogni superficie (popup, tabella canonica, testo AI, fallback del
-// Worker) deve coprire: il confronto è programmatico, così una famiglia aggiunta
-// o tolta da una sola superficie fa fallire i test.
+// Famiglie che ogni superficie derivata dal manuale deve coprire: il confronto
+// è programmatico, così una famiglia aggiunta o tolta da una sola superficie fa
+// fallire i test.
 const CARB_FAMILIES_ATTESE = ['pasta', 'riso', 'gnocchi', 'farroorzo', 'pseudo', 'couscous', 'pane', 'piadina', 'crackers', 'polenta', 'patate'];
 const PROTEIN_FAMILIES_ATTESE = ['pollame', 'manzo', 'maiale', 'salumi', 'molluschi', 'pesceBianco', 'tonno', 'pesceOmega', 'fiocchiLatte', 'uova', 'formaggi', 'legumi', 'legumotti'];
 
@@ -1757,13 +1757,12 @@ test('Meller fonte unica: le alternative dei popup non duplicano grammature', ()
   assert.doesNotMatch(block, /\d+\s*g\b/, 'nessun valore in grammi scritto a mano nelle alternative');
 });
 
-test('Meller fonte unica: popup, grammature e testo AI coprono le stesse famiglie', () => {
+test('Meller fonte unica: popup e grammature coprono le stesse famiglie', () => {
   const canonicalCarbs = sortedUnique(canonicalFamiliesWithLunchAndDinner('carb'));
   const canonicalProteins = sortedUnique(canonicalFamiliesWithLunchAndDinner('protein'));
   assert.deepEqual(canonicalCarbs, sortedUnique(CARB_FAMILIES_ATTESE), 'famiglie carboidrati canoniche');
   assert.deepEqual(canonicalProteins, sortedUnique(PROTEIN_FAMILIES_ATTESE), 'famiglie proteiche canoniche');
 
-  // Superficie 1: alternative dei popup (righe + riferimento mostrato nel titolo).
   const carbGroup = d.MELLER_GUIDE.alternatives.carbohydrates;
   const proteinGroup = d.MELLER_GUIDE.alternatives.proteins;
   const popupCarbs = sortedUnique(
@@ -1774,64 +1773,13 @@ test('Meller fonte unica: popup, grammature e testo AI coprono le stesse famigli
   );
   assert.deepEqual(popupCarbs, canonicalCarbs, 'i popup coprono tutte le famiglie carboidrati');
   assert.deepEqual(popupProteins, canonicalProteins, 'i popup coprono tutte le categorie proteiche');
-
-  // Superficie 2: testo passato al backend AI.
-  const aiText = d.mellerAlternativesText();
-  const inText = d.mellerFamiliesInText(aiText);
-  assert.deepEqual(sortedUnique(inText.carbohydrates), canonicalCarbs, 'il testo AI copre i carboidrati');
-  assert.deepEqual(sortedUnique(inText.proteins), canonicalProteins, 'il testo AI copre le proteine');
-
-  // Le etichette dei popup e del testo AI sono le stesse.
   assert.deepEqual(carbGroup.rows.map(row => row[0]), d.MELLER_ALTERNATIVES.carbohydrates.map(item => item.label));
   assert.deepEqual(proteinGroup.rows.map(row => row[0]), d.MELLER_PROTEIN_ALTERNATIVES.map(entry => entry.label));
   assert.deepEqual(
     d.MELLER_ALTERNATIVES.proteins.map(item => item.label),
     [d.MELLER_PROTEIN_REFERENCE.label, ...d.MELLER_PROTEIN_ALTERNATIVES.map(entry => entry.label)],
-    'il testo AI aggiunge solo il riferimento (pollame) alle righe del popup'
+    'il riferimento proteico aggiunge solo il pollame alle righe del popup'
   );
-  assert.deepEqual(Object.keys(d.mellerAlternativeFamilies()).sort(), ['carbohydrates', 'proteins']);
-  assert.deepEqual(sortedUnique(d.mellerAlternativeFamilies().carbohydrates), canonicalCarbs);
-  assert.deepEqual(sortedUnique(d.mellerAlternativeFamilies().proteins), canonicalProteins);
-});
-
-test('Meller testo AI: famiglie, grammature e regole obbligatorie', () => {
-  const text = d.mellerAlternativesText();
-  const lower = text.toLowerCase();
-  ['pasta/riso', 'gnocchi', 'farro/orzo', 'quinoa/grano saraceno/amaranto', 'cous cous', 'pane', 'piadina',
-    'crackers', 'polenta', 'patate', 'maiale', 'salumi', 'fiocchi di latte', 'uova', 'legumotti', 'pollame',
-    'affettati/salumi', 'crostacei/molluschi', 'pesce bianco', 'tonno', 'omega-3', 'formaggi', 'legumi']
-    .forEach(token => assert.ok(lower.includes(token), `il testo AI contiene "${token}"`));
-  assert.match(text, /^ALTERNATIVE CARBOIDRATI MELLER:$/m);
-  assert.match(text, /^ALTERNATIVE PROTEINE MELLER:$/m);
-  assert.match(text, /^Pasta, Riso: pranzo allenamento 90 g, pranzo riposo 70 g, cena 40 g\.$/m);
-  assert.match(text, /^Gnocchi di patate: pranzo allenamento 250 g, pranzo riposo 190 g, cena 120 g\.$/m);
-  assert.match(text, /^Patate: pranzo allenamento 450 g, pranzo riposo 350 g, cena 230 g\.$/m);
-  assert.match(text, /^Pollame: 200 g\.$/m);
-  assert.match(text, /^Legumotti Barilla: 80 g\.$/m);
-  assert.match(text, /^Affettati sgrassati \/ Salumi magri: 100 g\.$/m);
-  d.MELLER_AI_RULES.forEach(rule => assert.ok(text.includes(rule), `regola presente: ${rule}`));
-  assert.match(text, /I pesi sono riferiti agli alimenti a crudo\./);
-  assert.match(text, /A cena è ammesso qualsiasi carboidrato presente nella tabella\./);
-  assert.match(text, /La dose cena è circa 2\/3 della dose del pranzo di riposo, arrotondata per difetto alla decina\./);
-  assert.match(text, /Cena A e cena R hanno la stessa dose\./);
-  assert.match(text, /Le proteine mantengono la dose prevista per pranzo anche a cena\./);
-});
-
-test('Meller testo AI: ogni grammatura citata arriva dalla tabella canonica', () => {
-  const text = d.mellerAlternativesText();
-  const byLabel = new Map([...d.MELLER_ALTERNATIVES.carbohydrates, ...d.MELLER_ALTERNATIVES.proteins]
-    .map(item => [item.label, item]));
-  const detailLines = text.split('\n').filter(line => /^[^:\n]+: .*?\d+ g/.test(line));
-  assert.equal(detailLines.length, byLabel.size, 'una riga di dettaglio per ogni voce');
-  detailLines.forEach(line => {
-    const [label, rest] = line.split(':');
-    const item = byLabel.get(label.trim());
-    assert.ok(item, `etichetta derivata dalla fonte canonica: ${label}`);
-    const amounts = (rest.match(/(\d+) g/g) || []).map(value => Number(value.split(' ')[0]));
-    assert.ok(amounts.length > 0, `${label}: almeno una grammatura`);
-    const allowed = [item.lunchTraining, item.lunchRest, item.dinner].filter(Number.isFinite);
-    amounts.forEach(amount => assert.ok(allowed.includes(amount), `${label}: ${amount} g presente in tabella`));
-  });
 });
 
 test('Meller popup: riconoscimento degli ingredienti dalla fonte canonica', () => {

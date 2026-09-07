@@ -1,5 +1,4 @@
 /exports/
 .preview/
-.wrangler/
 .env*
-**/.dev.vars
+node_modules/
