@@ -1911,3 +1911,103 @@ test('CSS smartphone: titoli ricettario, profilo e tipo giornata non collassano'
   assert.match(mobile, /\.recipe-count-compact \{ display: inline; \}/, 'conteggio compatto visibile su smartphone');
   assert.match(css, /@media \(hover: none\) \{[\s\S]*?\.recipe-card-emoji, \.today-badge \{ animation: none; \}/, 'animazioni decorative disattivate sui touch device');
 });
+
+// ---- Meller contestuale: ricettario originale, contesto del piano e dipendenze ----
+
+test('Meller contestuale: segnala 350 g di pollo, lascia libere le verdure e usa 200 g come riferimento', () => {
+  const source = recipe('M1', 'Pollo e zucchine', 'lunch', [
+    ingredient('Pollo', { ipoTraining: '350 g', ipoRest: '350 g', manTraining: '350 g', manRest: '350 g' }),
+    ingredient('Zucchine', { ipoTraining: 'q.b.', ipoRest: 'q.b.', manTraining: 'q.b.', manRest: 'q.b.' })
+  ]);
+  const report = d.checkMellerContext(source, 'lunch');
+  assert.equal(report.status, 'needs-adaptation');
+  assert.equal(report.summary[0].actual, 350);
+  assert.equal(report.summary[0].expected, 200);
+  assert.deepEqual(report.free.map(item => item.ingredient), ['Zucchine']);
+
+  const built = d.buildMellerContextAdaptation(source, 'lunch');
+  const effective = d.applyMellerContextAdaptation(source, built.context);
+  assert.equal(effective.ingredients[0].portions.manTraining, '200 g');
+  assert.equal(effective.ingredients[0].portions.manRest, '200 g');
+  assert.equal(effective.ingredients[0].portions.ipoTraining, '200 g');
+  assert.equal(effective.ingredients[0].portions.ipoRest, '200 g');
+  assert.equal(effective.ingredients[1].portions.manTraining, 'q.b.');
+  assert.equal(source.ingredients[0].portions.manTraining, '350 g', 'la sorgente non viene mutata');
+});
+
+test('Meller contestuale: mapping sconosciuto blocca l’applicazione', () => {
+  const source = recipe('M2', 'Ricetta senza mapping', 'dinner', [
+    ingredient('Proteina misteriosa', { ipoTraining: '100 g', ipoRest: '100 g', manTraining: '100 g', manRest: '100 g' })
+  ]);
+  const report = d.checkMellerContext(source, 'dinner');
+  assert.equal(report.status, 'blocked');
+  assert.equal(report.readyToApply, false);
+  assert.equal(d.buildMellerContextAdaptation(source, 'dinner').changed, false);
+  const resolved = d.resolveRecipeForPlan(source, 'dinner', d.MELLER_MODE_MELLER);
+  assert.equal(resolved.blocked, true);
+  assert.equal(resolved.recipe.ingredients[0].portions.manTraining, '100 g');
+});
+
+test('Meller contestuale: l’adattamento persistente viene riutilizzato senza riscrivere la ricetta', () => {
+  const source = recipe('M3', 'Pollo persistente', 'lunch', [
+    ingredient('Pollo', { ipoTraining: '350 g', ipoRest: '350 g', manTraining: '350 g', manRest: '350 g' })
+  ]);
+  const stored = { ...source, mellerAdaptations: d.buildMellerAdaptationMetadata(source) };
+  const resolved = d.resolveRecipeForPlan(stored, 'lunch', d.MELLER_MODE_MELLER);
+  assert.equal(resolved.applied, true);
+  assert.equal(resolved.recipe.ingredients[0].portions.manTraining, '200 g');
+  assert.equal(stored.ingredients[0].portions.manTraining, '350 g');
+  const original = d.resolveRecipeForPlan(stored, 'lunch', d.MELLER_MODE_ORIGINAL);
+  assert.equal(original.applied, false);
+  assert.equal(original.recipe.ingredients[0].portions.manTraining, '350 g');
+});
+
+test('Meller contestuale: shopping e batch usano la dose effettiva del piano', () => {
+  const days = {};
+  d.DAYS.forEach(day => {
+    days[day] = { type: 'rest', breakfast: null, snack1: null, lunch: null, snack2: null, dinner: null };
+  });
+  days.monday.dinner = 'D1';
+  days.tuesday.lunch = 'P1';
+  const plan = d.migratePlan({ days, defaultDays: JSON.parse(JSON.stringify(days)), batchRules: {}, batchTemplates: [] });
+  const lunch = recipe('P1', 'Pollo', 'lunch', [
+    ingredient('Pollo', { ipoTraining: '350 g', ipoRest: '350 g', manTraining: '350 g', manRest: '350 g' })
+  ]);
+  const dinner = recipe('D1', 'Cena', 'dinner', [ingredient('Zucchine', { ipoTraining: 'q.b.', ipoRest: 'q.b.', manTraining: 'q.b.', manRest: 'q.b.' })]);
+  const recipes = { P1: lunch, D1: dinner };
+  const selected = { monday: [], tuesday: ['lunch'] };
+  const mellerShopping = d.aggregateShopping(plan, recipes, selected, 'man');
+  assert.equal(mellerShopping.find(item => item.ingredientId === 'pollo').totals.g, 200);
+  plan.mellerModes.tuesday.lunch = d.MELLER_MODE_ORIGINAL;
+  const originalShopping = d.aggregateShopping(plan, recipes, selected, 'man');
+  assert.equal(originalShopping.find(item => item.ingredientId === 'pollo').totals.g, 350);
+
+  plan.mellerModes.tuesday.lunch = d.MELLER_MODE_MELLER;
+  const templates = [{
+    id: 'batch-p1',
+    anchor: { slot: 'dinner', recipeId: 'D1' },
+    target: { slot: 'lunch', recipeId: 'P1', lookAheadDays: 2 },
+    tasks: [{ id: 'pollo', label: 'Prepara il pollo', storage: { maxDays: 1 }, quantitySource: { recipeId: 'P1', ingredientId: 'pollo' } }]
+  }];
+  const batches = d.activeBatch('monday', plan, templates, recipes, 'man');
+  assert.equal(batches[0].tasks[0].quantity, '200 g');
+});
+
+test('Meller contestuale: swap, copia e ripristino propagano la modalità del pasto', () => {
+  const days = {};
+  d.DAYS.forEach(day => {
+    days[day] = { type: 'rest', breakfast: null, snack1: null, lunch: null, snack2: null, dinner: null };
+  });
+  days.monday.lunch = 'A';
+  days.tuesday.lunch = 'B';
+  const plan = d.migratePlan({ days, defaultDays: JSON.parse(JSON.stringify(days)), batchRules: {}, batchTemplates: [] });
+  plan.mellerModes.monday.lunch = d.MELLER_MODE_ORIGINAL;
+  plan.mellerModes.tuesday.lunch = d.MELLER_MODE_MELLER;
+  const swapped = d.swapMeals(plan, 'monday', 'lunch', 'tuesday', 'lunch');
+  assert.equal(swapped.mellerModes.monday.lunch, d.MELLER_MODE_MELLER);
+  assert.equal(swapped.mellerModes.tuesday.lunch, d.MELLER_MODE_ORIGINAL);
+  const copied = d.copyMeal(swapped, 'monday', 'lunch', 'wednesday');
+  assert.equal(copied.mellerModes.wednesday.lunch, d.MELLER_MODE_MELLER);
+  const restored = d.restoreMeal(copied, 'wednesday', 'lunch');
+  assert.equal(restored.mellerModes.wednesday.lunch, d.MELLER_MODE_MELLER);
+});
