@@ -17,7 +17,9 @@ function createEmptyWeeklyPlan() {
     days,
     defaultDays: JSON.parse(JSON.stringify(days)),
     batchRules: {},
-    batchTemplates: []
+    batchTemplates: [],
+    mellerModes: PianoDomain.emptyMellerModes(),
+    mellerAdaptations: {}
   };
 }
 

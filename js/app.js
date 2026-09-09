@@ -85,6 +85,31 @@ function getPlannedRecipe(dayKey, slot) {
   return getRecipe(recipeId);
 }
 
+function getPlanMellerMode(dayKey, slot) {
+  if (!window.PianoDomain) return "original";
+  const explicit = PianoDomain.mellerModeForPlan(appState.plan, dayKey, slot);
+  if (explicit) return explicit;
+  return PianoDomain.MELLER_MAIN_SLOTS.includes(slot)
+    ? PianoDomain.MELLER_MODE_MELLER
+    : PianoDomain.MELLER_MODE_ORIGINAL;
+}
+
+function ensurePlanMellerContext() {
+  if (!window.PianoDomain || Object.prototype.hasOwnProperty.call(appState.plan || {}, "mellerModes")) return;
+  appState.plan = PianoDomain.migratePlan(appState.plan);
+}
+
+function resolvePlannedRecipe(recipe, dayKey, slot) {
+  if (!recipe || !window.PianoDomain) return { recipe, mode: "original", applied: false, blocked: false, report: null, context: null };
+  return PianoDomain.resolveRecipeForPlan(recipe, slot, getPlanMellerMode(dayKey, slot));
+}
+
+function mellerReportForRecipe(recipe, slot = recipe?.slot) {
+  return window.PianoDomain?.checkMellerContext
+    ? PianoDomain.checkMellerContext(recipe, slot)
+    : null;
+}
+
 function getRecipeDisplayName(recipe, dayType = "training") {
   return recipe?.namesByDayType?.[dayType] || recipe?.name || "Ricetta non disponibile";
 }
@@ -186,6 +211,12 @@ function saveShopCategoryOrder(order) {
 
 function recipeIsCrossSlot(recipe, assignedSlot) {
   return Boolean(recipe && window.PianoDomain && assignedSlot && PianoDomain.isPranzoCenaCross(recipe.slot, assignedSlot));
+}
+
+function recipeUsesMellerInPlan(dayKey, slot) {
+  return Boolean(window.PianoDomain
+    && PianoDomain.MELLER_MAIN_SLOTS.includes(slot)
+    && getPlanMellerMode(dayKey, slot) === PianoDomain.MELLER_MODE_MELLER);
 }
 
 function normalizeRecipeSchema(recipe) {
@@ -442,11 +473,16 @@ function applyState(recipes, plan, shopping) {
   // per rimuoverlo definitivamente dai dati persistiti.
   const needsCatalogMigration = window.PianoDomain && PianoDomain.catalogHasLegacyFrequency(recipes);
   setRecipes(recipes);
+  const needsMellerPlanMigration = window.PianoDomain
+    && !Object.prototype.hasOwnProperty.call(plan || {}, "mellerModes");
   appState.plan = window.PianoDomain ? PianoDomain.migratePlan(plan) : plan;
   appState.shopping = shopping;
   appState.deviceSettings = getLocalDeviceSettings();
   if (needsCatalogMigration) {
     saveRecipeCatalog(appState.recipes).catch(error => console.warn("Migrazione schema 5: salvataggio catalogo non riuscito", error));
+  }
+  if (needsMellerPlanMigration) {
+    saveWeeklyPlan(appState.plan).catch(error => console.warn("Migrazione contesto Meller del piano non riuscita", error));
   }
 
   applyTheme(!!appState.deviceSettings.darkMode);
@@ -701,13 +737,25 @@ function batchRecipeIngredients(recipe, dayKey, slot, batch) {
     }).filter(Boolean);
   }
 
-  return (recipe.ingredients || []).map(ingredient => {
-    const adapted = window.PianoDomain
-      ? PianoDomain.adaptIngredientForSlot(ingredient, recipe.slot, slot)
-      : null;
-    const displayed = adapted ? { ...ingredient, name: adapted.name, portions: adapted.portions } : ingredient;
-    return { name: displayed.name, quantityHtml: getIngredientCoupleHtml(displayed, getDayType(dayKey)) };
-  });
+  let effectiveRecipe = recipe;
+  if (window.PianoDomain && Object.prototype.hasOwnProperty.call(appState.plan || {}, "mellerModes")) {
+    effectiveRecipe = resolvePlannedRecipe(recipe, dayKey, slot).recipe || recipe;
+  } else {
+    // Compatibilità con piani legacy non ancora migrati al contesto Meller.
+    effectiveRecipe = {
+      ...recipe,
+      ingredients: (recipe.ingredients || []).map(ingredient => {
+        const adapted = window.PianoDomain
+          ? PianoDomain.adaptIngredientForSlot(ingredient, recipe.slot, slot)
+          : null;
+        return adapted ? { ...ingredient, name: adapted.name, portions: adapted.portions } : ingredient;
+      })
+    };
+  }
+  return (effectiveRecipe.ingredients || []).map(ingredient => ({
+    name: ingredient.name,
+    quantityHtml: getIngredientCoupleHtml(ingredient, getDayType(dayKey))
+  }));
 }
 
 // Nel popup batch la ricetta è già completa: ingredienti, dosi e preparazione
@@ -887,9 +935,20 @@ function renderWeek() {
             </div>
             ${MEAL_SLOTS.map(slot => {
               const recipe = getRecipe(planDay[slot.id]);
+              const planned = recipe ? resolvePlannedRecipe(recipe, day, slot.id) : null;
+              const mainSlot = window.PianoDomain?.MELLER_MAIN_SLOTS?.includes(slot.id);
+              const mode = mainSlot ? getPlanMellerMode(day, slot.id) : null;
+              const modeBadge = mainSlot && mode === "meller"
+                ? `<span class="meller-plan-badge" title="Dosi Meller applicate al piano">M</span>`
+                : mainSlot && mode === "original"
+                  ? `<span class="meller-plan-badge original" title="Quantità originali: Meller non applicato">O</span>`
+                  : "";
+              const blockedBadge = planned?.blocked
+                ? `<span class="meller-blocked-badge" title="Adattamento Meller bloccato: mapping ingrediente mancante">⚠</span>`
+                : "";
               return `<div class="week-meal">
                 <small>${escapeHtml(slot.shortLabel)}</small>
-                <button class="week-meal-name" onclick="openRecipeModal('${escapeAttr(recipe?.id || "")}', '${day}', '${slot.id}')">${escapeHtml(recipe?.emoji || "")} ${escapeHtml(recipe ? getRecipeDisplayName(recipe, planDay.type) : "Non disponibile")}${recipe && recipeIsCrossSlot(recipe, slot.id) ? ` <span class="cross-slot-badge" title="Carboidrati adattati alla dose prevista per questo pasto">↻</span>` : ""}</button>
+                <button class="week-meal-name" onclick="openRecipeModal('${escapeAttr(recipe?.id || "")}', '${day}', '${slot.id}')">${escapeHtml(recipe?.emoji || "")} ${escapeHtml(recipe ? getRecipeDisplayName(recipe, planDay.type) : "Non disponibile")}${recipe && recipeIsCrossSlot(recipe, slot.id) && mode === "meller" ? ` <span class="cross-slot-badge" title="Ingredienti adattati alla dose prevista per questo pasto">↻</span>` : ""} ${modeBadge}${blockedBadge}</button>
                 <button class="btn-icon btn-swap" onclick="openMealActions('${day}', '${slot.id}')" title="Operazioni sul pasto" aria-label="Operazioni sul pasto">⋯</button>
               </div>`;
             }).join("")}
@@ -994,6 +1053,33 @@ window.closeSwapModal = function() {
   document.getElementById("swap-modal")?.classList.add("hidden");
 };
 
+window.toggleCurrentPlanMellerMode = async function() {
+  const dayKey = currentModal?.dayKey;
+  const slot = currentModal?.planSlot;
+  const recipe = dayKey && slot ? getPlannedRecipe(dayKey, slot) : null;
+  if (!dayKey || !slot || !recipe || !window.PianoDomain?.MELLER_MAIN_SLOTS?.includes(slot)) return;
+  ensurePlanMellerContext();
+  const current = getPlanMellerMode(dayKey, slot);
+  const next = current === PianoDomain.MELLER_MODE_MELLER
+    ? PianoDomain.MELLER_MODE_ORIGINAL
+    : PianoDomain.MELLER_MODE_MELLER;
+  if (next === PianoDomain.MELLER_MODE_MELLER) {
+    const check = PianoDomain.checkMellerContext(recipe, slot);
+    if (check.status === "blocked") {
+      showToast(`Meller bloccato: mapping mancante per ${check.unknown.map(item => item.ingredient).join(", ") || "la ricetta"}`, true);
+      return;
+    }
+  }
+  appState.plan.mellerModes[dayKey][slot] = next;
+  try {
+    await saveWeeklyPlan(appState.plan);
+    handleRoute();
+    openRecipeModal(recipe.id, dayKey, slot);
+  } catch (error) {
+    showToast("Impossibile aggiornare la modalità Meller", true);
+  }
+};
+
 window.confirmSwap = async function(dayKey, slot, recipeId) {
   if (appState.plan.days[dayKey][slot] === recipeId) {
     closeSwapModal();
@@ -1004,7 +1090,22 @@ window.confirmSwap = async function(dayKey, slot, recipeId) {
   const baseMsg = "Sostituire questo pasto con la ricetta scelta? Frequenze e batch cooking potrebbero cambiare.";
   const crossMsg = crossSlot ? "\n\nI carboidrati verranno adattati alle linee guida del pasto di destinazione: a cena si usa la dose cena della tabella (circa 2/3 del pranzo di riposo, arrotondata per difetto alla decina), a pranzo si rileggono le dosi previste per Allenamento o Riposo. Le proteine, le uova e la verdura restano invariate." : "";
   if (!confirm(baseMsg + crossMsg)) return;
+  ensurePlanMellerContext();
+  let selectedMode = PianoDomain?.MELLER_MAIN_SLOTS?.includes(slot)
+    ? PianoDomain.MELLER_MODE_MELLER
+    : PianoDomain.MELLER_MODE_ORIGINAL;
+  if (selectedMode === PianoDomain?.MELLER_MODE_MELLER) {
+    const mellerCheck = PianoDomain.checkMellerContext(recipe, slot);
+    if (mellerCheck.status === "blocked") {
+      const missing = mellerCheck.unknown.map(item => item.ingredient).join(", ");
+      const ambiguous = mellerCheck.ambiguous.map(item => item.group).join(", ");
+      const details = [missing && `ingredienti non mappati: ${missing}`, ambiguous && `combinazioni da verificare: ${ambiguous}`].filter(Boolean).join("; ");
+      if (!confirm(`Meller non può essere applicato a questa ricetta (${details}).\n\nInserirla comunque con le quantità originali?`)) return;
+      selectedMode = PianoDomain.MELLER_MODE_ORIGINAL;
+    }
+  }
   appState.plan.days[dayKey][slot] = recipeId;
+  appState.plan.mellerModes[dayKey][slot] = selectedMode;
   try {
     await saveWeeklyPlan(appState.plan);
     closeSwapModal();
@@ -1182,8 +1283,9 @@ function recipeSectionHtml(title, recipes, slot) {
       <div id="${sectionId}" class="recipe-section-body ${isOpen ? "" : "hidden"}">
         <div class="recipe-grid">
           ${recipes.map(recipe => {
-            const mellerFlag = window.PianoDomain?.checkMellerAdaptation?.(recipe)?.adapted === false
-              ? `<span class="meller-card-flag" title="Dosi fuori dalle linee guida">⚠</span>`
+            const mellerCheck = window.PianoDomain?.checkMellerContext?.(recipe, recipe.slot);
+            const mellerFlag = mellerCheck && mellerCheck.status !== "not-applicable" && !mellerCheck.aligned
+              ? `<span class="meller-card-flag" title="${mellerCheck.status === "blocked" ? "Mapping Meller incompleto" : "Dosi fuori dalle linee guida"}">⚠</span>`
               : "";
             return `<button class="recipe-library-card" data-search="${escapeAttr(`${recipe.id} ${recipe.name} ${recipe.namesByDayType?.training || ""} ${recipe.namesByDayType?.rest || ""} ${recipeProteinLabel(recipe)} ${(recipe.ingredients || []).map(i => i.name).join(" ")}`.toLowerCase())}" onclick="openRecipeModal('${escapeAttr(recipe.id)}')"><span class="recipe-code">${escapeHtml(recipe.id)}</span>${mellerFlag}<span class="recipe-card-emoji">${escapeHtml(recipe.emoji || "🍲")}</span><strong>${escapeHtml(recipe.name)}</strong><small>${escapeHtml(recipeProteinLabel(recipe))}</small></button>`;
           }).join("")}
@@ -2116,10 +2218,23 @@ window.prepareRecipeImport = async function(file) {
     const imported = recipesFromImportedJson(parsed);
     validateRecipeCatalog(imported.recipes);
     if (!imported.recipes.length) throw new Error("Il file non contiene ricette");
-    pendingRecipeImport = { recipes: imported.recipes.map(cleanRecipeForTransfer), plan: imported.plan, filename: file.name };
+    const normalizedImported = imported.recipes.map(cleanRecipeForTransfer);
+    const mellerChecks = window.PianoDomain
+      ? normalizedImported.map(recipe => ({ recipe, check: PianoDomain.checkMellerContext(recipe, recipe.slot) }))
+      : [];
+    pendingRecipeImport = { recipes: normalizedImported, plan: imported.plan, filename: file.name, mellerChecks };
     document.getElementById("import-file-name").textContent = file.name;
     document.getElementById("import-recipe-count").textContent = `${imported.recipes.length} ricett${imported.recipes.length === 1 ? "a" : "e"}`;
     document.getElementById("import-plan-note").textContent = imported.plan?.days ? "Il file contiene anche un piano: verrà applicato scegliendo Sostituisci oppure quando il tuo catalogo è vuoto." : "Il piano attuale verrà mantenuto quando possibile.";
+    const importMeller = mellerChecks.filter(item => item.check.status === "needs-adaptation" || item.check.status === "blocked");
+    const importBlocked = mellerChecks.filter(item => item.check.status === "blocked");
+    const importNames = importMeller.slice(0, 4).map(item => item.recipe.name).join(" · ");
+    const importNote = document.getElementById("import-meller-note");
+    if (importNote) {
+      importNote.innerHTML = importMeller.length
+        ? `<strong>⚠ Verifica Meller:</strong> ${importMeller.length} ricett${importMeller.length === 1 ? "a" : "e"} richiedono attenzione${importBlocked.length ? `, ${importBlocked.length} con mapping mancante` : ""}.<br><small>${escapeHtml(importNames)}${importMeller.length > 4 ? "…" : ""}</small><br><small>Le ricette verranno importate fedelmente; l'adattamento sarà applicato quando entreranno nel piano.</small>`
+        : `<strong class="meller-import-ok">✓ Dosi Meller verificabili</strong><br><small>Il file sarà importato senza modificare le ricette originali.</small>`;
+    }
     document.getElementById("recipe-import-modal").classList.remove("hidden");
   } catch (error) {
     console.error(error);
@@ -2217,7 +2332,7 @@ function setupTransferModals() {
     <div id="recipe-import-modal" class="modal hidden" role="dialog" aria-modal="true">
       <div class="modal-content transfer-modal-content">
         <div class="modal-header"><div><p class="eyebrow">IMPORTAZIONE</p><h2>Come vuoi importare?</h2></div><button class="btn-icon" onclick="closeRecipeImportModal()">&times;</button></div>
-        <div class="transfer-summary"><strong id="import-file-name"></strong><span id="import-recipe-count"></span><p id="import-plan-note"></p></div>
+        <div class="transfer-summary"><strong id="import-file-name"></strong><span id="import-recipe-count"></span><p id="import-plan-note"></p><div id="import-meller-note" class="meller-import-note"></div></div>
         <div class="transfer-choice-grid">
           <button class="transfer-choice" onclick="applyRecipeImport('add')"><span>＋</span><strong>Aggiungi</strong><small>Mantiene le ricette esistenti. Gli ID duplicati vengono rinominati.</small></button>
           <button class="transfer-choice danger" onclick="applyRecipeImport('replace')"><span>↻</span><strong>Sostituisci tutte</strong><small>Rimuove il catalogo attuale e mantiene solo le ricette importate.</small></button>
@@ -3212,6 +3327,13 @@ function renderModalContent() {
   const recipe = currentModal.recipe;
   const dayType = currentModal.dayType;
   const batches = modalBatchRule();
+  const plannedResolution = (!editMode && currentModal.dayKey && currentModal.planSlot)
+    ? resolvePlannedRecipe(recipe, currentModal.dayKey, currentModal.planSlot)
+    : null;
+  const displayRecipe = plannedResolution?.recipe || recipe;
+  const planMode = currentModal.dayKey && currentModal.planSlot
+    ? getPlanMellerMode(currentModal.dayKey, currentModal.planSlot)
+    : null;
   const batchTab = document.querySelector('.tab-btn[data-target="tab-batch"]');
   const tabsBar = document.querySelector('.tabs');
   // Consultazione = schermata unica: ingredienti e preparazione restano
@@ -3227,7 +3349,7 @@ function renderModalContent() {
   if (!editMode && document.querySelector('.tab-btn[data-target="tab-batch"]').classList.contains("active") && !batches) setModalTab("tab-ingredients");
 
   document.getElementById("modal-title").innerHTML = editMode
-    ? `<input id="edit-recipe-name" class="modal-title-input" value="${escapeAttr(recipe.name)}">`
+    ? `<input id="edit-recipe-name" class="modal-title-input" value="${escapeAttr(recipe.name)}" oninput="updateMellerEditorNotice()">`
     : `<span class="recipe-code">${escapeHtml(recipe.id)}</span> ${escapeHtml(recipe.emoji || "🍲")} ${escapeHtml(getRecipeDisplayName(recipe, dayType))}`;
   const dayTypeLabel = currentModal.dayKey
     ? `${DAY_NAMES[currentModal.dayKey]} · ${dayType === "training" ? "Allenamento" : "Riposo"}`
@@ -3238,12 +3360,16 @@ function renderModalContent() {
       <button class="type-option training ${dayType === "training" ? "active" : ""}" onclick="setModalDayType('training')" aria-pressed="${dayType === "training"}">Allenamento</button>
       <button class="type-option rest ${dayType === "rest" ? "active" : ""}" onclick="setModalDayType('rest')" aria-pressed="${dayType === "rest"}">Riposo</button>
     </span>` : "";
+  const mellerPlanControl = (!editMode && currentModal.dayKey && currentModal.planSlot && window.PianoDomain?.MELLER_MAIN_SLOTS?.includes(currentModal.planSlot))
+    ? `<span class="meller-plan-control"><button type="button" class="meller-mode-toggle ${planMode === "meller" ? "active" : "original"}" onclick="toggleCurrentPlanMellerMode()">${planMode === "meller" ? "✓ Dosi Meller" : "↺ Quantità originali"}</button></span>`
+    : "";
   document.getElementById("modal-time").innerHTML = editMode
-    ? `<div class="edit-meta-grid"><label>Emoji<input id="edit-recipe-emoji" value="${escapeAttr(recipe.emoji || "🍲")}"></label><label>Tipo<select id="edit-recipe-slot">${MEAL_SLOTS.map(slot => `<option value="${slot.id}" ${recipe.slot === slot.id ? "selected" : ""}>${escapeHtml(slot.label)}</option>`).join("")}</select></label><label>
+    ? `<div class="edit-meta-grid"><label>Emoji<input id="edit-recipe-emoji" value="${escapeAttr(recipe.emoji || "🍲")}" oninput="updateMellerEditorNotice()"></label><label>Tipo<select id="edit-recipe-slot" onchange="updateMellerEditorNotice()">${MEAL_SLOTS.map(slot => `<option value="${slot.id}" ${recipe.slot === slot.id ? "selected" : ""}>${escapeHtml(slot.label)}</option>`).join("")}</select></label><label>
   Categoria proteica
 <select
   id="edit-recipe-category"
   title="Opzionale: il generatore riconosce prima la proteina dagli ingredienti. Questa scelta viene usata solo se nessun ingrediente è riconoscibile."
+  onchange="updateMellerEditorNotice()"
 >
   ${recipe.proteinCategory && !Object.prototype.hasOwnProperty.call(window.PianoDomain?.PROTEIN_CATEGORY_LABELS || {}, recipe.proteinCategory) ? `
     <option value="${escapeAttr(recipe.proteinCategory)}" selected>
@@ -3261,28 +3387,22 @@ function renderModalContent() {
     Opzionale: serve solo come fallback per ricette con ingredienti non riconoscibili.
   </small>
 </label></div>`
-    : `<div class="modal-context-row"><span>${escapeHtml(getSlotMeta(currentModal.slot || recipe.slot).label)} · ${escapeHtml(dayTypeLabel)} · ${escapeHtml(getProfileLabel())}</span>${toggleHtml}</div>${recipeIsCrossSlot(recipe, currentModal.slot) ? `<div class="modal-adapted-note">↻ Carboidrati alla dose prevista per ${escapeHtml(getSlotMeta(currentModal.slot).label.toLowerCase())}</div>` : ""}`;
+    : `<div class="modal-context-row"><span>${escapeHtml(getSlotMeta(currentModal.slot || recipe.slot).label)} · ${escapeHtml(dayTypeLabel)} · ${escapeHtml(getProfileLabel())}</span>${toggleHtml}${mellerPlanControl}</div>${plannedResolution?.applied ? `<div class="modal-adapted-note">↻ Dosi Meller applicate a tutti gli ingredienti regolati per ${escapeHtml(getSlotMeta(currentModal.slot || recipe.slot).label.toLowerCase())}</div>` : plannedResolution?.blocked ? `<div class="modal-adapted-note warning">⚠ Meller non applicabile: completa il mapping degli ingredienti mancanti oppure usa le quantità originali.</div>` : planMode === "original" && currentModal.dayKey && currentModal.planSlot && window.PianoDomain?.MELLER_MAIN_SLOTS?.includes(currentModal.planSlot) ? `<div class="modal-adapted-note warning">↺ Quantità originali: le dosi Meller non sono applicate a questo pasto.</div>` : ""}`;
 
   const ingredientList = document.getElementById("modal-ingredients-list");
   if (editMode) {
     ingredientList.innerHTML = recipe.ingredients.map((ingredient, index) => `
       <li class="edit-ingredient" data-index="${index}">
-        <input id="edit-ing-name-${index}" aria-label="Ingrediente" value="${escapeAttr(ingredient.name)}">
-        <div class="portion-edit-grid"><label>IPO · Allenamento<input id="edit-ing-ipo-training-${index}" value="${escapeAttr(getPortionValue(ingredient, "ipo", "training"))}"></label><label>IPO · Riposo<input id="edit-ing-ipo-rest-${index}" value="${escapeAttr(getPortionValue(ingredient, "ipo", "rest"))}"></label><label>Uomo · Allenamento<input id="edit-ing-man-training-${index}" value="${escapeAttr(getPortionValue(ingredient, "man", "training"))}"></label><label>Uomo · Riposo<input id="edit-ing-man-rest-${index}" value="${escapeAttr(getPortionValue(ingredient, "man", "rest"))}"></label><button class="btn-icon remove-edit-item" onclick="removeIngredient(${index})">×</button></div>
+        <input id="edit-ing-name-${index}" aria-label="Ingrediente" value="${escapeAttr(ingredient.name)}" oninput="updateMellerEditorNotice()">
+        <div class="portion-edit-grid"><label>IPO · Allenamento<input id="edit-ing-ipo-training-${index}" value="${escapeAttr(getPortionValue(ingredient, "ipo", "training"))}" oninput="updateMellerEditorNotice()"></label><label>IPO · Riposo<input id="edit-ing-ipo-rest-${index}" value="${escapeAttr(getPortionValue(ingredient, "ipo", "rest"))}" oninput="updateMellerEditorNotice()"></label><label>Uomo · Allenamento<input id="edit-ing-man-training-${index}" value="${escapeAttr(getPortionValue(ingredient, "man", "training"))}" oninput="updateMellerEditorNotice()"></label><label>Uomo · Riposo<input id="edit-ing-man-rest-${index}" value="${escapeAttr(getPortionValue(ingredient, "man", "rest"))}" oninput="updateMellerEditorNotice()"></label><button class="btn-icon remove-edit-item" onclick="removeIngredient(${index})">×</button></div>
       </li>`).join("") + `<li><button class="btn btn-outline full-width" onclick="addIngredient()">+ Aggiungi ingrediente</button></li>`;
   } else {
-    const items = recipe.ingredients.map(ingredient => {
-      const adapted = (currentModal.slot && window.PianoDomain)
-        ? PianoDomain.adaptIngredientForSlot(ingredient, recipe.slot, currentModal.slot)
-        : null;
-      const ing = adapted ? { ...ingredient, name: adapted.name, portions: adapted.portions } : ingredient;
-      return { ing, adapted: Boolean(adapted) };
-    });
+    const items = displayRecipe.ingredients.map(ingredient => ({ ing: ingredient, adapted: Boolean(plannedResolution?.applied) }));
     const hasMeller = items.some(({ ing }) => !!getMellerAlternativesForIngredient(ing.name));
     ingredientList.innerHTML = items.map(({ ing, adapted }) => {
       const adaptedMark = adapted ? ` <small class="adapted-mark" title="Dose adattata alle linee guida di questo pasto">↻</small>` : "";
       if (getMellerAlternativesForIngredient(ing.name)) {
-        return `<li class="meller-ingredient" onclick="openMellerAlternatives('${escapeAttr(ing.name)}')" title="Tocca per alternative"><span>${escapeHtml(ing.name)} <small class="meller-hint">⇄</small></span>${getIngredientCoupleHtml(ing, dayType)}</li>`;
+        return `<li class="meller-ingredient" onclick="openMellerAlternatives('${escapeAttr(ing.name)}')" title="Tocca per alternative"><span>${escapeHtml(ing.name)}${adaptedMark} <small class="meller-hint">⇄</small></span>${getIngredientCoupleHtml(ing, dayType)}</li>`;
       }
       return `<li><span>${escapeHtml(ing.name)}${adaptedMark}</span>${getIngredientCoupleHtml(ing, dayType)}</li>`;
     }).join("") + (hasMeller ? `<li class="meller-footnote"><small>↑ Tocca carboidrati o proteine per le equivalenze</small></li>` : "");
@@ -3340,30 +3460,71 @@ function renderModalContent() {
   if (mellerNotice) mellerNotice.innerHTML = mellerNoticeHtml();
 }
 
-// Banner "dosi fuori dalle linee guida": elenca le dosi
-// che superano il riferimento del pasto e offre l'adattamento con un click.
+// Banner Meller: distingue ricetta originale, dosi non allineate e mapping
+// incompleto. In lettura dal piano mostra l'esito effettivo, mentre in
+// modifica/importazione lascia sempre salva la ricetta originale.
 function mellerNoticeHtml() {
-  if (!currentModal || !window.PianoDomain?.checkMellerAdaptation) return "";
-  const check = PianoDomain.checkMellerAdaptation(currentModal.recipe);
-  if (check.adapted) return "";
-  const items = check.summary.slice(0, 4).map(item =>
-    `<li><span>${escapeHtml(item.ingredient)} · ${escapeHtml(item.dayTypeLabel)}</span><strong>${formatNumber(item.actual)}${item.unit === "ml" ? " ml" : " g"} → ${item.expected}${item.unit === "ml" ? " ml" : " g"}</strong></li>`
+  if (!currentModal || !window.PianoDomain?.checkMellerContext) return "";
+  const recipe = currentModal.recipe;
+  const contextSlot = currentModal.slot || recipe.slot;
+  const check = PianoDomain.checkMellerContext(recipe, contextSlot);
+  if (check.status === "not-applicable") return "";
+
+  const planned = !editMode && currentModal.dayKey && currentModal.planSlot
+    ? resolvePlannedRecipe(recipe, currentModal.dayKey, currentModal.planSlot)
+    : null;
+  if (planned?.applied && planned.mode === "meller") {
+    return `<div class="meller-notice meller-notice-success" role="status">
+      <div class="meller-notice-head"><span aria-hidden="true">✓</span><div><strong>Dosi Meller applicate</strong><small>La ricetta originale resta invariata; questo pasto usa le dosi precise del contesto.</small></div></div>
+    </div>`;
+  }
+  if (check.aligned && !currentModal.mellerPreviewActive) return "";
+  if (check.aligned && currentModal.mellerPreviewActive) {
+    return `<div class="meller-notice meller-notice-success" role="status">
+      <div class="meller-notice-head"><span aria-hidden="true">✓</span><div><strong>Preview Meller pronto</strong><small>Le quantità mostrate sono adattate. Salva l'adattamento contestuale oppure conserva l'originale.</small></div></div>
+      <div class="meller-save-actions">
+        <button class="btn btn-outline" type="button" onclick="saveRecipeEdit(true)">Salva comunque</button>
+        <button class="btn btn-primary" type="button" onclick="saveRecipeWithMeller()">Adatta e salva</button>
+      </div>
+    </div>`;
+  }
+
+  const issueItems = check.summary.slice(0, 5).map(item => {
+    const actual = item.actual == null
+      ? "non leggibile"
+      : `${formatNumber(item.actual)}${item.unit === "ml" ? " ml" : " g"}`;
+    return `<li><span>${escapeHtml(item.ingredient)} · ${escapeHtml(item.dayTypeLabel)}</span><strong>${escapeHtml(actual)} → ${item.expected} g</strong></li>`;
+  }).join("");
+  const unknownItems = check.unknown.slice(0, 6).map(item =>
+    `<li><span>${escapeHtml(item.ingredient)}</span><strong>mapping mancante</strong></li>`
   ).join("");
-  const more = check.summary.length > 4
-    ? `<li class="meller-notice-more">…e altre ${check.summary.length - 4} dosi fuori riferimento</li>`
+  const ambiguousItems = check.ambiguous.map(item =>
+    `<li><span>${escapeHtml(item.group)}</span><strong>${item.count} ingredienti</strong></li>`
+  ).join("");
+  const more = check.summary.length > 5
+    ? `<li class="meller-notice-more">…e altre ${check.summary.length - 5} dosi fuori riferimento</li>`
     : "";
+  const blocked = check.status === "blocked";
+  const list = `${unknownItems}${ambiguousItems}${issueItems}${more}`;
+  const actions = editMode
+    ? `<div class="meller-save-actions">
+        <button class="btn btn-outline" type="button" onclick="saveRecipeEdit(true)">Salva comunque</button>
+        ${blocked ? `<button class="btn btn-outline" type="button" disabled title="Completa prima il mapping Meller">Adatta e salva</button>` : `<button class="btn btn-primary" type="button" onclick="saveRecipeWithMeller()">Adatta e salva</button>`}
+      </div>`
+    : `<button class="btn btn-outline meller-adapt-btn" type="button" onclick="adaptCurrentRecipeToMeller()">Prepara adattamento Meller</button>`;
   return `
-    <div class="meller-notice" role="note">
-      <div class="meller-notice-head"><span aria-hidden="true">⚠️</span><div><strong>Dosi fuori dalle linee guida</strong><small>Riferimento per ${escapeHtml(getSlotMeta(currentModal.recipe.slot || "lunch").label.toLowerCase())} · pesi a crudo</small></div></div>
-      <ul class="meller-notice-list">${items}${more}</ul>
-      <button class="btn btn-outline meller-adapt-btn" type="button" onclick="adaptCurrentRecipeToMeller()">Adatta alle linee guida</button>
+    <div class="meller-notice ${blocked ? "meller-notice-blocked" : ""}" role="note">
+      <div class="meller-notice-head"><span aria-hidden="true">${blocked ? "⚠" : "⚠️"}</span><div><strong>${blocked ? "Mapping Meller incompleto" : "Dosi non allineate alle linee guida"}</strong><small>Riferimento per ${escapeHtml(getSlotMeta(contextSlot || "lunch").label.toLowerCase())} · pesi a crudo</small></div></div>
+      ${blocked ? `<p class="meller-notice-explanation">L'adattamento è bloccato finché gli ingredienti non riconosciuti non vengono mappati. La ricetta originale può comunque essere conservata.</p>` : ""}
+      <ul class="meller-notice-list">${list}</ul>
+      ${actions}
     </div>`;
 }
 
 // Adatta con un click le dosi alle linee guida. In lettura
 // passa prima alla modifica (senza salvare nulla finché l'utente non conferma).
 window.adaptCurrentRecipeToMeller = function() {
-  if (!currentModal || !window.PianoDomain?.adaptRecipeToMeller) return;
+  if (!currentModal || !window.PianoDomain?.buildMellerContextAdaptation) return;
   const wasEditing = editMode;
   if (!wasEditing) {
     editMode = true;
@@ -3371,15 +3532,71 @@ window.adaptCurrentRecipeToMeller = function() {
   } else {
     captureEditState();
   }
-  const result = PianoDomain.adaptRecipeToMeller(currentModal.recipe);
-  if (!result.changed) {
-    showToast("Le dosi rispettano già le linee guida");
+  const contextSlot = currentModal.slot || currentModal.recipe.slot;
+  const built = PianoDomain.buildMellerContextAdaptation(currentModal.recipe, contextSlot);
+  if (built.report.status === "blocked") {
+    showToast("Meller bloccato: completa il mapping degli ingredienti non riconosciuti", true);
     renderModalContent();
     return;
   }
-  currentModal.recipe = result.recipe;
+  currentModal.mellerPreviewOriginal = currentModal.mellerPreviewOriginal || clone(currentModal.recipe);
+  currentModal.mellerPreviewActive = true;
+  currentModal.recipe = PianoDomain.applyMellerContextAdaptation(currentModal.recipe, built.context);
+  if (!built.changed) showToast("Le dosi rispettano già le linee guida");
+  else showToast("Dosi adattate alle linee guida ✅ Rivedi e salva");
   renderModalContent();
-  showToast("Dosi adattate alle linee guida ✅ Rivedi e salva");
+};
+
+window.updateMellerEditorNotice = function() {
+  if (!editMode || !currentModal) return;
+  captureEditState();
+  const notice = document.getElementById("modal-meller-notice");
+  if (notice) notice.innerHTML = mellerNoticeHtml();
+};
+
+function restoreMellerPreviewSource() {
+  if (!currentModal?.mellerPreviewActive || !currentModal.mellerPreviewOriginal) return false;
+  const edited = currentModal.recipe;
+  const source = clone(currentModal.mellerPreviewOriginal);
+  ["name", "emoji", "slot", "proteinCategory", "steps", "notes", "specialNote", "namesByDayType"].forEach(key => {
+    if (edited[key] !== undefined) source[key] = clone(edited[key]);
+  });
+  // Le etichette possono essere state corrette durante la revisione del
+  // preview, ma le quantità originali arrivano sempre dalla copia sorgente.
+  if (Array.isArray(edited.ingredients) && Array.isArray(source.ingredients)) {
+    edited.ingredients.forEach((ingredient, index) => {
+      if (source.ingredients[index] && ingredient.name !== undefined) source.ingredients[index].name = ingredient.name;
+    });
+  }
+  currentModal.recipe = source;
+  currentModal.mellerPreviewActive = false;
+  currentModal.mellerPreviewOriginal = null;
+  return true;
+}
+
+window.saveRecipeWithMeller = async function() {
+  if (!currentModal || !window.PianoDomain?.buildMellerAdaptationMetadata) return;
+  captureEditState();
+  const edited = clone(currentModal.recipe);
+  const source = currentModal.mellerPreviewActive && currentModal.mellerPreviewOriginal
+    ? clone(currentModal.mellerPreviewOriginal)
+    : edited;
+  // Il comando salva l'originale dell'utente e persiste soltanto la matrice
+  // contestuale delle dosi Meller. Non sostituisce le quantità del ricettario.
+  ["name", "emoji", "slot", "proteinCategory", "steps", "notes", "specialNote", "namesByDayType"].forEach(key => {
+    if (edited[key] !== undefined) source[key] = clone(edited[key]);
+  });
+  if (currentModal.mellerPreviewActive && Array.isArray(edited.ingredients) && Array.isArray(source.ingredients)) {
+    edited.ingredients.forEach((ingredient, index) => {
+      if (source.ingredients[index] && ingredient.name !== undefined) source.ingredients[index].name = ingredient.name;
+    });
+  }
+  source.mellerAdaptations = PianoDomain.buildMellerAdaptationMetadata(source);
+  currentModal.recipe = source;
+  currentModal.mellerSaveWithAdaptation = true;
+  currentModal.mellerPreviewActive = false;
+  currentModal.mellerPreviewOriginal = null;
+  await saveRecipeEdit(true);
 };
 
 function captureEditState() {
@@ -3401,6 +3618,9 @@ function captureEditState() {
   recipe.steps = recipe.steps.map((_, index) => document.getElementById(`edit-step-${index}`)?.value.trim() || "");
   recipe.specialNote = document.getElementById("edit-recipe-special")?.value.trim() || "";
   recipe.notes = (document.getElementById("edit-recipe-notes")?.value || "").split("\n").map(note => note.trim()).filter(Boolean);
+  // Qualunque modifica manuale invalida le dosi contestuali precedenti; il
+  // comando “Adatta e salva” le rigenera esplicitamente.
+  delete recipe.mellerAdaptations;
 }
 
 window.addIngredient = function() {
@@ -3435,16 +3655,32 @@ window.moveStep = function(index, direction) {
   renderModalContent();
 };
 
-async function saveRecipeEdit() {
+async function saveRecipeEdit(forceMellerDecision = false) {
   captureEditState();
-  const recipe = currentModal.recipe;
+  let recipe = currentModal.recipe;
+  // Il pulsante generico di salvataggio e “Salva comunque” salvano sempre la
+  // sorgente originale quando l'editor sta mostrando un preview adattato.
+  if (currentModal.mellerPreviewActive && currentModal.mellerPreviewOriginal && !currentModal.mellerSaveWithAdaptation) {
+    restoreMellerPreviewSource();
+    recipe = currentModal.recipe;
+    forceMellerDecision = true;
+  }
   if (!recipe.ingredients.length || !recipe.steps.length) {
     showToast("Aggiungi almeno un ingrediente e un passaggio", true);
     return;
   }
-  const mellerCheck = window.PianoDomain?.checkMellerAdaptation?.(recipe);
-  if (mellerCheck && !mellerCheck.adapted) {
-    showToast("⚠ Dosi fuori dalle linee guida: tocca “Adatta alle linee guida” per correggerle", true);
+  const mellerCheck = window.PianoDomain?.checkMellerContext?.(recipe, recipe.slot);
+  if (currentModal.mellerSaveWithAdaptation && window.PianoDomain?.buildMellerAdaptationMetadata) {
+    recipe.mellerAdaptations = PianoDomain.buildMellerAdaptationMetadata(recipe);
+    currentModal.recipe = recipe;
+    currentModal.mellerSaveWithAdaptation = false;
+  }
+  if (mellerCheck && mellerCheck.status !== "not-applicable" && !mellerCheck.aligned && !forceMellerDecision) {
+    // Il ricettario resta libero: prima del salvataggio chiediamo soltanto se
+    // conservare l'originale o preparare l'adattamento Meller contestuale.
+    renderModalContent();
+    showToast("Controlla il riquadro Meller e scegli come salvare la ricetta", true);
+    return;
   }
   if (!currentModal.isNew && !recipe._original && currentModal.original) {
     const baseline = clone(currentModal.original);
@@ -3453,6 +3689,7 @@ async function saveRecipeEdit() {
   }
   setLoading("Salvataggio delle ricette…");
   const previousRecipes = clone(appState.recipes);
+  let planAssignmentWarning = false;
   try {
     const existingIndex = appState.recipes.findIndex(item => item.id === recipe.id);
     if (existingIndex >= 0) appState.recipes[existingIndex] = clone(recipe);
@@ -3462,15 +3699,26 @@ async function saveRecipeEdit() {
     setRecipes(appState.recipes);
     if (currentModal.assignAfterSave) {
       const { day, slot } = currentModal.assignAfterSave;
+      ensurePlanMellerContext();
+      const checkForPlan = PianoDomain?.checkMellerContext?.(recipe, slot);
+      const blockedForPlan = checkForPlan?.status === "blocked" && PianoDomain?.MELLER_MAIN_SLOTS?.includes(slot);
       appState.plan.days[day][slot] = recipe.id;
+      appState.plan.mellerModes[day][slot] = blockedForPlan
+        ? PianoDomain.MELLER_MODE_ORIGINAL
+        : PianoDomain?.MELLER_MAIN_SLOTS?.includes(slot)
+          ? PianoDomain.MELLER_MODE_MELLER
+          : PianoDomain.MELLER_MODE_ORIGINAL;
       await saveWeeklyPlan(appState.plan);
       currentModal.assignAfterSave = null;
+      if (blockedForPlan) planAssignmentWarning = true;
     }
     currentModal.isNew = false;
     currentModal.original = clone(recipe);
     editMode = false;
     renderModalContent();
-    showToast("Ricetta salvata nel cloud ✅");
+    showToast(planAssignmentWarning
+      ? "Ricetta salvata e assegnata con le quantità originali: completa il mapping per applicare Meller"
+      : "Ricetta salvata nel cloud ✅", planAssignmentWarning);
     if (window.location.hash === "#recipes") renderRecipes();
   } catch (error) {
     setRecipes(previousRecipes);

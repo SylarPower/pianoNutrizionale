@@ -734,7 +734,8 @@ async function getWeeklyPlan() {
     // Migrazione una tantum del piano: schema 4 + batchTemplates strutturati
     // derivati dalle vecchie batchRules. Salvata una sola volta.
     const hasLegacyRules = plan.batchRules && Object.keys(plan.batchRules).length > 0;
-    const needsMigration = Number(plan.schemaVersion || 1) < CATALOG_SCHEMA_VERSION || hasLegacyRules;
+    const needsMellerContext = !Object.prototype.hasOwnProperty.call(plan, "mellerModes");
+    const needsMigration = Number(plan.schemaVersion || 1) < CATALOG_SCHEMA_VERSION || hasLegacyRules || needsMellerContext;
     if (needsMigration && typeof PianoDomain !== "undefined") {
       const migrated = PianoDomain.migratePlan(plan);
       writeLocalJson("weekly_plan", migrated);
