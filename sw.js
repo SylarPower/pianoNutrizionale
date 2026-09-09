@@ -5,7 +5,7 @@
  * (sottocartella /pianoNutrizionale/).
  */
 // IMPORTANTE: incrementare CACHE_VERSION a OGNI modifica di CSS, JS o index.html.
-const CACHE_VERSION = 58;
+const CACHE_VERSION = 61;
 const CACHE = `piano-nutrizionale-shell-v${CACHE_VERSION}`;
 const SHELL = [
   './',
@@ -13,6 +13,8 @@ const SHELL = [
   './offline.html',
   './css/style.css',
   './js/domain.js',
+  './js/saas-config.js',
+  './js/saas.js',
   './js/data.js',
   './js/prices.js',
   './js/firebase.js',
@@ -33,7 +35,8 @@ const FIREBASE_SDK = [
   'https://www.gstatic.com/firebasejs/9.23.0/firebase-app.js',
   'https://www.gstatic.com/firebasejs/9.23.0/firebase-auth.js',
   'https://www.gstatic.com/firebasejs/9.23.0/firebase-firestore.js',
-  'https://www.gstatic.com/firebasejs/9.23.0/firebase-app-check.js'
+  'https://www.gstatic.com/firebasejs/9.23.0/firebase-app-check.js',
+  'https://www.gstatic.com/firebasejs/9.23.0/firebase-functions.js'
 ];
 
 // Lettore barcode per la sezione Prezzi: URL versionato e immutabile come
@@ -108,6 +111,13 @@ self.addEventListener('fetch', event => {
 
   // Non intercettare mai Firebase Auth, Firestore o App Check.
   if (url.origin !== self.location.origin || isFirebaseRequest(url)) return;
+
+  // La console professionale contiene dati operativi: mai servirla dalla cache
+  // della PWA né sostituirla accidentalmente con index.html.
+  if (event.request.mode === 'navigate' && url.pathname.endsWith('/admin.html')) {
+    event.respondWith(fetch(event.request).catch(() => caches.match('./offline.html')));
+    return;
+  }
 
   // Navigazione: network-first, fallback alla shell in cache (o offline.html).
   if (event.request.mode === 'navigate') {

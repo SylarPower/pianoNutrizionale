@@ -178,6 +178,73 @@ service cloud.firestore {
       allow read, write, delete: if signedIn() && request.auth.uid == userId;
     }
 
+    // ----- Piano SaaS multi-tenant -----
+    // Le membership sono la fonte autorevole; i custom claims non bastano.
+    // Tutte le mutazioni SaaS passano da Cloud Functions/Admin SDK. Il client
+    // può leggere direttamente soltanto la propria membership e i clienti che
+    // il tenant gli ha assegnato. Profilo attivo, regole e coda mapping vengono
+    // restituiti da callable per impedire IDOR e selezione autonoma del ruleSet.
+    function activeTenantMember(organizationId) {
+      return signedIn()
+        && exists(/databases/$(database)/documents/organizations/$(organizationId)/members/$(request.auth.uid))
+        && get(/databases/$(database)/documents/organizations/$(organizationId)/members/$(request.auth.uid)).data.status == 'active'
+        && get(/databases/$(database)/documents/organizations/$(organizationId)/members/$(request.auth.uid)).data.role in ['admin', 'nutritionist'];
+    }
+
+    function tenantAdmin(organizationId) {
+      return activeTenantMember(organizationId)
+        && get(/databases/$(database)/documents/organizations/$(organizationId)/members/$(request.auth.uid)).data.role == 'admin';
+    }
+
+    function authorizedNutritionist(organizationId, clientId) {
+      return activeTenantMember(organizationId)
+        && get(/databases/$(database)/documents/organizations/$(organizationId)/members/$(request.auth.uid)).data.role == 'nutritionist'
+        && get(/databases/$(database)/documents/organizations/$(organizationId)/clients/$(clientId)).data.nutritionistUids.hasAny([request.auth.uid]);
+    }
+
+    match /platformMembers/{userId} {
+      allow read: if signedIn() && request.auth.uid == userId;
+      allow write: if false;
+    }
+
+    match /accountClientLinks/{userId} {
+      allow read, write: if false;
+    }
+
+    match /globalRuleSets/{ruleSetId}/{document=**} {
+      allow read, write: if false;
+    }
+
+    match /globalMappings/{mappingId}/{document=**} {
+      allow read, write: if false;
+    }
+
+    match /organizations/{organizationId} {
+      allow read: if activeTenantMember(organizationId);
+      allow write: if false;
+    }
+
+    match /organizations/{organizationId}/members/{userId} {
+      allow read: if activeTenantMember(organizationId) && (request.auth.uid == userId || tenantAdmin(organizationId));
+      allow write: if false;
+    }
+
+    match /organizations/{organizationId}/clients/{clientId} {
+      allow read: if tenantAdmin(organizationId) || authorizedNutritionist(organizationId, clientId);
+      allow write: if false;
+    }
+
+    match /organizations/{organizationId}/clients/{clientId}/{document=**} {
+      allow read: if tenantAdmin(organizationId) || authorizedNutritionist(organizationId, clientId);
+      allow write: if false;
+    }
+
+    // Code, cataloghi, inviti, notifiche e audit non sono interrogabili
+    // direttamente: le callable filtrano campi personali e autorizzazioni.
+    match /organizations/{organizationId}/{document=**} {
+      allow read, write: if false;
+    }
+
     // Prezzi condivisi (Spesa Smart): UNICO database per tutti gli utenti.
     // Ogni account autenticato legge tutto; la creazione è aperta ma
     // vincolata ai campi previsti e all'UID dell'autore; modifica ed

@@ -1909,6 +1909,10 @@ test('CSS smartphone: titoli ricettario, profilo e tipo giornata non collassano'
   assert.match(mobile, /\.profile-chip \{ margin-left: 0; \}/, 'profilo senza offset fragile');
   assert.match(mobile, /\.recipe-count-full \{ display: none; \}/, 'conteggio esteso nascosto su smartphone');
   assert.match(mobile, /\.recipe-count-compact \{ display: inline; \}/, 'conteggio compatto visibile su smartphone');
+  assert.match(css, /\.recipe-library-section \{ margin: 8px 0 22px; \}/, 'categorie più compatte nel ricettario');
+  assert.match(css, /@media \(max-width: 980px\) \{[\s\S]*?\.recipes-heading \{ align-items: stretch; flex-direction: column; \}/, 'toolbar a capo prima che possa sovrapporsi');
+  assert.match(css, /\.recipe-library-card strong \{[\s\S]*?overflow-wrap: anywhere;/, 'titoli lunghi non rompono le card');
+  assert.match(mobile, /\.meller-notice-list li \{ align-items: flex-start; flex-direction: column;/, 'avvisi Meller senza sovrapposizioni su mobile');
   assert.match(css, /@media \(hover: none\) \{[\s\S]*?\.recipe-card-emoji, \.today-badge \{ animation: none; \}/, 'animazioni decorative disattivate sui touch device');
 });
 
@@ -2010,4 +2014,24 @@ test('Meller contestuale: swap, copia e ripristino propagano la modalità del pa
   assert.equal(copied.mellerModes.wednesday.lunch, d.MELLER_MODE_MELLER);
   const restored = d.restoreMeal(copied, 'wednesday', 'lunch');
   assert.equal(restored.mellerModes.wednesday.lunch, d.MELLER_MODE_MELLER);
+});
+
+test('SaaS: rule set server-side aggiorna resolver e derivati senza toccare ricette', () => {
+  const serverRules = d.MELLER_GRAMMATURE.map(rule => ({
+    family: rule.family,
+    group: rule.group,
+    label: rule.label,
+    aliases: [rule.label],
+    slots: JSON.parse(JSON.stringify(rule.slots))
+  }));
+  const pasta = serverRules.find(rule => rule.family === 'pasta');
+  pasta.aliases = ['pasta premium'];
+  pasta.slots.lunch.training = 91;
+  const recipeSource = { id: 'immutable', ingredients: [{ name: 'Pasta premium', portions: { manTraining: '120 g' } }] };
+  const before = JSON.stringify(recipeSource);
+  assert.equal(d.activateMellerRuleSet(serverRules, ['Ingrediente libero approvato']), true);
+  assert.equal(d.mellerMappingForIngredient('Ingrediente libero approvato').kind, 'free');
+  assert.equal(d.mellerRuleForIngredient('Pasta premium').slots.lunch.training, 91);
+  assert.equal(d.CARB_REFERENCE.find(item => item.family === 'pasta').pranzo.training, 91);
+  assert.equal(JSON.stringify(recipeSource), before, 'la ricetta originale resta immutata');
 });

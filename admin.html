@@ -1,0 +1,91 @@
+<!doctype html>
+<html lang="it">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <meta name="robots" content="noindex,nofollow">
+  <meta name="theme-color" content="#173c30">
+  <title>Piano — Console professionale</title>
+  <link rel="icon" href="icons/icon-192.svg" type="image/svg+xml">
+  <link rel="stylesheet" href="css/admin.css">
+</head>
+<body>
+  <div class="ambient ambient-a" aria-hidden="true"></div><div class="ambient ambient-b" aria-hidden="true"></div>
+  <main id="admin-login" class="auth-shell">
+    <section class="auth-card" aria-labelledby="admin-login-title">
+      <div class="brand-lockup"><span>🥗</span><div><strong>Piano</strong><small>Console professionale</small></div></div>
+      <p class="eyebrow">ACCESSO RISERVATO</p>
+      <h1 id="admin-login-title">Decisioni più sicure.<br>Più tempo per le persone.</h1>
+      <p class="lead">Gestisci profili e ingredienti con una traccia chiara, versionata e verificabile.</p>
+      <form id="admin-login-form">
+        <label>Username<input id="admin-username" autocomplete="username" required placeholder="Il tuo username"></label>
+        <label>Password<input id="admin-password" type="password" autocomplete="current-password" required placeholder="••••••••"></label>
+        <p id="admin-login-error" class="error" role="alert"></p>
+        <button class="primary" type="submit">Entra nella console <span>→</span></button>
+      </form>
+      <p class="trust-line">🔒 Accesso protetto · Operazioni registrate nell’audit</p>
+    </section>
+  </main>
+
+  <div id="admin-app" class="app-shell hidden">
+    <aside class="sidebar">
+      <a class="brand-lockup compact" href="#mapping"><span>🥗</span><div><strong>Piano</strong><small>Console professionale</small></div></a>
+      <nav aria-label="Console">
+        <button class="nav-link active" data-view="mapping"><span>◫</span>Coda ingredienti <b id="nav-open-count">0</b></button>
+        <button class="nav-link" data-view="clients"><span>♙</span>Clienti</button>
+      </nav>
+      <div class="sidebar-bottom"><div class="security-note"><span>✓</span><div><strong>Ambiente protetto</strong><small>Ogni azione è tracciata</small></div></div><button id="admin-logout" class="text-button">Esci</button></div>
+    </aside>
+
+    <div class="workspace">
+      <header class="topbar">
+        <button id="mobile-menu" class="icon-button" aria-label="Apri menu">☰</button>
+        <label class="tenant-field"><span>Organizzazione</span><input id="organization-id" placeholder="organization-id" autocomplete="off"></label>
+        <div class="topbar-user"><span class="avatar" id="admin-avatar">A</span><div><strong id="admin-name">Professionista</strong><small>Sessione verificata</small></div></div>
+      </header>
+
+      <main id="view-mapping" class="console-view">
+        <section class="hero-row"><div><p class="eyebrow">QUALITÀ DEL CATALOGO</p><h1>Ogni ingrediente risolto<br>rende il piano più affidabile.</h1><p>Parti dai casi più frequenti: riduci il blocco per più clienti con una sola decisione.</p></div><button id="refresh-reports" class="secondary">↻ Aggiorna coda</button></section>
+        <section class="metric-grid" aria-label="Riepilogo coda">
+          <article><span class="metric-icon warm">!</span><div><small>Da valutare</small><strong id="metric-open">—</strong></div></article>
+          <article><span class="metric-icon cool">◎</span><div><small>In lavorazione</small><strong id="metric-review">—</strong></div></article>
+          <article><span class="metric-icon green">✓</span><div><small>Risolti nella pagina</small><strong id="metric-resolved">—</strong></div></article>
+        </section>
+        <section class="panel">
+          <div class="panel-head"><div><h2>Coda ingredienti</h2><p>Casi anonimizzati e ordinati per aggiornamento.</p></div><label>Stato<select id="report-status"><option value="">Tutti</option><option value="open">Da valutare</option><option value="needs-review">Proposta pronta</option><option value="resolved">Risolti</option><option value="rejected">Rifiutati</option></select></label></div>
+          <div id="report-feedback" class="feedback" role="status"></div>
+          <div id="reports-list" class="report-list"></div>
+          <button id="load-more-reports" class="secondary full hidden">Carica altri casi</button>
+        </section>
+      </main>
+
+      <main id="view-clients" class="console-view hidden">
+        <section class="hero-row"><div><p class="eyebrow">PROFILI INDIVIDUALI</p><h1>Il protocollo giusto,<br>assegnato alla persona giusta.</h1><p>Household e account restano separati: ogni assegnazione è personale e storicizzata.</p></div><button id="refresh-clients" class="secondary">↻ Aggiorna clienti</button></section>
+        <section class="panel"><div class="panel-head"><div><h2>Clienti autorizzati</h2><p>Vedi solo i profili consentiti dal tuo ruolo.</p></div></div><div id="clients-feedback" class="feedback" role="status"></div><div id="clients-list" class="client-grid"></div></section>
+      </main>
+    </div>
+  </div>
+
+  <div id="mapping-dialog" class="dialog hidden" role="dialog" aria-modal="true" aria-labelledby="mapping-title">
+    <div class="dialog-backdrop" data-close-dialog></div>
+    <section class="dialog-card"><button class="dialog-close" data-close-dialog aria-label="Chiudi">×</button><p class="eyebrow">RISOLUZIONE GUIDATA</p><h2 id="mapping-title">Approva il mapping</h2><p id="mapping-context" class="dialog-lead"></p>
+      <form id="mapping-form">
+        <input id="mapping-report-id" type="hidden">
+        <div class="form-grid"><label>Trattamento<select id="mapping-kind"><option value="guided">Ingrediente guidato</option><option value="free">Ingrediente libero</option></select></label><label>ID canonico<input id="mapping-canonical" required placeholder="es. riso-venere"></label></div>
+        <label>Alias riconosciuti<input id="mapping-aliases" required placeholder="Separali con una virgola"></label>
+        <div id="guided-fields"><div class="form-grid"><label>Famiglia<input id="mapping-family" placeholder="es. riso"></label><label>Gruppo<select id="mapping-group"><option value="carb">Carboidrati</option><option value="protein">Proteine</option><option value="dairy">Latticini</option><option value="fat">Grassi</option><option value="sweet">Dolci</option><option value="fruit">Frutta</option></select></label></div>
+          <fieldset><legend>Dosi a crudo</legend><div class="dose-grid"><label>Pranzo A<input id="dose-la" type="number" min="1"></label><label>Pranzo R<input id="dose-lr" type="number" min="1"></label><label>Cena A<input id="dose-da" type="number" min="1"></label><label>Cena R<input id="dose-dr" type="number" min="1"></label></div></fieldset></div>
+        <label>Motivazione clinica/operativa<textarea id="mapping-rationale" required maxlength="500" placeholder="Perché questo mapping è affidabile?"></textarea></label>
+        <label class="check-row"><input id="mapping-global" type="checkbox"><span><strong>Pubblica nel catalogo globale</strong><small>Disponibile solo ai platform admin. Altrimenti resta nel tenant.</small></span></label>
+        <p id="mapping-error" class="error" role="alert"></p><div class="dialog-actions"><button type="button" class="secondary" data-close-dialog>Annulla</button><button id="mapping-submit" type="submit" class="primary">Pubblica mapping <span>→</span></button></div>
+      </form>
+    </section>
+  </div>
+
+  <div id="assignment-dialog" class="dialog hidden" role="dialog" aria-modal="true" aria-labelledby="assignment-title"><div class="dialog-backdrop" data-close-assignment></div><section class="dialog-card"><button class="dialog-close" data-close-assignment>×</button><p class="eyebrow">NUOVA ASSEGNAZIONE</p><h2 id="assignment-title">Assegna profilo nutrizionale</h2><p id="assignment-client" class="dialog-lead"></p><form id="assignment-form"><input id="assignment-client-id" type="hidden"><div class="form-grid"><label>Ambito<select id="assignment-scope"><option value="tenant">Organizzazione</option><option value="global">Globale</option></select></label><label>Rule set ID<input id="assignment-rule-id" required></label><label>Versione<input id="assignment-version" required></label><label>Checksum SHA-256<input id="assignment-checksum" required minlength="64" maxlength="64"></label><label>Decorrenza<input id="assignment-effective" type="datetime-local" required></label><label>Scadenza (opzionale)<input id="assignment-expires" type="datetime-local"></label></div><label>Strategia<select id="assignment-strategy"><option value="migrate-on-confirmation">Migra solo dopo conferma cliente</option><option value="freeze">Congela i piani esistenti</option><option value="original-only">Solo dosi originali</option></select></label><button id="assignment-preview" class="secondary" type="button">Confronta con il profilo attuale</button><div id="assignment-diff" class="callout hidden" role="status"></div><label>Motivazione<textarea id="assignment-reason" required maxlength="500"></textarea></label><p class="callout">Il piano e la lista spesa non verranno ricalcolati automaticamente.</p><p id="assignment-error" class="error"></p><div class="dialog-actions"><button type="button" class="secondary" data-close-assignment>Annulla</button><button class="primary" type="submit">Conferma assegnazione →</button></div></form></section></div>
+
+  <script>if (["localhost", "127.0.0.1"].includes(location.hostname)) self.FIREBASE_APPCHECK_DEBUG_TOKEN = true;</script>
+  <script src="js/firebase.js"></script>
+  <script src="js/admin.js"></script>
+</body>
+</html>
