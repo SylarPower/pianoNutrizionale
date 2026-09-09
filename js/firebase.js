@@ -14,6 +14,8 @@ const INTERNAL_USERNAME_DOMAIN = "utenti.pianonutrizionale.app";
 let db = null;
 let auth = null;
 let fb = null;
+let firebaseApp = null;
+let functionsService = null;
 let currentUser = null;
 // Metadati dell'ultimo catalogo letto (es. etichette canoniche degli ingredienti).
 let catalogMeta = {};
@@ -41,26 +43,30 @@ function hasCompatFirebase() {
 }
 
 async function loadFirebaseModules() {
-  const [appMod, authMod, firestoreMod, appCheckMod] = await Promise.all([
+  const [appMod, authMod, firestoreMod, appCheckMod, functionsMod] = await Promise.all([
     import(`${FIREBASE_MODULE_BASE}/firebase-app.js`),
     import(`${FIREBASE_MODULE_BASE}/firebase-auth.js`),
     import(`${FIREBASE_MODULE_BASE}/firebase-firestore.js`),
-    import(`${FIREBASE_MODULE_BASE}/firebase-app-check.js`)
+    import(`${FIREBASE_MODULE_BASE}/firebase-app-check.js`),
+    import(`${FIREBASE_MODULE_BASE}/firebase-functions.js`)
   ]);
-  return { appMod, authMod, firestoreMod, appCheckMod };
+  return { appMod, authMod, firestoreMod, appCheckMod, functionsMod };
 }
 
 async function initializeFirebaseAsync() {
   if (fb) return;
-  const { appMod, authMod, firestoreMod, appCheckMod } = await loadFirebaseModules();
+  const { appMod, authMod, firestoreMod, appCheckMod, functionsMod } = await loadFirebaseModules();
   fb = {
     ...appMod,
     ...authMod,
     ...firestoreMod,
-    ...appCheckMod
+    ...appCheckMod,
+    ...functionsMod
   };
 
   const app = fb.initializeApp(firebaseConfig);
+  firebaseApp = app;
+  functionsService = fb.getFunctions(app, "europe-west1");
 
   if (APP_CHECK_SITE_KEY && !APP_CHECK_SITE_KEY.startsWith("REPLACE_")) {
     try {
@@ -93,6 +99,11 @@ async function initializeFirebaseAsync() {
   }
 
   auth = fb.getAuth(app);
+  if (typeof location !== "undefined" && ["localhost", "127.0.0.1"].includes(location.hostname)) {
+    fb.connectAuthEmulator(auth, "http://127.0.0.1:9099", { disableWarnings: true });
+    fb.connectFirestoreEmulator(db, "127.0.0.1", 8080);
+    fb.connectFunctionsEmulator(functionsService, "127.0.0.1", 5001);
+  }
   fb.setPersistence(auth, fb.browserLocalPersistence).catch(error => {
     console.warn("Persistenza autenticazione non disponibile", error);
   });
@@ -118,6 +129,8 @@ async function initializeCompatFirebase() {
 
   db = compat.firestore();
   auth = compat.auth();
+  firebaseApp = typeof compat.app === "function" ? compat.app() : null;
+  functionsService = typeof compat.functions === "function" ? compat.functions("europe-west1") : null;
   auth.setPersistence(compat.auth.Auth.Persistence.LOCAL).catch(error => {
     console.warn("Persistenza autenticazione non disponibile", error);
   });
@@ -151,6 +164,19 @@ function initFirebase() {
 async function ensureFirebaseReady() {
   await firebaseReady;
   if (!db || !auth) throw new Error("Servizio dati non disponibile");
+}
+
+async function callSaasFunction(name, data = {}) {
+  await ensureFirebaseReady();
+  if (!functionsService) throw new Error("Servizio SaaS non disponibile");
+  // Il serializer Firebase rifiuta `undefined`: i form opzionali lo omettono.
+  const cleanData = JSON.parse(JSON.stringify(data));
+  if (hasCompatFirebase()) {
+    const response = await functionsService.httpsCallable(name)(cleanData);
+    return response.data;
+  }
+  const response = await fb.httpsCallable(functionsService, name)(cleanData);
+  return response.data;
 }
 
 function serverTimestamp() {

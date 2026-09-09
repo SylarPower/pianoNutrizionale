@@ -21,7 +21,9 @@ let appState = {
   plan: null,
   deviceSettings: null,
   shopping: null,
-  household: null
+  household: null,
+  saasContext: { state: "feature-disabled" },
+  saasPolicy: { mode: "legacy-disabled", migrationRequired: false }
 };
 let appStarted = false;
 let currentModal = null;
@@ -157,7 +159,7 @@ function getProfileLabel() {
 
 function getProfileChipLabel() {
   const profile = getPortionProfile();
-  if (profile === "ipo") return { icon: "👩", label: "Profilo donna IPO" };
+  if (profile === "ipo") return { icon: "👩", label: "Profilo donna" };
   if (profile === "couple") return { icon: "👥", label: "Profilo coppia" };
   return { icon: "👨", label: "Profilo uomo" };
 }
@@ -443,6 +445,9 @@ async function loadUserData(user, { silent = false } = {}) {
         getRecipeCatalog(), getWeeklyPlan(), getShoppingListCloud()
       ]);
     }
+    appState.saasContext = window.PianoSaas
+      ? await PianoSaas.loadContext(user.uid)
+      : { state: "feature-disabled", fallback: "legacy" };
     applyState(recipes, plan, shopping);
     writeSessionCache({
       uid: user.uid,
@@ -475,7 +480,11 @@ function applyState(recipes, plan, shopping) {
   setRecipes(recipes);
   const needsMellerPlanMigration = window.PianoDomain
     && !Object.prototype.hasOwnProperty.call(plan || {}, "mellerModes");
-  appState.plan = window.PianoDomain ? PianoDomain.migratePlan(plan) : plan;
+  const migratedPlan = window.PianoDomain ? PianoDomain.migratePlan(plan) : plan;
+  appState.saasPolicy = window.PianoSaas
+    ? PianoSaas.applyPolicy(migratedPlan, appState.saasContext)
+    : { plan: migratedPlan, mode: "legacy-disabled", migrationRequired: false };
+  appState.plan = appState.saasPolicy.plan;
   appState.shopping = shopping;
   appState.deviceSettings = getLocalDeviceSettings();
   if (needsCatalogMigration) {
@@ -695,7 +704,7 @@ function renderGlobalHeader() {
     <div class="header-brand"><span class="header-brand-icon" aria-hidden="true">🥗</span><strong>Piano</strong></div>
     <select aria-label="Profilo porzioni" onchange="changePortionProfile(this.value)">
       <option value="man" ${profile === "man" ? "selected" : ""}>👨 Profilo uomo</option>
-      <option value="ipo" ${profile === "ipo" ? "selected" : ""}>👩 Profilo donna IPO</option>
+      <option value="ipo" ${profile === "ipo" ? "selected" : ""}>👩 Profilo donna</option>
       <option value="couple" ${profile === "couple" ? "selected" : ""}>👥 Profilo coppia</option>
     </select>
     <a href="#settings" class="header-account" title="Impostazioni" aria-label="Impostazioni">⚙️ ${escapeHtml(usernameFromUser(appState.user))}</a>
@@ -1066,7 +1075,7 @@ window.toggleCurrentPlanMellerMode = async function() {
   if (next === PianoDomain.MELLER_MODE_MELLER) {
     const check = PianoDomain.checkMellerContext(recipe, slot);
     if (check.status === "blocked") {
-      showToast(`Meller bloccato: mapping mancante per ${check.unknown.map(item => item.ingredient).join(", ") || "la ricetta"}`, true);
+      showToast(`Meller non applicabile: ${check.unknown.map(item => item.ingredient).join(", ") || "la ricetta"} non ha un mapping nel catalogo attuale. Usa le quantità originali.`, true);
       return;
     }
   }
@@ -1579,8 +1588,33 @@ function groupShoppingEntries(entries) {
   return { categoryOrder, grouped };
 }
 
+function renderShoppingAccessGate(container) {
+  const access = window.PianoSaas?.shoppingAccess?.();
+  if (!access || access.allowed) return false;
+  const available = access.reason === "reward-available";
+  container.innerHTML = `<section class="shopping-access-gate">
+    <div class="shopping-gate-mark" aria-hidden="true">🛒</div>
+    <p class="eyebrow">LISTA DELLA SPESA</p>
+    <h1>Porta il piano con te,<br>senza pensare a cosa manca.</h1>
+    <p>${available ? "Guarda un breve contenuto dello sponsor e usa la lista completa per 24 ore." : "L’accesso tramite sponsor sarà disponibile a breve. Il tuo piano e le tue ricette restano sempre accessibili."}</p>
+    <button class="btn btn-primary" onclick="unlockShoppingWithAd()" ${available ? "" : "disabled"}>${available ? "Guarda e sblocca per 24 ore" : "In arrivo"}</button>
+    <small>La pubblicità non riceve ricette, ingredienti o informazioni sul tuo profilo nutrizionale.</small>
+  </section>`;
+  return true;
+}
+
+window.unlockShoppingWithAd = async function() {
+  try {
+    await PianoSaas.requestShoppingReward();
+    renderShop();
+  } catch (error) {
+    showToast(error.message || "Sblocco non disponibile", true);
+  }
+};
+
 function renderShop() {
   const container = document.getElementById("view-shop");
+  if (renderShoppingAccessGate(container)) return;
   const entries = getVisibleShoppingEntries();
   const { categoryOrder, grouped } = groupShoppingEntries(entries);
   const allSelected = DAY_ORDER.every(day => MEAL_SLOTS.every(slot => (appState.shopping.selectedMeals[day] || []).includes(slot.id)));
@@ -2030,6 +2064,40 @@ function renderLinkedAccountsSection() {
     </section>`;
 }
 
+function renderSaasProfileSection() {
+  if (!window.PianoSaas?.config().enabled) return "";
+  const context = appState.saasContext || {};
+  if (context.state !== "assigned" || !context.profile) {
+    return `<section class="settings-section"><p class="eyebrow">PROFILO NUTRIZIONALE</p><h2>Dosi originali attive</h2><p class="text-muted">Non hai un profilo nutrizionale valido assegnato. Nessun protocollo viene applicato automaticamente.</p></section>`;
+  }
+  const profile = context.profile;
+  const pending = appState.saasPolicy?.migrationRequired;
+  return `<section class="settings-section saas-profile-card">
+    <div><p class="eyebrow">PROFILO NUTRIZIONALE</p><h2>${pending ? "Nuovo profilo da confermare" : "Profilo verificato"}</h2><p class="text-muted">${escapeHtml(profile.ruleSetId)} · versione ${escapeHtml(profile.ruleSetVersion)}</p></div>
+    <span class="link-status ${pending ? "" : "active"}">${pending ? "In attesa" : "● Attivo"}</span>
+    <p>${pending ? "Per proteggere il piano esistente stai ancora usando le quantità originali. Controlla il cambiamento prima di applicarlo." : "Il piano conserva versione e checksum usati per ogni risoluzione."}</p>
+    ${pending ? `<button class="btn btn-primary" onclick="confirmAssignedNutritionProfile()">Rivedi e applica il profilo</button>` : ""}
+  </section>`;
+}
+
+window.confirmAssignedNutritionProfile = async function() {
+  const profile = appState.saasContext?.profile;
+  if (!profile || !window.PianoSaas) return;
+  if (!confirm("Applicare il nuovo profilo ai pasti futuri? Le ricette originali resteranno invariate e la lista della spesa rifletterà le nuove dosi.")) return;
+  appState.plan.nutritionSnapshot = PianoSaas.snapshotFor(profile);
+  DAY_ORDER.forEach(day => {
+    appState.plan.mellerModes[day] = { ...(appState.plan.mellerModes[day] || {}), lunch: "meller", dinner: "meller" };
+  });
+  try {
+    await saveWeeklyPlan(appState.plan);
+    appState.saasPolicy = { plan: appState.plan, mode: "assigned", migrationRequired: false };
+    renderSettings();
+    showToast("Profilo applicato. Le ricette originali sono al sicuro ✅");
+  } catch (error) {
+    showToast("Impossibile applicare il profilo", true);
+  }
+};
+
 function renderSettings() {
   const container = document.getElementById("view-settings");
   const breakfastCount = appState.recipes.filter(recipe => recipe.slot === "breakfast").length;
@@ -2041,6 +2109,8 @@ function renderSettings() {
       <button class="btn btn-outline" onclick="logoutCurrentUser()">Esci</button>
     </section>
 
+    ${renderSaasProfileSection()}
+
     ${renderLinkedAccountsSection()}
 
     <section class="settings-section">
@@ -2050,12 +2120,11 @@ function renderSettings() {
 
     <div class="manual-heading"><p class="eyebrow">LINEE GUIDA</p><h2>Dieta e alternative</h2><p>Le alternative originali restano sempre consultabili nell'app.</p></div>
 
-    ${settingsAccordion("Struttura della dieta", `<ul class="guide-list">${MELLER_GUIDE.structure.map(item => `<li>${escapeHtml(item)}</li>`).join("")}</ul>`)}
     ${settingsAccordion("Giorno di allenamento", guideDayHtml(MELLER_GUIDE.trainingDay, "training"))}
     ${settingsAccordion("Giorno di riposo", guideDayHtml(MELLER_GUIDE.restDay, "rest"))}
     ${settingsAccordion("Alternative alimentari", `<div class="alternatives-grid">${alternativesTableHtml(MELLER_GUIDE.alternatives.carbohydrates)}${alternativesTableHtml(MELLER_GUIDE.alternatives.proteins)}</div>`)}
     ${settingsAccordion("Frequenze proteiche", `<div class="alternative-table frequency-table">${MELLER_GUIDE.proteinFrequencies.map(row => `<div><span>${escapeHtml(row[0])}</span><strong>${escapeHtml(row[1])}</strong></div>`).join("")}</div>`)}
-    ${settingsAccordion("Altre informazioni e FAQ", `<ul class="guide-list">${MELLER_GUIDE.faq.map(item => `<li>${escapeHtml(item)}</li>`).join("")}</ul>`)}
+    ${settingsAccordion("Altre informazioni e FAQ", `<h3>Struttura della dieta</h3><ul class="guide-list">${MELLER_GUIDE.structure.map(item => `<li>${escapeHtml(item)}</li>`).join("")}</ul><h3>Altre informazioni</h3><ul class="guide-list">${MELLER_GUIDE.faq.map(item => `<li>${escapeHtml(item)}</li>`).join("")}</ul>`)}
 
     <section class="settings-section cloud-section">
       <div><h2>Dati e sincronizzazione</h2><p class="text-muted">${appState.recipes.length} ricette totali · ${breakfastCount} colazioni</p><p class="cloud-call-info">⚡ Dati sincronizzati tra i tuoi dispositivi.</p></div>
@@ -3387,7 +3456,7 @@ function renderModalContent() {
     Opzionale: serve solo come fallback per ricette con ingredienti non riconoscibili.
   </small>
 </label></div>`
-    : `<div class="modal-context-row"><span>${escapeHtml(getSlotMeta(currentModal.slot || recipe.slot).label)} · ${escapeHtml(dayTypeLabel)} · ${escapeHtml(getProfileLabel())}</span>${toggleHtml}${mellerPlanControl}</div>${plannedResolution?.applied ? `<div class="modal-adapted-note">↻ Dosi Meller applicate a tutti gli ingredienti regolati per ${escapeHtml(getSlotMeta(currentModal.slot || recipe.slot).label.toLowerCase())}</div>` : plannedResolution?.blocked ? `<div class="modal-adapted-note warning">⚠ Meller non applicabile: completa il mapping degli ingredienti mancanti oppure usa le quantità originali.</div>` : planMode === "original" && currentModal.dayKey && currentModal.planSlot && window.PianoDomain?.MELLER_MAIN_SLOTS?.includes(currentModal.planSlot) ? `<div class="modal-adapted-note warning">↺ Quantità originali: le dosi Meller non sono applicate a questo pasto.</div>` : ""}`;
+    : `<div class="modal-context-row"><span>${escapeHtml(getSlotMeta(currentModal.slot || recipe.slot).label)} · ${escapeHtml(dayTypeLabel)} · ${escapeHtml(getProfileLabel())}</span>${toggleHtml}${mellerPlanControl}</div>${plannedResolution?.applied ? `<div class="modal-adapted-note">↻ Dosi Meller applicate a tutti gli ingredienti regolati per ${escapeHtml(getSlotMeta(currentModal.slot || recipe.slot).label.toLowerCase())}</div>` : plannedResolution?.blocked ? `<div class="modal-adapted-note warning">⚠ Meller non applicabile: uno o più ingredienti non hanno un mapping nel catalogo attuale. Vengono usate le quantità originali.</div>` : planMode === "original" && currentModal.dayKey && currentModal.planSlot && window.PianoDomain?.MELLER_MAIN_SLOTS?.includes(currentModal.planSlot) ? `<div class="modal-adapted-note warning">↺ Quantità originali: le dosi Meller non sono applicate a questo pasto.</div>` : ""}`;
 
   const ingredientList = document.getElementById("modal-ingredients-list");
   if (editMode) {
@@ -3506,20 +3575,44 @@ function mellerNoticeHtml() {
     : "";
   const blocked = check.status === "blocked";
   const list = `${unknownItems}${ambiguousItems}${issueItems}${more}`;
+  const canReport = blocked && check.unknown.length > 0 && appState.saasContext?.state === "assigned";
   const actions = editMode
     ? `<div class="meller-save-actions">
         <button class="btn btn-outline" type="button" onclick="saveRecipeEdit(true)">Salva comunque</button>
-        ${blocked ? `<button class="btn btn-outline" type="button" disabled title="Completa prima il mapping Meller">Adatta e salva</button>` : `<button class="btn btn-primary" type="button" onclick="saveRecipeWithMeller()">Adatta e salva</button>`}
+        ${blocked ? `<button class="btn btn-outline" type="button" disabled title="Mapping non disponibile nel catalogo Meller attuale">Adatta e salva</button>` : `<button class="btn btn-primary" type="button" onclick="saveRecipeWithMeller()">Adatta e salva</button>`}
       </div>`
     : `<button class="btn btn-outline meller-adapt-btn" type="button" onclick="adaptCurrentRecipeToMeller()">Prepara adattamento Meller</button>`;
   return `
     <div class="meller-notice ${blocked ? "meller-notice-blocked" : ""}" role="note">
       <div class="meller-notice-head"><span aria-hidden="true">${blocked ? "⚠" : "⚠️"}</span><div><strong>${blocked ? "Mapping Meller incompleto" : "Dosi non allineate alle linee guida"}</strong><small>Riferimento per ${escapeHtml(getSlotMeta(contextSlot || "lunch").label.toLowerCase())} · pesi a crudo</small></div></div>
-      ${blocked ? `<p class="meller-notice-explanation">L'adattamento è bloccato finché gli ingredienti non riconosciuti non vengono mappati. La ricetta originale può comunque essere conservata.</p>` : ""}
+      ${blocked ? `<p class="meller-notice-explanation">L'adattamento non è disponibile perché uno o più ingredienti non hanno un mapping nel catalogo attuale. Non puoi creare il mapping da questa app; la ricetta originale può comunque essere conservata e usata.</p>` : ""}
       <ul class="meller-notice-list">${list}</ul>
       ${actions}
+      ${canReport ? `<button class="btn btn-outline meller-report-btn" type="button" onclick="reportCurrentMissingMappings()">Segnala ingredienti non riconosciuti</button>` : ""}
     </div>`;
 }
+
+window.reportCurrentMissingMappings = async function() {
+  if (!currentModal || appState.saasContext?.state !== "assigned") return;
+  const profile = appState.saasContext.profile;
+  const slot = currentModal.slot || currentModal.recipe.slot;
+  const check = PianoDomain.checkMellerContext(currentModal.recipe, slot);
+  if (!check.unknown.length) return;
+  try {
+    await Promise.all(check.unknown.map(item => callSaasFunction("submitMappingReport", {
+      clientProfileId: profile.clientProfileId,
+      fingerprint: `${check.sourceFingerprint}:${item.ingredientId}`,
+      ingredientText: item.ingredient,
+      slot,
+      errorType: "unknown",
+      ruleSetId: profile.ruleSetId,
+      ruleSetVersion: profile.ruleSetVersion
+    })));
+    showToast("Segnalazione inviata in forma minimizzata ✅");
+  } catch (error) {
+    showToast("Invio della segnalazione non riuscito", true);
+  }
+};
 
 // Adatta con un click le dosi alle linee guida. In lettura
 // passa prima alla modifica (senza salvare nulla finché l'utente non conferma).
@@ -3535,7 +3628,7 @@ window.adaptCurrentRecipeToMeller = function() {
   const contextSlot = currentModal.slot || currentModal.recipe.slot;
   const built = PianoDomain.buildMellerContextAdaptation(currentModal.recipe, contextSlot);
   if (built.report.status === "blocked") {
-    showToast("Meller bloccato: completa il mapping degli ingredienti non riconosciuti", true);
+    showToast("Meller non applicabile: il mapping degli ingredienti non riconosciuti non è disponibile nel catalogo attuale. Usa le quantità originali.", true);
     renderModalContent();
     return;
   }
@@ -3717,7 +3810,7 @@ async function saveRecipeEdit(forceMellerDecision = false) {
     editMode = false;
     renderModalContent();
     showToast(planAssignmentWarning
-      ? "Ricetta salvata e assegnata con le quantità originali: completa il mapping per applicare Meller"
+      ? "Ricetta salvata e assegnata con le quantità originali: il mapping Meller non è disponibile nel catalogo attuale"
       : "Ricetta salvata nel cloud ✅", planAssignmentWarning);
     if (window.location.hash === "#recipes") renderRecipes();
   } catch (error) {

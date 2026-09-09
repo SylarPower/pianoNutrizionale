@@ -125,7 +125,7 @@ global.firebase = {
 };
 global.firebase.auth.Auth = { Persistence: { LOCAL: 'local' } };
 
-for (const file of ['js/domain.js', 'js/data.js', 'js/prices.js', 'js/firebase.js', 'js/app.js']) {
+for (const file of ['js/domain.js', 'js/saas-config.js', 'js/saas.js', 'js/data.js', 'js/prices.js', 'js/firebase.js', 'js/app.js']) {
   vm.runInThisContext(fs.readFileSync(path.join(ROOT, file), 'utf8'), { filename: file });
 }
 
@@ -207,6 +207,12 @@ setRecipes(recipes);
 // ---- Percorsi di rendering ----
 renderGlobalHeader();
 assert.match(document.getElementById('global-header-container').innerHTML, /header-brand-icon/, 'brand premium generato nell’header');
+appState.deviceSettings.portionProfile = 'ipo';
+renderGlobalHeader();
+assert.match(document.getElementById('global-header-container').innerHTML, />👩 Profilo donna<\/option>/, 'profilo donna rinominato nell’header');
+assert.doesNotMatch(document.getElementById('global-header-container').innerHTML, /Profilo donna IPO/, 'vecchia etichetta rimossa dall’header');
+appState.deviceSettings.portionProfile = 'man';
+renderGlobalHeader();
 renderWeek();
 const weekMarkup = document.getElementById('view-week').innerHTML;
 assert.match(weekMarkup, />Allenamento<\/button>/, 'tipo giornata Allenamento scritto per esteso');
@@ -565,6 +571,8 @@ assert.match(document.getElementById('view-settings').innerHTML, /Account colleg
 assert.match(document.getElementById('view-settings').innerHTML, /Backup e annullamento/);
 assert.match(document.getElementById('view-settings').innerHTML, /Importazioni che sostituiscono tutte le ricette/);
 assert.match(document.getElementById('view-settings').innerHTML, /Nessun backup/);
+assert.doesNotMatch(document.getElementById('view-settings').innerHTML, /aria-controls="guide-struttura-della-dieta"/, 'Struttura della dieta non è più un accordion autonomo');
+assert.match(document.getElementById('view-settings').innerHTML, /aria-controls="guide-altre-informazioni-e-faq"[\s\S]*<h3>Struttura della dieta<\/h3>/, 'la struttura è contenuta in Altre informazioni e FAQ');
 
 // ---- Popup e tabelle delle alternative Meller (fonte unica js/domain.js) ----
 // Le Impostazioni non hanno una giornata di riferimento, quindi mostrano

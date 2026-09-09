@@ -155,6 +155,7 @@
     /curry/, /noce moscata/, /aglio/, /zenzero/, /sale/, /limon/, /lime/,
     /aceto/, /acqua/, /brodo/, /passata di pomodoro/, /passata/
   ];
+  let activeMellerFreeIngredientPatterns = [];
 
   function mellerGrammatureFor(family) {
     return MELLER_GRAMMATURE.find(rule => rule.family === family) || null;
@@ -162,7 +163,7 @@
 
   function isMellerFreeIngredient(name) {
     const value = aliasKey(name);
-    return Boolean(value && MELLER_FREE_INGREDIENT_PATTERNS.some(pattern => pattern.test(value)));
+    return Boolean(value && MELLER_FREE_INGREDIENT_PATTERNS.concat(activeMellerFreeIngredientPatterns).some(pattern => pattern.test(value)));
   }
 
   function mellerMappingForIngredient(name) {
@@ -1956,6 +1957,38 @@ const PROTEIN_CATEGORY_LABELS = {
     return MELLER_GRAMMATURE.find(rule => rule.match.test(value)) || null;
   }
 
+  // Installa una versione server-side già autenticata e verificata dalla
+  // callable. Aggiorna in-place i derivati per conservare i riferimenti usati
+  // dal client vanilla e non modifica mai le ricette originali.
+  function activateMellerRuleSet(rules, freeAliases = []) {
+    if (!Array.isArray(rules) || !rules.length) return false;
+    const escapeRegex = value => String(value).replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+    activeMellerFreeIngredientPatterns = (Array.isArray(freeAliases) ? freeAliases : [])
+      .map(alias => aliasKey(alias)).filter(Boolean).map(alias => new RegExp(`^${escapeRegex(alias)}$`, 'i'));
+    const compiled = rules.map(rule => {
+      if (!rule?.family || !rule?.group || !rule?.label || !Array.isArray(rule.aliases) || !rule.aliases.length) {
+        throw new Error('Rule set Meller non compatibile');
+      }
+      const slots = deepClone(rule.slots || {});
+      Object.values(slots).forEach(byDay => ['training', 'rest'].forEach(dayType => {
+        const amount = Number(byDay?.[dayType]);
+        if (!Number.isFinite(amount) || amount <= 0) throw new Error('Grammatura Meller non valida');
+      }));
+      return {
+        family: String(rule.family), group: String(rule.group), label: String(rule.label),
+        match: new RegExp(rule.aliases.map(alias => escapeRegex(aliasKey(alias))).join('|'), 'i'),
+        slots
+      };
+    });
+    MELLER_GRAMMATURE.splice(0, MELLER_GRAMMATURE.length, ...compiled);
+    CARB_REFERENCE.splice(0, CARB_REFERENCE.length, ...buildCarbReference());
+    const nextAlternatives = buildMellerAlternatives();
+    Object.assign(MELLER_ALTERNATIVES, nextAlternatives);
+    Object.assign(DEFAULT_CONSTRAINTS, buildDefaultConstraints());
+    Object.assign(MELLER_GUIDE, buildMellerGuide());
+    return true;
+  }
+
   // Gruppo canonico di un ingrediente ('carb', 'protein', 'dairy', …) oppure
   // null quando non ha una grammatura Meller (verdura, spezie, q.b.).
   function mellerGroupForIngredient(name) {
@@ -2399,6 +2432,7 @@ const PROTEIN_CATEGORY_LABELS = {
     mellerSlotHasAlternatives,
     MELLER_ALTERNATIVE_SLOTS,
     mellerRuleForIngredient,
+    activateMellerRuleSet,
     mellerGroupForIngredient,
     mellerFamilyForIngredient,
     isMellerFreeIngredient,
