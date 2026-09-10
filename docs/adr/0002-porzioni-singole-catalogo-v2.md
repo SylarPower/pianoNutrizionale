@@ -36,6 +36,10 @@ In parallelo, `MELLER_GRAMMATURE` mescolava: identità degli ingredienti (nomi, 
 
 8. **Font Inter self-hosted** (OFL 1.1, `assets/fonts/`), fallback Verdana; nessuna chiamata Google Fonts a runtime.
 
+9. **Import batch del catalogo globale**: gli ingredienti del catalogo si importano solo da **platform admin** via job applicativo (JSON/CSV) con validazione, deduplica e controllo collisioni alias; anteprima con diff, **dry-run** di default e commit atomico versionato ai numeri di catalogo (`catalogVersion`). La funzione è **reversibile con feature flag** (`CATALOG_IMPORT_ENABLED`, default disattivo in produzione finché il catalogo definitivo del dott. Meller non è pronto). Il formato esatto e le fixture vedi `docs/catalog-import-format.md`.
+
+10. **Migrazione JSON Meller → split**: `splitMellerSeed(extract)` divide l'estratto canonico `docs/catalogo-ingredienti-meller.json` (25 famiglie guidate + 50 pattern liberi) in tre collezioni: `categories` (6 categorie del manuale + `free`), `ingredients` (25 guided + 50 free, **zero quantità**), `families` (motore quantità per nome), più `structureSeed.rules` (25) e `alternativeGroups` (carboidrati 10 / proteine 13). Il seed dell'emulatore lo applica tramite lo script `functions/scripts/seed-emulator.js` — nessuna modifica manuale del sorgente tra gli ambienti (App Check off solo in emulator).
+
 ## Conseguenze
 
 - Le ricette originali restano immutabili: ogni adattamento è una **risoluzione di piano** (context + dayType), coerente con la non-retroattività (ADR 0001).

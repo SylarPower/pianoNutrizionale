@@ -2487,6 +2487,10 @@ body.dark-mode .meller-notice-list li strong { color: #E6A976; }
   gap: 8px;
   margin-top: 6px;
 }
+@media (max-width: 400px) {
+  .portion-edit-grid-single { grid-template-columns: 1fr; }
+  .portion-edit-grid-single .ghost-button { justify-self: start; }
+}
 .portion-edit-grid-single label { display: flex; flex-direction: column; gap: 4px; font-size: 0.72rem; color: var(--text-muted); font-weight: 600; }
 .recipe-optional-hint { font-weight: 400; color: var(--text-muted); font-size: 0.7em; }
 .modal-edit-notes { margin-top: 12px; display: grid; gap: 10px; }
