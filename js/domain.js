@@ -17,7 +17,10 @@
 })(typeof globalThis !== 'undefined' ? globalThis : window, () => {
   'use strict';
 
-  const VERSION = 5;
+  // Schema 6: quantità originale singola per profilo persona (porzioni v2),
+  // controllo piano «quantità adattate alle linee guida», catalogo globale e
+  // Strutture dieta v2.
+  const VERSION = 6;
   const DAYS = ['monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday', 'sunday'];
   const SLOTS = ['breakfast', 'snack1', 'lunch', 'snack2', 'dinner'];
   const MELLER_MAIN_SLOTS = ['lunch', 'dinner'];
@@ -520,18 +523,25 @@
     return INGREDIENT_ALIASES[aliasKey(name)] || slug(name) || 'ingredient';
   }
 
+  // Porzioni v2 (schema 6): una sola quantità originale per profilo persona
+  // (`ipo` Donna, `man` Uomo). Non esistono più campi distinti per
+  // allenamento/riposo o pranzo/cena: le quantità adattate sono derivate a
+  // livello di piano e non modificano la ricetta. In lettura i vecchi formati
+  // vengono migrati conservando il valore di ALLENAMENTO come originale
+  // (decisione di prodotto approvata: il riposo è una derivazione delle
+  // linee guida, non un dato originale separato).
   function normalizePortions(p = {}) {
     return {
-      ipoTraining: p.ipoTraining ?? p.ipo ?? EMPTY_PORTION,
-      ipoRest: p.ipoRest ?? p.ipo ?? EMPTY_PORTION,
-      manTraining: p.manTraining ?? p.training ?? EMPTY_PORTION,
-      manRest: p.manRest ?? p.rest ?? p.training ?? EMPTY_PORTION
+      ipo: p.ipo ?? p.ipoTraining ?? p.ipoRest ?? EMPTY_PORTION,
+      man: p.man ?? p.manTraining ?? p.training ?? p.manRest ?? p.rest ?? EMPTY_PORTION
     };
   }
 
-  // Migrazione idempotente di una singola ricetta allo schema corrente (5).
+  // Migrazione idempotente di una singola ricetta allo schema corrente (6).
   // Schema 4 → 5: rimuove il campo legacy `frequency` (sostituito dalle
   // frequenze proteiche calcolate dal generatore sui pasti principali).
+  // Schema 5 → 6: porzioni ridotte a una quantità originale per profilo
+  // persona (vedi normalizePortions).
   function migrateRecipe(recipe) {
     if (!recipe || typeof recipe !== 'object') return recipe;
     const ingredients = (recipe.ingredients || []).map(ingredient => ({
@@ -604,8 +614,24 @@
       mellerModes: normalizeMellerModes(plan.mellerModes || {}),
       mellerAdaptations: plan.mellerAdaptations && typeof plan.mellerAdaptations === 'object'
         ? plan.mellerAdaptations
-        : {}
+        : {},
+      // Controllo «Ricette con quantità adattate alle linee guida»: modalità
+      // del piano, non quantità derivate nelle ricette. Default attivo per
+      // nuovi piani e migrazione (decisione di prodotto approvata): disattivo
+      // solo se l'utente lo spegne esplicitamente.
+      adaptedQuantitiesEnabled: normalizeAdaptedQuantitiesEnabled(plan)
     };
+  }
+
+  // Vero di default: il flag è false solo se il piano lo dichiara apertamente.
+  function normalizeAdaptedQuantitiesEnabled(plan) {
+    return (plan && typeof plan === 'object') ? plan.adaptedQuantitiesEnabled !== false : true;
+  }
+
+  function setAdaptedQuantitiesEnabled(plan, enabled) {
+    const next = deepClone(plan || emptyPlan());
+    next.adaptedQuantitiesEnabled = Boolean(enabled);
+    return next;
   }
 
   function emptyDay(type = 'rest') {
@@ -669,7 +695,8 @@
       batchRules: {},
       batchTemplates: [],
       mellerModes: emptyMellerModes(),
-      mellerAdaptations: {}
+      mellerAdaptations: {},
+      adaptedQuantitiesEnabled: true
     };
   }
 
@@ -705,39 +732,35 @@
 
 function portionFor(ingredient, profile, dayType, slot, recipeSlot) {
   const p = normalizePortions(ingredient?.portions || {});
-  const training = dayType === 'training';
-  
+
   // Se è un carboidrato e la ricetta è di pranzo ma viene usata a cena
-  // (o viceversa), applica la trasformazione percentuale
+  // (o viceversa), applica la trasformazione percentuale del contesto.
   if (slot && recipeSlot && isPranzoCenaCross(recipeSlot, slot)) {
-    const adapted = crossSlotCarbPortions(ingredient, recipeSlot, slot);
+    const adapted = crossSlotCarbPortions(ingredient, recipeSlot, slot, dayType);
     if (adapted) {
-      if (profile === 'ipo') return training ? adapted.ipoTraining : adapted.ipoRest;
-      if (profile === 'couple') {
-        return {
-          man: training ? adapted.manTraining : adapted.manRest,
-          ipo: training ? adapted.ipoTraining : adapted.ipoRest
-        };
-      }
-      return training ? adapted.manTraining : adapted.manRest;
+      if (profile === 'ipo') return adapted.ipo;
+      if (profile === 'couple') return { man: adapted.man, ipo: adapted.ipo };
+      return adapted.man;
     }
   }
-  
-  if (profile === 'ipo') return training ? p.ipoTraining : p.ipoRest;
+
+  // Quantità originale: un solo valore per profilo persona, uguale in ogni
+  // contesto. Le dosi adattate (ripreso/pranzo/cena) sono derivate dal piano.
+  if (profile === 'ipo') return p.ipo;
   if (profile === 'couple') {
     return {
-      man: training ? p.manTraining : p.manRest,
-      ipo: training ? p.ipoTraining : p.ipoRest
+      man: p.man,
+      ipo: p.ipo
     };
   }
-  return training ? p.manTraining : p.manRest;
+  return p.man;
 }
 
   function formatPortion(portion, profile) {
     if (profile === 'couple' && portion && typeof portion === 'object') {
       const man = portion.man === undefined || portion.man === null || portion.man === '' ? EMPTY_PORTION : portion.man;
       const ipo = portion.ipo === undefined || portion.ipo === null || portion.ipo === '' ? EMPTY_PORTION : portion.ipo;
-      return `Uomo: ${man} · Donna IPO: ${ipo}`;
+      return `Uomo: ${man} · Donna: ${ipo}`;
     }
     const value = portion ?? EMPTY_PORTION;
     return value === '' ? EMPTY_PORTION : value;
@@ -752,12 +775,12 @@ function portionFor(ingredient, profile, dayType, slot, recipeSlot) {
     const mode = contextualPlan
       ? (mellerModeForPlan(plan, targetDay, targetSlot) || (MELLER_MAIN_SLOTS.includes(targetSlot) ? MELLER_MODE_MELLER : MELLER_MODE_ORIGINAL))
       : null;
-    const effectiveRecipe = contextualPlan ? resolveRecipeForPlan(recipe, targetSlot, mode).recipe : recipe;
+    const dayType = plan?.days?.[targetDay]?.type || 'rest';
+    const effectiveRecipe = contextualPlan ? resolveRecipeForPlan(recipe, targetSlot, mode, dayType).recipe : recipe;
     const ingredient = (effectiveRecipe?.ingredients || []).find(item =>
       (item.ingredientId || ingredientIdFor(item.name)) === src.ingredientId
     );
     if (!ingredient) return '';
-    const dayType = plan?.days?.[targetDay]?.type || 'rest';
     return formatPortion(portionFor(ingredient, profile, dayType), profile);
   }
 
@@ -864,8 +887,8 @@ function portionFor(ingredient, profile, dayType, slot, recipeSlot) {
     const lunchMode = contextualPlan
       ? (mellerModeForPlan(plan, target.day, 'lunch') || MELLER_MODE_MELLER)
       : null;
-    const dinnerRecipe = contextualPlan ? resolveRecipeForPlan(recipe, 'dinner', dinnerMode).recipe : recipe;
-    const lunchRecipe = contextualPlan ? resolveRecipeForPlan(recipe, 'lunch', lunchMode).recipe : recipe;
+    const dinnerRecipe = contextualPlan ? resolveRecipeForPlan(recipe, 'dinner', dinnerMode, dinnerDayType).recipe : recipe;
+    const lunchRecipe = contextualPlan ? resolveRecipeForPlan(recipe, 'lunch', lunchMode, lunchDayType).recipe : recipe;
     const ingredientById = (source, id) => (source?.ingredients || []).find(item =>
       (item.ingredientId || ingredientIdFor(item.name)) === id
     );
@@ -874,13 +897,13 @@ function portionFor(ingredient, profile, dayType, slot, recipeSlot) {
       const dinnerEffective = contextualPlan
         ? (ingredientById(dinnerRecipe, baseId) || ingredient)
         : (() => {
-            const adapted = adaptIngredientForSlot(ingredient, recipe.slot, 'dinner');
+            const adapted = adaptIngredientForSlot(ingredient, recipe.slot, 'dinner', dinnerDayType);
             return adapted ? { ...ingredient, portions: adapted.portions } : ingredient;
           })();
       const lunchEffective = contextualPlan
         ? (ingredientById(lunchRecipe, baseId) || ingredient)
         : (() => {
-            const adapted = adaptIngredientForSlot(ingredient, recipe.slot, 'lunch');
+            const adapted = adaptIngredientForSlot(ingredient, recipe.slot, 'lunch', lunchDayType);
             return adapted ? { ...ingredient, portions: adapted.portions } : ingredient;
           })();
       const cenaName = dinnerEffective.name || ingredient.name;
@@ -1053,12 +1076,12 @@ function portionFor(ingredient, profile, dayType, slot, recipeSlot) {
     return { value: parsed.value, unit };
   }
 
-  // Quantità di partenza dell'uomo in allenamento: prima la dose nativa della
-  // ricetta, poi (solo se mancante o non numerica) il riferimento delle linee
+  // Quantità di partenza: prima la dose originale della ricetta (profilo
+  // Uomo), poi (solo se mancante o non numerica) il riferimento delle linee
   // guida per il pasto di origine.
   function carbBaseAmount(ingredient, source, nativeSlot) {
     const p = normalizePortions(ingredient?.portions || {});
-    const native = parseCarbAmount(p.manTraining);
+    const native = parseCarbAmount(p.man);
     if (native) return native;
     const amountObj = nativeSlot === 'lunch' ? source.pranzo : (source.cena || source.pranzo);
     if (amountObj && Number(amountObj.training) > 0) {
@@ -1073,7 +1096,10 @@ function portionFor(ingredient, profile, dayType, slot, recipeSlot) {
   // per un alimento non ancora censito conserva le proporzioni storiche (2/3
   // del pranzo R, oppure 200%/150% per il ritorno), arrotondate alla decina per
   // eccesso.
-  function crossSlotCarbPortions(ingredient, nativeSlot, assignedSlot) {
+  // La dose derivata è calcolata per il contesto richiesto (pasto + giorno
+  // A/R) e restituita come quantità singola per profilo: la ricetta originale
+  // non viene mai riscritta.
+  function crossSlotCarbPortions(ingredient, nativeSlot, assignedSlot, dayType = 'training') {
     if (!ingredient || !isPranzoCenaCross(nativeSlot, assignedSlot)) return null;
     const source = carbSourceForName(ingredient.name);
     if (!source) return null;
@@ -1084,15 +1110,15 @@ function portionFor(ingredient, profile, dayType, slot, recipeSlot) {
       const value = source?.cena?.rest ?? Math.floor((source?.pranzo?.rest ?? base.value) * 2 / 3 / 10) * 10;
       if (!value) return null;
       const amount = carbAmountText(value, base.unit);
-      return { ipoTraining: amount, ipoRest: amount, manTraining: amount, manRest: amount };
+      return { ipo: amount, man: amount };
     }
 
     const trainingValue = source?.pranzo?.training ?? roundUpToTen(base.value * 2);
     const restValue = source?.pranzo?.rest ?? roundUpToTen(base.value * 1.5);
-    if (!trainingValue || !restValue) return null;
-    const training = carbAmountText(trainingValue, base.unit);
-    const rest = carbAmountText(restValue, base.unit);
-    return { ipoTraining: training, ipoRest: rest, manTraining: training, manRest: rest };
+    const value = dayType === 'rest' ? restValue : trainingValue;
+    if (!value) return null;
+    const amount = carbAmountText(value, base.unit);
+    return { ipo: amount, man: amount };
   }
 
   // Adatta un ingrediente carboidrato quando la sua ricetta viene collocata nel
@@ -1100,8 +1126,8 @@ function portionFor(ingredient, profile, dayType, slot, recipeSlot) {
   // solo per i carboidrati da adattare, altrimenti null (ingrediente invariato).
   // Solo i carboidrati cambiano: proteine, uova, verdura e condimenti restano
   // uguali.
-  function adaptIngredientForSlot(ingredient, nativeSlot, assignedSlot) {
-    const portions = crossSlotCarbPortions(ingredient, nativeSlot, assignedSlot);
+  function adaptIngredientForSlot(ingredient, nativeSlot, assignedSlot, dayType = 'training') {
+    const portions = crossSlotCarbPortions(ingredient, nativeSlot, assignedSlot, dayType);
     if (!portions) return null;
     return {
       name: ingredient.name,
@@ -1125,21 +1151,21 @@ function portionFor(ingredient, profile, dayType, slot, recipeSlot) {
         let effectiveRecipe = recipe;
         if (contextualPlan) {
           const mode = mellerModeForPlan(plan, day, slot) || (MELLER_MAIN_SLOTS.includes(slot) ? MELLER_MODE_MELLER : MELLER_MODE_ORIGINAL);
-          effectiveRecipe = resolveRecipeForPlan(recipe, slot, mode).recipe;
+          effectiveRecipe = resolveRecipeForPlan(recipe, slot, mode, dayType).recipe;
         }
         (effectiveRecipe.ingredients || []).forEach(ingredient => {
           // I piani nuovi applicano Meller a tutti gli ingredienti regolati,
           // compresi proteine, grassi e carboidrati quando una ricetta viene
           // spostata pranzo ↔ cena. I piani legacy privi di mellerModes
           // conservano invece il solo travaso carboidrati storico.
-          const adapted = contextualPlan ? null : adaptIngredientForSlot(ingredient, recipe.slot, slot);
+          const adapted = contextualPlan ? null : adaptIngredientForSlot(ingredient, recipe.slot, slot, dayType);
           const effective = adapted
             ? { ...ingredient, name: adapted.name, ingredientId: adapted.ingredientId, portions: adapted.portions }
             : ingredient;
           const amount = portionFor(effective, profile, dayType);
           const entries = profile === 'couple' && amount && typeof amount === 'object'
-            ? [{ role: 'Uomo', raw: amount.man }, { role: 'Donna IPO', raw: amount.ipo }]
-            : [{ role: profile === 'ipo' ? 'Donna IPO' : 'Uomo', raw: amount }];
+            ? [{ role: 'Uomo', raw: amount.man }, { role: 'Donna', raw: amount.ipo }]
+            : [{ role: profile === 'ipo' ? 'Donna' : 'Uomo', raw: amount }];
           const id = ingredientIdFor(effective.name, effective.ingredientId);
           const entry = out[id] || (out[id] = {
             ingredientId: id,
@@ -1246,6 +1272,7 @@ function portionFor(ingredient, profile, dayType, slot, recipeSlot) {
       next.mellerAdaptations = next.mellerAdaptations && typeof next.mellerAdaptations === 'object'
         ? next.mellerAdaptations
         : {};
+      next.adaptedQuantitiesEnabled = normalizeAdaptedQuantitiesEnabled(next);
     }
     return next;
   }
@@ -2033,10 +2060,11 @@ const PROTEIN_CATEGORY_LABELS = {
     return { value: parsed.value, unit: parsed.unit };
   }
 
-  const MELLER_PORTION_KEYS = [
-    ['manTraining', 'training'], ['manRest', 'rest'],
-    ['ipoTraining', 'training'], ['ipoRest', 'rest']
-  ];
+  // Chiavi logiche del confronto contestuale: profili persona e giorni A/R.
+  // Le porzioni v2 hanno un solo valore per profilo; il confronto con il
+  // riferimento Meller avviene per ogni giorno A/R sullo stesso originale.
+  const MELLER_PROFILE_KEYS = ['man', 'ipo'];
+  const MELLER_DAY_TYPES = ['training', 'rest'];
 
   function mellerSourceFingerprint(recipe) {
     const source = {
@@ -2097,27 +2125,36 @@ const PROTEIN_CATEGORY_LABELS = {
       .filter(([, count]) => count > 1)
       .map(([group, count]) => ({ group, count }));
 
+    // Confronto STRICT sul contesto canonico (giorno di allenamento): la
+    // quantità originale è unica per profilo; la dose di riposo è derivata
+    // dal piano e non è un difetto dell'originale.
     const issues = [];
     guided.forEach(item => {
       const rule = item.mapping.rule;
-      MELLER_PORTION_KEYS.forEach(([key, dayType]) => {
-        const expected = mellerReferenceAmount(rule, slot, dayType);
-        if (expected == null) return;
-        const amount = mellerComparableAmount(item.ingredient?.portions?.[key]);
-        if (!amount || amount.unit !== 'g' || amount.value !== expected) {
-          issues.push({
-            ingredient: item.ingredient.name,
-            ingredientId: item.id,
-            family: rule.family,
-            label: rule.label,
-            portion: key,
-            dayType,
-            expected,
-            actual: amount?.value ?? null,
-            unit: amount?.unit || 'g',
-            kind: amount ? (amount.value > expected ? 'above' : 'below') : 'unreadable'
-          });
-        }
+      const original = normalizePortions(item.ingredient?.portions || {});
+      // Se i due profili hanno la stessa quantità il confronto produce una
+      // sola segnalazione (niente duplicati uomo/donna).
+      const profiles = String(original.ipo) === String(original.man) ? ['man'] : MELLER_PROFILE_KEYS;
+      profiles.forEach(profileKey => {
+        ['training'].forEach(dayType => {
+          const expected = mellerReferenceAmount(rule, slot, dayType);
+          if (expected == null) return;
+          const amount = mellerComparableAmount(original[profileKey]);
+          if (!amount || amount.unit !== 'g' || amount.value !== expected) {
+            issues.push({
+              ingredient: item.ingredient.name,
+              ingredientId: item.id,
+              family: rule.family,
+              label: rule.label,
+              portion: profileKey,
+              dayType,
+              expected,
+              actual: amount?.value ?? null,
+              unit: amount?.unit || 'g',
+              kind: amount ? (amount.value > expected ? 'above' : 'below') : 'unreadable'
+            });
+          }
+        });
       });
     });
 
@@ -2195,9 +2232,9 @@ const PROTEIN_CATEGORY_LABELS = {
       const rule = item.mapping.rule;
       const divisor = groupCounts[rule.group] || 1;
       const portions = {};
-      MELLER_PORTION_KEYS.forEach(([key, dayType]) => {
+      MELLER_DAY_TYPES.forEach(dayType => {
         const expected = mellerReferenceAmount(rule, report.slot, dayType);
-        if (expected != null) portions[key] = mellerAmountText(expected / divisor);
+        if (expected != null) portions[dayType] = mellerAmountText(expected / divisor);
       });
       context.portions[item.id] = portions;
     });
@@ -2218,20 +2255,25 @@ const PROTEIN_CATEGORY_LABELS = {
     };
   }
 
-  function applyMellerContextAdaptation(recipe, context) {
+  // Applica la matrice contestuale per il giorno A/R richiesto: la dose
+  // adattata è una quantità singola per profilo (le dosi Meller non sono
+  // distinte per uomo/donna) e non riscrive mai la ricetta originale.
+  function applyMellerContextAdaptation(recipe, context, dayType = 'training') {
     const next = deepClone(recipe);
     const portionsById = context?.portions || {};
+    const day = MELLER_DAY_TYPES.includes(dayType) ? dayType : 'training';
     next.ingredients = (next.ingredients || []).map(ingredient => {
       const id = ingredient.ingredientId || ingredientIdFor(ingredient.name);
       const adapted = portionsById[id];
-      return adapted
-        ? { ...ingredient, portions: { ...normalizePortions(ingredient.portions || {}), ...adapted } }
-        : ingredient;
+      if (!adapted) return ingredient;
+      const amount = adapted[day] ?? adapted.training;
+      if (amount == null) return ingredient;
+      return { ...ingredient, portions: { ipo: amount, man: amount } };
     });
     return next;
   }
 
-  function resolveRecipeForPlan(recipe, assignedSlot, mode = MELLER_MODE_MELLER) {
+  function resolveRecipeForPlan(recipe, assignedSlot, mode = MELLER_MODE_MELLER, dayType = 'training') {
     const slot = mellerContextSlot(assignedSlot || recipe?.slot);
     if (!recipe || mode !== MELLER_MODE_MELLER || !slot) {
       return { recipe: deepClone(recipe), mode: mode === MELLER_MODE_ORIGINAL ? mode : MELLER_MODE_ORIGINAL, applied: false, blocked: false, report: null, context: null };
@@ -2252,7 +2294,7 @@ const PROTEIN_CATEGORY_LABELS = {
       return { recipe: deepClone(recipe), mode: MELLER_MODE_MELLER, applied: false, blocked: true, report, context };
     }
     return {
-      recipe: applyMellerContextAdaptation(recipe, context),
+      recipe: applyMellerContextAdaptation(recipe, context, dayType),
       mode: MELLER_MODE_MELLER,
       applied: true,
       blocked: false,
@@ -2272,20 +2314,24 @@ const PROTEIN_CATEGORY_LABELS = {
       const rule = mellerRuleForIngredient(ingredient?.name);
       if (!rule) return;
       const portions = normalizePortions(ingredient?.portions || {});
-      MELLER_PORTION_KEYS.forEach(([key, dayType]) => {
-        const expected = mellerReferenceAmount(rule, slot, dayType);
-        if (expected == null) return;
-        const amount = mellerComparableAmount(portions[key]);
-        if (!amount || amount.value <= expected) return;
-        issues.push({
-          ingredient: ingredient.name,
-          family: rule.family,
-          label: rule.label,
-          portion: key,
-          dayType,
-          expected,
-          actual: Math.round(amount.value * 100) / 100,
-          unit: amount.unit
+      const profiles = String(portions.ipo) === String(portions.man) ? ['man'] : MELLER_PROFILE_KEYS;
+      // Massimale sul contesto canonico (allenamento): il riposo è derivato.
+      profiles.forEach(profileKey => {
+        ['training'].forEach(dayType => {
+          const expected = mellerReferenceAmount(rule, slot, dayType);
+          if (expected == null) return;
+          const amount = mellerComparableAmount(portions[profileKey]);
+          if (!amount || amount.value <= expected) return;
+          issues.push({
+            ingredient: ingredient.name,
+            family: rule.family,
+            label: rule.label,
+            portion: profileKey,
+            dayType,
+            expected,
+            actual: Math.round(amount.value * 100) / 100,
+            unit: amount.unit
+          });
         });
       });
     });
@@ -2318,8 +2364,9 @@ const PROTEIN_CATEGORY_LABELS = {
     return { adapted: issues.length === 0, issues, summary };
   }
 
-  // Adatta con un click: riporta ai riferimenti Meller le dosi che superano
-  // il massimo del proprio pasto e giorno A/R. Le dosi già corrette o non
+  // Adatta con un click: riporta la quantità originale al riferimento del
+  // giorno di allenamento (contesto canonico della quantità originale); le
+  // dosi di riposo restano derivate dal piano. Le dosi già corrette o non
   // numeriche restano invariate. Restituisce una copia della ricetta.
   function adaptRecipeToMeller(recipe) {
     const next = deepClone(recipe);
@@ -2327,20 +2374,303 @@ const PROTEIN_CATEGORY_LABELS = {
     (next.ingredients || []).forEach(ingredient => {
       const rule = mellerRuleForIngredient(ingredient.name);
       if (!rule) return;
-      const portions = ingredient.portions || {};
-      MELLER_PORTION_KEYS.forEach(([key, dayType]) => {
-        const expected = mellerReferenceAmount(rule, next.slot && SLOTS.includes(next.slot) ? next.slot : 'lunch', dayType);
-        if (expected == null) return;
-        const raw = String(portions[key] ?? '');
+      const portions = normalizePortions(ingredient.portions || {});
+      const expected = mellerReferenceAmount(rule, next.slot && SLOTS.includes(next.slot) ? next.slot : 'lunch', 'training');
+      if (expected == null) return;
+      MELLER_PROFILE_KEYS.forEach(profileKey => {
+        const raw = String(portions[profileKey] ?? '');
         const amount = mellerComparableAmount(raw);
         if (!amount || amount.value <= expected) return;
         const unit = amount.unit === 'ml' ? ' ml' : ' g';
         const nextAmount = `${expected}${unit}`;
-        report.push({ ingredient: ingredient.name, portion: key, from: raw, to: nextAmount });
-        portions[key] = nextAmount;
+        report.push({ ingredient: ingredient.name, portion: profileKey, from: raw, to: nextAmount });
+        portions[profileKey] = nextAmount;
       });
+      ingredient.portions = portions;
     });
     return { recipe: next, report, changed: report.length > 0 };
+  }
+
+  // =====================================================================
+  // Catalogo globale ingredienti v2 (schema catalogo/strutture 2)
+  //
+  // Tre concetti separati (ADR 0002):
+  //   1. catalogo globale: identità, alias e categorie; MAI quantità;
+  //   2. famiglie/motore di dosaggio Meller: quantità adattate per ID;
+  //   3. Strutture dieta: revisioni organization-scoped private per ownerUid.
+  // Il catalogo è un dato esterno/versionato: queste funzioni lavorano su
+  // qualunque documento pubblicato, senza dati incorporati nella UI.
+  // =====================================================================
+
+  // Token di ricerca normalizzati. Il server è autorevole nella loro
+  // generazione; il client li ricalcola solo per filtrare localmente una
+  // copia del catalogo pubblicato (cache/offline).
+  function searchTokensFor(displayName, aliases = []) {
+    const tokens = new Set();
+    [displayName, ...(Array.isArray(aliases) ? aliases : [])].forEach(value => {
+      const key = aliasKey(value);
+      if (!key) return;
+      key.split(' ').forEach(word => { if (word) tokens.add(word); });
+    });
+    return [...tokens].slice(0, 200);
+  }
+
+  // Indice in memoria del catalogo pubblicato, per autocomplete e per la
+  // risoluzione ingrediente → famiglia Meller tramite ID stabili.
+  function buildCatalogIndex(catalogDoc = {}) {
+    const categories = Array.isArray(catalogDoc.categories) ? catalogDoc.categories : [];
+    const ingredients = Array.isArray(catalogDoc.ingredients) ? catalogDoc.ingredients : [];
+    const categoriesById = new Map(categories.filter(item => item?.categoryId).map(item => [item.categoryId, item]));
+    const items = ingredients
+      .filter(item => item && item.ingredientId && item.status !== 'archived')
+      .map(item => {
+        const tokens = (Array.isArray(item.searchTokens) && item.searchTokens.length
+          ? item.searchTokens
+          : searchTokensFor(item.displayName, item.aliases)).map(token => aliasKey(token)).filter(Boolean);
+        return {
+          ingredient: item,
+          category: categoriesById.get(item.categoryId) || null,
+          key: aliasKey(item.displayName),
+          aliasKeys: (Array.isArray(item.aliases) ? item.aliases : []).map(aliasKey).filter(Boolean),
+          tokens
+        };
+      });
+    const byId = new Map(items.map(entry => [entry.ingredient.ingredientId, entry]));
+    return { items, byId, categoriesById };
+  }
+
+  // Autocomplete tollerante a maiuscole, accenti e alias. La categoria viene
+  // restituita per disambiguare risultati omonimi. Ordinamento deterministico:
+  // corrispondenza esatta (nome/alias) > prefisso token > substring; a parità
+  // di punteggio, ordine alfabetico italiano. Mai una scelta silenziosa: i
+  // risultati multipli restano elencati e il testo non riconosciuto produce
+  // zero risultati (mapping mancante), non un'ipotesi.
+  function searchCatalog(index, query, { limit = 12 } = {}) {
+    const q = aliasKey(query);
+    if (!index || !q || q.length < 2) return [];
+    const queryWords = q.split(' ');
+    const scored = [];
+    for (const entry of index.items) {
+      let score = 0;
+      let matchedAlias = null;
+      if (entry.key === q) {
+        score = 100;
+      } else {
+        const aliasIndex = entry.aliasKeys.indexOf(q);
+        if (aliasIndex >= 0) {
+          score = 95;
+          matchedAlias = entry.ingredient.aliases[aliasIndex] || null;
+        } else if (entry.tokens.some(token => token.startsWith(q) || q.split(' ').every(word => token.startsWith(word)))) {
+          score = 80;
+        } else if (queryWords.every(word => entry.tokens.some(token => token.startsWith(word)))) {
+          score = 70;
+        } else if (entry.key.includes(q)) {
+          score = 60;
+        } else if (entry.aliasKeys.some(alias => alias.includes(q))) {
+          score = 55;
+        }
+      }
+      if (score > 0) {
+        scored.push({
+          ingredientId: entry.ingredient.ingredientId,
+          displayName: entry.ingredient.displayName,
+          categoryId: entry.ingredient.categoryId || null,
+          categoryLabel: entry.category?.displayName || null,
+          mappingKind: entry.ingredient.mappingKind || 'guided',
+          mellerFamilyId: entry.ingredient.mellerFamilyId || null,
+          matchedAlias,
+          score
+        });
+      }
+    }
+    scored.sort((a, b) => b.score - a.score || String(a.displayName).localeCompare(String(b.displayName), 'it'));
+    return scored.slice(0, Math.max(1, Math.min(limit, 50)));
+  }
+
+  // Converte la revisione pubblicata di una Struttura dieta nel formato motore
+  // consumato dal client (stesso shape del rule set v1): le quantità arrivano
+  // SOLO dalla struttura assegnata e confermata, gli alias dal catalogo
+  // globale. Le etichette/pattern legacy embedded restano come fallback di
+  // migrazione controllato per famiglie prive di ingredienti in catalogo; mai
+  // quantità inventate per ingredienti sconosciuti.
+  function structureRevisionToMellerRules(revision, index) {
+    const byId = index?.byId || new Map();
+    const fallbackFamilies = new Map(MELLER_GRAMMATURE.map(rule => [rule.family, rule]));
+    const freeAliases = [];
+    const rules = [];
+    (revision?.rules || []).forEach(rule => {
+      if (!rule || rule.enabled === false) return;
+      const family = String(rule.mellerFamilyId || rule.ruleId || '');
+      if (!family) return;
+      const fallback = fallbackFamilies.get(family) || null;
+      const ingredients = (Array.isArray(rule.ingredientIds) ? rule.ingredientIds : [])
+        .map(idValue => byId.get(idValue)?.ingredient).filter(Boolean);
+      const aliases = [...new Set(ingredients.flatMap(ingredient => [ingredient.displayName, ...(ingredient.aliases || [])]).map(value => String(value || '').trim()).filter(Boolean))];
+      if (!aliases.length && fallback) aliases.push(fallback.label);
+      if (!aliases.length) return;
+      rules.push({
+        family,
+        group: fallback?.group || (rule.categoryId && rule.categoryId !== 'free' ? String(rule.categoryId) : ingredients[0]?.categoryId) || 'carb',
+        label: fallback?.label || ingredients[0]?.displayName || family,
+        aliases,
+        slots: deepClone(rule.quantityGrams || {})
+      });
+    });
+    (index?.items || []).forEach(entry => {
+      if (entry.ingredient.mappingKind === 'free') {
+        freeAliases.push(entry.ingredient.displayName, ...(entry.ingredient.aliases || []));
+      }
+    });
+    return { rules, freeAliases: uniqueStrings(freeAliases) };
+  }
+
+  // Nomi di visualizzazione editoriali per gli alimenti liberi del seed
+  // (verdura, aromi, spezie): completano gli stem del manuale Meller, non
+  // contengono quantità né dosi e saranno sostituiti dal catalogo approvato
+  // dal dott. Meller tramite il flusso di import versionato.
+  const MELLER_FREE_DISPLAY_LABELS = {
+    'zucchin': 'Zucchine', 'pomodor': 'Pomodori', 'melanzan': 'Melanzane',
+    'peperon': 'Peperoni', 'broccol': 'Broccoli', 'cavolfior': 'Cavolfiore',
+    'cavol': 'Cavolo', 'asparag': 'Asparagi', 'bietol': 'Bietole',
+    'radicch': 'Radicchio', 'ravanell': 'Ravanelli', 'zucca': 'Zucca',
+    'verza': 'Verza', 'spinac': 'Spinaci', 'rucola': 'Rucola',
+    'lattug': 'Lattuga', 'insalat': 'Insalata', 'cetriol': 'Cetriolo',
+    'carot': 'Carote', 'sedan': 'Sedano', 'cipoll': 'Cipolla',
+    'finocch': 'Finocchi', 'fagiolin': 'Fagiolini', 'fungh': 'Funghi',
+    'verdura': 'Verdure', 'ortaggi': 'Ortaggi', 'basilic': 'Basilico',
+    'prezzemol': 'Prezzemolo', 'rosmarin': 'Rosmarino', 'salvia': 'Salvia',
+    'origano': 'Origano', 'timo': 'Timo', 'menta': 'Menta',
+    'erbe aromatiche': 'Erbe aromatiche', 'spezi': 'Spezie', 'pepe': 'Pepe',
+    'paprika': 'Paprika', 'curcuma': 'Curcuma', 'curry': 'Curry',
+    'noce moscata': 'Noce moscata', 'aglio': 'Aglio', 'zenzero': 'Zenzero',
+    'sale': 'Sale', 'limon': 'Limone', 'lime': 'Lime', 'aceto': 'Aceto',
+    'acqua': 'Acqua', 'brodo': 'Brodo',
+    'passata di pomodoro': 'Passata di pomodoro', 'passata': 'Passata'
+  };
+
+  // Divide il JSON monolitico estratto da MELLER_GRAMMATURE nei tre concetti:
+  // catalogo globale (ingredienti/categorie, senza quantità), famiglie del
+  // motore di dosaggio (con quantità e pattern legacy) e seed della Struttura
+  // dieta base. Funzione pura usata da migrazione e test: NON importa il 58
+  // ingredienti del lotto provvisorio né inventa quantità mancanti.
+  function splitMellerSeed(extract = {}) {
+    const guided = Array.isArray(extract.guidedRules) ? extract.guidedRules : [];
+    const categoryNames = extract.categories && typeof extract.categories === 'object' ? extract.categories : {};
+
+    const categories = Object.entries(categoryNames).map(([categoryId, displayName], indexCategory) => ({
+      categoryId: String(categoryId),
+      displayName: String(displayName),
+      normalizedName: aliasKey(displayName),
+      description: null,
+      sortOrder: indexCategory,
+      status: 'active'
+    }));
+    categories.push({
+      categoryId: 'free',
+      displayName: 'Alimenti liberi',
+      normalizedName: 'alimenti liberi',
+      description: 'Verdura, aromi, spezie e condimenti senza quantità adattata.',
+      sortOrder: categories.length,
+      status: 'active'
+    });
+
+    // Gli alias del seed derivano dai pattern legacy SOLO come migrazione
+    // controllata: diventano alias espliciti normalizzati nel catalogo.
+    const patternAliases = source => [...new Set(String(source || '')
+      .split('|')
+      .map(part => aliasKey(part
+        .replace(/\\b/g, ' ')
+        .replace(/[()]/g, ' ')
+        .replace(/\?/g, '')
+        .replace(/\\\./g, '.')))
+      .filter(Boolean))];
+
+    const ingredients = [];
+    const families = [];
+    const rules = [];
+    const familyQuantities = new Map();
+    guided.forEach(rule => {
+      const family = String(rule.family);
+      const label = String(rule.label || rule.family);
+      const quantities = deepClone(rule.quantitiesGrams || {});
+      familyQuantities.set(family, quantities);
+      const aliases = [...new Set([label, ...patternAliases(rule.recognizedPattern)])].filter(Boolean);
+      ingredients.push({
+        ingredientId: family,
+        displayName: label,
+        normalizedName: aliasKey(label),
+        categoryId: String(rule.category || 'carb'),
+        aliases,
+        searchTokens: searchTokensFor(label, aliases),
+        mappingKind: 'guided',
+        mellerFamilyId: family,
+        status: 'active'
+      });
+      families.push({
+        familyId: family,
+        label,
+        categoryId: String(rule.category || 'carb'),
+        quantityGrams: quantities,
+        legacyPattern: String(rule.recognizedPattern || ''),
+        alternativeTableLabels: Array.isArray(rule.alternativeTableLabels) ? rule.alternativeTableLabels.slice() : []
+      });
+      rules.push({
+        ruleId: `rule-${family}`,
+        mellerFamilyId: family,
+        ingredientIds: [family],
+        categoryId: String(rule.category || 'carb'),
+        quantityGrams: deepClone(quantities),
+        enabled: true
+      });
+    });
+
+    guided.length && (extract.freeIngredientPatterns || []).forEach(source => {
+      const key = patternAliases(source)[0] || aliasKey(source);
+      if (!key) return;
+      const ingredientId = `free-${slug(key) || 'ingrediente'}`;
+      if (ingredients.some(item => item.ingredientId === ingredientId)) return;
+      const displayName = MELLER_FREE_DISPLAY_LABELS[key] || key.charAt(0).toUpperCase() + key.slice(1);
+      ingredients.push({
+        ingredientId,
+        displayName,
+        normalizedName: aliasKey(displayName),
+        categoryId: 'free',
+        aliases: [key],
+        searchTokens: searchTokensFor(displayName, [key]),
+        mappingKind: 'free',
+        mellerFamilyId: null,
+        status: 'active'
+      });
+    });
+
+    const alternativeGroups = [];
+    const toAlternativeItems = entries => (Array.isArray(entries) ? entries : [])
+      .filter(entry => entry?.family && familyQuantities.has(entry.family))
+      .map(entry => ({
+        ingredientId: String(entry.family),
+        quantityGrams: deepClone(familyQuantities.get(entry.family))
+      }));
+    const carbItems = toAlternativeItems(extract.carbohydrateAlternatives);
+    if (carbItems.length) {
+      alternativeGroups.push({ alternativeGroupId: 'carboidrati', displayName: 'Alternative carboidrati', items: carbItems });
+    }
+    const proteinItems = toAlternativeItems(extract.proteinAlternatives);
+    if (proteinItems.length) {
+      alternativeGroups.push({ alternativeGroupId: 'proteine', displayName: 'Alternative proteiche', items: proteinItems });
+    }
+
+    return {
+      categories,
+      ingredients,
+      families,
+      proteinWeeklyFrequencies: deepClone(extract.proteinWeeklyFrequencies || []),
+      structureSeed: {
+        name: 'Struttura dieta base Meller',
+        description: 'Seed iniziale generato dal manuale del dott. Meller senza modificare le grammature originali.',
+        rules,
+        alternativeGroups
+      }
+    };
   }
 
   return {
@@ -2450,6 +2780,16 @@ const PROTEIN_CATEGORY_LABELS = {
     adaptRecipeToMeller,
     mulberry32,
     hashString,
-    generateWeek
+    generateWeek,
+    // Piano v2: controllo «quantità adattate alle linee guida»
+    normalizeAdaptedQuantitiesEnabled,
+    setAdaptedQuantitiesEnabled,
+    // Catalogo globale v2 e Strutture dieta
+    searchTokensFor,
+    buildCatalogIndex,
+    searchCatalog,
+    structureRevisionToMellerRules,
+    MELLER_FREE_DISPLAY_LABELS,
+    splitMellerSeed
   };
 });

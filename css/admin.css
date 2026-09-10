@@ -25,3 +25,25 @@
   .report-row{padding:17px 20px}
   .full{width:calc(100% - 40px);margin-inline:20px}
 }
+
+/* Badge coda accessibile: colore + valore numerico, mai solo colore. */
+.nav-link b.badge-zero { background: var(--green); }
+.nav-link b.badge-count { background: var(--warm); }
+
+/* ---- Sezione Strutture dieta ---- */
+.hero-actions{display:flex;gap:10px;flex-wrap:wrap}
+.small-primary{padding:11px 15px}
+.dialog-card.wide{width:min(100%,860px)}
+.structure-rules{display:grid;gap:12px;margin-bottom:14px}
+.structure-rule{border:1px solid var(--line);border-radius:13px;padding:13px;display:grid;gap:10px}
+.structure-rule .rule-head{display:grid;grid-template-columns:1fr 2fr auto auto;gap:9px;align-items:center}
+.structure-rule .rule-doses{display:grid;grid-template-columns:repeat(4,1fr);gap:9px}
+.structure-rule .rule-doses label{display:grid;gap:3px;font-size:.7rem;font-weight:800;color:#34463f}
+.structure-rule .rule-head label{display:flex;align-items:center;gap:7px;font-size:.76rem;font-weight:800;color:#34463f}
+.structure-rule .rule-head input[type=checkbox]{width:auto}
+.structure-archived .status-arch{background:#f1e3e0;color:#a63e35}
+.restore-row{display:flex;gap:8px}
+@media(max-width:840px){.structure-rule .rule-head{grid-template-columns:1fr 1fr}.structure-rule .rule-head label{grid-column:1/-1}.structure-rule .rule-doses{grid-template-columns:1fr 1fr}}
+.archive-toggle{color:#34463f;font-weight:700;margin-top:8px}
+.card-actions{display:flex;align-items:center;gap:12px;flex-wrap:wrap;margin-top:6px}
+.structure-dates{min-height:auto!important;font-size:.78rem}

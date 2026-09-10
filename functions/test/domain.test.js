@@ -3,7 +3,7 @@ const test = require('node:test');
 const assert = require('node:assert/strict');
 const {
   canonicalJson, checksum, normalizeIngredient, reportKey, validateReport,
-  validateMapping, validateRuleSetRules, validateAssignment, effectiveAssignment
+  validateMapping, validateRuleSetRules, validateAssignment, validateStructureAssignment, validateDietStructureRules, effectiveAssignment
 } = require('../src/domain');
 
 test('canonicalJson e checksum sono indipendenti dall’ordine delle chiavi', () => {
@@ -62,4 +62,65 @@ test('assenza, sospensione, programmazione e scadenza producono original-only', 
   assert.equal(effectiveAssignment({ status: 'active', effectiveAt: '2026-09-10' }, now).reason, 'scheduled');
   assert.equal(effectiveAssignment({ status: 'active', effectiveAt: '2026-09-01', expiresAt: '2026-09-09T11:00:00Z' }, now).reason, 'expired');
   assert.equal(effectiveAssignment({ status: 'active', effectiveAt: '2026-09-01', expiresAt: null }, now).valid, true);
+});
+
+test('validateStructureAssignment (v2): risolve solo il contratto della modale', () => {
+  const base = {
+    organizationId: 'org-1', clientId: 'c1', ruleSetId: 'struttura-base',
+    effectiveAt: '2026-09-12T09:00:00Z', expiresAt: '2026-12-31T00:00:00Z',
+    withoutExpiration: false, notes: 'Percorso iniziale', idempotencyKey: 'k1'
+  };
+  const parsed = validateStructureAssignment(base);
+  assert.equal(parsed.ruleSetId, 'struttura-base');
+  assert.equal(parsed.notes, 'Percorso iniziale');
+  assert.equal(parsed.withoutExpiration, false);
+  // Il contratto rifiuta revisione/checksum/strategia inviati dal client.
+  assert.throws(() => validateStructureAssignment({ ...base, checksum: 'a'.repeat(64) }), /campi non ammessi/);
+  assert.throws(() => validateStructureAssignment({ ...base, strategy: 'freeze' }), /campi non ammessi/);
+});
+
+test('validateStructureAssignment: scadenza obbligatoria o flag esplicito', () => {
+  const base = {
+    organizationId: 'org-1', clientId: 'c1', ruleSetId: 'rs',
+    effectiveAt: '2026-09-12T09:00:00Z', expiresAt: null,
+    withoutExpiration: false, notes: '', idempotencyKey: 'k1'
+  };
+  // Senza scadenza E senza flag → rifiutato.
+  assert.throws(() => validateStructureAssignment(base), /Senza scadenza/);
+  // Con flag esplicito → accettato, expiresAt svuotato.
+  const open = validateStructureAssignment({ ...base, withoutExpiration: true });
+  assert.equal(open.expiresAt, null);
+  assert.equal(open.withoutExpiration, true);
+  // Flag attivo + data di scadenza → inconsistente.
+  assert.throws(() => validateStructureAssignment({ ...base, withoutExpiration: true, expiresAt: '2026-12-31T00:00:00Z' }), /Senza scadenza/);
+  // Note omessa → stringa vuota (nessun dato sanitario obbligatorio).
+  assert.equal(validateStructureAssignment({ ...base, expiresAt: '2026-12-31T00:00:00Z' }).notes, '');
+});
+
+test('validateDietStructureRules: contratto revisione struttura (schema v2)', () => {
+  const base = {
+    mellerFamilyId: 'pane', ingredientIds: ['pane'],
+    quantityGrams: { lunch: { training: 120, rest: 90 }, dinner: { training: 60, rest: 60 } },
+    enabled: true, categoryId: 'pane'
+  };
+  const parsed = validateDietStructureRules([base])[0];
+  assert.equal(parsed.mellerFamilyId, 'pane');
+  assert.equal(parsed.quantityGrams.lunch.training, 120);
+  // Un pasto può essere null (non gestito dalla struttura), mai entrambi.
+  const onlyLunch = validateDietStructureRules([{ ...base, quantityGrams: { lunch: base.quantityGrams.lunch, dinner: null } }])[0];
+  assert.equal(onlyLunch.quantityGrams.dinner, null);
+  assert.throws(() => validateDietStructureRules([{ ...base, quantityGrams: { lunch: null, dinner: null } }]), /almeno una dose/);
+  // Dosi fuori range o non intere → bloccanti, mai quantità inventate.
+  assert.throws(() => validateDietStructureRules([{ ...base, quantityGrams: { ...base.quantityGrams, lunch: { training: 2001, rest: 10 } } }]), /1 e 2000/);
+  assert.throws(() => validateDietStructureRules([{ ...base, quantityGrams: { ...base.quantityGrams, lunch: { training: 12.5, rest: 10 } } }]), /1 e 2000/);
+  // enabled default true; enabled non booleano → errore.
+  assert.equal(validateDietStructureRules([{ mellerFamilyId: 'x', quantityGrams: { lunch: { training: 10, rest: 10 }, dinner: null } }])[0].enabled, true);
+  assert.throws(() => validateDietStructureRules([{ ...base, enabled: 'sì' }]), /booleano/);
+});
+
+test('validateDietStructureRules: niente famiglie duplicate né campi extra', () => {
+  const rule = id => ({ mellerFamilyId: id, quantityGrams: { lunch: { training: 50, rest: 40 }, dinner: null } });
+  assert.throws(() => validateDietStructureRules([rule('pane'), rule('pane')]), /duplicata/);
+  assert.throws(() => validateDietStructureRules([{ ...rule('riso'), version: '3' }]), /campi non ammessi/);
+  assert.throws(() => validateDietStructureRules([]), /tra 1 e 40/);
 });

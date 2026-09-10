@@ -57,7 +57,7 @@
       <div class="tabs" role="tablist">
         <button class="tab-btn active" data-target="tab-ingredients" role="tab">Ingredienti</button>
         <button class="tab-btn" data-target="tab-prep" role="tab">Preparazione</button>
-        <button class="tab-btn" data-target="tab-batch" role="tab">Batch cooking</button>
+        <button class="tab-btn" data-target="tab-batch" role="tab" aria-label="Batch cooking (solo consultazione)">Batch cooking</button>
       </div>
 
       <div id="tab-ingredients" class="tab-content">
@@ -65,8 +65,9 @@
         <ul id="modal-ingredients-list" class="modal-ingredient-list"></ul>
       </div>
       <div id="tab-prep" class="tab-content hidden">
-        <h3 class="recipe-section-heading">Preparazione</h3>
+        <h3 class="recipe-section-heading">Preparazione <small class="recipe-optional-hint">(facoltativa)</small></h3>
         <ul id="modal-prep-list" class="modal-prep-list"></ul>
+        <div id="modal-edit-notes" class="modal-edit-notes"></div>
       </div>
       <div id="tab-batch" class="tab-content hidden">
         <h3 class="recipe-section-heading">Batch cooking</h3>

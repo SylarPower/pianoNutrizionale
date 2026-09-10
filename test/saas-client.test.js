@@ -49,3 +49,29 @@ test('versione 4 non modifica retroattivamente snapshot versione 3', () => {
   assert.equal(result.migrationRequired, true);
   assert.equal(source.nutritionSnapshot.ruleSetVersion, '3');
 });
+
+test('spesa: cliente con assegnazione attiva accede sempre, senza pubblicità', () => {
+  const previousConfig = globalThis.PIANO_SAAS_CONFIG;
+  const previousStorage = globalThis.localStorage;
+  globalThis.localStorage = { getItem: () => null, setItem: () => {} };
+  globalThis.PIANO_SAAS_CONFIG = { enabled: true, shoppingRewardedAds: { enabled: false, provider: null } };
+  try {
+    const assigned = Saas.shoppingAccess(Date.now(), { state: 'assigned' });
+    assert.equal(assigned.allowed, true);
+    assert.equal(assigned.reason, 'assignment');
+    // Non associato: il gate rewarded resta dietro flag provider disattivato.
+    const guest = Saas.shoppingAccess(Date.now(), { state: 'unassigned' });
+    assert.equal(guest.allowed, false);
+    assert.equal(guest.reason, 'provider-unavailable');
+    // Contesto omesso: comportamento invariato (fallback legacy dei guest).
+    assert.equal(Saas.shoppingAccess(Date.now()).allowed, false);
+    // Con la feature SaaS disattivata l'accesso resta libero (legacy).
+    globalThis.PIANO_SAAS_CONFIG = { enabled: false };
+    const legacy = Saas.shoppingAccess(Date.now(), { state: 'unassigned' });
+    assert.equal(legacy.allowed, true);
+    assert.equal(legacy.reason, 'feature-disabled');
+  } finally {
+    globalThis.PIANO_SAAS_CONFIG = previousConfig;
+    globalThis.localStorage = previousStorage;
+  }
+});

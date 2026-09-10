@@ -7,7 +7,8 @@ const { initializeApp } = require('firebase-admin/app');
 const { getFirestore, FieldValue, Timestamp } = require('firebase-admin/firestore');
 const {
   ROLES, REPORT_STATUSES, exactObject, text, optionalText, id, checksum,
-  reportKey, validateReport, validateMapping, validateRuleSetRules, validateAssignment, effectiveAssignment
+  reportKey, validateReport, validateMapping, validateRuleSetRules, validateAssignment, validateStructureAssignment,
+  validateDietStructureRules, effectiveAssignment
 } = require('./domain');
 
 initializeApp();
@@ -468,6 +469,238 @@ exports.assignClientRuleSet = callable(async (data, uid) => {
     }
   });
   return { assignmentId, status: immediate ? 'active' : 'scheduled', requiresClientConfirmation: true };
+});
+
+// Selettore "Struttura dieta" della console: solo ID, ultima pubblicazione e
+// data di modifica — revisione e checksum restano interni al backend.
+exports.listRuleSets = callable(async (data, uid) => {
+  exactObject(data, ['organizationId']);
+  const actor = await membership(data.organizationId, uid);
+  let query = db.collection(`organizations/${actor.organizationId}/ruleSets`);
+  if (actor.role === 'nutritionist') query = query.where('createdBy', '==', uid);
+  const snapshot = await query.limit(50).get();
+  const ruleSets = snapshot.docs
+    .map(doc => ({
+      ruleSetId: doc.id,
+      latestPublishedVersion: doc.data().latestPublishedVersion || null,
+      updatedAt: doc.data().updatedAt?.toDate?.()?.toISOString() || null
+    }))
+    .filter(item => item.latestPublishedVersion)
+    .sort((a, b) => String(b.updatedAt || '').localeCompare(String(a.updatedAt || '')));
+  return { ruleSets };
+});
+
+// Assegnazione v2: niente Ambito/Versione/Strategia/anteprima dal client.
+// Revisione e checksum sono risolti server-side dalla pubblicazione più
+// recente; il backend rifiuta payload senza scadenza se senza flag esplicito.
+// Le note restano visibili solo al personale autorizzato.
+exports.assignClientStructure = callable(async (data, uid) => {
+  const input = validateStructureAssignment(data);
+  const actor = await membership(input.organizationId, uid);
+  const client = await authorizedClient(actor, input.clientId);
+  const rootRef = db.doc(`organizations/${actor.organizationId}/ruleSets/${input.ruleSetId}`);
+  const root = await rootRef.get();
+  if (!root.exists || !root.data()?.latestPublishedVersion || !root.data()?.latestChecksum) {
+    throw new HttpsError('not-found', 'Struttura dieta non trovata o senza pubblicazioni');
+  }
+  if (actor.role === 'nutritionist' && root.data().createdBy !== uid) {
+    throw new HttpsError('permission-denied', 'Puoi assegnare soltanto le tue strutture dieta');
+  }
+  const pointer = {
+    scope: 'tenant', ruleSetId: input.ruleSetId,
+    version: root.data().latestPublishedVersion,
+    checksum: root.data().latestChecksum
+  };
+  const versionRef = await ruleVersionRef(actor.organizationId, pointer);
+  const versionDoc = await versionRef.get();
+  if (!versionDoc.exists || !verifiedRuleVersion(versionDoc.data(), pointer)) {
+    throw new HttpsError('failed-precondition', 'Pubblicazione della struttura non valida');
+  }
+  const notesMetadata = input.notes ? { notes: input.notes, notesVisibility: 'staff' } : {};
+  const assignmentId = checksum(`${actor.organizationId}:${input.clientId}:${input.idempotencyKey}`).slice(0, 32);
+  const assignmentRef = client.ref.collection('assignments').doc(assignmentId);
+  const stateRef = client.ref.collection('state').doc('activeAssignment');
+  const eventId = checksum(`assignment.created:${assignmentId}`).slice(0, 32);
+  const now = new Date();
+  const immediate = input.effectiveAt <= now;
+  await db.runTransaction(async tx => {
+    const [existing, state] = await Promise.all([tx.get(assignmentRef), tx.get(stateRef)]);
+    if (existing.exists) return;
+    const previousAssignmentId = state.data()?.assignmentId || null;
+    if (immediate && previousAssignmentId) {
+      tx.update(client.ref.collection('assignments').doc(previousAssignmentId), { status: 'revoked', revocationReason: 'Sostituito da una nuova assegnazione', updatedAt: FieldValue.serverTimestamp(), updatedBy: uid });
+    }
+    tx.create(assignmentRef, {
+      schemaVersion: 1, assignmentId, clientId: client.id, ruleSet: pointer,
+      status: immediate ? 'active' : 'scheduled', effectiveAt: Timestamp.fromDate(input.effectiveAt),
+      expiresAt: input.expiresAt ? Timestamp.fromDate(input.expiresAt) : null,
+      withoutExpiration: input.withoutExpiration,
+      strategy: 'migrate-on-confirmation', reason: input.notes || 'Assegnazione da console',
+      notesVisibility: 'staff', ...notesMetadata,
+      previousAssignmentId, idempotencyKey: input.idempotencyKey,
+      createdAt: FieldValue.serverTimestamp(), updatedAt: FieldValue.serverTimestamp(), createdBy: uid, updatedBy: uid
+    });
+    if (immediate) {
+      tx.set(stateRef, { schemaVersion: 1, assignmentId, updatedAt: FieldValue.serverTimestamp(), updatedBy: uid });
+      tx.update(client.ref, { activeAssignment: { assignmentId, ruleSet: pointer }, updatedAt: FieldValue.serverTimestamp(), updatedBy: uid });
+    }
+    tx.create(auditRef(actor.organizationId, eventId), auditEvent({ orgId: actor.organizationId, eventId, type: 'assignment.created', actor, subject: { type: 'assignment', id: assignmentId }, idempotencyKey: input.idempotencyKey, metadata: { clientId: client.id, ruleSetId: pointer.ruleSetId, revision: pointer.version, effectiveAt: input.effectiveAt.toISOString(), expiresAt: input.expiresAt ? input.expiresAt.toISOString() : null, withoutExpiration: input.withoutExpiration } }));
+    if (client.authUid) {
+      tx.create(db.doc(`organizations/${actor.organizationId}/notifications/${eventId}`), {
+        schemaVersion: 1, notificationId: eventId, recipientUid: client.authUid,
+        type: immediate ? 'profile.assigned' : 'profile.scheduled', subjectId: assignmentId,
+        readAt: null, dedupeKey: eventId, createdAt: FieldValue.serverTimestamp(),
+        updatedAt: FieldValue.serverTimestamp(), delivery: { inApp: 'pending', email: 'disabled' }
+      });
+    }
+  });
+  // La risposta NON include mai il checksum: le versioni chiuse sono interne.
+  return { assignmentId, status: immediate ? 'active' : 'scheduled' };
+});
+
+// Sezione "Strutture dieta" (schema v2, docs/schema-catalogo-strutture-v2.json):
+// aggregato mutabile + revisioni immutabili, privacy per ownerUid. Il
+// nutritionist vede/tocca solo le proprie strutture; l'admin org le vede
+// tutte. Niente campo "Versione" verso l'UI; il checksum è riservato all'admin.
+
+function structureDoc(structure, { includeChecksum = false } = {}) {
+  const data = structure.data();
+  const doc = {
+    id: structure.id,
+    name: data.name || structure.id,
+    status: data.status || 'active',
+    ownerUid: data.ownerUid || data.createdBy || null,
+    createdAt: data.createdAt?.toDate?.()?.toISOString() || null,
+    updatedAt: data.updatedAt?.toDate?.()?.toISOString() || null,
+    currentRevisionId: data.currentRevisionId || null,
+    ruleCount: data.ruleCount ?? null
+  };
+  if (includeChecksum) doc.latestChecksum = data.latestChecksum || null;
+  return doc;
+}
+
+async function authorizedStructure(actor, structureId, { mustOwn = false } = {}) {
+  const ref = db.doc(`organizations/${actor.organizationId}/dietStructures/${structureId}`);
+  const doc = await ref.get();
+  if (!doc.exists) throw new HttpsError('not-found', 'Struttura dieta non trovata');
+  if ((mustOwn || actor.role === 'nutritionist') && (doc.data().ownerUid || doc.data().createdBy) !== actor.uid) {
+    throw new HttpsError('permission-denied', 'Puoi gestire soltanto le tue strutture dieta');
+  }
+  return { ref, doc };
+}
+
+exports.listDietStructures = callable(async (data, uid) => {
+  exactObject(data, ['organizationId']);
+  const actor = await membership(data.organizationId, uid);
+  let query = db.collection(`organizations/${actor.organizationId}/dietStructures`);
+  if (actor.role === 'nutritionist') query = query.where('ownerUid', '==', uid);
+  const snapshot = await query.limit(100).get();
+  const structures = snapshot.docs
+    .map(doc => structureDoc(doc))
+    .sort((a, b) => String(b.updatedAt || '').localeCompare(String(a.updatedAt || '')));
+  return { structures };
+});
+
+exports.getDietStructureRevision = callable(async (data, uid) => {
+  exactObject(data, ['organizationId', 'structureId', 'revisionId']);
+  const actor = await membership(data.organizationId, uid);
+  const { doc } = await authorizedStructure(actor, data.structureId);
+  const revisionId = data.revisionId == null || data.revisionId === ''
+    ? doc.data().currentRevisionId
+    : id(String(data.revisionId), 'revisionId');
+  if (!revisionId) throw new HttpsError('not-found', 'Nessuna revisione pubblicata');
+  const revision = await doc.ref.collection('revisions').doc(revisionId).get();
+  if (!revision.exists) throw new HttpsError('not-found', 'Revisione non trovata');
+  const structure = structureDoc(doc, { includeChecksum: actor.role === 'admin' });
+  return {
+    structure,
+    revision: {
+      revisionId: revision.id,
+      rules: revision.data().rules || [],
+      checksum: actor.role === 'admin' ? revision.data().checksum || null : undefined,
+      publishedAt: revision.data().publishedAt?.toDate?.()?.toISOString() || null,
+      changelog: revision.data().changelog || null,
+      restoredFromRevisionId: revision.data().restoredFromRevisionId || null
+    }
+  };
+});
+
+exports.createDietStructure = callable(async (data, uid) => {
+  exactObject(data, ['organizationId', 'name', 'rules', 'idempotencyKey']);
+  const actor = await membership(data.organizationId, uid);
+  const name = text(data.name, 'name', { min: 3, max: 80 });
+  const rules = validateDietStructureRules(data.rules);
+  const idem = id(data.idempotencyKey, 'idempotencyKey');
+  const structureId = checksum(`${actor.organizationId}:${uid}:${name}:${idem}`).slice(0, 24);
+  const ref = db.doc(`organizations/${actor.organizationId}/dietStructures/${structureId}`);
+  const body = { schemaVersion: 1, rules };
+  const revisionChecksum = checksum(body);
+  const eventId = checksum(`structure.created:${structureId}`).slice(0, 32);
+  await db.runTransaction(async tx => {
+    const [existing, audit] = await Promise.all([tx.get(ref), tx.get(auditRef(actor.organizationId, eventId))]);
+    if (existing.exists || audit.exists) return;
+    tx.create(ref, {
+      schemaVersion: 1, name, status: 'active', ownerUid: uid, createdBy: uid,
+      currentRevisionId: '1', latestChecksum: revisionChecksum, ruleCount: rules.length,
+      createdAt: FieldValue.serverTimestamp(), updatedAt: FieldValue.serverTimestamp()
+    });
+    tx.create(ref.collection('revisions').doc('1'), {
+      schemaVersion: 1, revisionId: '1', structureId, ...body, status: 'published', checksum: revisionChecksum,
+      compatibleClientSchema: 6, changelog: 'Prima revisione', createdAt: FieldValue.serverTimestamp(),
+      updatedAt: FieldValue.serverTimestamp(), createdBy: uid, publishedAt: FieldValue.serverTimestamp(), publishedBy: uid
+    });
+    tx.create(auditRef(actor.organizationId, eventId), auditEvent({ orgId: actor.organizationId, eventId, type: 'structure.created', actor, subject: { type: 'dietStructure', id: structureId }, idempotencyKey: idem, metadata: { name, ruleCount: rules.length } }));
+  });
+  return { structureId, revisionId: '1' };
+});
+
+exports.updateDietStructureRevision = callable(async (data, uid) => {
+  exactObject(data, ['organizationId', 'structureId', 'name', 'rules', 'changelog', 'restoredFromRevisionId', 'idempotencyKey']);
+  const actor = await membership(data.organizationId, uid);
+  const rules = validateDietStructureRules(data.rules);
+  const idem = id(data.idempotencyKey, 'idempotencyKey');
+  const name = optionalText(data.name, 'name', 80);
+  const changelog = optionalText(data.changelog, 'changelog', 500);
+  const restoredFrom = optionalText(data.restoredFromRevisionId, 'restoredFromRevisionId', 40);
+  const { ref, doc } = await authorizedStructure(actor, data.structureId, { mustOwn: actor.role === 'nutritionist' });
+  if (doc.data().status === 'archived') throw new HttpsError('failed-precondition', 'Riattiva la struttura prima di pubblicare una nuova revisione');
+  const nextRevisionId = String(Number(doc.data().currentRevisionId || '0') + 1);
+  const revisionChecksum = checksum({ schemaVersion: 1, rules });
+  const eventId = checksum(`structure.revision:${ref.id}:${nextRevisionId}:${idem}`).slice(0, 32);
+  await db.runTransaction(async tx => {
+    const audit = await tx.get(auditRef(actor.organizationId, eventId));
+    if (audit.exists) return;
+    tx.update(ref, {
+      ...(name ? { name } : {}),
+      currentRevisionId: nextRevisionId, latestChecksum: revisionChecksum, ruleCount: rules.length,
+      updatedAt: FieldValue.serverTimestamp(), updatedBy: uid
+    });
+    tx.create(ref.collection('revisions').doc(nextRevisionId), {
+      schemaVersion: 1, revisionId: nextRevisionId, structureId: ref.id, rules, status: 'published', checksum: revisionChecksum,
+      compatibleClientSchema: 6, changelog: changelog || (restoredFrom ? `Ripristino dalla revisione ${restoredFrom}` : 'Nuova revisione'),
+      restoredFromRevisionId: restoredFrom || null,
+      createdAt: FieldValue.serverTimestamp(), updatedAt: FieldValue.serverTimestamp(),
+      createdBy: uid, publishedAt: FieldValue.serverTimestamp(), publishedBy: uid
+    });
+    tx.create(auditRef(actor.organizationId, eventId), auditEvent({ orgId: actor.organizationId, eventId, type: 'structure.revision.published', actor, subject: { type: 'dietStructure', id: ref.id }, idempotencyKey: idem, metadata: { revisionId: nextRevisionId, restoredFromRevisionId: restoredFrom || null } }));
+  });
+  return { structureId: ref.id, revisionId: nextRevisionId };
+});
+
+exports.archiveDietStructure = callable(async (data, uid) => {
+  exactObject(data, ['organizationId', 'structureId', 'archived', 'idempotencyKey']);
+  const actor = await membership(data.organizationId, uid);
+  const idem = id(data.idempotencyKey, 'idempotencyKey');
+  if (typeof data.archived !== 'boolean') throw new HttpsError('invalid-argument', 'archived deve essere booleano');
+  const { ref } = await authorizedStructure(actor, data.structureId, { mustOwn: actor.role === 'nutritionist' });
+  const eventId = checksum(`structure.status:${ref.id}:${data.archived}:${idem}`).slice(0, 32);
+  await db.runTransaction(async tx => {
+    const audit = await tx.get(auditRef(actor.organizationId, eventId));
+    if (audit.exists) return;
+    tx.update(ref, { status: data.archived ? 'archived' : 'active', updatedAt: FieldValue.serverTimestamp(), updatedBy: uid });
+    tx.create(auditRef(actor.organizationId, eventId), auditEvent({ orgId: actor.organizationId, eventId, type: data.archived ? 'structure.archived' : 'structure.restored', actor, subject: { type: 'dietStructure', id: ref.id }, idempotencyKey: idem, metadata: {} }));
+  });
+  return { structureId: ref.id, status: data.archived ? 'archived' : 'active' };
 });
 
 exports.updateAssignmentStatus = callable(async (data, uid) => {
