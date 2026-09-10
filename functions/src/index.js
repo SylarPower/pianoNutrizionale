@@ -958,7 +958,7 @@ async function catalogImportConfig() {
   const flag = process.env.CATALOG_IMPORT_ENABLED;
   if (flag === 'true') return { enabled: true, source: 'env' };
   if (flag === 'false') return { enabled: false, source: 'env' };
-  const doc = await db.doc('globalIngredientCatalog/config/import').get();
+  const doc = await db.doc('globalIngredientCatalog/config/docs/import').get();
   if (doc.exists && typeof doc.data()?.enabled === 'boolean') {
     return { enabled: doc.data().enabled, source: 'firestore' };
   }
@@ -1074,7 +1074,7 @@ exports.importGlobalIngredientCatalog = callable(async (data, uid) => {
   const parsed = parseCatalogPayload(data.format, data.payload);
   const [catalog, denylistDoc] = await Promise.all([
     loadGlobalCatalog(),
-    db.doc('globalIngredientCatalog/config/denylist').get()
+    db.doc('globalIngredientCatalog/config/docs/denylist').get()
   ]);
   const denylist = Array.isArray(denylistDoc.data()?.ingredientIds) ? denylistDoc.data().ingredientIds : [];
   const existingIngredients = {};
