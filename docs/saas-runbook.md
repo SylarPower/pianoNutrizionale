@@ -61,10 +61,12 @@ Creare `globalRuleSets/base/versions/3` con il contratto documentato, `status:"p
    ```bash
    firebase deploy --only firestore:rules,firestore:indexes
    ```
-3. Attendere che gli indici siano `Enabled`.
+3. Attendere che gli indici siano `Enabled`. Fase 2: nessun nuovo indice
+   composito (le query Utenti/inviti/link usano singoli filtri + selezione
+   in codice; verificare comunque `firebase/firestore.indexes.json` in deploy).
 4. Deploy Functions:
    ```bash
-   firebase deploy --only functions
+   firebase deploy --only functions,firestore:indexes,firestore:rules
    ```
 5. Smoke callable con account test admin e paziente.
 6. Deploy Hosting con `PIANO_SAAS_CONFIG.enabled = false`.
@@ -81,13 +83,43 @@ Creare `globalRuleSets/base/versions/3` con il contratto documentato, `status:"p
 - Rollback clinico: nuova assignment verso la versione precedente; mai modificare il documento pubblicato.
 - Rollback mapping: pubblicare una nuova versione correttiva/retired, non cancellare la storia.
 
+## Feature flag server-side (Fase 2)
+
+- `CATALOG_IMPORT_ENABLED` (env Functions, default: ON in emulatore, OFF in
+  produzione): abilita commit/restore dell'import catalogo. Il dry-run resta
+  sempre disponibile al platform admin (nessuna scrittura). Override
+  Firestore: `globalIngredientCatalog/config/import = { enabled: bool }`
+  (l'env prevale se impostata).
+- `SHOPPING_REWARD_ENABLED` (env Functions, default OFF): con assignment attivo
+  `requestShoppingReward` risponde `allowed` senza reward; senza assignment e
+  flag OFF → `failed-precondition`. Nessun provider reale: la ricevuta non è
+  verificabile e non viene mai considerata attendibile.
+
+## Import catalogo e rollback (Fase 2)
+
+1. Dry-run: `importGlobalIngredientCatalog({ format, mode: 'dry-run', payload })`
+   → conteggi, diff (≤200 righe), errori, `previewId`.
+2. Correggere il file finché `errors` è vuoto; il commit richiede `confirm: true`
+   e lo stesso `previewId` (concorrenza ottimistica sulla `catalogVersion`).
+3. Commit atomico in transazione: bump `catalogVersion`, upsert voci, snapshot
+   della versione precedente in `globalIngredientCatalog/versions/<n-1>`, audit
+   `catalog.imported` in `platformAuditLog` con checksum. Limite: 400 voci per
+   commit (suddividere i file grandi).
+4. Rollback: disattivare il flag (blocca nuovi commit) e ripristinare con
+   `mode: 'restore', restoreVersion: <n>, confirm: true` → nuova versione con
+   il contenuto dello snapshot + audit `catalog.restored`. La categoria `free`
+   non viene mai cancellata da un ripristino.
+5. Denylist provvisoria: `globalIngredientCatalog/config/denylist =
+   { ingredientIds: [...] }` (server-only, mai nel repository). Le strutture
+   pubblicate conservano `ingredientCatalogVersion`: nessun effetto retroattivo.
+
 ## Advertising rewarded / Lista spesa
 
 Decisione: sblocco per 24 ore. L'integrazione reale è disattivata finché non viene scelto un provider web compatibile.
 
 - Consenso UE separato, revocabile e versionato.
 - Il provider riceve solo placement e identificatore pubblicitario consentito: mai ricette, ingredienti, diagnosi, rule set o client ID.
-- La ricevuta del provider deve essere verificata da `grantShoppingReward` server-side; il timestamp locale non è fonte autorevole.
+- La ricevuta del provider deve essere verificata da `requestShoppingReward` server-side; il timestamp locale non è fonte autorevole.
 - Frequency cap, fallback in caso di disabilità/assenza inventory e alternativa a pagamento devono essere definiti prima dell'attivazione.
 - Niente countdown ingannevoli, pulsanti camuffati o blocco delle ricette.
 
@@ -134,7 +166,7 @@ Alert: spike permission-denied, checksum mismatch, errori scheduler, backlog olt
 
 ## Fuori scope esplicito della slice
 
-- provider pubblicitario reale e verifica ricevuta `grantShoppingReward`;
+- provider pubblicitario reale e verifica ricevuta (`requestShoppingReward` verifica solo l'entitlement da assignment);
 - billing/abbonamenti;
 - email provider, retry queue e dead-letter;
 - UI completa inviti, audit, contenuti editoriali e GDPR self-service;

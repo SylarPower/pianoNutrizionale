@@ -1610,6 +1610,9 @@ body.dark-mode .batch-task-status.fresh {
 .linked-member { display: flex; align-items: center; gap: 11px; padding: 11px; border: 1px solid var(--line); border-radius: 12px; background: var(--surface-alt); }
 .linked-member > div { display: flex; flex-direction: column; }
 .linked-member small { color: var(--text-muted); }
+.link-request-actions { display: flex; gap: 8px; margin-left: auto; flex-wrap: wrap; }
+.link-request-actions .btn { padding: 8px 12px; font-size: .82rem; }
+@media (max-width: 480px) { .linked-member { flex-wrap: wrap; } .link-request-actions { margin-left: 0; width: 100%; } .link-request-actions .btn { flex: 1; min-height: 44px; } }
 .linked-account-actions, .account-base-choices { display: flex; flex-wrap: wrap; gap: 8px; }
 .account-link-request { border-color: rgba(36,90,67,.35); background: var(--primary-soft); }
 .account-link-request > p { color: var(--text); }
