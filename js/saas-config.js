@@ -3,7 +3,7 @@
 window.PIANO_SAAS_CONFIG = {
   enabled: false,
   shoppingRewardedAds: {
-    enabled: false,
+    enabled: true,
     provider: null,
     unlockHours: 24,
     consentVersion: null
