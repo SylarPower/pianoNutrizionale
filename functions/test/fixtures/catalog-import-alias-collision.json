@@ -1,0 +1,12 @@
+{
+  "ingredients": [
+    {
+      "ingredientId": "riso-rosso",
+      "displayName": "Riso rosso",
+      "aliases": ["riso"],
+      "categoryId": "carb",
+      "mappingKind": "guided",
+      "mellerFamilyId": "riso"
+    }
+  ]
+}

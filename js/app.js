@@ -198,7 +198,8 @@ let appState = {
   shopping: null,
   household: null,
   saasContext: { state: "feature-disabled" },
-  saasPolicy: { mode: "legacy-disabled", migrationRequired: false }
+  saasPolicy: { mode: "legacy-disabled", migrationRequired: false },
+  clientLink: null
 };
 let appStarted = false;
 let currentModal = null;
@@ -625,6 +626,7 @@ async function loadUserData(user, { silent = false } = {}) {
     appState.saasContext = window.PianoSaas
       ? await PianoSaas.loadContext(user.uid)
       : { state: "feature-disabled", fallback: "legacy" };
+    refreshClientLinkState();
     applyState(recipes, plan, shopping);
     writeSessionCache({
       uid: user.uid,
@@ -2312,13 +2314,121 @@ function renderSaasProfileSection() {
   }
   const profile = context.profile;
   const pending = appState.saasPolicy?.migrationRequired;
+  const profileLabel = profile.structureId
+    ? `${profile.structureName || "Struttura dieta"} · revisione n. ${profile.structureRevisionId}`
+    : `${profile.ruleSetId} · versione ${profile.ruleSetVersion}`;
   return `<section class="settings-section saas-profile-card">
-    <div><p class="eyebrow">PROFILO NUTRIZIONALE</p><h2>${pending ? "Nuovo profilo da confermare" : "Profilo verificato"}</h2><p class="text-muted">${escapeHtml(profile.ruleSetId)} · versione ${escapeHtml(profile.ruleSetVersion)}</p></div>
+    <div><p class="eyebrow">PROFILO NUTRIZIONALE</p><h2>${pending ? "Nuovo profilo da confermare" : "Profilo verificato"}</h2><p class="text-muted">${escapeHtml(profileLabel)}</p></div>
     <span class="link-status ${pending ? "" : "active"}">${pending ? "In attesa" : "● Attivo"}</span>
     <p>${pending ? "Per proteggere il piano esistente stai ancora usando le quantità originali. Controlla il cambiamento prima di applicarlo." : "Il piano conserva versione e checksum usati per ogni risoluzione."}</p>
     ${pending ? `<button class="btn btn-primary" onclick="openProfileUpdateModal()">Rivedi e applica il profilo</button>` : ""}
   </section>`;
 }
+
+// ---- Collegamento professionista (SaaS, app cliente) ----
+// Richieste in attesa (accetta/rifiuta) e scollegamento volontario con
+// finestra di conferma. Lo scollegamento revoca solo l'associazione
+// professionale: account, ricette, settimana e backup restano intatti.
+
+async function refreshClientLinkState() {
+  if (!window.PianoSaas?.config().enabled || typeof callSaasFunction !== "function") {
+    appState.clientLink = null;
+    return;
+  }
+  try {
+    appState.clientLink = await callSaasFunction("listMyClientLinkRequests", {});
+  } catch (_) {
+    appState.clientLink = { requests: [], link: null, error: true };
+  }
+  if (window.location.hash === "#settings") renderSettings();
+}
+
+function renderClientLinkSection() {
+  if (!window.PianoSaas?.config().enabled) return "";
+  const state = appState.clientLink;
+  if (!state) {
+    return `<section class="settings-section"><p class="eyebrow">PROFESSIONISTA</p><h2>Collegamento professionista</h2><p class="text-muted">Verifica del collegamento…</p></section>`;
+  }
+  if (state.error) {
+    return `<section class="settings-section"><p class="eyebrow">PROFESSIONISTA</p><h2>Collegamento professionista</h2><p class="text-muted">Stato non disponibile offline. Riprova con la connessione attiva.</p><button class="btn btn-outline" onclick="refreshClientLinkState()">Riprova</button></section>`;
+  }
+  const requests = Array.isArray(state.requests) ? state.requests : [];
+  const link = state.link || null;
+  const requestsHtml = requests.length ? `<div class="linked-member-list">${requests.map(item => `
+    <div class="linked-member"><span class="account-avatar small">🥗</span><div><strong>${escapeHtml(item.organizationName || "Studio professionale")}</strong><small>Ti ha invitato a collegare il tuo piano</small></div>
+    <div class="link-request-actions"><button class="btn btn-primary" onclick="respondClientLinkRequest('${escapeHtml(item.requestId)}','accept')">Accetta</button><button class="btn btn-outline" onclick="respondClientLinkRequest('${escapeHtml(item.requestId)}','reject')">Rifiuta</button></div></div>`).join("")}</div>` : "";
+  const linkHtml = link
+    ? `<div class="linked-member"><span class="account-avatar small">●</span><div><strong>${escapeHtml(link.organizationName || "Studio professionale")}</strong><small>Collegamento attivo</small></div></div>
+       <div class="linked-account-actions"><button class="btn btn-outline" onclick="openUnlinkModal()">Scollegati</button></div>`
+    : (requests.length ? "" : `<p class="linked-empty">Nessun professionista collegato. Se il tuo nutrizionista ti invita con il tuo username, la richiesta apparirà qui.</p>`);
+  return `<section class="settings-section linked-accounts-section"><div class="flex-between"><div><p class="eyebrow">PROFESSIONISTA</p><h2>Collegamento professionista</h2></div><span class="link-status ${link ? "active" : ""}">${link ? "● Collegato" : "Non collegato"}</span></div>${requestsHtml}${linkHtml}</section>`;
+}
+
+window.respondClientLinkRequest = async function(requestId, decision) {
+  try {
+    const result = await callSaasFunction("respondClientLink", { requestId, decision });
+    showToast(result.status === "link-active" ? "Collegamento attivato ✅" : result.status === "already-accepted" ? "Collegamento già attivo" : "Richiesta rifiutata");
+    await reloadSaasAfterLink();
+  } catch (error) {
+    showToast(error?.message || "Operazione non riuscita", true);
+  }
+};
+
+async function reloadSaasAfterLink() {
+  if (!appState.user || !window.PianoSaas) return;
+  appState.saasContext = await PianoSaas.loadContext(appState.user.uid);
+  appState.saasPolicy = PianoSaas.applyPolicy(appState.plan, appState.saasContext);
+  appState.plan = appState.saasPolicy.plan;
+  await refreshClientLinkState();
+  maybePromptProfileUpdate();
+  handleRoute();
+}
+
+function setupUnlinkModal() {
+  if (document.getElementById("client-unlink-modal")) return;
+  document.body.insertAdjacentHTML("beforeend", `
+    <div id="client-unlink-modal" class="modal hidden" role="dialog" aria-modal="true" aria-labelledby="client-unlink-title" aria-describedby="client-unlink-copy">
+      <div class="modal-content profile-update-content">
+        <div class="modal-header"><div><p class="eyebrow">SCOLLEGAMENTO</p><h2 id="client-unlink-title">Vuoi scollegarti dal tuo professionista?</h2></div></div>
+        <div id="client-unlink-copy" class="profile-update-copy">
+          <ul class="profile-update-points">
+            <li><strong>Il tuo account resta attivo:</strong> non cancelliamo account, ricette, settimana né backup.</li>
+            <li><strong>Torni alle dosi originali:</strong> i profili assegnati vengono sospesi subito.</li>
+            <li><strong>Perdi la Lista spesa inclusa:</strong> resta disponibile solo con un collegamento attivo.</li>
+          </ul>
+        </div>
+        <div class="modal-footer profile-update-actions">
+          <button class="btn btn-outline" onclick="closeUnlinkModal()">Torna indietro</button>
+          <button class="btn btn-danger" onclick="confirmClientUnlink()">Scollegati</button>
+        </div>
+      </div>
+    </div>`);
+  bindModalOutsideClose("client-unlink-modal", () => window.closeUnlinkModal());
+  document.addEventListener("keydown", event => {
+    if (event.key === "Escape") window.closeUnlinkModal();
+  });
+}
+
+window.openUnlinkModal = function() {
+  setupUnlinkModal();
+  document.getElementById("client-unlink-modal").classList.remove("hidden");
+  setTimeout(() => document.querySelector("#client-unlink-modal .btn-outline")?.focus(), 60);
+};
+
+window.closeUnlinkModal = function() {
+  document.getElementById("client-unlink-modal")?.classList.add("hidden");
+};
+
+window.confirmClientUnlink = async function() {
+  try {
+    await callSaasFunction("requestClientUnlink", {});
+    window.closeUnlinkModal();
+    showToast("Scollegamento completato. Stai usando le dosi originali.");
+    await reloadSaasAfterLink();
+  } catch (error) {
+    showToast(error?.message || "Scollegamento non riuscito", true);
+  }
+};
 
 window.confirmAssignedNutritionProfile = async function() {
   const profile = appState.saasContext?.profile;
@@ -2352,6 +2462,8 @@ function renderSettings() {
     </section>
 
     ${renderSaasProfileSection()}
+
+    ${renderClientLinkSection()}
 
     ${renderLinkedAccountsSection()}
 
@@ -2677,14 +2789,19 @@ window.openProfileUpdateModal = function() {
 };
 
 // Mostrato una sola volta per versione profilo e solo quando serve conferma.
+// La chiave include la versione catalogo: un catalogo aggiornato genera un
+// nudge anche a revisione invariata (solo nuovi pasti, mai ricalcoli passati).
 function maybePromptProfileUpdate() {
   if (!appState.saasPolicy?.migrationRequired) return;
-  const version = appState.saasContext?.profile?.ruleSetVersion;
+  const profile = appState.saasContext?.profile || {};
+  const version = profile.structureRevisionId ?? profile.ruleSetVersion ?? null;
+  const catalog = profile.ingredientCatalogVersion ?? profile.mappingCatalogChecksum ?? null;
   const key = `pn_profile_update_shown_${appState.user?.uid || "user"}`;
   let seen;
   try { seen = JSON.parse(localStorage.getItem(key) || "null"); } catch (_) { seen = null; }
-  if (seen && String(seen) === String(version)) return;
-  try { localStorage.setItem(key, JSON.stringify(version ?? null)); } catch (_) {}
+  const seenKey = seen && typeof seen === "object" ? `${seen.v}::${seen.c}` : String(seen);
+  if (seenKey === `${version}::${catalog}`) return;
+  try { localStorage.setItem(key, JSON.stringify({ v: version, c: catalog })); } catch (_) {}
   window.openProfileUpdateModal();
 }
 

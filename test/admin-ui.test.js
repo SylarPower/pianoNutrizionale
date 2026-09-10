@@ -25,11 +25,15 @@ test('modale assegnazione v2: solo Cliente, Struttura, Decorrenza, Scadenza/Senz
   for (const legacy of ['assignment-scope','assignment-version','assignment-strategy','assignment-checksum','assignment-preview','assignment-reason']) {
     assert.doesNotMatch(html, new RegExp(`id="${legacy}"`), `il campo v1 ${legacy} non deve più esistere`);
   }
-  // Il checksum non viene mai mostrato né richiesto nel UI della console.
+  // Il checksum non viene mai mostrato né richiesto nel flusso di assegnazione.
   assert.doesNotMatch(html, /Checksum SHA-256/i);
   assert.doesNotMatch(js, /previewClientRuleSet/);
+  assert.doesNotMatch(js, /listRuleSets/);
+  assert.doesNotMatch(js, /assignClientRuleSet/);
   assert.match(js, /assignClientStructure/);
-  assert.match(js, /listRuleSets/);
+  // Fase 2: il selettore usa le dietStructures (nome + ultima modifica).
+  assert.match(js, /listDietStructures/);
+  assert.match(js, /structureId: chosen.id/);
   // Landing: la vista Clienti è la porta d'ingresso.
   assert.match(html, /nav-link active" data-view="clients"/);
   assert.match(js, /showView\('clients'\)/);
@@ -60,12 +64,80 @@ test('sezione Strutture dieta: voce di menu dopo Clienti, editor a revisioni nuo
   for (const callable of ['listDietStructures','getDietStructureRevision','createDietStructure','updateDietStructureRevision','archiveDietStructure']) {
     assert.match(js, new RegExp(`['"]${callable}['"]`), `callable ${callable} usata`);
   }
-  // Nessun campo "Versione" né checksum nel UI; date di sola lettura.
+  // Nessun campo "Versione" operativo; date di sola lettura.
   assert.doesNotMatch(html, /<label>Versione/i);
-  assert.doesNotMatch(html, /Checksum/);
   assert.doesNotMatch(js, /<input[^>]*structure-(created|updated)/);
   assert.match(js, /1 e 2000/);
   assert.match(js, /Famiglia duplicata/);
+  // Checksum solo nei "Dettagli tecnici" admin, mai al nutritionist: il
+  // markup esiste ma il JS lo mostra solo se il server lo espone (admin).
+  assert.match(html, /<details id="structure-tech-details"/);
+  assert.match(html, /<summary>Dettagli tecnici<\/summary>/);
+  assert.match(js, /if \(result\.structure\.latestChecksum\)/);
+});
+
+test('strutture dieta Fase 2: autocomplete catalogo, categorie, gruppi alternativi, confronto', () => {
+  // js/domain.js caricato in console per buildCatalogIndex/searchCatalog.
+  assert.match(html, /<script src="js\/domain\.js"><\/script>/);
+  assert.match(js, /loadCatalogIndex/);
+  assert.match(js, /catalogSearch/);
+  assert.match(js, /rule-ing-search/);
+  assert.match(js, /fillCategorySelects/);
+  assert.match(js, /\.rule-cat/);
+  // Famiglia validata contro il motore (casing canonico, server rivalida).
+  assert.match(js, /engineFamilyId/);
+  assert.match(js, /non esiste nel motore/);
+  // Gruppi alternativi CRUD salvati nella revisione.
+  assert.match(html, /id="structure-groups"/);
+  assert.match(html, /id="structure-add-group"/);
+  assert.match(js, /collectStructureGroups/);
+  assert.match(js, /alternativeGroups/);
+  // CONFRONTA: checkbox card + dialog matrice responsive, sola lettura.
+  assert.match(html, /id="compare-structures"/);
+  assert.match(html, /id="compare-dialog"/);
+  assert.match(html, /id="compare-matrix"/);
+  assert.match(js, /compareDietStructures/);
+  assert.match(js, /data-compare-structure/);
+  assert.match(js, /Sola lettura/);
+  assert.match(css, /\.compare-table/);
+  assert.match(css, /max-width:760px/);
+  // Differenze mai solo-colore: simbolo + parola.
+  assert.match(js, /≠.*=|diff-word/);
+  assert.match(css, /\.diff-mark/);
+});
+
+test('sezione Utenti: membri, inviti monouso, rimozione con conferma forte', () => {
+  assert.match(html, /data-view="users"/);
+  assert.ok(html.indexOf('data-view="structures"') < html.indexOf('data-view="users"'), 'Utenti segue Strutture dieta nel menu');
+  assert.match(html, /id="view-users"/);
+  assert.match(html, /id="members-list"/);
+  assert.match(html, /id="invite-nutritionist-form"/);
+  assert.match(html, /id="invite-client-form"/);
+  assert.match(html, /id="links-list"/);
+  for (const callable of ['listOrganizationUsers', 'searchUserByUsername', 'inviteOrganizationUser', 'inviteClientLink', 'setMemberStatus', 'removeClientLink', 'removeNutritionist']) {
+    assert.match(js, new RegExp(`['"]${callable}['"]`), `callable ${callable} usata`);
+  }
+  // Verifica per username esatto: solo trovato/non trovato, mai PII o liste.
+  assert.match(html, /data-verify-username/);
+  assert.match(js, /Nessun account con questo username/);
+  // Rimozione associazione: dialog dedicato che spiega gli effetti.
+  assert.match(html, /id="unlink-dialog"/);
+  assert.match(html, /Non cancelliamo l’account/);
+  assert.match(html, /torna alle dosi originali/);
+  assert.match(js, /removeClientLink/);
+  // Mai password/token nei form: solo username esatto + token mostrato una volta.
+  assert.doesNotMatch(html, /id="invite-.*password"/);
+  assert.match(js, /una sola volta/);
+});
+
+test('console Fase 2: font self-hosted e drawer mobile accessibile', () => {
+  assert.match(html, /rel="preload" href="assets\/fonts\/inter-latin-400-normal\.woff2"/);
+  assert.match(html, /aria-expanded="false" aria-controls="console-sidebar"/);
+  assert.match(html, /id="sidebar-backdrop"/);
+  assert.match(css, /@font-face\{font-family:"Inter"/);
+  assert.match(css, /\.sidebar-backdrop/);
+  assert.match(js, /sidebar-backdrop/);
+  assert.match(js, /aria-expanded/);
 });
 
 test('copy premium comunica valore e sicurezza senza promessa clinica assoluta', () => {

@@ -7,6 +7,8 @@
   <meta name="theme-color" content="#173c30">
   <title>Piano — Console professionale</title>
   <link rel="icon" href="icons/icon-192.svg" type="image/svg+xml">
+  <link rel="preload" href="assets/fonts/inter-latin-400-normal.woff2" as="font" type="font/woff2" crossorigin>
+  <link rel="preload" href="assets/fonts/inter-latin-700-normal.woff2" as="font" type="font/woff2" crossorigin>
   <link rel="stylesheet" href="css/admin.css">
 </head>
 <body>
@@ -28,11 +30,13 @@
   </main>
 
   <div id="admin-app" class="app-shell hidden">
-    <aside class="sidebar">
+    <div id="sidebar-backdrop" class="sidebar-backdrop" hidden></div>
+    <aside class="sidebar" id="console-sidebar">
       <a class="brand-lockup compact" href="#mapping"><span>🥗</span><div><strong>Piano</strong><small>Console professionale</small></div></a>
       <nav aria-label="Console">
         <button class="nav-link active" data-view="clients"><span>♙</span>Clienti</button>
         <button class="nav-link" data-view="structures"><span>▦</span>Strutture dieta</button>
+        <button class="nav-link" data-view="users"><span>⛉</span>Utenti</button>
         <button class="nav-link" data-view="mapping"><span>◫</span>Coda ingredienti <b id="nav-open-count" class="badge-zero" aria-label="Coda ingredienti: nessun caso in sospeso">0</b></button>
       </nav>
       <div class="sidebar-bottom"><div class="security-note"><span>✓</span><div><strong>Ambiente protetto</strong><small>Ogni azione è tracciata</small></div></div><button id="admin-logout" class="text-button">Esci</button></div>
@@ -40,7 +44,7 @@
 
     <div class="workspace">
       <header class="topbar">
-        <button id="mobile-menu" class="icon-button" aria-label="Apri menu">☰</button>
+        <button id="mobile-menu" class="icon-button" aria-label="Apri menu" aria-expanded="false" aria-controls="console-sidebar">☰</button>
         <label class="tenant-field"><span>Organizzazione</span><input id="organization-id" placeholder="organization-id" autocomplete="off"></label>
         <div class="topbar-user"><span class="avatar" id="admin-avatar">A</span><div><strong id="admin-name">Professionista</strong><small>Sessione verificata</small></div></div>
       </header>
@@ -67,7 +71,19 @@
 
       <main id="view-structures" class="console-view hidden">
         <section class="hero-row"><div><p class="eyebrow">STRUTTURE DIETA</p><h1>Le tue strutture,<br>revisionate e tracciate.</h1><p>Ogni modifica crea una nuova revisione: le precedenti restano intatte e ripristinabili.</p></div><div class="hero-actions"><button id="new-structure" class="primary small-primary">＋ Nuova struttura</button><button id="refresh-structures" class="secondary">↻ Aggiorna</button></div></section>
-        <section class="panel"><div class="panel-head"><div><h2>Strutture dieta</h2><p id="structures-scope">Vedi tutte le strutture che il tuo ruolo autorizza.</p></div></div><div id="structures-feedback" class="feedback" role="status"></div><div id="structures-list" class="client-grid"></div></section>
+        <section class="panel"><div class="panel-head"><div><h2>Strutture dieta</h2><p id="structures-scope">Vedi tutte le strutture che il tuo ruolo autorizza.</p></div><div class="hero-actions"><button id="compare-structures" class="secondary" disabled>Confronta (0)</button></div></div><div id="structures-feedback" class="feedback" role="status"></div><div id="compare-hint" class="feedback" role="status">Seleziona almeno 2 strutture per confrontarle.</div><div id="structures-list" class="client-grid"></div></section>
+      </main>
+
+      <main id="view-users" class="console-view hidden">
+        <section class="hero-row"><div><p class="eyebrow">PERSONE E ACCESSI</p><h1>Chi può operare,<br>e su chi.</h1><p>Inviti monouso, associazioni revocabili, audit completo. Mai password né credenziali altrui.</p></div><button id="refresh-users" class="secondary">↻ Aggiorna</button></section>
+        <section class="panel"><div class="panel-head"><div><h2>Membri dell’organizzazione</h2><p id="users-scope">Solo l’admin vede e gestisce i membri.</p></div></div><div id="users-feedback" class="feedback" role="status"></div><div id="members-list" class="report-list"></div></section>
+        <section class="panel"><div class="panel-head"><div><h2>Invita</h2><p>Cerca per username esatto: nessuna enumerazione, nessun elenco utenti.</p></div></div>
+          <div class="invite-grid">
+            <form id="invite-nutritionist-form" class="invite-card"><h3>Professionista</h3><label>Username<div class="restore-row"><input id="invite-nutritionist-username" required autocomplete="off" placeholder="username esatto"><button type="button" class="secondary" data-verify-username="invite-nutritionist-username" data-verify-out="invite-nutritionist-result">Verifica</button></div></label><p class="field-hint">Ruolo consentito: solo nutritionist. Se l’account non esiste, ricevi un invito monouso (7 giorni) da consegnare fuori piattaforma.</p><p id="invite-nutritionist-result" class="feedback" role="status"></p><button class="primary" type="submit">Invita professionista →</button></form>
+            <form id="invite-client-form" class="invite-card"><h3>Cliente</h3><label>Username<div class="restore-row"><input id="invite-client-username" required autocomplete="off" placeholder="username esatto"><button type="button" class="secondary" data-verify-username="invite-client-username" data-verify-out="invite-client-result">Verifica</button></div></label><label id="invite-client-nutri-field">Professionista destinatario<select id="invite-client-nutritionist"><option value="">Senza professionista (solo admin)</option></select></label><p class="field-hint">Il cliente accetta o rifiuta dall’app. L’invito non imposta password né credenziali.</p><p id="invite-client-result" class="feedback" role="status"></p><button class="primary" type="submit">Invita cliente →</button></form>
+          </div>
+        </section>
+        <section class="panel"><div class="panel-head"><div><h2>Collegamenti e inviti in attesa</h2><p>Richieste da accettare in app e inviti monouso non ancora riscattati.</p></div></div><div id="links-feedback" class="feedback" role="status"></div><div id="links-list" class="report-list"></div></section>
       </main>
     </div>
   </div>
@@ -95,11 +111,22 @@
         <div id="structure-rules" class="structure-rules"></div>
         <button type="button" id="structure-add-rule" class="secondary full">＋ Aggiungi famiglia</button>
       </fieldset>
+      <fieldset><legend>Gruppi alternativi (es. carboidrati, proteine)</legend>
+        <div id="structure-groups" class="structure-groups"></div>
+        <button type="button" id="structure-add-group" class="secondary full">＋ Aggiungi gruppo</button>
+      </fieldset>
+      <details id="structure-tech-details" class="tech-details hidden"><summary>Dettagli tecnici</summary><dl><div><dt>Revisione corrente</dt><dd id="tech-revision">—</dd></div><div><dt>Checksum revisione</dt><dd id="tech-checksum" class="mono">—</dd></div><div><dt>Catalogo ingredienti</dt><dd id="tech-catalog">—</dd></div></dl><p class="field-hint">Sola lettura, visibili solo all’admin. Verificati e ricalcolati dal server.</p></details>
       <div class="form-grid"><label>Nota revisione<textarea id="structure-changelog" maxlength="500" placeholder="Cosa cambia in questa revisione? (visibile solo allo staff)"></textarea></label>
       <div id="structure-restore-field" class="hidden"><label>Carica una revisione precedente<div class="restore-row"><input id="structure-restore-rev" type="number" min="1" step="1" placeholder="N° revisione"><button type="button" id="structure-load-revision" class="secondary">Carica N</button></div></label><small class="field-hint">Il salvataggio crea comunque una nuova revisione: le precedenti non vengono mai toccate.</small></div></div>
       <p class="callout">Date di creazione e ultima modifica sono di sola lettura. Non esiste un campo "Versione": le revisioni sono gestite dal sistema.</p>
       <p id="structure-error" class="error" role="alert"></p><div class="dialog-actions"><button type="button" class="secondary" data-close-structure>Annulla</button><button id="structure-submit" class="primary" type="submit">Salva struttura →</button></div>
     </form>
+  </section></div>
+
+  <div id="compare-dialog" class="dialog hidden" role="dialog" aria-modal="true" aria-labelledby="compare-title"><div class="dialog-backdrop" data-close-compare></div><section class="dialog-card wide"><button class="dialog-close" data-close-compare aria-label="Chiudi confronto">×</button><p class="eyebrow">CONFRONTO STRUTTURE</p><h2 id="compare-title">Confronta strutture</h2><p id="compare-subtitle" class="dialog-lead">Sola lettura: il confronto non modifica dati.</p>
+    <div id="compare-feedback" class="feedback" role="status"></div>
+    <div id="compare-matrix" class="compare-matrix"></div>
+    <div class="dialog-actions"><button type="button" class="secondary" data-close-compare>Chiudi</button></div>
   </section></div>
 
   <div id="assignment-dialog" class="dialog hidden" role="dialog" aria-modal="true" aria-labelledby="assignment-title"><div class="dialog-backdrop" data-close-assignment></div><section class="dialog-card"><button class="dialog-close" data-close-assignment aria-label="Chiudi assegnazione">×</button><p class="eyebrow">NUOVA ASSEGNAZIONE</p><h2 id="assignment-title">Assegna struttura dieta</h2><p id="assignment-client" class="dialog-lead"></p>
@@ -113,7 +140,17 @@
     </form>
   </section></div>
 
+  <div id="unlink-dialog" class="dialog hidden" role="dialog" aria-modal="true" aria-labelledby="unlink-title"><div class="dialog-backdrop" data-close-unlink></div><section class="dialog-card"><button class="dialog-close" data-close-unlink aria-label="Chiudi">×</button><p class="eyebrow">RIMOZIONE ASSOCIAZIONE</p><h2 id="unlink-title">Rimuovere il collegamento?</h2><p id="unlink-client" class="dialog-lead"></p>
+    <ul class="profile-update-points unlink-points">
+      <li><strong>Non cancelliamo l’account:</strong> Auth, household, ricette e backup restano intatti.</li>
+      <li><strong>Revochiamo solo il legame professionale:</strong> tu non vedi più il cliente e viceversa.</li>
+      <li><strong>Sospendiamo i profili assegnati:</strong> al prossimo aggiornamento il cliente torna alle dosi originali e perde la Spesa inclusa.</li>
+    </ul>
+    <form id="unlink-form"><input id="unlink-client-id" type="hidden"><label>Motivo (audit)<input id="unlink-reason" required minlength="3" maxlength="500" placeholder="es. Percorso concluso su richiesta"></label><p id="unlink-error" class="error" role="alert"></p><div class="dialog-actions"><button type="button" class="secondary" data-close-unlink>Annulla</button><button class="primary danger" type="submit">Rimuovi collegamento</button></div></form>
+  </section></div>
+
   <script>if (["localhost", "127.0.0.1"].includes(location.hostname)) self.FIREBASE_APPCHECK_DEBUG_TOKEN = true;</script>
+  <script src="js/domain.js"></script>
   <script src="js/firebase.js"></script>
   <script src="js/admin.js"></script>
 </body>

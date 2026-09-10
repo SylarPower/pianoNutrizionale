@@ -220,12 +220,20 @@ service cloud.firestore {
     }
 
     // Catalogo globale ingredienti (autocomplete editor/console): lettura
-    // consentita agli utenti autenticati, scritture solo da callable/Admin SDK.
-    // La privacy ownerUid delle strutture org-scoped è applicata dalle callable
-    // (listDietStructures/authorizedStructure): non servono eccezioni dirette.
-    match /globalIngredientCatalog/{document=**} {
+    // della versione corrente consentita agli utenti autenticati, scritture
+    // solo da callable/Admin SDK. Configurazione (denylist, flag import) e
+    // snapshot versionati sono server-only: nessun accesso diretto.
+    match /globalIngredientCatalog/current/{document=**} {
       allow read: if signedIn();
       allow write: if false;
+    }
+
+    match /globalIngredientCatalog/config/{document=**} {
+      allow read, write: if false;
+    }
+
+    match /globalIngredientCatalog/versions/{document=**} {
+      allow read, write: if false;
     }
 
     match /organizations/{organizationId} {
@@ -248,7 +256,36 @@ service cloud.firestore {
       allow write: if false;
     }
 
-    // Code, cataloghi, inviti, notifiche e audit non sono interrogabili
+    // Strutture dieta e revisioni: NESSUN accesso diretto (privacy ownerUid
+    // applicata dalle callable listDietStructures/authorizedStructure).
+    // Esplicito per documentare l'intento oltre al catch-all.
+    match /organizations/{organizationId}/dietStructures/{structureId} {
+      allow read, write: if false;
+    }
+
+    match /organizations/{organizationId}/dietStructures/{structureId}/revisions/{revisionId} {
+      allow read, write: if false;
+    }
+
+    // Inviti monouso: lettura ai contraenti (admin + chi ha creato l'invito).
+    // Il token in chiaro non è mai nel documento (solo hash); riscatto via
+    // callable con binding allo username invitato.
+    match /organizations/{organizationId}/invitations/{inviteId} {
+      allow read: if tenantAdmin(organizationId)
+        || (activeTenantMember(organizationId) && resource.data.createdBy == request.auth.uid);
+      allow write: if false;
+    }
+
+    // Richieste di collegamento: lettura ai contraenti (admin, professionista
+    // proponente, cliente destinatario). Accettazione solo via callable.
+    match /organizations/{organizationId}/clientLinkRequests/{requestId} {
+      allow read: if tenantAdmin(organizationId)
+        || (activeTenantMember(organizationId) && resource.data.nutritionistUid == request.auth.uid)
+        || (signedIn() && resource.data.targetUid == request.auth.uid);
+      allow write: if false;
+    }
+
+    // Code, cataloghi, notifiche e audit non sono interrogabili
     // direttamente: le callable filtrano campi personali e autorizzazioni.
     match /organizations/{organizationId}/{document=**} {
       allow read, write: if false;

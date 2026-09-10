@@ -29,29 +29,71 @@
     return next;
   }
 
+  // Snapshot v2: le assegnazioni a Struttura dieta registrano structureId,
+  // revisione e versione del catalogo ingredienti al momento della conferma.
+  // Un cambio di catalogo richiede conferma (nudge sui nuovi pasti) senza
+  // mai ricalcolare retroattivamente quelli già pianificati.
   function snapshotFor(profile, now = new Date()) {
-    return {
+    const base = {
       schemaVersion: 1,
       clientProfileId: profile.clientProfileId,
       assignmentId: profile.assignmentId,
+      resolvedAt: now.toISOString(),
+      migrationDecision: 'confirmed'
+    };
+    if (profile.structureId) {
+      return {
+        ...base,
+        structureId: profile.structureId,
+        structureRevisionId: String(profile.structureRevisionId),
+        structureChecksum: profile.structureChecksum,
+        ingredientCatalogVersion: profile.ingredientCatalogVersion ?? null
+      };
+    }
+    return {
+      ...base,
       ruleSetId: profile.ruleSetId,
       ruleSetVersion: profile.ruleSetVersion,
       ruleSetChecksum: profile.ruleSetChecksum,
-      mappingCatalogChecksum: profile.mappingCatalogChecksum || null,
-      resolvedAt: now.toISOString(),
-      migrationDecision: 'confirmed'
+      mappingCatalogChecksum: profile.mappingCatalogChecksum || null
     };
   }
 
   function snapshotMatches(plan, profile) {
     const snap = plan?.nutritionSnapshot;
-    return Boolean(snap && profile &&
-      snap.clientProfileId === profile.clientProfileId &&
-      snap.assignmentId === profile.assignmentId &&
+    if (!snap || !profile) return false;
+    if (snap.clientProfileId !== profile.clientProfileId || snap.assignmentId !== profile.assignmentId) return false;
+    if (profile.structureId || snap.structureId) {
+      return snap.structureId === profile.structureId &&
+        String(snap.structureRevisionId) === String(profile.structureRevisionId) &&
+        snap.structureChecksum === profile.structureChecksum &&
+        (snap.ingredientCatalogVersion ?? null) === (profile.ingredientCatalogVersion ?? null);
+    }
+    return Boolean(
       snap.ruleSetId === profile.ruleSetId &&
       String(snap.ruleSetVersion) === String(profile.ruleSetVersion) &&
       snap.ruleSetChecksum === profile.ruleSetChecksum &&
       (snap.mappingCatalogChecksum || null) === (profile.mappingCatalogChecksum || null));
+  }
+
+  // Regole motore per il profilo assegnato. V1: già in formato motore. V2: la
+  // revisione struttura viene convertita nel client con il catalogo incorporato
+  // nel profilo (stesso motore, nessun fork server-side delle dosi). Ritorna
+  // null se la conversione è impossibile o produrrebbe un profilo vuoto: mai
+  // attivare in silenzio un profilo senza dosi.
+  function engineRulesFor(profile) {
+    if (!profile) return null;
+    if (profile.schemaVersion !== 2) {
+      return Array.isArray(profile.rules) && profile.rules.length
+        ? { rules: profile.rules, freeAliases: profile.freeAliases || [] }
+        : null;
+    }
+    const Domain = root.PianoDomain;
+    if (!Domain?.buildCatalogIndex || !Domain?.structureRevisionToMellerRules) return null;
+    const converted = Domain.structureRevisionToMellerRules(
+      profile.structureRevision || {}, Domain.buildCatalogIndex(profile.catalog || {}));
+    if (!converted.rules.length) return null;
+    return converted;
   }
 
   function applyPolicy(plan, context) {
@@ -82,7 +124,9 @@
         const cached = JSON.parse(localStorage.getItem(cacheKey(uid)) || 'null');
         const expires = cached?.profile?.expiresAt ? new Date(cached.profile.expiresAt) : null;
         if (cached?.state === 'assigned' && (!expires || expires > new Date())) {
-          root.PianoDomain?.activateMellerRuleSet?.(cached.profile.rules, cached.profile.freeAliases);
+          const engine = engineRulesFor(cached.profile);
+          if (!engine) throw new Error('Profilo in cache non compatibile');
+          root.PianoDomain?.activateMellerRuleSet?.(engine.rules, engine.freeAliases);
           return { ...cached, offline: true };
         }
       } catch (_) {}
@@ -111,13 +155,17 @@
     if (!ads.consentVersion || localStorage.getItem('pn_ads_consent') !== ads.consentVersion) {
       throw new Error('Consenso pubblicitario richiesto');
     }
-    // Il provider restituisce una ricevuta opaca; la concessione definitiva
-    // dovrà essere verificata server-side. Non inviare ricette o dati sanitari.
+    // Il provider restituisce una ricevuta opaca; la concessione definitiva è
+    // verificata server-side da `requestShoppingReward` (con assignment attivo
+    // non serve alcun reward; senza assignment e provider OFF → errore).
+    // Non inviare ricette o dati sanitari.
     const receipt = await root.PianoRewardedAds.show({ placement: 'shopping-access' });
-    const grant = await root.callSaasFunction('grantShoppingReward', { receipt, placement: 'shopping-access' });
-    localStorage.setItem('pn_shopping_reward_until', String(new Date(grant.expiresAt).getTime()));
+    const grant = await root.callSaasFunction('requestShoppingReward', { receipt, placement: 'shopping-access' });
+    if (grant?.expiresAt) {
+      localStorage.setItem('pn_shopping_reward_until', String(new Date(grant.expiresAt).getTime()));
+    }
     return grant;
   }
 
-  return { config, originalOnlyPlan, snapshotFor, snapshotMatches, applyPolicy, loadContext, shoppingAccess, requestShoppingReward };
+  return { config, originalOnlyPlan, snapshotFor, snapshotMatches, engineRulesFor, applyPolicy, loadContext, shoppingAccess, requestShoppingReward };
 });

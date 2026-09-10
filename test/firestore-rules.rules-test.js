@@ -27,6 +27,14 @@ before(async () => {
     await db.doc('organizations/org-a/mappingReports/report-a').set({ schemaVersion: 1, clientId: 'client-a', status: 'open' });
     await db.doc('accountClientLinks/patient-a').set({ organizationId: 'org-a', clientId: 'client-a', status: 'active' });
     await db.doc('globalRuleSets/base/versions/3').set({ status: 'published' });
+    // Fase 2: strutture, inviti, link, catalogo.
+    await db.doc('organizations/org-a/dietStructures/struttura-a').set({ schemaVersion: 1, name: 'Base', status: 'active', ownerUid: 'nutri-a', currentRevisionId: '1' });
+    await db.doc('organizations/org-a/dietStructures/struttura-a/revisions/1').set({ schemaVersion: 2, status: 'published', rules: [{ mellerFamilyId: 'riso' }] });
+    await db.doc('organizations/org-a/invitations/invite-a').set({ schemaVersion: 1, type: 'client', targetUsername: 'cliente-x', tokenHash: 'h', status: 'pending', createdBy: 'nutri-a' });
+    await db.doc('organizations/org-a/clientLinkRequests/req-a').set({ schemaVersion: 1, clientId: 'client-a', targetUid: 'patient-a', nutritionistUid: 'nutri-a', status: 'pending' });
+    await db.doc('globalIngredientCatalog/current/ingredients/riso').set({ schemaVersion: 2, displayName: 'Riso', status: 'active' });
+    await db.doc('globalIngredientCatalog/config/denylist').set({ ingredientIds: [] });
+    await db.doc('globalIngredientCatalog/versions/0').set({ schemaVersion: 2, catalogVersion: 0 });
   });
 });
 
@@ -55,6 +63,37 @@ test('link cliente, cataloghi globali e coda mapping passano soltanto da callabl
   await assertFails(db('patient-a').doc('accountClientLinks/patient-a').get());
   await assertFails(db('patient-a').doc('globalRuleSets/base/versions/3').get());
   await assertFails(db('admin-a').doc('organizations/org-a/mappingReports/report-a').get());
+});
+
+test('strutture dieta: nessun accesso diretto, privacy ownerUid solo via callable', async () => {
+  // Nemmeno il proprietario né l'admin leggono direttamente: passa da callable.
+  await assertFails(db('nutri-a').doc('organizations/org-a/dietStructures/struttura-a').get());
+  await assertFails(db('nutri-a').doc('organizations/org-a/dietStructures/struttura-a/revisions/1').get());
+  await assertFails(db('admin-a').doc('organizations/org-a/dietStructures/struttura-a').get());
+  await assertFails(db('nutri-a').doc('organizations/org-a/dietStructures/struttura-a').update({ name: 'X' }));
+});
+
+test('catalogo: current leggibile, config e snapshot server-only, scritture negate', async () => {
+  await assertSucceeds(db('patient-a').doc('globalIngredientCatalog/current/ingredients/riso').get());
+  await assertFails(db('patient-a').doc('globalIngredientCatalog/config/denylist').get());
+  await assertFails(db('admin-a').doc('globalIngredientCatalog/config/denylist').get());
+  await assertFails(db('patient-a').doc('globalIngredientCatalog/versions/0').get());
+  await assertFails(db('patient-a').doc('globalIngredientCatalog/current/ingredients/riso').update({ displayName: 'X' }));
+  await assertFails(db('admin-a').doc('globalIngredientCatalog/current/ingredients/nuovo').set({ displayName: 'Y' }));
+});
+
+test('inviti e collegamenti: lettura solo ai contraenti, scritture negate', async () => {
+  await assertSucceeds(db('admin-a').doc('organizations/org-a/invitations/invite-a').get());
+  await assertSucceeds(db('nutri-a').doc('organizations/org-a/invitations/invite-a').get());
+  await assertFails(db('nutri-b').doc('organizations/org-a/invitations/invite-a').get());
+  await assertFails(db('patient-a').doc('organizations/org-a/invitations/invite-a').get());
+  await assertSucceeds(db('admin-a').doc('organizations/org-a/clientLinkRequests/req-a').get());
+  await assertSucceeds(db('nutri-a').doc('organizations/org-a/clientLinkRequests/req-a').get());
+  await assertSucceeds(db('patient-a').doc('organizations/org-a/clientLinkRequests/req-a').get());
+  await assertFails(db('nutri-b').doc('organizations/org-a/clientLinkRequests/req-a').get());
+  await assertFails(db('patient-b').doc('organizations/org-a/clientLinkRequests/req-a').get());
+  await assertFails(db('nutri-a').doc('organizations/org-a/clientLinkRequests/req-a').update({ status: 'accepted' }));
+  await assertFails(db('patient-a').doc('organizations/org-a/clientLinkRequests/req-a').update({ status: 'accepted' }));
 });
 
 test('household non conferisce privilegi SaaS', async () => {

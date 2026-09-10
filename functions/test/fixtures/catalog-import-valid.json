@@ -1,0 +1,28 @@
+{
+  "categories": [
+    {
+      "categoryId": "cereali-minori",
+      "displayName": "Cereali minori",
+      "description": "Categoria di prova per l'import: sorgo e affini.",
+      "sortOrder": 90
+    }
+  ],
+  "ingredients": [
+    {
+      "ingredientId": "sorgo",
+      "displayName": "Sorgo",
+      "aliases": ["sorgo bianco", "sorgo decorticato"],
+      "categoryId": "cereali-minori",
+      "mappingKind": "guided",
+      "mellerFamilyId": "pseudo"
+    },
+    {
+      "ingredientId": "free-finocchio-selvatico",
+      "displayName": "Finocchio selvatico",
+      "aliases": ["finocchio selvatico"],
+      "categoryId": "free",
+      "mappingKind": "free",
+      "mellerFamilyId": null
+    }
+  ]
+}

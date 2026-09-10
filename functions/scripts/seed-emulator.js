@@ -4,7 +4,7 @@ process.env.FIREBASE_AUTH_EMULATOR_HOST ||= '127.0.0.1:9099';
 const { initializeApp } = require('firebase-admin/app');
 const { getAuth } = require('firebase-admin/auth');
 const { getFirestore, Timestamp } = require('firebase-admin/firestore');
-const { checksum } = require('../src/domain');
+const { checksum, structureRevisionChecksum, STRUCTURE_REVISION_SCHEMA_VERSION } = require('../src/domain');
 const Domain = require('../../js/domain');
 
 initializeApp({ projectId: 'piano-nutrizionale-test' });
