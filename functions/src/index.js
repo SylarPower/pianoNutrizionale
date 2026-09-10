@@ -8,7 +8,7 @@ const { getFirestore, FieldValue, Timestamp } = require('firebase-admin/firestor
 const {
   ROLES, REPORT_STATUSES, exactObject, text, optionalText, id, checksum,
   reportKey, validateReport, validateMapping, validateRuleSetRules, validateAssignment, validateStructureAssignment,
-  effectiveAssignment
+  validateDietStructureRules, effectiveAssignment
 } = require('./domain');
 
 initializeApp();
@@ -556,6 +556,151 @@ exports.assignClientStructure = callable(async (data, uid) => {
   });
   // La risposta NON include mai il checksum: le versioni chiuse sono interne.
   return { assignmentId, status: immediate ? 'active' : 'scheduled' };
+});
+
+// Sezione "Strutture dieta" (schema v2, docs/schema-catalogo-strutture-v2.json):
+// aggregato mutabile + revisioni immutabili, privacy per ownerUid. Il
+// nutritionist vede/tocca solo le proprie strutture; l'admin org le vede
+// tutte. Niente campo "Versione" verso l'UI; il checksum è riservato all'admin.
+
+function structureDoc(structure, { includeChecksum = false } = {}) {
+  const data = structure.data();
+  const doc = {
+    id: structure.id,
+    name: data.name || structure.id,
+    status: data.status || 'active',
+    ownerUid: data.ownerUid || data.createdBy || null,
+    createdAt: data.createdAt?.toDate?.()?.toISOString() || null,
+    updatedAt: data.updatedAt?.toDate?.()?.toISOString() || null,
+    currentRevisionId: data.currentRevisionId || null,
+    ruleCount: data.ruleCount ?? null
+  };
+  if (includeChecksum) doc.latestChecksum = data.latestChecksum || null;
+  return doc;
+}
+
+async function authorizedStructure(actor, structureId, { mustOwn = false } = {}) {
+  const ref = db.doc(`organizations/${actor.organizationId}/dietStructures/${structureId}`);
+  const doc = await ref.get();
+  if (!doc.exists) throw new HttpsError('not-found', 'Struttura dieta non trovata');
+  if ((mustOwn || actor.role === 'nutritionist') && (doc.data().ownerUid || doc.data().createdBy) !== actor.uid) {
+    throw new HttpsError('permission-denied', 'Puoi gestire soltanto le tue strutture dieta');
+  }
+  return { ref, doc };
+}
+
+exports.listDietStructures = callable(async (data, uid) => {
+  exactObject(data, ['organizationId']);
+  const actor = await membership(data.organizationId, uid);
+  let query = db.collection(`organizations/${actor.organizationId}/dietStructures`);
+  if (actor.role === 'nutritionist') query = query.where('ownerUid', '==', uid);
+  const snapshot = await query.limit(100).get();
+  const structures = snapshot.docs
+    .map(doc => structureDoc(doc))
+    .sort((a, b) => String(b.updatedAt || '').localeCompare(String(a.updatedAt || '')));
+  return { structures };
+});
+
+exports.getDietStructureRevision = callable(async (data, uid) => {
+  exactObject(data, ['organizationId', 'structureId', 'revisionId']);
+  const actor = await membership(data.organizationId, uid);
+  const { doc } = await authorizedStructure(actor, data.structureId);
+  const revisionId = data.revisionId == null || data.revisionId === ''
+    ? doc.data().currentRevisionId
+    : id(String(data.revisionId), 'revisionId');
+  if (!revisionId) throw new HttpsError('not-found', 'Nessuna revisione pubblicata');
+  const revision = await doc.ref.collection('revisions').doc(revisionId).get();
+  if (!revision.exists) throw new HttpsError('not-found', 'Revisione non trovata');
+  const structure = structureDoc(doc, { includeChecksum: actor.role === 'admin' });
+  return {
+    structure,
+    revision: {
+      revisionId: revision.id,
+      rules: revision.data().rules || [],
+      checksum: actor.role === 'admin' ? revision.data().checksum || null : undefined,
+      publishedAt: revision.data().publishedAt?.toDate?.()?.toISOString() || null,
+      changelog: revision.data().changelog || null,
+      restoredFromRevisionId: revision.data().restoredFromRevisionId || null
+    }
+  };
+});
+
+exports.createDietStructure = callable(async (data, uid) => {
+  exactObject(data, ['organizationId', 'name', 'rules', 'idempotencyKey']);
+  const actor = await membership(data.organizationId, uid);
+  const name = text(data.name, 'name', { min: 3, max: 80 });
+  const rules = validateDietStructureRules(data.rules);
+  const idem = id(data.idempotencyKey, 'idempotencyKey');
+  const structureId = checksum(`${actor.organizationId}:${uid}:${name}:${idem}`).slice(0, 24);
+  const ref = db.doc(`organizations/${actor.organizationId}/dietStructures/${structureId}`);
+  const body = { schemaVersion: 1, rules };
+  const revisionChecksum = checksum(body);
+  const eventId = checksum(`structure.created:${structureId}`).slice(0, 32);
+  await db.runTransaction(async tx => {
+    const [existing, audit] = await Promise.all([tx.get(ref), tx.get(auditRef(actor.organizationId, eventId))]);
+    if (existing.exists || audit.exists) return;
+    tx.create(ref, {
+      schemaVersion: 1, name, status: 'active', ownerUid: uid, createdBy: uid,
+      currentRevisionId: '1', latestChecksum: revisionChecksum, ruleCount: rules.length,
+      createdAt: FieldValue.serverTimestamp(), updatedAt: FieldValue.serverTimestamp()
+    });
+    tx.create(ref.collection('revisions').doc('1'), {
+      schemaVersion: 1, revisionId: '1', structureId, ...body, status: 'published', checksum: revisionChecksum,
+      compatibleClientSchema: 6, changelog: 'Prima revisione', createdAt: FieldValue.serverTimestamp(),
+      updatedAt: FieldValue.serverTimestamp(), createdBy: uid, publishedAt: FieldValue.serverTimestamp(), publishedBy: uid
+    });
+    tx.create(auditRef(actor.organizationId, eventId), auditEvent({ orgId: actor.organizationId, eventId, type: 'structure.created', actor, subject: { type: 'dietStructure', id: structureId }, idempotencyKey: idem, metadata: { name, ruleCount: rules.length } }));
+  });
+  return { structureId, revisionId: '1' };
+});
+
+exports.updateDietStructureRevision = callable(async (data, uid) => {
+  exactObject(data, ['organizationId', 'structureId', 'name', 'rules', 'changelog', 'restoredFromRevisionId', 'idempotencyKey']);
+  const actor = await membership(data.organizationId, uid);
+  const rules = validateDietStructureRules(data.rules);
+  const idem = id(data.idempotencyKey, 'idempotencyKey');
+  const name = optionalText(data.name, 'name', 80);
+  const changelog = optionalText(data.changelog, 'changelog', 500);
+  const restoredFrom = optionalText(data.restoredFromRevisionId, 'restoredFromRevisionId', 40);
+  const { ref, doc } = await authorizedStructure(actor, data.structureId, { mustOwn: actor.role === 'nutritionist' });
+  if (doc.data().status === 'archived') throw new HttpsError('failed-precondition', 'Riattiva la struttura prima di pubblicare una nuova revisione');
+  const nextRevisionId = String(Number(doc.data().currentRevisionId || '0') + 1);
+  const revisionChecksum = checksum({ schemaVersion: 1, rules });
+  const eventId = checksum(`structure.revision:${ref.id}:${nextRevisionId}:${idem}`).slice(0, 32);
+  await db.runTransaction(async tx => {
+    const audit = await tx.get(auditRef(actor.organizationId, eventId));
+    if (audit.exists) return;
+    tx.update(ref, {
+      ...(name ? { name } : {}),
+      currentRevisionId: nextRevisionId, latestChecksum: revisionChecksum, ruleCount: rules.length,
+      updatedAt: FieldValue.serverTimestamp(), updatedBy: uid
+    });
+    tx.create(ref.collection('revisions').doc(nextRevisionId), {
+      schemaVersion: 1, revisionId: nextRevisionId, structureId: ref.id, rules, status: 'published', checksum: revisionChecksum,
+      compatibleClientSchema: 6, changelog: changelog || (restoredFrom ? `Ripristino dalla revisione ${restoredFrom}` : 'Nuova revisione'),
+      restoredFromRevisionId: restoredFrom || null,
+      createdAt: FieldValue.serverTimestamp(), updatedAt: FieldValue.serverTimestamp(),
+      createdBy: uid, publishedAt: FieldValue.serverTimestamp(), publishedBy: uid
+    });
+    tx.create(auditRef(actor.organizationId, eventId), auditEvent({ orgId: actor.organizationId, eventId, type: 'structure.revision.published', actor, subject: { type: 'dietStructure', id: ref.id }, idempotencyKey: idem, metadata: { revisionId: nextRevisionId, restoredFromRevisionId: restoredFrom || null } }));
+  });
+  return { structureId: ref.id, revisionId: nextRevisionId };
+});
+
+exports.archiveDietStructure = callable(async (data, uid) => {
+  exactObject(data, ['organizationId', 'structureId', 'archived', 'idempotencyKey']);
+  const actor = await membership(data.organizationId, uid);
+  const idem = id(data.idempotencyKey, 'idempotencyKey');
+  if (typeof data.archived !== 'boolean') throw new HttpsError('invalid-argument', 'archived deve essere booleano');
+  const { ref } = await authorizedStructure(actor, data.structureId, { mustOwn: actor.role === 'nutritionist' });
+  const eventId = checksum(`structure.status:${ref.id}:${data.archived}:${idem}`).slice(0, 32);
+  await db.runTransaction(async tx => {
+    const audit = await tx.get(auditRef(actor.organizationId, eventId));
+    if (audit.exists) return;
+    tx.update(ref, { status: data.archived ? 'archived' : 'active', updatedAt: FieldValue.serverTimestamp(), updatedBy: uid });
+    tx.create(auditRef(actor.organizationId, eventId), auditEvent({ orgId: actor.organizationId, eventId, type: data.archived ? 'structure.archived' : 'structure.restored', actor, subject: { type: 'dietStructure', id: ref.id }, idempotencyKey: idem, metadata: {} }));
+  });
+  return { structureId: ref.id, status: data.archived ? 'archived' : 'active' };
 });
 
 exports.updateAssignmentStatus = callable(async (data, uid) => {

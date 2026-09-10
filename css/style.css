@@ -2526,3 +2526,11 @@ body.dark-mode .meller-notice-list li strong { color: #E6A976; }
 @media (max-width: 400px) {
   .profile-update-actions .btn { width: 100%; }
 }
+
+/* Hint quantità condivisa: un solo campo compilato vale per entrambi i profili. */
+.portion-shared-hint {
+  grid-column: 1 / -1;
+  font-size: 0.7rem;
+  color: var(--text-muted);
+  line-height: 1.35;
+}

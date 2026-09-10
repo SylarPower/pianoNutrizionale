@@ -322,15 +322,15 @@ function getIngredientDisplay(ingredient, dayType) {
     const man = getPortionValue(ingredient, "man", dayType);
     const woman = getPortionValue(ingredient, "ipo", dayType);
     if (isEmptyPortion(man) && isEmptyPortion(woman)) return "—";
-    return `Uomo: ${man} · Donna IPO: ${woman}`;
+    return `Uomo: ${man} · Donna: ${woman}`;
   }
   return getPortionValue(ingredient, "man", dayType);
 }
 
 function getProfileLabel() {
   const profile = getPortionProfile();
-  if (profile === "ipo") return "Donna · regime IPO";
-  if (profile === "couple") return "Coppia · uomo + donna IPO";
+  if (profile === "ipo") return "Donna";
+  if (profile === "couple") return "Coppia · uomo + donna";
   return "Uomo";
 }
 
@@ -1216,7 +1216,7 @@ function setupSwapModal() {
     <div id="swap-modal" class="modal hidden" role="dialog" aria-modal="true">
       <div class="modal-content swap-modal-content">
         <div class="modal-header"><div><p class="eyebrow">Piano personale</p><h2 id="swap-title">Sostituisci ricetta</h2></div><button class="btn-icon" onclick="closeSwapModal()">&times;</button></div>
-        <p class="text-muted">La sostituzione può cambiare frequenze e batch cooking. Le dosi per Allenamento, Riposo e regime IPO restano invariate.</p>
+        <p class="text-muted">La sostituzione può cambiare frequenze e batch cooking. Le dosi per Allenamento, Riposo e per gli altri profili restano invariate.</p>
         <div id="swap-options-list" class="swap-options"></div>
       </div>
     </div>`);
@@ -1678,10 +1678,10 @@ function parseSimpleAmount(raw) {
 
 function shoppingPortionsForIngredient(ingredient, dayType) {
   const profile = getPortionProfile();
-  if (profile === "ipo") return [{ role: "Donna IPO", raw: getPortionValue(ingredient, "ipo", dayType) }];
+  if (profile === "ipo") return [{ role: "Donna", raw: getPortionValue(ingredient, "ipo", dayType) }];
   if (profile === "couple") return [
     { role: "Uomo", raw: getPortionValue(ingredient, "man", dayType) },
-    { role: "Donna IPO", raw: getPortionValue(ingredient, "ipo", dayType) }
+    { role: "Donna", raw: getPortionValue(ingredient, "ipo", dayType) }
   ];
   return [{ role: "Uomo", raw: getPortionValue(ingredient, "man", dayType) }];
 }
@@ -1729,7 +1729,7 @@ function pluralizeOpaqueUnit(unit, amount) {
 
 function formatOpaqueShoppingParts(opaque = {}) {
   const items = Object.entries(opaque).map(([label, count]) => {
-    const roleMatch = label.match(/^(Uomo|Donna IPO):\s*(.+)$/i);
+    const roleMatch = label.match(/^(Uomo|Donna):\s*(.+)$/i);
     return {
       label,
       count,
@@ -3643,7 +3643,7 @@ function getIngredientCoupleHtml(ingredient, dayType) {
       && manP.unit === womanP.unit && manP.value > 0 && womanP.value > 0) {
     const total = manP.value + womanP.value;
     const unit = manP.unit === "pz" ? " pz" : manP.unit;
-    return `<span class="portion-sum"><strong>${formatNumber(total)}${unit}</strong> <small class="portion-detail">(Uomo: ${escapeHtml(man)} · Donna IPO: ${escapeHtml(woman)})</small></span>`;
+    return `<span class="portion-sum"><strong>${formatNumber(total)}${unit}</strong> <small class="portion-detail">(Uomo: ${escapeHtml(man)} · Donna: ${escapeHtml(woman)})</small></span>`;
   }
   return `<strong>${escapeHtml(getIngredientDisplay(ingredient, dayType))}</strong>`;
 }
@@ -3772,7 +3772,7 @@ function renderModalContent() {
           <div id="ing-suggest-${index}" class="ing-suggest hidden" role="listbox" aria-label="Suggerimenti dal catalogo ingredienti"></div>
           ${meta.mappingMissing ? `<small class="ing-mapping-flag" title="Non presente nel catalogo Meller: nessuna quantità verrà adattata per questo ingrediente">⚠ mapping mancante</small>` : ""}
         </div>
-        <div class="portion-edit-grid portion-edit-grid-single"><label>Quantità · Donna IPO<input id="edit-ing-ipo-${index}" value="${escapeAttr(getPortionValue(ingredient, "ipo", "training"))}" oninput="updateMellerEditorNotice()"></label><label>Quantità · Uomo<input id="edit-ing-man-${index}" value="${escapeAttr(getPortionValue(ingredient, "man", "training"))}" oninput="updateMellerEditorNotice()"></label><button class="btn-icon remove-edit-item" aria-label="Rimuovi ingrediente" onclick="removeIngredient(${index})">×</button></div>
+        <div class="portion-edit-grid portion-edit-grid-single"><label>Quantità · Uomo<input id="edit-ing-man-${index}" value="${escapeAttr(getPortionValue(ingredient, "man", "training"))}" placeholder="g" inputmode="text" oninput="updateMellerEditorNotice()"></label><label>Quantità · Donna<input id="edit-ing-ipo-${index}" value="${escapeAttr(getPortionValue(ingredient, "ipo", "training"))}" placeholder="g" inputmode="text" oninput="updateMellerEditorNotice()"></label><button class="btn-icon remove-edit-item" aria-label="Rimuovi ingrediente" onclick="removeIngredient(${index})">×</button><small class="portion-shared-hint">In grammi: scrivi solo il numero. Se compili un solo campo, il valore vale per entrambi.</small></div>
       </li>`;
     }).join("") + `<li><button class="btn btn-outline full-width" onclick="addIngredient()">+ Aggiungi ingrediente</button></li>`;
   } else {

@@ -202,9 +202,63 @@ function effectiveAssignment(assignment, now = new Date()) {
   return { valid: assignment.status === 'active', reason: assignment.status === 'active' ? null : assignment.status };
 }
 
+// Regole di una revisione struttura dieta (schema v2): famiglie Meller con
+// dosi per pasto (pranzo/cena) × giorno (allenamento/riposo). Le quantità sono
+// interi in grammi tra 1 e 2000; un pasto può essere `null` se non gestito,
+// mai entrambi. Schema esatto: docs/schema-catalogo-strutture-v2.json.
+function grams(value, name) {
+  if (value == null || value === '') return null;
+  const number = Number(value);
+  if (!Number.isInteger(number) || number < 1 || number > 2000) fail('invalid-argument', `${name} deve essere un intero tra 1 e 2000`);
+  return number;
+}
+
+function validateDietStructureRules(rules) {
+  if (!Array.isArray(rules) || rules.length === 0 || rules.length > 40) {
+    fail('invalid-argument', 'rules deve contenere tra 1 e 40 famiglie');
+  }
+  const seen = new Set();
+  return rules.map((rule, index) => {
+    exactObject(rule, ['mellerFamilyId', 'ingredientIds', 'quantityGrams', 'enabled', 'categoryId'], `rules[${index}]`);
+    const mellerFamilyId = id(rule.mellerFamilyId, `rules[${index}].mellerFamilyId`);
+    if (seen.has(mellerFamilyId)) fail('invalid-argument', `Famiglia Meller duplicata: ${mellerFamilyId}`);
+    seen.add(mellerFamilyId);
+    if (!rule.quantityGrams || typeof rule.quantityGrams !== 'object') fail('invalid-argument', `rules[${index}].quantityGrams mancante`);
+    exactObject(rule.quantityGrams, ['lunch', 'dinner'], `rules[${index}].quantityGrams`);
+    const quantityGrams = {};
+    for (const meal of ['lunch', 'dinner']) {
+      const slot = rule.quantityGrams[meal];
+      if (slot == null) { quantityGrams[meal] = null; continue; }
+      exactObject(slot, ['training', 'rest'], `rules[${index}].quantityGrams.${meal}`);
+      quantityGrams[meal] = {
+        training: grams(slot.training, `rules[${index}].quantityGrams.${meal}.training`),
+        rest: grams(slot.rest, `rules[${index}].quantityGrams.${meal}.rest`)
+      };
+      if (quantityGrams[meal].training == null && quantityGrams[meal].rest == null) quantityGrams[meal] = null;
+    }
+    if (quantityGrams.lunch == null && quantityGrams.dinner == null) {
+      fail('invalid-argument', `rules[${index}]: almeno una dose per pranzo o cena`);
+    }
+    const ingredientIds = Array.isArray(rule.ingredientIds)
+      ? rule.ingredientIds.map((value, i) => id(value, `rules[${index}].ingredientIds[${i}]`))
+      : [];
+    if (rule.enabled !== undefined && typeof rule.enabled !== 'boolean') {
+      fail('invalid-argument', `rules[${index}].enabled deve essere booleano`);
+    }
+    return {
+      mellerFamilyId,
+      ingredientIds,
+      quantityGrams,
+      enabled: rule.enabled === undefined ? true : rule.enabled,
+      categoryId: rule.categoryId == null || rule.categoryId === '' ? null : id(rule.categoryId, `rules[${index}].categoryId`)
+    };
+  });
+}
+
 module.exports = {
   ROLES, REPORT_STATUSES, ASSIGNMENT_STATUSES, ASSIGNMENT_STRATEGIES,
   fail, exactObject, text, optionalText, id, isoDate, canonicalJson, checksum,
   normalizeIngredient, reportKey, validateReport, validateMapping, validateRuleSetRules, validateAssignment,
-  validateStructureAssignment, effectiveAssignment
+  validateStructureAssignment, validateDietStructureRules, effectiveAssignment
 };
+

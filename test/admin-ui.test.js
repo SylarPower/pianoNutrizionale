@@ -50,6 +50,24 @@ test('console admin è responsive, accessibile e non indicizzabile', () => {
   assert.match(css, /prefers-reduced-motion/);
 });
 
+test('sezione Strutture dieta: voce di menu dopo Clienti, editor a revisioni nuove, callable v2', () => {
+  assert.match(html, /data-view="structures"/);
+  assert.ok(html.indexOf('data-view="clients"') < html.indexOf('data-view="structures"'), 'Strutture dieta segue Clienti nel menu');
+  assert.match(html, /id="view-structures"/);
+  assert.match(html, /id="structure-form"/);
+  assert.match(html, /id="structure-rules"/);
+  assert.match(html, /id="structure-restore-field"/);
+  for (const callable of ['listDietStructures','getDietStructureRevision','createDietStructure','updateDietStructureRevision','archiveDietStructure']) {
+    assert.match(js, new RegExp(`['"]${callable}['"]`), `callable ${callable} usata`);
+  }
+  // Nessun campo "Versione" né checksum nel UI; date di sola lettura.
+  assert.doesNotMatch(html, /<label>Versione/i);
+  assert.doesNotMatch(html, /Checksum/);
+  assert.doesNotMatch(js, /<input[^>]*structure-(created|updated)/);
+  assert.match(js, /1 e 2000/);
+  assert.match(js, /Famiglia duplicata/);
+});
+
 test('copy premium comunica valore e sicurezza senza promessa clinica assoluta', () => {
   assert.match(html, /Decisioni più sicure/);
   assert.match(html, /Ogni azione è tracciata/);

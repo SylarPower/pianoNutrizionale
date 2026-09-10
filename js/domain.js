@@ -524,7 +524,7 @@
   }
 
   // Porzioni v2 (schema 6): una sola quantità originale per profilo persona
-  // (`ipo` Donna IPO, `man` Uomo). Non esistono più campi distinti per
+  // (`ipo` Donna, `man` Uomo). Non esistono più campi distinti per
   // allenamento/riposo o pranzo/cena: le quantità adattate sono derivate a
   // livello di piano e non modificano la ricetta. In lettura i vecchi formati
   // vengono migrati conservando il valore di ALLENAMENTO come originale
@@ -760,7 +760,7 @@ function portionFor(ingredient, profile, dayType, slot, recipeSlot) {
     if (profile === 'couple' && portion && typeof portion === 'object') {
       const man = portion.man === undefined || portion.man === null || portion.man === '' ? EMPTY_PORTION : portion.man;
       const ipo = portion.ipo === undefined || portion.ipo === null || portion.ipo === '' ? EMPTY_PORTION : portion.ipo;
-      return `Uomo: ${man} · Donna IPO: ${ipo}`;
+      return `Uomo: ${man} · Donna: ${ipo}`;
     }
     const value = portion ?? EMPTY_PORTION;
     return value === '' ? EMPTY_PORTION : value;
@@ -1164,8 +1164,8 @@ function portionFor(ingredient, profile, dayType, slot, recipeSlot) {
             : ingredient;
           const amount = portionFor(effective, profile, dayType);
           const entries = profile === 'couple' && amount && typeof amount === 'object'
-            ? [{ role: 'Uomo', raw: amount.man }, { role: 'Donna IPO', raw: amount.ipo }]
-            : [{ role: profile === 'ipo' ? 'Donna IPO' : 'Uomo', raw: amount }];
+            ? [{ role: 'Uomo', raw: amount.man }, { role: 'Donna', raw: amount.ipo }]
+            : [{ role: profile === 'ipo' ? 'Donna' : 'Uomo', raw: amount }];
           const id = ingredientIdFor(effective.name, effective.ingredientId);
           const entry = out[id] || (out[id] = {
             ingredientId: id,

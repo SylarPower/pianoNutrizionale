@@ -300,8 +300,8 @@ assert.ok(copiedShopping.indexOf('----- 🐟 Pesce') < copiedShopping.indexOf('-
 assert.ok(copiedShopping.indexOf('----- 🍚 Carboidrati') < copiedShopping.indexOf('----- 🥚 Uova e latticini'));
 assert.ok(exportedShopping.indexOf('----- 🐟 Pesce') < exportedShopping.indexOf('----- 🍚 Carboidrati'));
 assert.ok(exportedShopping.indexOf('----- 🍚 Carboidrati') < exportedShopping.indexOf('----- 🥚 Uova e latticini'));
-assert.equal(shoppingAmountText({ id: 'opaque-a', legacyId: 'opaque-a', totals: { pz: 28 }, opaque: { 'Uomo: 8-10': 2, 'Donna IPO: 8-10': 1 }, free: false }), '28 pz');
-assert.equal(shoppingAmountText({ id: 'opaque-b', legacyId: 'opaque-b', totals: {}, opaque: { 'Uomo: 1 mazzetto': 1, 'Donna IPO: 1 mazzetto': 1 }, free: false }), '2 mazzetti');
+assert.equal(shoppingAmountText({ id: 'opaque-a', legacyId: 'opaque-a', totals: { pz: 28 }, opaque: { 'Uomo: 8-10': 2, 'Donna: 8-10': 1 }, free: false }), '28 pz');
+assert.equal(shoppingAmountText({ id: 'opaque-b', legacyId: 'opaque-b', totals: {}, opaque: { 'Uomo: 1 mazzetto': 1, 'Donna: 1 mazzetto': 1 }, free: false }), '2 mazzetti');
 assert.equal(shoppingAmountText({ id: 'opaque-only', legacyId: 'opaque-only', totals: {}, opaque: { 'Uomo: una confezione piccola': 2 }, free: false }), 'Uomo: una confezione piccola');
 assert.equal(shoppingAmountText({ id: 'spoons', legacyId: 'spoons', totals: { g: 50 }, opaque: {}, free: false }), '50g');
 assert.match(exportedShopping, /Basilico - 7 pz/);
@@ -894,7 +894,15 @@ renderModalContent();
   // Schema 6 editor: un solo campo quantità per profilo, combobox catalogo e
   // niente tab Batch in modifica (le note sono nella tab Preparazione).
   assert.match(editHtml, /id="edit-ing-man-0"/, 'quantità uomo singola presente');
-  assert.match(editHtml, /id="edit-ing-ipo-0"/, 'quantità donna IPO singola presente');
+  assert.match(editHtml, /id="edit-ing-ipo-0"/, 'quantità donna singola presente');
+  // Primo campo Uomo, poi Donna (etichetta senza "IPO"), unità "g" suggerita e
+  // hint chiaro: un solo campo compilato vale per entrambi i profili.
+  assert.ok(editHtml.indexOf('id="edit-ing-man-0"') < editHtml.indexOf('id="edit-ing-ipo-0"'), 'il campo Uomo precede il campo Donna');
+  assert.match(editHtml, /Quantità · Uomo/);
+  assert.match(editHtml, /Quantità · Donna/);
+  assert.doesNotMatch(editHtml, /IPO/, 'etichetta IPO rimossa dall\'editor');
+  assert.equal((editHtml.match(/placeholder="g"/g) || []).length >= 2, true, 'placeholder "g" su entrambi i campi');
+  assert.match(editHtml, /vale per entrambi/, 'hint fallback condiviso presente');
   assert.doesNotMatch(editHtml, /edit-ing-man-training-0|edit-ing-ipo-rest-0/, 'campi legacy 4-porzioni rimossi dall\'editor');
   assert.match(editHtml, /role="combobox"/, 'campo nome come combobox accessibile');
   assert.match(editHtml, /ing-suggest-0/, 'listbox suggerimenti catalogo presente');

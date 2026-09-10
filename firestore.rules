@@ -219,6 +219,15 @@ service cloud.firestore {
       allow read, write: if false;
     }
 
+    // Catalogo globale ingredienti (autocomplete editor/console): lettura
+    // consentita agli utenti autenticati, scritture solo da callable/Admin SDK.
+    // La privacy ownerUid delle strutture org-scoped è applicata dalle callable
+    // (listDietStructures/authorizedStructure): non servono eccezioni dirette.
+    match /globalIngredientCatalog/{document=**} {
+      allow read: if signedIn();
+      allow write: if false;
+    }
+
     match /organizations/{organizationId} {
       allow read: if activeTenantMember(organizationId);
       allow write: if false;

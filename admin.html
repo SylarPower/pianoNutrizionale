@@ -32,6 +32,7 @@
       <a class="brand-lockup compact" href="#mapping"><span>🥗</span><div><strong>Piano</strong><small>Console professionale</small></div></a>
       <nav aria-label="Console">
         <button class="nav-link active" data-view="clients"><span>♙</span>Clienti</button>
+        <button class="nav-link" data-view="structures"><span>▦</span>Strutture dieta</button>
         <button class="nav-link" data-view="mapping"><span>◫</span>Coda ingredienti <b id="nav-open-count" class="badge-zero" aria-label="Coda ingredienti: nessun caso in sospeso">0</b></button>
       </nav>
       <div class="sidebar-bottom"><div class="security-note"><span>✓</span><div><strong>Ambiente protetto</strong><small>Ogni azione è tracciata</small></div></div><button id="admin-logout" class="text-button">Esci</button></div>
@@ -59,9 +60,14 @@
         </section>
       </main>
 
-      <main id="view-clients" class="console-view hidden">
+      <main id="view-clients" class="console-view hidden">>
         <section class="hero-row"><div><p class="eyebrow">PROFILI INDIVIDUALI</p><h1>Il protocollo giusto,<br>assegnato alla persona giusta.</h1><p>Household e account restano separati: ogni assegnazione è personale e storicizzata.</p></div><button id="refresh-clients" class="secondary">↻ Aggiorna clienti</button></section>
         <section class="panel"><div class="panel-head"><div><h2>Clienti autorizzati</h2><p>Vedi solo i profili consentiti dal tuo ruolo.</p></div></div><div id="clients-feedback" class="feedback" role="status"></div><div id="clients-list" class="client-grid"></div></section>
+      </main>
+
+      <main id="view-structures" class="console-view hidden">
+        <section class="hero-row"><div><p class="eyebrow">STRUTTURE DIETA</p><h1>Le tue strutture,<br>revisionate e tracciate.</h1><p>Ogni modifica crea una nuova revisione: le precedenti restano intatte e ripristinabili.</p></div><div class="hero-actions"><button id="new-structure" class="primary small-primary">＋ Nuova struttura</button><button id="refresh-structures" class="secondary">↻ Aggiorna</button></div></section>
+        <section class="panel"><div class="panel-head"><div><h2>Strutture dieta</h2><p id="structures-scope">Vedi tutte le strutture che il tuo ruolo autorizza.</p></div></div><div id="structures-feedback" class="feedback" role="status"></div><div id="structures-list" class="client-grid"></div></section>
       </main>
     </div>
   </div>
@@ -81,6 +87,20 @@
       </form>
     </section>
   </div>
+
+  <div id="structure-dialog" class="dialog hidden" role="dialog" aria-modal="true" aria-labelledby="structure-title"><div class="dialog-backdrop" data-close-structure></div><section class="dialog-card wide"><button class="dialog-close" data-close-structure aria-label="Chiudi">×</button><p class="eyebrow">STRUTTURA DIETA</p><h2 id="structure-title">Nuova struttura</h2><p id="structure-subtitle" class="dialog-lead"></p>
+    <form id="structure-form"><input id="structure-id" type="hidden">
+      <label>Nome struttura<input id="structure-name" required minlength="3" maxlength="80" placeholder="es. Base proteine"></label>
+      <fieldset><legend>Dosi per famiglia Meller (grammi a crudo, vuoto = pasto non gestito)</legend>
+        <div id="structure-rules" class="structure-rules"></div>
+        <button type="button" id="structure-add-rule" class="secondary full">＋ Aggiungi famiglia</button>
+      </fieldset>
+      <div class="form-grid"><label>Nota revisione<textarea id="structure-changelog" maxlength="500" placeholder="Cosa cambia in questa revisione? (visibile solo allo staff)"></textarea></label>
+      <div id="structure-restore-field" class="hidden"><label>Carica una revisione precedente<div class="restore-row"><input id="structure-restore-rev" type="number" min="1" step="1" placeholder="N° revisione"><button type="button" id="structure-load-revision" class="secondary">Carica N</button></div></label><small class="field-hint">Il salvataggio crea comunque una nuova revisione: le precedenti non vengono mai toccate.</small></div></div>
+      <p class="callout">Date di creazione e ultima modifica sono di sola lettura. Non esiste un campo "Versione": le revisioni sono gestite dal sistema.</p>
+      <p id="structure-error" class="error" role="alert"></p><div class="dialog-actions"><button type="button" class="secondary" data-close-structure>Annulla</button><button id="structure-submit" class="primary" type="submit">Salva struttura →</button></div>
+    </form>
+  </section></div>
 
   <div id="assignment-dialog" class="dialog hidden" role="dialog" aria-modal="true" aria-labelledby="assignment-title"><div class="dialog-backdrop" data-close-assignment></div><section class="dialog-card"><button class="dialog-close" data-close-assignment aria-label="Chiudi assegnazione">×</button><p class="eyebrow">NUOVA ASSEGNAZIONE</p><h2 id="assignment-title">Assegna struttura dieta</h2><p id="assignment-client" class="dialog-lead"></p>
     <form id="assignment-form"><input id="assignment-client-id" type="hidden">
