@@ -12,9 +12,32 @@ test('console admin contiene una slice reale mapping e assegnazioni', () => {
   for (const id of ['reports-list','mapping-form','clients-list','assignment-form','organization-id']) {
     assert.match(html, new RegExp(`id="${id}"`));
   }
-  for (const callable of ['listMappingReports','proposeMapping','publishMapping','listAuthorizedClients','previewClientRuleSet','assignClientRuleSet']) {
+  for (const callable of ['listMappingReports','proposeMapping','publishMapping','listAuthorizedClients']) {
     assert.match(js, new RegExp(`['"]${callable}['"]`));
   }
+});
+
+test('modale assegnazione v2: solo Cliente, Struttura, Decorrenza, Scadenza/Senza scadenza, Note e Conferma', () => {
+  for (const id of ['assignment-structure','assignment-effective','assignment-expires','assignment-no-expiry','assignment-notes']) {
+    assert.match(html, new RegExp(`id="${id}"`));
+  }
+  // Campi v1 eliminati: niente Ambito/Versione/Strategia/checksum/anteprima.
+  for (const legacy of ['assignment-scope','assignment-version','assignment-strategy','assignment-checksum','assignment-preview','assignment-reason']) {
+    assert.doesNotMatch(html, new RegExp(`id="${legacy}"`), `il campo v1 ${legacy} non deve più esistere`);
+  }
+  // Il checksum non viene mai mostrato né richiesto nel UI della console.
+  assert.doesNotMatch(html, /Checksum SHA-256/i);
+  assert.doesNotMatch(js, /previewClientRuleSet/);
+  assert.match(js, /assignClientStructure/);
+  assert.match(js, /listRuleSets/);
+  // Landing: la vista Clienti è la porta d'ingresso.
+  assert.match(html, /nav-link active" data-view="clients"/);
+  assert.match(js, /showView\('clients'\)/);
+  // Badge coda accessibile: stato anche senza colore.
+  assert.match(html, /id="nav-open-count" class="badge-zero"/);
+  assert.match(js, /aria-label.*Coda ingredienti/);
+  assert.match(css, /\.nav-link b\.badge-zero/);
+  assert.match(css, /\.nav-link b\.badge-count/);
 });
 
 test('console admin è responsive, accessibile e non indicizzabile', () => {

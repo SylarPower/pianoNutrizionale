@@ -3,7 +3,7 @@ const test = require('node:test');
 const assert = require('node:assert/strict');
 const {
   canonicalJson, checksum, normalizeIngredient, reportKey, validateReport,
-  validateMapping, validateRuleSetRules, validateAssignment, effectiveAssignment
+  validateMapping, validateRuleSetRules, validateAssignment, validateStructureAssignment, effectiveAssignment
 } = require('../src/domain');
 
 test('canonicalJson e checksum sono indipendenti dall’ordine delle chiavi', () => {
@@ -62,4 +62,37 @@ test('assenza, sospensione, programmazione e scadenza producono original-only', 
   assert.equal(effectiveAssignment({ status: 'active', effectiveAt: '2026-09-10' }, now).reason, 'scheduled');
   assert.equal(effectiveAssignment({ status: 'active', effectiveAt: '2026-09-01', expiresAt: '2026-09-09T11:00:00Z' }, now).reason, 'expired');
   assert.equal(effectiveAssignment({ status: 'active', effectiveAt: '2026-09-01', expiresAt: null }, now).valid, true);
+});
+
+test('validateStructureAssignment (v2): risolve solo il contratto della modale', () => {
+  const base = {
+    organizationId: 'org-1', clientId: 'c1', ruleSetId: 'struttura-base',
+    effectiveAt: '2026-09-12T09:00:00Z', expiresAt: '2026-12-31T00:00:00Z',
+    withoutExpiration: false, notes: 'Percorso iniziale', idempotencyKey: 'k1'
+  };
+  const parsed = validateStructureAssignment(base);
+  assert.equal(parsed.ruleSetId, 'struttura-base');
+  assert.equal(parsed.notes, 'Percorso iniziale');
+  assert.equal(parsed.withoutExpiration, false);
+  // Il contratto rifiuta revisione/checksum/strategia inviati dal client.
+  assert.throws(() => validateStructureAssignment({ ...base, checksum: 'a'.repeat(64) }), /campi non ammessi/);
+  assert.throws(() => validateStructureAssignment({ ...base, strategy: 'freeze' }), /campi non ammessi/);
+});
+
+test('validateStructureAssignment: scadenza obbligatoria o flag esplicito', () => {
+  const base = {
+    organizationId: 'org-1', clientId: 'c1', ruleSetId: 'rs',
+    effectiveAt: '2026-09-12T09:00:00Z', expiresAt: null,
+    withoutExpiration: false, notes: '', idempotencyKey: 'k1'
+  };
+  // Senza scadenza E senza flag → rifiutato.
+  assert.throws(() => validateStructureAssignment(base), /Senza scadenza/);
+  // Con flag esplicito → accettato, expiresAt svuotato.
+  const open = validateStructureAssignment({ ...base, withoutExpiration: true });
+  assert.equal(open.expiresAt, null);
+  assert.equal(open.withoutExpiration, true);
+  // Flag attivo + data di scadenza → inconsistente.
+  assert.throws(() => validateStructureAssignment({ ...base, withoutExpiration: true, expiresAt: '2026-12-31T00:00:00Z' }), /Senza scadenza/);
+  // Note omessa → stringa vuota (nessun dato sanitario obbligatorio).
+  assert.equal(validateStructureAssignment({ ...base, expiresAt: '2026-12-31T00:00:00Z' }).notes, '');
 });

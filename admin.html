@@ -31,8 +31,8 @@
     <aside class="sidebar">
       <a class="brand-lockup compact" href="#mapping"><span>🥗</span><div><strong>Piano</strong><small>Console professionale</small></div></a>
       <nav aria-label="Console">
-        <button class="nav-link active" data-view="mapping"><span>◫</span>Coda ingredienti <b id="nav-open-count">0</b></button>
-        <button class="nav-link" data-view="clients"><span>♙</span>Clienti</button>
+        <button class="nav-link active" data-view="clients"><span>♙</span>Clienti</button>
+        <button class="nav-link" data-view="mapping"><span>◫</span>Coda ingredienti <b id="nav-open-count" class="badge-zero" aria-label="Coda ingredienti: nessun caso in sospeso">0</b></button>
       </nav>
       <div class="sidebar-bottom"><div class="security-note"><span>✓</span><div><strong>Ambiente protetto</strong><small>Ogni azione è tracciata</small></div></div><button id="admin-logout" class="text-button">Esci</button></div>
     </aside>
@@ -82,7 +82,16 @@
     </section>
   </div>
 
-  <div id="assignment-dialog" class="dialog hidden" role="dialog" aria-modal="true" aria-labelledby="assignment-title"><div class="dialog-backdrop" data-close-assignment></div><section class="dialog-card"><button class="dialog-close" data-close-assignment>×</button><p class="eyebrow">NUOVA ASSEGNAZIONE</p><h2 id="assignment-title">Assegna profilo nutrizionale</h2><p id="assignment-client" class="dialog-lead"></p><form id="assignment-form"><input id="assignment-client-id" type="hidden"><div class="form-grid"><label>Ambito<select id="assignment-scope"><option value="tenant">Organizzazione</option><option value="global">Globale</option></select></label><label>Rule set ID<input id="assignment-rule-id" required></label><label>Versione<input id="assignment-version" required></label><label>Checksum SHA-256<input id="assignment-checksum" required minlength="64" maxlength="64"></label><label>Decorrenza<input id="assignment-effective" type="datetime-local" required></label><label>Scadenza (opzionale)<input id="assignment-expires" type="datetime-local"></label></div><label>Strategia<select id="assignment-strategy"><option value="migrate-on-confirmation">Migra solo dopo conferma cliente</option><option value="freeze">Congela i piani esistenti</option><option value="original-only">Solo dosi originali</option></select></label><button id="assignment-preview" class="secondary" type="button">Confronta con il profilo attuale</button><div id="assignment-diff" class="callout hidden" role="status"></div><label>Motivazione<textarea id="assignment-reason" required maxlength="500"></textarea></label><p class="callout">Il piano e la lista spesa non verranno ricalcolati automaticamente.</p><p id="assignment-error" class="error"></p><div class="dialog-actions"><button type="button" class="secondary" data-close-assignment>Annulla</button><button class="primary" type="submit">Conferma assegnazione →</button></div></form></section></div>
+  <div id="assignment-dialog" class="dialog hidden" role="dialog" aria-modal="true" aria-labelledby="assignment-title"><div class="dialog-backdrop" data-close-assignment></div><section class="dialog-card"><button class="dialog-close" data-close-assignment aria-label="Chiudi assegnazione">×</button><p class="eyebrow">NUOVA ASSEGNAZIONE</p><h2 id="assignment-title">Assegna struttura dieta</h2><p id="assignment-client" class="dialog-lead"></p>
+    <form id="assignment-form"><input id="assignment-client-id" type="hidden">
+      <label>Struttura dieta<input id="assignment-structure" list="assignment-structure-list" required autocomplete="off" placeholder="Cerca per nome…"><datalist id="assignment-structure-list"></datalist><small class="field-hint">Scegli una delle tue strutture: l'ultima modifica aiuta a distinguerle. La revisione applicata è risolta dal sistema.</small></label>
+      <div class="form-grid"><label>Decorrenza<input id="assignment-effective" type="datetime-local" required></label><label>Scadenza<input id="assignment-expires" type="datetime-local" aria-describedby="assignment-no-expiry-label"></label></div>
+      <label class="check-row" id="assignment-no-expiry-label"><input id="assignment-no-expiry" type="checkbox"><span><strong>Senza scadenza</strong><small>Se il flag è disattivo, il sistema richiede una data di scadenza.</small></span></label>
+      <label>Note<textarea id="assignment-notes" maxlength="500" placeholder="Note interne per il personale autorizzato"></textarea><small class="field-hint">Le note non vengono mai mostrate al cliente.</small></label>
+      <p class="callout">Nulla viene applicato in silenzio: il cliente conferma l'aggiornamento dall'app e le sue ricette restano invariate.</p>
+      <p id="assignment-error" class="error" role="alert"></p><div class="dialog-actions"><button type="button" class="secondary" data-close-assignment>Annulla</button><button class="primary" type="submit">Conferma assegnazione →</button></div>
+    </form>
+  </section></div>
 
   <script>if (["localhost", "127.0.0.1"].includes(location.hostname)) self.FIREBASE_APPCHECK_DEBUG_TOKEN = true;</script>
   <script src="js/firebase.js"></script>

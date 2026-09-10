@@ -7,7 +7,8 @@ const { initializeApp } = require('firebase-admin/app');
 const { getFirestore, FieldValue, Timestamp } = require('firebase-admin/firestore');
 const {
   ROLES, REPORT_STATUSES, exactObject, text, optionalText, id, checksum,
-  reportKey, validateReport, validateMapping, validateRuleSetRules, validateAssignment, effectiveAssignment
+  reportKey, validateReport, validateMapping, validateRuleSetRules, validateAssignment, validateStructureAssignment,
+  effectiveAssignment
 } = require('./domain');
 
 initializeApp();
@@ -468,6 +469,93 @@ exports.assignClientRuleSet = callable(async (data, uid) => {
     }
   });
   return { assignmentId, status: immediate ? 'active' : 'scheduled', requiresClientConfirmation: true };
+});
+
+// Selettore "Struttura dieta" della console: solo ID, ultima pubblicazione e
+// data di modifica — revisione e checksum restano interni al backend.
+exports.listRuleSets = callable(async (data, uid) => {
+  exactObject(data, ['organizationId']);
+  const actor = await membership(data.organizationId, uid);
+  let query = db.collection(`organizations/${actor.organizationId}/ruleSets`);
+  if (actor.role === 'nutritionist') query = query.where('createdBy', '==', uid);
+  const snapshot = await query.limit(50).get();
+  const ruleSets = snapshot.docs
+    .map(doc => ({
+      ruleSetId: doc.id,
+      latestPublishedVersion: doc.data().latestPublishedVersion || null,
+      updatedAt: doc.data().updatedAt?.toDate?.()?.toISOString() || null
+    }))
+    .filter(item => item.latestPublishedVersion)
+    .sort((a, b) => String(b.updatedAt || '').localeCompare(String(a.updatedAt || '')));
+  return { ruleSets };
+});
+
+// Assegnazione v2: niente Ambito/Versione/Strategia/anteprima dal client.
+// Revisione e checksum sono risolti server-side dalla pubblicazione più
+// recente; il backend rifiuta payload senza scadenza se senza flag esplicito.
+// Le note restano visibili solo al personale autorizzato.
+exports.assignClientStructure = callable(async (data, uid) => {
+  const input = validateStructureAssignment(data);
+  const actor = await membership(input.organizationId, uid);
+  const client = await authorizedClient(actor, input.clientId);
+  const rootRef = db.doc(`organizations/${actor.organizationId}/ruleSets/${input.ruleSetId}`);
+  const root = await rootRef.get();
+  if (!root.exists || !root.data()?.latestPublishedVersion || !root.data()?.latestChecksum) {
+    throw new HttpsError('not-found', 'Struttura dieta non trovata o senza pubblicazioni');
+  }
+  if (actor.role === 'nutritionist' && root.data().createdBy !== uid) {
+    throw new HttpsError('permission-denied', 'Puoi assegnare soltanto le tue strutture dieta');
+  }
+  const pointer = {
+    scope: 'tenant', ruleSetId: input.ruleSetId,
+    version: root.data().latestPublishedVersion,
+    checksum: root.data().latestChecksum
+  };
+  const versionRef = await ruleVersionRef(actor.organizationId, pointer);
+  const versionDoc = await versionRef.get();
+  if (!versionDoc.exists || !verifiedRuleVersion(versionDoc.data(), pointer)) {
+    throw new HttpsError('failed-precondition', 'Pubblicazione della struttura non valida');
+  }
+  const notesMetadata = input.notes ? { notes: input.notes, notesVisibility: 'staff' } : {};
+  const assignmentId = checksum(`${actor.organizationId}:${input.clientId}:${input.idempotencyKey}`).slice(0, 32);
+  const assignmentRef = client.ref.collection('assignments').doc(assignmentId);
+  const stateRef = client.ref.collection('state').doc('activeAssignment');
+  const eventId = checksum(`assignment.created:${assignmentId}`).slice(0, 32);
+  const now = new Date();
+  const immediate = input.effectiveAt <= now;
+  await db.runTransaction(async tx => {
+    const [existing, state] = await Promise.all([tx.get(assignmentRef), tx.get(stateRef)]);
+    if (existing.exists) return;
+    const previousAssignmentId = state.data()?.assignmentId || null;
+    if (immediate && previousAssignmentId) {
+      tx.update(client.ref.collection('assignments').doc(previousAssignmentId), { status: 'revoked', revocationReason: 'Sostituito da una nuova assegnazione', updatedAt: FieldValue.serverTimestamp(), updatedBy: uid });
+    }
+    tx.create(assignmentRef, {
+      schemaVersion: 1, assignmentId, clientId: client.id, ruleSet: pointer,
+      status: immediate ? 'active' : 'scheduled', effectiveAt: Timestamp.fromDate(input.effectiveAt),
+      expiresAt: input.expiresAt ? Timestamp.fromDate(input.expiresAt) : null,
+      withoutExpiration: input.withoutExpiration,
+      strategy: 'migrate-on-confirmation', reason: input.notes || 'Assegnazione da console',
+      notesVisibility: 'staff', ...notesMetadata,
+      previousAssignmentId, idempotencyKey: input.idempotencyKey,
+      createdAt: FieldValue.serverTimestamp(), updatedAt: FieldValue.serverTimestamp(), createdBy: uid, updatedBy: uid
+    });
+    if (immediate) {
+      tx.set(stateRef, { schemaVersion: 1, assignmentId, updatedAt: FieldValue.serverTimestamp(), updatedBy: uid });
+      tx.update(client.ref, { activeAssignment: { assignmentId, ruleSet: pointer }, updatedAt: FieldValue.serverTimestamp(), updatedBy: uid });
+    }
+    tx.create(auditRef(actor.organizationId, eventId), auditEvent({ orgId: actor.organizationId, eventId, type: 'assignment.created', actor, subject: { type: 'assignment', id: assignmentId }, idempotencyKey: input.idempotencyKey, metadata: { clientId: client.id, ruleSetId: pointer.ruleSetId, revision: pointer.version, effectiveAt: input.effectiveAt.toISOString(), expiresAt: input.expiresAt ? input.expiresAt.toISOString() : null, withoutExpiration: input.withoutExpiration } }));
+    if (client.authUid) {
+      tx.create(db.doc(`organizations/${actor.organizationId}/notifications/${eventId}`), {
+        schemaVersion: 1, notificationId: eventId, recipientUid: client.authUid,
+        type: immediate ? 'profile.assigned' : 'profile.scheduled', subjectId: assignmentId,
+        readAt: null, dedupeKey: eventId, createdAt: FieldValue.serverTimestamp(),
+        updatedAt: FieldValue.serverTimestamp(), delivery: { inApp: 'pending', email: 'disabled' }
+      });
+    }
+  });
+  // La risposta NON include mai il checksum: le versioni chiuse sono interne.
+  return { assignmentId, status: immediate ? 'active' : 'scheduled' };
 });
 
 exports.updateAssignmentStatus = callable(async (data, uid) => {

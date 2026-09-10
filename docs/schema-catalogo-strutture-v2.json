@@ -1,0 +1,250 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://piano.app/schemas/catalogo-strutture-v2.json",
+  "title": "Piano — Catalogo globale, Strutture dieta e assegnazioni",
+  "description": "Contratto proposto. Separa identità/categorie globali dalle quantità e dalle strutture tenant. Le revisioni e i checksum restano interni e non sono campi operativi del nutrizionista.",
+  "type": "object",
+  "required": ["globalIngredientCatalog", "organizationDietStructures", "clientAssignments"],
+  "additionalProperties": false,
+  "properties": {
+    "globalIngredientCatalog": {
+      "$ref": "#/$defs/globalIngredientCatalog"
+    },
+    "organizationDietStructures": {
+      "type": "array",
+      "items": { "$ref": "#/$defs/dietStructureAggregate" }
+    },
+    "clientAssignments": {
+      "type": "array",
+      "items": { "$ref": "#/$defs/clientAssignment" }
+    }
+  },
+  "x-firestoreCollections": {
+    "categories": "globalIngredientCatalog/current/categories/{categoryId}",
+    "ingredients": "globalIngredientCatalog/current/ingredients/{ingredientId}",
+    "structures": "organizations/{organizationId}/dietStructures/{dietStructureId}",
+    "revisions": "organizations/{organizationId}/dietStructures/{dietStructureId}/revisions/{revisionId}",
+    "assignments": "organizations/{organizationId}/clients/{clientId}/assignments/{assignmentId}"
+  },
+  "$defs": {
+    "auditFields": {
+      "type": "object",
+      "required": ["createdAt", "createdBy", "updatedAt", "updatedBy"],
+      "properties": {
+        "createdAt": { "type": "string", "format": "date-time" },
+        "createdBy": { "type": "string", "minLength": 1 },
+        "updatedAt": { "type": "string", "format": "date-time" },
+        "updatedBy": { "type": "string", "minLength": 1 }
+      }
+    },
+    "category": {
+      "type": "object",
+      "required": ["categoryId", "displayName", "normalizedName", "sortOrder", "status"],
+      "additionalProperties": false,
+      "properties": {
+        "categoryId": { "type": "string", "pattern": "^[a-z0-9][a-z0-9-]{1,63}$" },
+        "displayName": { "type": "string", "minLength": 1, "maxLength": 100 },
+        "normalizedName": { "type": "string", "minLength": 1, "maxLength": 100 },
+        "description": { "type": ["string", "null"], "maxLength": 500 },
+        "sortOrder": { "type": "integer", "minimum": 0 },
+        "status": { "enum": ["active", "archived"] }
+      }
+    },
+    "ingredient": {
+      "type": "object",
+      "required": ["ingredientId", "displayName", "normalizedName", "categoryId", "aliases", "searchTokens", "mappingKind", "status"],
+      "additionalProperties": false,
+      "properties": {
+        "ingredientId": { "type": "string", "pattern": "^[a-z0-9][a-z0-9-]{1,95}$" },
+        "displayName": { "type": "string", "minLength": 1, "maxLength": 160 },
+        "normalizedName": { "type": "string", "minLength": 1, "maxLength": 160 },
+        "categoryId": { "type": "string", "pattern": "^[a-z0-9][a-z0-9-]{1,63}$" },
+        "aliases": {
+          "type": "array",
+          "maxItems": 100,
+          "uniqueItems": true,
+          "items": { "type": "string", "minLength": 1, "maxLength": 160 }
+        },
+        "searchTokens": {
+          "description": "Token normalizzati generati server-side per autocomplete; il client non è autorevole.",
+          "type": "array",
+          "maxItems": 200,
+          "uniqueItems": true,
+          "items": { "type": "string", "minLength": 1, "maxLength": 80 }
+        },
+        "mappingKind": { "enum": ["guided", "free"] },
+        "mellerFamilyId": {
+          "description": "Collegamento opzionale alla famiglia di dosaggio; mai una quantità dentro il catalogo ingredienti.",
+          "type": ["string", "null"],
+          "pattern": "^[A-Za-z0-9][A-Za-z0-9-]{0,63}$"
+        },
+        "defaultUnit": { "enum": ["g", "ml", "pz"] },
+        "status": { "enum": ["active", "archived"] }
+      }
+    },
+    "globalIngredientCatalog": {
+      "type": "object",
+      "required": ["schemaVersion", "catalogId", "internalRevisionId", "checksum", "categories", "ingredients", "publishedAt", "publishedBy"],
+      "additionalProperties": false,
+      "properties": {
+        "schemaVersion": { "const": 2 },
+        "catalogId": { "const": "global" },
+        "internalRevisionId": { "type": "string", "minLength": 1 },
+        "checksum": { "type": "string", "pattern": "^[a-f0-9]{64}$" },
+        "categories": {
+          "type": "array",
+          "items": { "$ref": "#/$defs/category" }
+        },
+        "ingredients": {
+          "type": "array",
+          "items": { "$ref": "#/$defs/ingredient" }
+        },
+        "publishedAt": { "type": "string", "format": "date-time" },
+        "publishedBy": { "type": "string", "minLength": 1 }
+      }
+    },
+    "contextQuantity": {
+      "type": "object",
+      "required": ["lunch", "dinner"],
+      "additionalProperties": false,
+      "properties": {
+        "lunch": {
+          "type": "object",
+          "required": ["training", "rest"],
+          "additionalProperties": false,
+          "properties": {
+            "training": { "type": "number", "exclusiveMinimum": 0 },
+            "rest": { "type": "number", "exclusiveMinimum": 0 }
+          }
+        },
+        "dinner": {
+          "type": "object",
+          "required": ["training", "rest"],
+          "additionalProperties": false,
+          "properties": {
+            "training": { "type": "number", "exclusiveMinimum": 0 },
+            "rest": { "type": "number", "exclusiveMinimum": 0 }
+          }
+        }
+      }
+    },
+    "dietRule": {
+      "type": "object",
+      "required": ["ruleId", "mellerFamilyId", "ingredientIds", "quantityGrams", "enabled"],
+      "additionalProperties": false,
+      "properties": {
+        "ruleId": { "type": "string", "pattern": "^[a-z0-9][a-z0-9-]{1,95}$" },
+        "mellerFamilyId": { "type": "string", "minLength": 1, "maxLength": 64 },
+        "ingredientIds": {
+          "type": "array",
+          "minItems": 1,
+          "uniqueItems": true,
+          "items": { "type": "string", "minLength": 1, "maxLength": 96 }
+        },
+        "categoryId": { "type": ["string", "null"], "maxLength": 64 },
+        "quantityGrams": { "$ref": "#/$defs/contextQuantity" },
+        "enabled": { "type": "boolean" }
+      }
+    },
+    "alternativeGroup": {
+      "type": "object",
+      "required": ["alternativeGroupId", "displayName", "items"],
+      "additionalProperties": false,
+      "properties": {
+        "alternativeGroupId": { "type": "string", "pattern": "^[a-z0-9][a-z0-9-]{1,95}$" },
+        "displayName": { "type": "string", "minLength": 1, "maxLength": 160 },
+        "items": {
+          "type": "array",
+          "minItems": 1,
+          "items": {
+            "type": "object",
+            "required": ["ingredientId", "quantityGrams"],
+            "additionalProperties": false,
+            "properties": {
+              "ingredientId": { "type": "string", "minLength": 1, "maxLength": 96 },
+              "quantityGrams": { "$ref": "#/$defs/contextQuantity" }
+            }
+          }
+        }
+      }
+    },
+    "dietStructureRevision": {
+      "description": "Documento interno immutabile. revisionId e checksum non sono modificabili dalla UI.",
+      "type": "object",
+      "required": ["schemaVersion", "revisionId", "dietStructureId", "organizationId", "ownerUid", "name", "rules", "alternativeGroups", "checksum", "status", "createdAt", "createdBy"],
+      "additionalProperties": false,
+      "properties": {
+        "schemaVersion": { "const": 2 },
+        "revisionId": { "type": "string", "minLength": 1 },
+        "dietStructureId": { "type": "string", "pattern": "^[a-z0-9][a-z0-9-]{1,95}$" },
+        "organizationId": { "type": "string", "minLength": 1, "maxLength": 128 },
+        "ownerUid": { "description": "Proprietario privato. Il nutritionist può accedere solo alle proprie strutture; l'admin tenant può accedere a tutte.", "type": "string", "minLength": 1, "maxLength": 128 },
+        "name": { "type": "string", "minLength": 1, "maxLength": 160 },
+        "description": { "type": ["string", "null"], "maxLength": 1000 },
+        "rules": { "type": "array", "items": { "$ref": "#/$defs/dietRule" } },
+        "alternativeGroups": { "type": "array", "items": { "$ref": "#/$defs/alternativeGroup" } },
+        "checksum": { "type": "string", "pattern": "^[a-f0-9]{64}$" },
+        "status": { "enum": ["published", "archived"] },
+        "restoredFromRevisionId": { "type": ["string", "null"] },
+        "createdAt": { "type": "string", "format": "date-time" },
+        "createdBy": { "type": "string", "minLength": 1 },
+        "notes": { "type": ["string", "null"], "maxLength": 1000 }
+      }
+    },
+    "dietStructureAggregate": {
+      "description": "Testata mutabile della Struttura dieta. Le date sono visualizzate, mentre currentRevisionId/checksum restano dettagli interni.",
+      "type": "object",
+      "required": ["schemaVersion", "dietStructureId", "organizationId", "ownerUid", "name", "status", "currentRevisionId", "currentChecksum", "createdAt", "createdBy", "updatedAt", "updatedBy", "revisions"],
+      "additionalProperties": false,
+      "properties": {
+        "schemaVersion": { "const": 2 },
+        "dietStructureId": { "type": "string", "pattern": "^[a-z0-9][a-z0-9-]{1,95}$" },
+        "organizationId": { "type": "string", "minLength": 1, "maxLength": 128 },
+        "ownerUid": { "description": "UID del nutritionist/admin proprietario. Visibilità nutritionist filtrata server-side per ownerUid.", "type": "string", "minLength": 1, "maxLength": 128 },
+        "name": { "type": "string", "minLength": 1, "maxLength": 160 },
+        "status": { "enum": ["active", "archived"] },
+        "currentRevisionId": { "type": "string", "minLength": 1 },
+        "currentChecksum": { "type": "string", "pattern": "^[a-f0-9]{64}$" },
+        "createdAt": { "type": "string", "format": "date-time" },
+        "createdBy": { "type": "string", "minLength": 1 },
+        "updatedAt": { "type": "string", "format": "date-time" },
+        "updatedBy": { "type": "string", "minLength": 1 },
+        "archivedAt": { "type": ["string", "null"], "format": "date-time" },
+        "archivedBy": { "type": ["string", "null"] },
+        "revisions": { "type": "array", "items": { "$ref": "#/$defs/dietStructureRevision" } }
+      }
+    },
+    "clientAssignment": {
+      "type": "object",
+      "required": ["schemaVersion", "assignmentId", "organizationId", "clientId", "dietStructureId", "revisionId", "structureChecksum", "effectiveAt", "withoutExpiration", "expiresAt", "status", "notes", "createdAt", "createdBy"],
+      "additionalProperties": false,
+      "properties": {
+        "schemaVersion": { "const": 2 },
+        "assignmentId": { "type": "string", "minLength": 1 },
+        "organizationId": { "type": "string", "minLength": 1 },
+        "clientId": { "type": "string", "minLength": 1 },
+        "dietStructureId": { "type": "string", "minLength": 1 },
+        "revisionId": { "description": "Risolto server-side dalla revisione pubblicata corrente.", "type": "string", "minLength": 1 },
+        "structureChecksum": { "description": "Calcolato/verificato server-side; nascosto al nutritionist.", "type": "string", "pattern": "^[a-f0-9]{64}$" },
+        "effectiveAt": { "type": "string", "format": "date-time" },
+        "withoutExpiration": { "type": "boolean" },
+        "expiresAt": { "type": ["string", "null"], "format": "date-time" },
+        "status": { "enum": ["scheduled", "active", "suspended", "expired"] },
+        "notes": { "type": ["string", "null"], "maxLength": 500 },
+        "confirmedAt": { "type": ["string", "null"], "format": "date-time" },
+        "createdAt": { "type": "string", "format": "date-time" },
+        "createdBy": { "type": "string", "minLength": 1 }
+      },
+      "allOf": [
+        {
+          "if": { "properties": { "withoutExpiration": { "const": false } } },
+          "then": { "properties": { "expiresAt": { "type": "string", "format": "date-time" } } }
+        },
+        {
+          "if": { "properties": { "withoutExpiration": { "const": true } } },
+          "then": { "properties": { "expiresAt": { "type": "null" } } }
+        }
+      ]
+    }
+  }
+}

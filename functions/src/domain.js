@@ -162,6 +162,35 @@ function validateAssignment(input) {
   };
 }
 
+// Contratto assegnazione v2: il cliente sceglie solo Cliente, Struttura dieta,
+// Decorrenza, Scadenza (o il flag "Senza scadenza") e Note. Revisione e
+// checksum della struttura sono risolti server-side; Ambito/Versione/
+// Strategia/anteprima non esistono più nel payload.
+function validateStructureAssignment(input) {
+  exactObject(input, ['organizationId', 'clientId', 'ruleSetId', 'effectiveAt', 'expiresAt', 'withoutExpiration', 'notes', 'idempotencyKey']);
+  const withoutExpiration = input.withoutExpiration === true;
+  const effectiveAt = isoDate(input.effectiveAt, 'effectiveAt');
+  const expiresAt = isoDate(input.expiresAt, 'expiresAt', true);
+  if (!withoutExpiration && !expiresAt) {
+    fail('failed-precondition', 'Indica una scadenza oppure seleziona "Senza scadenza"');
+  }
+  if (withoutExpiration && expiresAt) {
+    fail('invalid-argument', 'expiresAt non ammessa quando il flag "Senza scadenza" è attivo');
+  }
+  if (expiresAt && expiresAt <= effectiveAt) fail('invalid-argument', 'expiresAt deve essere successiva a effectiveAt');
+  return {
+    organizationId: id(input.organizationId, 'organizationId'),
+    clientId: id(input.clientId, 'clientId'),
+    ruleSetId: id(input.ruleSetId, 'ruleSetId'),
+    effectiveAt,
+    expiresAt: withoutExpiration ? null : expiresAt,
+    withoutExpiration,
+    // Note: default solo personale autorizzato (il cliente non le legge).
+    notes: optionalText(input.notes, 'notes', 500) || '',
+    idempotencyKey: id(input.idempotencyKey, 'idempotencyKey')
+  };
+}
+
 function effectiveAssignment(assignment, now = new Date()) {
   if (!assignment) return { valid: false, reason: 'missing' };
   if (!ASSIGNMENT_STATUSES.has(assignment.status)) return { valid: false, reason: 'invalid-status' };
@@ -177,5 +206,5 @@ module.exports = {
   ROLES, REPORT_STATUSES, ASSIGNMENT_STATUSES, ASSIGNMENT_STRATEGIES,
   fail, exactObject, text, optionalText, id, isoDate, canonicalJson, checksum,
   normalizeIngredient, reportKey, validateReport, validateMapping, validateRuleSetRules, validateAssignment,
-  effectiveAssignment
+  validateStructureAssignment, effectiveAssignment
 };

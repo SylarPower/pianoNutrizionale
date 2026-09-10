@@ -90,9 +90,14 @@
     }
   }
 
-  function shoppingAccess(now = Date.now()) {
+  // Lista spesa per il cliente finale: con un'assegnazione attiva e confermata
+  // l'accesso è SEMPRE libero (nessuna pubblicità). Solo l'utente non
+  // associato passa dal gate rewarded (dietro flag provider, disattivato).
+  function shoppingAccess(now = Date.now(), context = null) {
     const ads = config().shoppingRewardedAds;
     if (!config().enabled) return { allowed: true, reason: 'feature-disabled' };
+    const state = context?.state ?? null;
+    if (state === 'assigned') return { allowed: true, reason: 'assignment' };
     const until = Number(localStorage.getItem('pn_shopping_reward_until') || 0);
     if (until > now) return { allowed: true, reason: 'reward', until };
     return { allowed: false, reason: ads.enabled && ads.provider ? 'reward-available' : 'provider-unavailable' };

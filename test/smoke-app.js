@@ -146,7 +146,8 @@ const recipes = [
   R('S1', 'Frutta', 'snack1', ''),
   R('M1', 'Yogurt', 'snack2', '')
 ];
-const samePortion = value => ({ ipoTraining: value, ipoRest: value, manTraining: value, manRest: value });
+// Schema 6: quantità originale unica per profilo (riposo derivato dal piano).
+const samePortion = value => ({ ipo: value, man: value });
 recipes.find(item => item.id === 'L1').ingredients.push({ name: 'Basilico', ingredientId: 'basilico', portions: samePortion('1') });
 recipes.find(item => item.id === 'D1').ingredients.push({ name: 'Basilico', ingredientId: 'basilico', portions: samePortion('un mazzetto') });
 // Secondo carboidrato nella colazione: serve per verificare l'ordine degli
@@ -200,8 +201,8 @@ for (const field of ['name', 'emoji', 'slot', 'proteinCategory', 'steps', 'speci
 }
 assert.equal(currentModal.recipe.ingredients[0].name, beforeReadAdapt.ingredients[0].name);
 assert.deepEqual(currentModal.recipe.ingredients[1], beforeReadAdapt.ingredients[1], 'ingrediente non adattato identico');
-assert.equal(currentModal.recipe.ingredients[0].portions.manTraining, '90 g');
-assert.equal(currentModal.recipe.ingredients[0].portions.manRest, '70 g');
+assert.equal(currentModal.recipe.ingredients[0].portions.man, '90 g', 'porzione unica per profilo dopo adattamento (schema 6)');
+assert.equal(currentModal.recipe.ingredients[0].portions.ipo, '90 g', 'profilo donna allineato al riferimento del pranzo');
 setRecipes(recipes);
 
 // ---- Percorsi di rendering ----
@@ -890,6 +891,15 @@ renderModalContent();
   // Assenza del vecchio input Frequenza
   assert.doesNotMatch(timeHtml, /edit-recipe-frequency/, 'input frequenza rimosso dall\'editor');
   assert.doesNotMatch(editHtml, /edit-recipe-frequency/, 'nessun campo frequenza negli ingredienti');
+  // Schema 6 editor: un solo campo quantità per profilo, combobox catalogo e
+  // niente tab Batch in modifica (le note sono nella tab Preparazione).
+  assert.match(editHtml, /id="edit-ing-man-0"/, 'quantità uomo singola presente');
+  assert.match(editHtml, /id="edit-ing-ipo-0"/, 'quantità donna IPO singola presente');
+  assert.doesNotMatch(editHtml, /edit-ing-man-training-0|edit-ing-ipo-rest-0/, 'campi legacy 4-porzioni rimossi dall\'editor');
+  assert.match(editHtml, /role="combobox"/, 'campo nome come combobox accessibile');
+  assert.match(editHtml, /ing-suggest-0/, 'listbox suggerimenti catalogo presente');
+  assert.equal(document.getElementById('modal-batch-text')._textContent, '', 'tab Batch svuotata in modalità modifica (solo consultazione)');
+  assert.match(document.getElementById('modal-edit-notes').innerHTML, /edit-recipe-special/, 'nota speciale nella tab Preparazione');
 }
 // Libreria ricette: niente chip frequenza, etichetta leggibile per categoria
 {

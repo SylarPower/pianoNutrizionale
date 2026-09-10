@@ -1,6 +1,6 @@
 'use strict';
 
-const adminState = { user: null, reports: [], clients: [], cursor: null, selectedReport: null };
+const adminState = { user: null, reports: [], clients: [], ruleSets: [], cursor: null, selectedReport: null };
 const $ = id => document.getElementById(id);
 const escapeAdmin = value => String(value ?? '').replace(/[&<>'"]/g, char => ({ '&':'&amp;','<':'&lt;','>':'&gt;',"'":'&#39;','"':'&quot;' }[char]));
 const orgId = () => $('organization-id').value.trim();
@@ -51,7 +51,14 @@ function renderReports() {
   $('metric-open').textContent = adminState.reports.filter(item => item.status === 'open').length;
   $('metric-review').textContent = adminState.reports.filter(item => ['triaged','needs-review'].includes(item.status)).length;
   $('metric-resolved').textContent = adminState.reports.filter(item => item.status === 'resolved').length;
-  $('nav-open-count').textContent = adminState.reports.filter(item => item.status === 'open').length;
+  // Badge coda accessibile: colore rosso se ci sono casi aperti, verde se la
+  // coda è vuota; lo stato è leggibile anche senza colore (numero + aria).
+  const open = adminState.reports.filter(item => item.status === 'open').length;
+  const badge = $('nav-open-count');
+  badge.textContent = open;
+  badge.classList.toggle('badge-count', open > 0);
+  badge.classList.toggle('badge-zero', open === 0);
+  badge.setAttribute('aria-label', open > 0 ? `Coda ingredienti: ${open} casi in sospeso` : 'Coda ingredienti: nessun caso in sospeso');
 }
 
 function openMapping(reportId) {
@@ -113,42 +120,55 @@ function renderClients() {
   $('clients-list').innerHTML = adminState.clients.map(client => `<article class="client-card"><p class="eyebrow">CLIENTE</p><h3>${escapeAdmin(client.displayCode)}</h3><p>${client.activeAssignment ? `Profilo ${escapeAdmin(client.activeAssignment.ruleSet?.ruleSetId || 'assegnato')} · v${escapeAdmin(client.activeAssignment.ruleSet?.version || '')}` : 'Nessun profilo attivo · dosi originali'}</p><button class="secondary" data-assign-client="${escapeAdmin(client.id)}">${client.activeAssignment ? 'Cambia profilo' : 'Assegna profilo'} →</button></article>`).join('');
 }
 
-function openAssignment(clientId) {
+async function loadRuleSetsList() {
+  if (!orgId()) { adminState.ruleSets = []; return; }
+  try {
+    const result = await callSaasFunction('listRuleSets', { organizationId: orgId() });
+    adminState.ruleSets = result.ruleSets || [];
+  } catch (error) { adminState.ruleSets = []; $('assignment-error').textContent = adminError(error); }
+  renderRuleSetOptions();
+}
+
+function renderRuleSetOptions() {
+  const format = iso => iso ? new Date(iso).toLocaleDateString('it-IT', { day: '2-digit', month: 'short', year: 'numeric' }) : '';
+  $('assignment-structure-list').innerHTML = adminState.ruleSets
+    .map(item => `<option value="${escapeAdmin(item.ruleSetId)}">${item.updatedAt ? `ultima modifica ${format(item.updatedAt)}` : 'nessuna modifica nota'}</option>`)
+    .join('');
+}
+
+async function openAssignment(clientId) {
   const client = adminState.clients.find(item => item.id === clientId); if (!client) return;
   $('assignment-client-id').value = client.id; $('assignment-client').textContent = client.displayCode;
   const inOneHour = new Date(Date.now() + 3600000); inOneHour.setMinutes(0, 0, 0);
   $('assignment-effective').value = inOneHour.toISOString().slice(0, 16);
+  $('assignment-structure').value = ''; $('assignment-expires').value = '';
+  $('assignment-no-expiry').checked = false; $('assignment-expires').disabled = false;
+  $('assignment-notes').value = '';
   $('assignment-error').textContent = ''; $('assignment-dialog').classList.remove('hidden');
+  await loadRuleSetsList();
+  $('assignment-structure').focus();
 }
 function closeAssignment() { $('assignment-dialog').classList.add('hidden'); }
 
-async function previewAssignment() {
-  $('assignment-error').textContent = '';
-  try {
-    const result = await callSaasFunction('previewClientRuleSet', {
-      organizationId: orgId(), clientId: $('assignment-client-id').value,
-      ruleSet: { scope: $('assignment-scope').value, ruleSetId: $('assignment-rule-id').value.trim(), version: $('assignment-version').value.trim(), checksum: $('assignment-checksum').value.trim().toLowerCase() }
-    });
-    const summary = result.summary;
-    $('assignment-diff').innerHTML = `<strong>${summary.totalChanges} differenze</strong><br><small>${summary.changed.length} dosi cambiate · ${summary.added.length} famiglie aggiunte · ${summary.removed.length} rimosse. Il piano resterà invariato fino alla conferma del cliente.</small>`;
-    $('assignment-diff').classList.remove('hidden');
-    return true;
-  } catch (error) { $('assignment-error').textContent = adminError(error); return false; }
-}
-
 async function submitAssignment(event) {
   event.preventDefault(); $('assignment-error').textContent = '';
-  if ($('assignment-diff').classList.contains('hidden') && !(await previewAssignment())) return;
+  const withoutExpiration = $('assignment-no-expiry').checked;
+  const expiresRaw = $('assignment-expires').value;
+  if (!withoutExpiration && !expiresRaw) { $('assignment-error').textContent = 'Indica una scadenza oppure seleziona "Senza scadenza".'; return; }
+  const ruleSetId = $('assignment-structure').value.trim();
+  if (!adminState.ruleSets.some(item => item.ruleSetId === ruleSetId)) { $('assignment-error').textContent = 'Scegli una struttura dieta dall’elenco.'; return; }
   try {
-    const result = await callSaasFunction('assignClientRuleSet', {
+    const result = await callSaasFunction('assignClientStructure', {
       organizationId: orgId(), clientId: $('assignment-client-id').value,
-      ruleSet: { scope: $('assignment-scope').value, ruleSetId: $('assignment-rule-id').value.trim(), version: $('assignment-version').value.trim(), checksum: $('assignment-checksum').value.trim().toLowerCase() },
-      effectiveAt: isoFromLocal($('assignment-effective').value), expiresAt: isoFromLocal($('assignment-expires').value),
-      strategy: $('assignment-strategy').value, reason: $('assignment-reason').value,
+      ruleSetId,
+      effectiveAt: isoFromLocal($('assignment-effective').value),
+      expiresAt: withoutExpiration ? null : isoFromLocal(expiresRaw),
+      withoutExpiration,
+      notes: $('assignment-notes').value.trim(),
       idempotencyKey: idem('assignment')
     });
     closeAssignment(); await loadClients();
-    $('clients-feedback').textContent = result.status === 'scheduled' ? 'Assegnazione programmata. Il cliente dovrà confermare il ricalcolo.' : 'Profilo assegnato. Il cliente dovrà confermare il ricalcolo.';
+    $('clients-feedback').textContent = result.status === 'scheduled' ? 'Assegnazione programmata. Il cliente dovrà confermare l’aggiornamento dall’app.' : 'Struttura assegnata. Il cliente dovrà confermare l’aggiornamento dall’app.';
   } catch (error) { $('assignment-error').textContent = adminError(error); }
 }
 
@@ -178,8 +198,7 @@ function bindAdmin() {
   $('refresh-clients').addEventListener('click', loadClients);
   $('clients-list').addEventListener('click', event => { const button = event.target.closest('[data-assign-client]'); if (button) openAssignment(button.dataset.assignClient); });
   $('assignment-form').addEventListener('submit', submitAssignment);
-  $('assignment-preview').addEventListener('click', previewAssignment);
-  ['assignment-scope','assignment-rule-id','assignment-version','assignment-checksum'].forEach(id => $(id).addEventListener('input', () => $('assignment-diff').classList.add('hidden')));
+  $('assignment-no-expiry').addEventListener('change', () => { $('assignment-expires').disabled = $('assignment-no-expiry').checked; if ($('assignment-no-expiry').checked) $('assignment-expires').value = ''; });
   document.querySelectorAll('[data-close-assignment]').forEach(node => node.addEventListener('click', closeAssignment));
   document.querySelectorAll('.nav-link').forEach(node => node.addEventListener('click', () => showView(node.dataset.view)));
   $('mobile-menu').addEventListener('click', () => document.querySelector('.sidebar').classList.toggle('open'));
@@ -194,6 +213,7 @@ observeAuthState(user => {
   if (user) {
     const name = usernameFromUser(user) || 'Professionista';
     $('admin-name').textContent = name; $('admin-avatar').textContent = name.slice(0, 1).toUpperCase();
-    loadReports();
+    // Landing: la vista Clienti è la porta d'ingresso della console.
+    showView('clients');
   }
 });

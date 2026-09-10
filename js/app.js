@@ -13,6 +13,181 @@ const MEAL_SLOTS = [
 ];
 const SHOP_CATEGORY_ORDER = ["🥩 Carne", "🐟 Pesce", "🥚 Uova e latticini", "🫘 Legumi", "🍚 Carboidrati", "🥬 Verdura", "🍑 Frutta", "🥫 Dispensa", "🌿 Spezie e aromi"];
 const RECIPE_LIBRARY_SECTION_DEFAULTS = Object.fromEntries(MEAL_SLOTS.map(slot => [slot.id, false]));
+// Feature flag Sezione Prezzi (momentaneamente DISATTIVATA): la vista, logica
+// e dati NON vengono cancellati, soltanto il menu e la rotta vengono nascosti.
+// Per riattivare: PRICES_FEATURE_ENABLED = true.
+const PRICES_FEATURE_ENABLED = false;
+
+// ---- Catalogo globale ingredienti (autocomplete editor) ----
+// Il catalogo definitivo del dott. Meller arriverà via import versionato; fino
+// ad allora il seed autorevole deriva da MELLER_GRAMMATURE (famiglie guidate)
+// e dai libri d'ortaggi/aromi liberi, senza inventare quantità. Un nome non
+// riconosciuto resta ammesso ma viene marcato "mapping mancante".
+let ingredientCatalogIndexCache = null;
+function buildLocalCatalogIndex() {
+  if (ingredientCatalogIndexCache) return ingredientCatalogIndexCache;
+  const catalog = { ingredients: [], categories: [] };
+  if (window.PianoDomain?.MELLER_GRAMMATURE) {
+    catalog.categories = [
+      { categoryId: "carb", displayName: "Carboidrati" },
+      { categoryId: "protein", displayName: "Proteine" },
+      { categoryId: "fat", displayName: "Grassi" },
+      { categoryId: "free", displayName: "Alimenti liberi" }
+    ];
+    catalog.ingredients = PianoDomain.MELLER_GRAMMATURE.map(rule => ({
+      ingredientId: String(rule.family),
+      displayName: String(rule.label || rule.family),
+      categoryId: rule.group === "carb" ? "carb" : rule.group === "fat" ? "fat" : "protein",
+      aliases: Array.isArray(rule.aliases) ? rule.aliases : [],
+      mappingKind: "guided",
+      mellerFamilyId: String(rule.family)
+    }));
+    Object.entries(PianoDomain.MELLER_FREE_DISPLAY_LABELS || {}).forEach(([stem, label]) => {
+      catalog.ingredients.push({
+        ingredientId: `free-${stem.replace(/\s+/g, "-")}`,
+        displayName: label,
+        categoryId: "free",
+        aliases: [stem],
+        mappingKind: "free",
+        mellerFamilyId: null
+      });
+    });
+  }
+  ingredientCatalogIndexCache = window.PianoDomain?.buildCatalogIndex
+    ? PianoDomain.buildCatalogIndex(catalog)
+    : { items: [] };
+  return ingredientCatalogIndexCache;
+}
+function ingredientCatalogMatches(query) {
+  const index = buildLocalCatalogIndex();
+  return window.PianoDomain?.searchCatalog ? PianoDomain.searchCatalog(index, query, { limit: 8 }) : [];
+}
+function editorIngredientMeta(recipe) {
+  if (!Array.isArray(recipe._ingredientMeta) || recipe._ingredientMeta.length !== recipe.ingredients.length) {
+    const mappingFor = name => window.PianoDomain?.mellerMappingForIngredient?.(name) || null;
+    recipe._ingredientMeta = recipe.ingredients.map(ingredient => {
+      const name = String(ingredient.name || "").trim();
+      const mapping = name ? mappingFor(name) : null;
+      return {
+        ingredientId: ingredient.ingredientId || "",
+        // Marcatura immediata: nomi senza famiglia/dosaggi approvati risultano
+        // ricercabili ma non attivano adattamenti né fallback (schema 6).
+        mappingMissing: Boolean(name) && !mapping
+      };
+    });
+  }
+  return recipe._ingredientMeta;
+}
+let editorSuggestActiveIndex = -1;
+function editorSuggestBox(index) {
+  return document.getElementById(`ing-suggest-${index}`);
+}
+function hideEditorSuggest(index) {
+  editorSuggestActiveIndex = -1;
+  const box = editorSuggestBox(index);
+  if (box) { box.classList.add("hidden"); box.innerHTML = ""; }
+  document.getElementById(`edit-ing-name-${index}`)?.setAttribute("aria-expanded", "false");
+}
+function hideOtherEditorSuggests(index) {
+  (currentModal?.recipe?.ingredients || []).forEach((_, i) => { if (i !== index) hideEditorSuggest(i); });
+}
+function renderEditorSuggestions(index) {
+  const recipe = currentModal?.recipe;
+  const box = editorSuggestBox(index);
+  const input = document.getElementById(`edit-ing-name-${index}`);
+  if (!recipe || !box || !input) return;
+  const raw = input.value || "";
+  const meta = editorIngredientMeta(recipe)[index];
+  if (!raw.trim()) {
+    hideEditorSuggest(index);
+    return;
+  }
+  const matches = ingredientCatalogMatches(raw);
+  // Stato di mapping: match esatto sul nome visualizzato o su alias.
+  const exact = window.PianoDomain?.aliasKey
+    ? matches.find(item => [PianoDomain.aliasKey(item.displayName), PianoDomain.aliasKey(item.matchedAlias || "")].includes(PianoDomain.aliasKey(raw))) || matches[0]
+    : matches[0];
+  const exactKnown = exact && PianoDomain.aliasKey(raw) && [PianoDomain.aliasKey(exact.displayName), PianoDomain.aliasKey(exact.matchedAlias || "")].includes(PianoDomain.aliasKey(raw));
+  meta.ingredientId = exactKnown ? exact.ingredientId : "";
+  meta.mappingMissing = !exactKnown;
+  editorSuggestActiveIndex = -1;
+  const missingHtml = meta.mappingMissing
+    ? `<div class="ing-suggest-missing" role="note">ⓘ «${escapeHtml(raw)}» non è nel catalogo: sarà salvato senza mapping Meller.</div>`
+    : "";
+  box.innerHTML = `${matches.map((item, i) => `
+    <button type="button" class="ing-suggest-item" role="option" aria-selected="false" data-idx="${i}" data-id="${escapeAttr(item.ingredientId)}" data-name="${escapeAttr(item.displayName)}" onmousedown="event.preventDefault()" onclick="selectEditorSuggestion(${index}, ${i})"><span>${escapeHtml(item.displayName)}</span><small>${escapeHtml(item.categoryLabel || item.categoryId || "")}${item.matchedAlias ? ` · alias: ${escapeHtml(item.matchedAlias)}` : ""}</small></button>`).join("")}${missingHtml}`;
+  box.classList.remove("hidden");
+  input.setAttribute("aria-expanded", "true");
+}
+function updateEditorSuggestionSelection(index) {
+  const box = editorSuggestBox(index);
+  if (!box) return;
+  box.querySelectorAll(".ing-suggest-item").forEach(item => {
+    item.classList.toggle("active", Number(item.dataset.idx) === editorSuggestActiveIndex);
+    item.setAttribute("aria-selected", String(Number(item.dataset.idx) === editorSuggestActiveIndex));
+  });
+}
+window.selectEditorSuggestion = function(index, i) {
+  const box = editorSuggestBox(index);
+  const item = box?.querySelector(`.ing-suggest-item[data-idx="${i}"]`);
+  if (!item) return;
+  const input = document.getElementById(`edit-ing-name-${index}`);
+  if (input) input.value = item.dataset.name;
+  const meta = editorIngredientMeta(currentModal.recipe)[index];
+  meta.ingredientId = item.dataset.id;
+  meta.mappingMissing = false;
+  hideEditorSuggest(index);
+  updateMellerEditorNotice();
+  input?.focus();
+};
+window.editorIngredientInput = function(index, input) {
+  hideOtherEditorSuggests(index);
+  const recipe = currentModal?.recipe;
+  if (!recipe) return;
+  const ingredient = recipe.ingredients[index];
+  // Se l'utente sta editando un nome già risolto, il mapping preciso resta
+  // valido finché il testo non si discosta dal nome scelto.
+  const meta = editorIngredientMeta(recipe)[index];
+  if (meta.ingredientId && ingredient && window.PianoDomain?.aliasKey) {
+    const known = buildLocalCatalogIndex().byId?.get(meta.ingredientId)?.ingredient;
+    if (known && [PianoDomain.aliasKey(known.displayName), ...(known.aliases || []).map(a => PianoDomain.aliasKey(a))].includes(PianoDomain.aliasKey(input.value))) {
+      meta.mappingMissing = false;
+    } else {
+      meta.ingredientId = "";
+      meta.mappingMissing = true;
+    }
+  } else if (input.value.trim()) {
+    meta.mappingMissing = !ingredientCatalogMatches(input.value).length;
+  } else {
+    meta.ingredientId = "";
+    meta.mappingMissing = false;
+  }
+  renderEditorSuggestions(index);
+  updateMellerEditorNotice();
+};
+window.editorIngredientBlur = function(index) {
+  setTimeout(() => hideEditorSuggest(index), 180);
+};
+window.editorIngredientKeydown = function(index, event) {
+  const box = editorSuggestBox(index);
+  const items = box ? [...box.querySelectorAll(".ing-suggest-item")] : [];
+  const boxOpen = Boolean(items.length && !box.classList.contains("hidden"));
+  if (event.key === "ArrowDown" || event.key === "ArrowUp") {
+    if (!boxOpen) return;
+    event.preventDefault();
+    const delta = event.key === "ArrowDown" ? 1 : -1;
+    editorSuggestActiveIndex = (editorSuggestActiveIndex + delta + items.length) % items.length;
+    updateEditorSuggestionSelection(index);
+    return;
+  }
+  if (event.key === "Enter" && boxOpen) {
+    event.preventDefault();
+    const target = editorSuggestActiveIndex >= 0 ? editorSuggestActiveIndex : 0;
+    window.selectEditorSuggestion(index, target);
+    return;
+  }
+  if (event.key === "Escape") hideEditorSuggest(index);
+};
 
 let appState = {
   user: null,
@@ -103,7 +278,8 @@ function ensurePlanMellerContext() {
 
 function resolvePlannedRecipe(recipe, dayKey, slot) {
   if (!recipe || !window.PianoDomain) return { recipe, mode: "original", applied: false, blocked: false, report: null, context: null };
-  return PianoDomain.resolveRecipeForPlan(recipe, slot, getPlanMellerMode(dayKey, slot));
+  const mode = planAdaptedQuantitiesEffective() ? getPlanMellerMode(dayKey, slot) : PianoDomain.MELLER_MODE_ORIGINAL;
+  return PianoDomain.resolveRecipeForPlan(recipe, slot, mode);
 }
 
 function mellerReportForRecipe(recipe, slot = recipe?.slot) {
@@ -126,11 +302,12 @@ function getPortionProfile() {
 
 function getPortionValue(ingredient, profile, dayType) {
   const portions = ingredient?.portions || {};
-  const isTraining = dayType === "training";
+  // Schema 6: una sola quantità originale per profilo — la dose A/R è derivata
+  // dalla struttura sul piano, mai salvata nei 4 campi legacy.
   if (profile === "ipo") {
-    return portions[isTraining ? "ipoTraining" : "ipoRest"] ?? portions.ipo ?? "—";
+    return portions.ipo ?? portions.ipoTraining ?? "—";
   }
-  return portions[isTraining ? "manTraining" : "manRest"] ?? portions[dayType] ?? portions.training ?? "—";
+  return portions.man ?? portions.manTraining ?? portions[dayType] ?? portions.training ?? "—";
 }
 
 function isEmptyPortion(value) {
@@ -497,6 +674,7 @@ function applyState(recipes, plan, shopping) {
   applyTheme(!!appState.deviceSettings.darkMode);
   showApp();
   renderGlobalHeader();
+  maybePromptProfileUpdate();
   document.querySelector(".bottom-nav")?.classList.remove("hidden");
   if (!appStarted) {
     setupRouter();
@@ -605,7 +783,15 @@ async function initApp() {
 
 function setupRouter() {
   window.addEventListener("hashchange", handleRoute);
-  if (!window.location.hash || !["#week", "#recipes", "#shop", "#prices", "#settings"].includes(window.location.hash)) {
+  // Nav "Prezzi" nascosta quando la feature è disattivata (elemento conservato).
+  if (!pricesFeatureEnabled()) {
+    document.getElementById("nav-prices")?.classList.add("hidden");
+    document.getElementById("nav-prices")?.setAttribute("aria-hidden", "true");
+  }
+  const allowed = pricesFeatureEnabled()
+    ? ["#week", "#recipes", "#shop", "#prices", "#settings"]
+    : ["#week", "#recipes", "#shop", "#settings"];
+  if (!window.location.hash || !allowed.includes(window.location.hash)) {
     window.location.hash = "#week";
   } else {
     handleRoute();
@@ -635,6 +821,12 @@ function handleRoute() {
   if (!appState.user || !appState.plan) return;
   const hash = window.location.hash || "#week";
   const routeName = hash.slice(1);
+  // Sezione Prezzi sospesa dietro feature flag: la rotta viene riportata alla
+  // Settimana senza cancellare view, logica né dati.
+  if (routeName === "prices" && !pricesFeatureEnabled()) {
+    window.location.hash = "#week";
+    return;
+  }
   const targetView = document.getElementById(`view-${routeName}`);
   if (!targetView) return;
 
@@ -913,10 +1105,43 @@ function renderWeekAnalysis() {
     </section>`;
 }
 
+// Il toggle "quantità adattate" persiste la MODALITÀ del piano (nessuna dose
+// derivata viene memorizzata). Con SaaS attivo, senza una struttura assegnata
+// e confermata la vista resta comunque sulle quantità originali.
+function pricesFeatureEnabled() {
+  return PRICES_FEATURE_ENABLED;
+}
+function planAdaptedQuantitiesEffective() {
+  if (!window.PianoDomain) return true;
+  const enabled = PianoDomain.normalizeAdaptedQuantitiesEnabled
+    ? PianoDomain.normalizeAdaptedQuantitiesEnabled(appState.plan)
+    : appState.plan?.adaptedQuantitiesEnabled !== false;
+  if (enabled && window.PianoSaas?.config().enabled && appState.saasPolicy?.mode !== "assigned") return false;
+  return enabled;
+}
+window.toggleWeekAdaptedQuantities = async function(enabled) {
+  if (!window.PianoDomain?.setAdaptedQuantitiesEnabled || !appState.plan) return;
+  appState.plan = PianoDomain.setAdaptedQuantitiesEnabled(appState.plan, enabled);
+  try {
+    await saveWeeklyPlan(appState.plan);
+    renderWeek();
+    showToast(enabled
+      ? "Quantità adattate alle linee guida attivate ✅"
+      : "Vista impostata sulle quantità originali delle ricette");
+  } catch (error) {
+    showToast("Impossibile salvare la scelta", true);
+  }
+};
+
 function renderWeek() {
   const container = document.getElementById("view-week");
   const today = getTodayKey();
   const profileChip = getProfileChipLabel();
+  const adaptedEnabled = window.PianoDomain?.normalizeAdaptedQuantitiesEnabled
+    ? PianoDomain.normalizeAdaptedQuantitiesEnabled(appState.plan)
+    : true;
+  const adaptedEffective = planAdaptedQuantitiesEffective();
+  const adaptedBlocked = adaptedEnabled && !adaptedEffective;
   container.innerHTML = `
     <div class="page-heading week-heading">
       <div class="week-heading-copy">
@@ -925,6 +1150,13 @@ function renderWeek() {
         <p>Scegli Allenamento o Riposo in ogni giornata per adattare le dosi.</p>
         <div class="week-heading-meta">
           <span class="profile-chip"><span aria-hidden="true">${profileChip.icon}</span><strong>${escapeHtml(profileChip.label)}</strong></span>
+          <span class="week-adapted-row">
+            <span class="switch">
+              <input type="checkbox" role="switch" id="week-adapted-toggle" aria-label="Ricette con quantità adattate alle linee guida" ${adaptedEnabled ? "checked" : ""} onchange="toggleWeekAdaptedQuantities(this.checked)">
+              <span class="switch-track" aria-hidden="true"></span>
+            </span>
+            <span class="week-adapted-copy"><strong>Quantità adattate alle linee guida</strong>${adaptedBlocked ? `<small>Ricette con quantità originali: il nuovo profilo va prima confermato nelle Impostazioni.</small>` : ""}</span>
+          </span>
         </div>
       </div>
       <button class="btn btn-outline week-generate-btn" onclick="openGeneratorModal()">✨ Genera settimana</button>
@@ -1375,8 +1607,16 @@ window.createNewRecipe = function(slot = "lunch", assignDay = null) {
   };
   currentModal = { recipe, original: null, dayKey: DAY_ORDER.includes(assignDay) ? assignDay : null, dayType: DAY_ORDER.includes(assignDay) ? getDayType(assignDay) : getRecipePreviewDayType(), assignAfterSave: DAY_ORDER.includes(assignDay) ? { day: assignDay, slot: selectedSlot } : null, isNew: true };
   editMode = true;
+  setModalTab("tab-ingredients");
   renderModalContent();
   document.getElementById("recipe-modal").classList.remove("hidden");
+  // Solo in creazione: il titolo "Nuova ricetta" viene autofocusato e
+  // selezionato per intero, pronto alla sostituzione con la prima battitura.
+  setTimeout(() => {
+    const titleInput = document.getElementById("edit-recipe-name");
+    titleInput?.focus();
+    try { titleInput?.select?.(); } catch (_) {}
+  }, 60);
 };
 
 function duplicatedRecipeFrom(sourceRecipe) {
@@ -1589,7 +1829,7 @@ function groupShoppingEntries(entries) {
 }
 
 function renderShoppingAccessGate(container) {
-  const access = window.PianoSaas?.shoppingAccess?.();
+  const access = window.PianoSaas?.shoppingAccess?.(Date.now(), appState.saasContext);
   if (!access || access.allowed) return false;
   const available = access.reason === "reward-available";
   container.innerHTML = `<section class="shopping-access-gate">
@@ -2076,14 +2316,14 @@ function renderSaasProfileSection() {
     <div><p class="eyebrow">PROFILO NUTRIZIONALE</p><h2>${pending ? "Nuovo profilo da confermare" : "Profilo verificato"}</h2><p class="text-muted">${escapeHtml(profile.ruleSetId)} · versione ${escapeHtml(profile.ruleSetVersion)}</p></div>
     <span class="link-status ${pending ? "" : "active"}">${pending ? "In attesa" : "● Attivo"}</span>
     <p>${pending ? "Per proteggere il piano esistente stai ancora usando le quantità originali. Controlla il cambiamento prima di applicarlo." : "Il piano conserva versione e checksum usati per ogni risoluzione."}</p>
-    ${pending ? `<button class="btn btn-primary" onclick="confirmAssignedNutritionProfile()">Rivedi e applica il profilo</button>` : ""}
+    ${pending ? `<button class="btn btn-primary" onclick="openProfileUpdateModal()">Rivedi e applica il profilo</button>` : ""}
   </section>`;
 }
 
 window.confirmAssignedNutritionProfile = async function() {
   const profile = appState.saasContext?.profile;
   if (!profile || !window.PianoSaas) return;
-  if (!confirm("Applicare il nuovo profilo ai pasti futuri? Le ricette originali resteranno invariate e la lista della spesa rifletterà le nuove dosi.")) return;
+  // La conferma è la modale "Aggiornamento disponibile": niente apply silenzioso.
   appState.plan.nutritionSnapshot = PianoSaas.snapshotFor(profile);
   DAY_ORDER.forEach(day => {
     appState.plan.mellerModes[day] = { ...(appState.plan.mellerModes[day] || {}), lunch: "meller", dinner: "meller" };
@@ -2091,7 +2331,9 @@ window.confirmAssignedNutritionProfile = async function() {
   try {
     await saveWeeklyPlan(appState.plan);
     appState.saasPolicy = { plan: appState.plan, mode: "assigned", migrationRequired: false };
+    closeProfileUpdateModal();
     renderSettings();
+    handleRoute();
     showToast("Profilo applicato. Le ricette originali sono al sicuro ✅");
   } catch (error) {
     showToast("Impossibile applicare il profilo", true);
@@ -2394,6 +2636,57 @@ window.applyRecipeImport = async function(mode) {
     clearLoading();
   }
 };
+
+// ---- Modale aggiornamento profilo nutrizionale (SaaS) ----
+// Popup evidente quando arriva una nuova struttura/revisione: copy non
+// tecnico, accessibile (dialog, Escape), nessuna modifica senza conferma.
+function setupProfileUpdateModal() {
+  if (document.getElementById("profile-update-modal")) return;
+  document.body.insertAdjacentHTML("beforeend", `
+    <div id="profile-update-modal" class="modal hidden" role="dialog" aria-modal="true" aria-labelledby="profile-update-title" aria-describedby="profile-update-copy">
+      <div class="modal-content profile-update-content">
+        <div class="modal-header"><div><p class="eyebrow">AGGIORNAMENTO DISPONIBILE</p><h2 id="profile-update-title">Il tuo piano è stato aggiornato dal tuo nutrizionista</h2></div></div>
+        <div id="profile-update-copy" class="profile-update-copy">
+          <p>È arrivata una nuova versione delle linee guida del tuo piano.</p>
+          <ul class="profile-update-points">
+            <li><strong>Niente cambia senza la tua conferma:</strong> finché non applichi l'aggiornamento, continui a vedere le quantità originali delle tue ricette.</li>
+            <li><strong>Le tue ricette sono al sicuro:</strong> non vengono modificate né cancellate dall'aggiornamento.</li>
+            <li>Potrai comunque scegliere per ogni pasto se usare le dosi adattate o quelle originali.</li>
+          </ul>
+        </div>
+        <div class="modal-footer profile-update-actions">
+          <button class="btn btn-outline" onclick="closeProfileUpdateModal()">Più tardi</button>
+          <button class="btn btn-primary" onclick="confirmAssignedNutritionProfile()">Applica aggiornamento</button>
+        </div>
+      </div>
+    </div>`);
+  bindModalOutsideClose("profile-update-modal", () => window.closeProfileUpdateModal());
+  document.addEventListener("keydown", event => {
+    if (event.key === "Escape") closeProfileUpdateModal();
+  });
+}
+
+window.closeProfileUpdateModal = function() {
+  document.getElementById("profile-update-modal")?.classList.add("hidden");
+};
+
+window.openProfileUpdateModal = function() {
+  setupProfileUpdateModal();
+  document.getElementById("profile-update-modal").classList.remove("hidden");
+  setTimeout(() => document.querySelector("#profile-update-modal .btn-primary")?.focus(), 60);
+};
+
+// Mostrato una sola volta per versione profilo e solo quando serve conferma.
+function maybePromptProfileUpdate() {
+  if (!appState.saasPolicy?.migrationRequired) return;
+  const version = appState.saasContext?.profile?.ruleSetVersion;
+  const key = `pn_profile_update_shown_${appState.user?.uid || "user"}`;
+  let seen;
+  try { seen = JSON.parse(localStorage.getItem(key) || "null"); } catch (_) { seen = null; }
+  if (seen && String(seen) === String(version)) return;
+  try { localStorage.setItem(key, JSON.stringify(version ?? null)); } catch (_) {}
+  window.openProfileUpdateModal();
+}
 
 function setupTransferModals() {
   if (document.getElementById("recipe-import-modal")) return;
@@ -3254,6 +3547,10 @@ function setupModal() {
   document.getElementById("modal-edit-btn").addEventListener("click", () => {
     editMode = true;
     currentModal.recipe = clone(currentModal.recipe);
+    // Primo render della modifica: gli ingredienti sono la tab di partenza
+    // (fix storico del tab Preparazione vuoto al primo ingresso per ricette
+    // senza passaggi o note).
+    setModalTab("tab-ingredients");
     renderModalContent();
   });
   document.getElementById("modal-cancel-edit-btn").addEventListener("click", cancelRecipeEdit);
@@ -3407,15 +3704,19 @@ function renderModalContent() {
   const tabsBar = document.querySelector('.tabs');
   // Consultazione = schermata unica: ingredienti e preparazione restano
   // contemporaneamente visibili, come nella sezione DA CUCINARE.
-  // Le tab restano disponibili solo in modalità modifica.
+  // Le tab restano disponibili solo in modalità modifica. La tab "Batch
+  // cooking" è stata rimossa dall'editor (dati batch solo in consultazione):
+  // in modifica note/nota speciale vivono nella tab Preparazione.
   tabsBar?.classList.toggle("hidden", !editMode);
-  document.getElementById("tab-ingredients")?.classList.remove("hidden");
-  document.getElementById("tab-prep")?.classList.toggle("hidden", editMode);
+  if (editMode && !document.querySelector(".tab-btn.active")) setModalTab("tab-ingredients");
+  document.getElementById("tab-ingredients")?.classList.toggle("hidden", editMode && !document.querySelector('.tab-btn[data-target="tab-ingredients"]')?.classList.contains("active"));
+  document.getElementById("tab-prep")?.classList.toggle("hidden", editMode && !document.querySelector('.tab-btn[data-target="tab-prep"]')?.classList.contains("active"));
   // In modifica la visibilità delle tab è gestita dai click; in consultazione
   // (schermata unica) il blocco batch è visibile solo se pertinente.
   if (!editMode) document.getElementById("tab-batch")?.classList.toggle("hidden", !batches);
-  batchTab.classList.toggle("hidden", !batches && !editMode);
-  if (!editMode && document.querySelector('.tab-btn[data-target="tab-batch"]').classList.contains("active") && !batches) setModalTab("tab-ingredients");
+  batchTab.classList.toggle("hidden", !batches || editMode);
+  const batchButtonActive = document.querySelector('.tab-btn[data-target="tab-batch"]')?.classList.contains("active");
+  if (batchButtonActive && (editMode || !batches)) setModalTab("tab-ingredients");
 
   document.getElementById("modal-title").innerHTML = editMode
     ? `<input id="edit-recipe-name" class="modal-title-input" value="${escapeAttr(recipe.name)}" oninput="updateMellerEditorNotice()">`
@@ -3460,11 +3761,20 @@ function renderModalContent() {
 
   const ingredientList = document.getElementById("modal-ingredients-list");
   if (editMode) {
-    ingredientList.innerHTML = recipe.ingredients.map((ingredient, index) => `
-      <li class="edit-ingredient" data-index="${index}">
-        <input id="edit-ing-name-${index}" aria-label="Ingrediente" value="${escapeAttr(ingredient.name)}" oninput="updateMellerEditorNotice()">
-        <div class="portion-edit-grid"><label>IPO · Allenamento<input id="edit-ing-ipo-training-${index}" value="${escapeAttr(getPortionValue(ingredient, "ipo", "training"))}" oninput="updateMellerEditorNotice()"></label><label>IPO · Riposo<input id="edit-ing-ipo-rest-${index}" value="${escapeAttr(getPortionValue(ingredient, "ipo", "rest"))}" oninput="updateMellerEditorNotice()"></label><label>Uomo · Allenamento<input id="edit-ing-man-training-${index}" value="${escapeAttr(getPortionValue(ingredient, "man", "training"))}" oninput="updateMellerEditorNotice()"></label><label>Uomo · Riposo<input id="edit-ing-man-rest-${index}" value="${escapeAttr(getPortionValue(ingredient, "man", "rest"))}" oninput="updateMellerEditorNotice()"></label><button class="btn-icon remove-edit-item" onclick="removeIngredient(${index})">×</button></div>
-      </li>`).join("") + `<li><button class="btn btn-outline full-width" onclick="addIngredient()">+ Aggiungi ingrediente</button></li>`;
+    const ingredientMeta = editorIngredientMeta(recipe);
+    ingredientList.innerHTML = recipe.ingredients.map((ingredient, index) => {
+      const meta = ingredientMeta[index];
+      return `
+      <li class="edit-ingredient ${meta.mappingMissing ? "mapping-missing" : ""}" data-index="${index}">
+        <div class="ing-combobox">
+          <input id="edit-ing-name-${index}" aria-label="Ingrediente" value="${escapeAttr(ingredient.name)}" role="combobox" aria-autocomplete="list" aria-expanded="false" aria-controls="ing-suggest-${index}" autocomplete="off" spellcheck="false"
+            oninput="editorIngredientInput(${index}, this)" onkeydown="editorIngredientKeydown(${index}, event)" onfocus="editorIngredientInput(${index}, this)" onblur="editorIngredientBlur(${index})">
+          <div id="ing-suggest-${index}" class="ing-suggest hidden" role="listbox" aria-label="Suggerimenti dal catalogo ingredienti"></div>
+          ${meta.mappingMissing ? `<small class="ing-mapping-flag" title="Non presente nel catalogo Meller: nessuna quantità verrà adattata per questo ingrediente">⚠ mapping mancante</small>` : ""}
+        </div>
+        <div class="portion-edit-grid portion-edit-grid-single"><label>Quantità · Donna IPO<input id="edit-ing-ipo-${index}" value="${escapeAttr(getPortionValue(ingredient, "ipo", "training"))}" oninput="updateMellerEditorNotice()"></label><label>Quantità · Uomo<input id="edit-ing-man-${index}" value="${escapeAttr(getPortionValue(ingredient, "man", "training"))}" oninput="updateMellerEditorNotice()"></label><button class="btn-icon remove-edit-item" aria-label="Rimuovi ingrediente" onclick="removeIngredient(${index})">×</button></div>
+      </li>`;
+    }).join("") + `<li><button class="btn btn-outline full-width" onclick="addIngredient()">+ Aggiungi ingrediente</button></li>`;
   } else {
     const items = displayRecipe.ingredients.map(ingredient => ({ ing: ingredient, adapted: Boolean(plannedResolution?.applied) }));
     const hasMeller = items.some(({ ing }) => !!getMellerAlternativesForIngredient(ing.name));
@@ -3486,10 +3796,16 @@ function renderModalContent() {
     if (recipe.notes?.length) prepList.innerHTML += `<li class="recipe-notes"><strong>Note</strong><ul>${recipe.notes.map(note => `<li>${escapeHtml(note)}</li>`).join("")}</ul></li>`;
   }
 
+  // In modifica nota speciale e note vivono nella tab Preparazione
+  // (la tab Batch cooking non è più presente nell'editor).
+  const editNotesContent = document.getElementById("modal-edit-notes");
   const batchContent = document.getElementById("modal-batch-text");
   if (editMode) {
-    batchContent.innerHTML = `<label class="full-field">Nota speciale<textarea id="edit-recipe-special">${escapeHtml(recipe.specialNote || "")}</textarea></label><label class="full-field">Note (una per riga)<textarea id="edit-recipe-notes">${escapeHtml((recipe.notes || []).join("\n"))}</textarea></label>`;
+    document.getElementById("tab-prep")?.classList.toggle("hidden", !document.querySelector('.tab-btn[data-target="tab-prep"]')?.classList.contains("active"));
+    if (editNotesContent) editNotesContent.innerHTML = `<label class="full-field">Nota speciale<textarea id="edit-recipe-special">${escapeHtml(recipe.specialNote || "")}</textarea></label><label class="full-field">Note (una per riga)<textarea id="edit-recipe-notes">${escapeHtml((recipe.notes || []).join("\n"))}</textarea></label>`;
+    batchContent.textContent = "";
   } else if (batches && batches.length) {
+    if (editNotesContent) editNotesContent.innerHTML = "";
     batchContent.innerHTML = batches.map(batch => `
       <div class="batch-modal">
         <h3>${escapeHtml(batch.template.title || "Preparazioni in anticipo")}</h3>
@@ -3699,14 +4015,18 @@ function captureEditState() {
   recipe.emoji = document.getElementById("edit-recipe-emoji")?.value.trim() || "🍲";
   recipe.slot = document.getElementById("edit-recipe-slot")?.value || "lunch";
   recipe.proteinCategory = document.getElementById("edit-recipe-category")?.value.trim() || "";
+  // Schema 6: una sola quantità originale per profilo (le dosi di riposo sono
+  // derivate dal piano). Il mapping al catalogo vive su ingredientId.
+  const ingredientMeta = editorIngredientMeta(recipe);
   recipe.ingredients.forEach((ingredient, index) => {
     ingredient.name = document.getElementById(`edit-ing-name-${index}`)?.value.trim() || "Ingrediente";
     ingredient.portions = {
-      ipoTraining: document.getElementById(`edit-ing-ipo-training-${index}`)?.value.trim() || "—",
-      ipoRest: document.getElementById(`edit-ing-ipo-rest-${index}`)?.value.trim() || "—",
-      manTraining: document.getElementById(`edit-ing-man-training-${index}`)?.value.trim() || "—",
-      manRest: document.getElementById(`edit-ing-man-rest-${index}`)?.value.trim() || "—"
+      ipo: document.getElementById(`edit-ing-ipo-${index}`)?.value.trim() || "—",
+      man: document.getElementById(`edit-ing-man-${index}`)?.value.trim() || "—"
     };
+    const metaId = ingredientMeta[index]?.ingredientId || "";
+    if (metaId) ingredient.ingredientId = metaId;
+    else delete ingredient.ingredientId;
   });
   recipe.steps = recipe.steps.map((_, index) => document.getElementById(`edit-step-${index}`)?.value.trim() || "");
   recipe.specialNote = document.getElementById("edit-recipe-special")?.value.trim() || "";
@@ -3718,12 +4038,16 @@ function captureEditState() {
 
 window.addIngredient = function() {
   captureEditState();
-  currentModal.recipe.ingredients.push({ name: "Nuovo ingrediente", portions: { ipoTraining: "—", ipoRest: "—", manTraining: "—", manRest: "—" } });
+  currentModal.recipe.ingredients.push({ name: "", portions: { ipo: "—", man: "—" } });
   renderModalContent();
+  // Focus sulla riga appena creata per accelerare l'inserimento.
+  const index = currentModal.recipe.ingredients.length - 1;
+  setTimeout(() => document.getElementById(`edit-ing-name-${index}`)?.focus(), 40);
 };
 
 window.removeIngredient = function(index) {
   captureEditState();
+  hideEditorSuggest(index);
   currentModal.recipe.ingredients.splice(index, 1);
   renderModalContent();
 };
@@ -3751,6 +4075,8 @@ window.moveStep = function(index, direction) {
 async function saveRecipeEdit(forceMellerDecision = false) {
   captureEditState();
   let recipe = currentModal.recipe;
+  // Lo scratch dell'editor (suggerimenti catalogo) non viene mai persistito.
+  delete recipe._ingredientMeta;
   // Il pulsante generico di salvataggio e “Salva comunque” salvano sempre la
   // sorgente originale quando l'editor sta mostrando un preview adattato.
   if (currentModal.mellerPreviewActive && currentModal.mellerPreviewOriginal && !currentModal.mellerSaveWithAdaptation) {
@@ -3758,8 +4084,10 @@ async function saveRecipeEdit(forceMellerDecision = false) {
     recipe = currentModal.recipe;
     forceMellerDecision = true;
   }
-  if (!recipe.ingredients.length || !recipe.steps.length) {
-    showToast("Aggiungi almeno un ingrediente e un passaggio", true);
+  // Preparazione opzionale: una ricetta può essere salvata anche senza
+  // passaggi (utile per cibi già pronti o schede in lavorazione).
+  if (!recipe.ingredients.length) {
+    showToast("Aggiungi almeno un ingrediente", true);
     return;
   }
   const mellerCheck = window.PianoDomain?.checkMellerContext?.(recipe, recipe.slot);

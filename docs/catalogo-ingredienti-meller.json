@@ -1,0 +1,692 @@
+{
+  "schemaVersion": 1,
+  "source": "js/domain.js — MELLER_GRAMMATURE",
+  "notes": [
+    "Le righe rappresentano famiglie canoniche, non un catalogo esaustivo di singoli prodotti.",
+    "Le quantità sono grammi di riferimento per pranzo/cena e giorno allenamento/riposo.",
+    "Le espressioni recognizedPattern sono le regole attuali di riconoscimento; il loro ordine è significativo.",
+    "Gli ingredienti free non hanno quantità adattate."
+  ],
+  "categories": {
+    "carb": "Carboidrati",
+    "protein": "Proteine",
+    "dairy": "Latticini",
+    "fat": "Grassi",
+    "sweet": "Dolci",
+    "fruit": "Frutta"
+  },
+  "guidedRules": [
+    {
+      "family": "gnocchi",
+      "category": "carb",
+      "label": "Gnocchi",
+      "recognizedPattern": "gnocch",
+      "quantitiesGrams": {
+        "lunch": {
+          "training": 250,
+          "rest": 190
+        },
+        "dinner": {
+          "training": 120,
+          "rest": 120
+        }
+      },
+      "alternativeTableLabels": [
+        "Gnocchi di patate"
+      ]
+    },
+    {
+      "family": "polenta",
+      "category": "carb",
+      "label": "Polenta",
+      "recognizedPattern": "polenta",
+      "quantitiesGrams": {
+        "lunch": {
+          "training": 430,
+          "rest": 340
+        },
+        "dinner": {
+          "training": 220,
+          "rest": 220
+        }
+      },
+      "alternativeTableLabels": [
+        "Polenta cotta"
+      ]
+    },
+    {
+      "family": "piadina",
+      "category": "carb",
+      "label": "Piadina",
+      "recognizedPattern": "piadina|tortilla",
+      "quantitiesGrams": {
+        "lunch": {
+          "training": 110,
+          "rest": 80
+        },
+        "dinner": {
+          "training": 50,
+          "rest": 50
+        }
+      },
+      "alternativeTableLabels": [
+        "Piadina"
+      ]
+    },
+    {
+      "family": "pseudo",
+      "category": "carb",
+      "label": "Quinoa/Grano saraceno/Amaranto",
+      "recognizedPattern": "quinoa|grano saraceno|amaranto",
+      "quantitiesGrams": {
+        "lunch": {
+          "training": 80,
+          "rest": 60
+        },
+        "dinner": {
+          "training": 40,
+          "rest": 40
+        }
+      },
+      "alternativeTableLabels": [
+        "Quinoa, Grano Saraceno, Amaranto"
+      ]
+    },
+    {
+      "family": "couscous",
+      "category": "carb",
+      "label": "Cous cous",
+      "recognizedPattern": "cous.?cous",
+      "quantitiesGrams": {
+        "lunch": {
+          "training": 80,
+          "rest": 60
+        },
+        "dinner": {
+          "training": 40,
+          "rest": 40
+        }
+      },
+      "alternativeTableLabels": [
+        "Cous cous"
+      ]
+    },
+    {
+      "family": "farroorzo",
+      "category": "carb",
+      "label": "Farro/Orzo",
+      "recognizedPattern": "\\b(farro|orzo)\\b",
+      "quantitiesGrams": {
+        "lunch": {
+          "training": 90,
+          "rest": 70
+        },
+        "dinner": {
+          "training": 40,
+          "rest": 40
+        }
+      },
+      "alternativeTableLabels": [
+        "Farro, Orzo"
+      ]
+    },
+    {
+      "family": "pasta",
+      "category": "carb",
+      "label": "Pasta",
+      "recognizedPattern": "pasta|spaghetti|penne|rigatoni|linguine|tagliatelle|lasagne|trofie|fusilli",
+      "quantitiesGrams": {
+        "lunch": {
+          "training": 90,
+          "rest": 70
+        },
+        "dinner": {
+          "training": 40,
+          "rest": 40
+        }
+      },
+      "alternativeTableLabels": [
+        "Pasta, Riso"
+      ]
+    },
+    {
+      "family": "riso",
+      "category": "carb",
+      "label": "Riso",
+      "recognizedPattern": "\\briso\\b|risotto",
+      "quantitiesGrams": {
+        "lunch": {
+          "training": 90,
+          "rest": 70
+        },
+        "dinner": {
+          "training": 40,
+          "rest": 40
+        }
+      },
+      "alternativeTableLabels": []
+    },
+    {
+      "family": "crackers",
+      "category": "carb",
+      "label": "Crackers/Grissini/Crostini",
+      "recognizedPattern": "cracker|grissin|crostin",
+      "quantitiesGrams": {
+        "lunch": {
+          "training": 70,
+          "rest": 60
+        },
+        "dinner": {
+          "training": 40,
+          "rest": 40
+        }
+      },
+      "alternativeTableLabels": [
+        "Crackers, Grissini, Crostini"
+      ]
+    },
+    {
+      "family": "patate",
+      "category": "carb",
+      "label": "Patate",
+      "recognizedPattern": "patat",
+      "quantitiesGrams": {
+        "lunch": {
+          "training": 450,
+          "rest": 350
+        },
+        "dinner": {
+          "training": 230,
+          "rest": 230
+        }
+      },
+      "alternativeTableLabels": [
+        "Patate"
+      ]
+    },
+    {
+      "family": "pane",
+      "category": "carb",
+      "label": "Pane",
+      "recognizedPattern": "\\bpane\\b|fette biscottate|wasa",
+      "quantitiesGrams": {
+        "lunch": {
+          "training": 120,
+          "rest": 90
+        },
+        "dinner": {
+          "training": 60,
+          "rest": 60
+        }
+      },
+      "alternativeTableLabels": [
+        "Pane"
+      ]
+    },
+    {
+      "family": "pollame",
+      "category": "protein",
+      "label": "Pollame",
+      "recognizedPattern": "pollo|tacchino|faraona|pollame",
+      "quantitiesGrams": {
+        "lunch": {
+          "training": 200,
+          "rest": 200
+        },
+        "dinner": {
+          "training": 200,
+          "rest": 200
+        }
+      },
+      "alternativeTableLabels": [
+        "Pollame"
+      ]
+    },
+    {
+      "family": "manzo",
+      "category": "protein",
+      "label": "Manzo/Vitello",
+      "recognizedPattern": "manzo|vitello|roastbeef|hamburger",
+      "quantitiesGrams": {
+        "lunch": {
+          "training": 150,
+          "rest": 150
+        },
+        "dinner": {
+          "training": 150,
+          "rest": 150
+        }
+      },
+      "alternativeTableLabels": [
+        "Manzo, tagli magri"
+      ]
+    },
+    {
+      "family": "maiale",
+      "category": "protein",
+      "label": "Maiale",
+      "recognizedPattern": "maiale|lonza|pork",
+      "quantitiesGrams": {
+        "lunch": {
+          "training": 100,
+          "rest": 100
+        },
+        "dinner": {
+          "training": 100,
+          "rest": 100
+        }
+      },
+      "alternativeTableLabels": [
+        "Maiale, tagli magri"
+      ]
+    },
+    {
+      "family": "salumi",
+      "category": "protein",
+      "label": "Affettati/Salumi",
+      "recognizedPattern": "affettat|prosciutto|salume|salumi|speck|bresaola|mortadella|salame|wurstel|salsiccia",
+      "quantitiesGrams": {
+        "lunch": {
+          "training": 100,
+          "rest": 100
+        },
+        "dinner": {
+          "training": 100,
+          "rest": 100
+        }
+      },
+      "alternativeTableLabels": [
+        "Affettati sgrassati / Salumi magri"
+      ]
+    },
+    {
+      "family": "pesceOmega",
+      "category": "protein",
+      "label": "Pesce azzurro/omega-3",
+      "recognizedPattern": "salmone|sgombro|sardine?|aringa|alice|acciug",
+      "quantitiesGrams": {
+        "lunch": {
+          "training": 100,
+          "rest": 100
+        },
+        "dinner": {
+          "training": 100,
+          "rest": 100
+        }
+      },
+      "alternativeTableLabels": [
+        "Pesce in scatola sott'olio / Salmone / Sgombro"
+      ]
+    },
+    {
+      "family": "molluschi",
+      "category": "protein",
+      "label": "Crostacei/Molluschi",
+      "recognizedPattern": "gamber|crostace|mollusch|calamar|polpo|seppi|cozze|vongole",
+      "quantitiesGrams": {
+        "lunch": {
+          "training": 300,
+          "rest": 300
+        },
+        "dinner": {
+          "training": 300,
+          "rest": 300
+        }
+      },
+      "alternativeTableLabels": [
+        "Crostacei, Molluschi"
+      ]
+    },
+    {
+      "family": "tonno",
+      "category": "protein",
+      "label": "Tonno",
+      "recognizedPattern": "tonno",
+      "quantitiesGrams": {
+        "lunch": {
+          "training": 150,
+          "rest": 150
+        },
+        "dinner": {
+          "training": 150,
+          "rest": 150
+        }
+      },
+      "alternativeTableLabels": [
+        "Pesce in scatola al naturale"
+      ]
+    },
+    {
+      "family": "pesceBianco",
+      "category": "protein",
+      "label": "Pesce bianco",
+      "recognizedPattern": "merluzzo|nasello|sogliola|orata|branzino|spigola|trota|platessa|\\bpesce\\b",
+      "quantitiesGrams": {
+        "lunch": {
+          "training": 250,
+          "rest": 250
+        },
+        "dinner": {
+          "training": 250,
+          "rest": 250
+        }
+      },
+      "alternativeTableLabels": [
+        "Merluzzo / Nasello / Sogliola"
+      ]
+    },
+    {
+      "family": "legumotti",
+      "category": "protein",
+      "label": "Legumotti",
+      "recognizedPattern": "legumott",
+      "quantitiesGrams": {
+        "lunch": {
+          "training": 80,
+          "rest": 80
+        },
+        "dinner": {
+          "training": 80,
+          "rest": 80
+        }
+      },
+      "alternativeTableLabels": [
+        "Legumotti Barilla"
+      ]
+    },
+    {
+      "family": "legumi",
+      "category": "protein",
+      "label": "Legumi",
+      "recognizedPattern": "legumi|ceci|lenticch|fagiol|pisell|edamame|soia|tofu|tempeh",
+      "quantitiesGrams": {
+        "lunch": {
+          "training": 240,
+          "rest": 240
+        },
+        "dinner": {
+          "training": 240,
+          "rest": 240
+        }
+      },
+      "alternativeTableLabels": [
+        "Legumi in scatola o bolliti"
+      ]
+    },
+    {
+      "family": "uova",
+      "category": "protein",
+      "label": "Uova",
+      "recognizedPattern": "\\buov|albume|tuorlo",
+      "quantitiesGrams": {
+        "lunch": {
+          "training": 180,
+          "rest": 180
+        },
+        "dinner": {
+          "training": 180,
+          "rest": 180
+        }
+      },
+      "alternativeTableLabels": [
+        "Uova intere"
+      ]
+    },
+    {
+      "family": "fiocchiLatte",
+      "category": "protein",
+      "label": "Fiocchi di latte",
+      "recognizedPattern": "fiocchi di latte",
+      "quantitiesGrams": {
+        "lunch": {
+          "training": 180,
+          "rest": 180
+        },
+        "dinner": {
+          "training": 180,
+          "rest": 180
+        }
+      },
+      "alternativeTableLabels": [
+        "Fiocchi di latte / Uova intere"
+      ]
+    },
+    {
+      "family": "formaggi",
+      "category": "protein",
+      "label": "Formaggi",
+      "recognizedPattern": "formaggi|parmigiano|grana|pecorino|mozzarella|ricotta|stracchino|scamorza|feta|emmental|montasio|caprino|crescenza|robiola",
+      "quantitiesGrams": {
+        "lunch": {
+          "training": 50,
+          "rest": 50
+        },
+        "dinner": {
+          "training": 50,
+          "rest": 50
+        }
+      },
+      "alternativeTableLabels": [
+        "Montasio / Grana"
+      ]
+    },
+    {
+      "family": "olio",
+      "category": "fat",
+      "label": "Olio EVO",
+      "recognizedPattern": "olio|extravergine|evo\\b",
+      "quantitiesGrams": {
+        "lunch": {
+          "training": 10,
+          "rest": 10
+        },
+        "dinner": {
+          "training": 10,
+          "rest": 10
+        }
+      },
+      "alternativeTableLabels": []
+    }
+  ],
+  "freeIngredientPatterns": [
+    "zucchin",
+    "pomodor",
+    "melanzan",
+    "peperon",
+    "broccol",
+    "cavolfior",
+    "cavol",
+    "asparag",
+    "bietol",
+    "radicch",
+    "ravanell",
+    "zucca",
+    "verza",
+    "spinac",
+    "rucola",
+    "lattug",
+    "insalat",
+    "cetriol",
+    "carot",
+    "sedan",
+    "cipoll",
+    "finocch",
+    "fagiolin",
+    "fungh",
+    "verdura",
+    "ortaggi",
+    "basilic",
+    "prezzemol",
+    "rosmarin",
+    "salvia",
+    "origano",
+    "timo",
+    "menta",
+    "erbe aromatiche",
+    "spezi",
+    "pepe",
+    "paprika",
+    "curcuma",
+    "curry",
+    "noce moscata",
+    "aglio",
+    "zenzero",
+    "sale",
+    "limon",
+    "lime",
+    "aceto",
+    "acqua",
+    "brodo",
+    "passata di pomodoro",
+    "passata"
+  ],
+  "proteinWeeklyFrequencies": [
+    {
+      "key": "poultry",
+      "label": "Pollame",
+      "min": 1,
+      "max": 2
+    },
+    {
+      "key": "beef",
+      "label": "Manzo e maiale",
+      "min": 0,
+      "max": 1
+    },
+    {
+      "key": "curedMeats",
+      "label": "Affettati e carni miste",
+      "min": 0,
+      "max": 1
+    },
+    {
+      "key": "omega",
+      "label": "Pesce ricco di omega-3 (salmone, sgombro, sardine, aringhe, alici/acciughe)",
+      "min": 2,
+      "max": 3
+    },
+    {
+      "key": "otherFish",
+      "label": "Altro pesce e prodotti ittici",
+      "min": 1,
+      "max": 2
+    },
+    {
+      "key": "dairy",
+      "label": "Latticini e formaggi",
+      "min": 1,
+      "max": 2
+    },
+    {
+      "key": "eggs",
+      "label": "Uova",
+      "min": 1,
+      "max": 2
+    },
+    {
+      "key": "legumes",
+      "label": "Legumi e derivati",
+      "min": 3,
+      "max": 14
+    }
+  ],
+  "carbohydrateAlternatives": [
+    {
+      "label": "Pasta, Riso",
+      "family": "pasta",
+      "also": [
+        "riso"
+      ]
+    },
+    {
+      "label": "Gnocchi di patate",
+      "family": "gnocchi"
+    },
+    {
+      "label": "Farro, Orzo",
+      "family": "farroorzo"
+    },
+    {
+      "label": "Quinoa, Grano Saraceno, Amaranto",
+      "family": "pseudo"
+    },
+    {
+      "label": "Cous cous",
+      "family": "couscous"
+    },
+    {
+      "label": "Pane",
+      "family": "pane"
+    },
+    {
+      "label": "Piadina",
+      "family": "piadina"
+    },
+    {
+      "label": "Crackers, Grissini, Crostini",
+      "family": "crackers"
+    },
+    {
+      "label": "Polenta cotta",
+      "family": "polenta"
+    },
+    {
+      "label": "Patate",
+      "family": "patate"
+    }
+  ],
+  "proteinAlternatives": [
+    {
+      "label": "Pollame",
+      "family": "pollame"
+    },
+    {
+      "label": "Manzo, tagli magri",
+      "family": "manzo"
+    },
+    {
+      "label": "Maiale, tagli magri",
+      "family": "maiale"
+    },
+    {
+      "label": "Affettati sgrassati / Salumi magri",
+      "family": "salumi"
+    },
+    {
+      "label": "Crostacei, Molluschi",
+      "family": "molluschi"
+    },
+    {
+      "label": "Merluzzo / Nasello / Sogliola",
+      "family": "pesceBianco"
+    },
+    {
+      "label": "Pesce in scatola al naturale",
+      "family": "tonno"
+    },
+    {
+      "label": "Pesce in scatola sott'olio / Salmone / Sgombro",
+      "family": "pesceOmega"
+    },
+    {
+      "label": "Fiocchi di latte / Uova intere",
+      "family": "fiocchiLatte"
+    },
+    {
+      "label": "Uova intere",
+      "family": "uova"
+    },
+    {
+      "label": "Montasio / Grana",
+      "family": "formaggi"
+    },
+    {
+      "label": "Legumi in scatola o bolliti",
+      "family": "legumi"
+    },
+    {
+      "label": "Legumotti Barilla",
+      "family": "legumotti"
+    }
+  ]
+}

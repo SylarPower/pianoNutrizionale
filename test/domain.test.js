@@ -25,12 +25,12 @@ function planWith(days, extra = {}) {
 
 // ---- Migrazioni schema 3 → 4 ----
 
-test('migrazione ricetta schema 3 → 4: ingredientId e porzioni legacy', () => {
+test('migrazione ricetta 3 → schema corrente: ingredientId e porzione singola per profilo', () => {
   const migrated = d.migrateRecipe(recipe('R1', 'Uova', 'lunch', [ingredient('Uova intere (sode)')], 'Uova'));
   assert.equal(migrated.ingredients[0].ingredientId, 'whole-eggs');
-  assert.deepEqual(migrated.ingredients[0].portions, {
-    ipoTraining: '60g', ipoRest: '60g', manTraining: '90g', manRest: '70g'
-  });
+  // Schema 6: le porzioni legacy 4-campi convergono in un'unica quantità
+  // originale per profilo; il valore conservato è quello di allenamento.
+  assert.deepEqual(migrated.ingredients[0].portions, { ipo: '60g', man: '90g' });
 });
 
 test('migrazione idempotente', () => {
@@ -39,9 +39,9 @@ test('migrazione idempotente', () => {
   assert.deepEqual(once, twice);
 });
 
-test('migrazione catalogo a schema 5 con alias incorporati', () => {
+test('migrazione catalogo allo schema corrente con alias incorporati', () => {
   const catalog = d.migrateCatalog({ schemaVersion: 3, recipes: [recipe('R1', 'X', 'lunch', [ingredient('Pomodorini')])] });
-  assert.equal(catalog.schemaVersion, 5);
+  assert.equal(catalog.schemaVersion, d.VERSION);
   assert.equal(catalog.recipeCount, 1);
   assert.equal(catalog.ingredientAliases['pomodorini'], 'cherry-tomatoes');
 });
@@ -51,7 +51,7 @@ test('migrazione piano: batchRules testuali → batchTemplates strutturati', () 
     batchRules: { monday: { dinner: 'C1', nextLunch: 'P1', actions: ['[5 min] Prepara il riso'] } }
   });
   const migrated = d.migratePlan(plan);
-  assert.equal(migrated.schemaVersion, 5);
+  assert.equal(migrated.schemaVersion, d.VERSION);
   assert.equal(migrated.batchTemplates.length, 1);
   assert.equal(migrated.batchTemplates[0].anchor.recipeId, 'C1');
   assert.equal(migrated.batchTemplates[0].target.recipeId, 'P1');
@@ -131,7 +131,7 @@ test('lista spesa aggrega per ingredientId (nomi diversi convergono)', () => {
   assert.equal(eggs.totals.pz, 4);
   const rice = list.find(entry => entry.ingredientId === 'riso-venere');
   assert.ok(rice, 'riso venere presente');
-  assert.equal(rice.totals.g, 250); // L5 90g (A) + D3 90g (A) + D6 70g (R) profilo uomo
+  assert.equal(rice.totals.g, 270); // L5 90g + D3 90g + D6 90g: porzione originale unica per profilo (schema 6)
 });
 
 test('profilo Uomo usa dosi man', () => {
@@ -297,65 +297,67 @@ test('isPranzoCenaCross solo tra pranzo e cena', () => {
   assert.equal(d.isPranzoCenaCross('breakfast', 'lunch'), false);
 });
 
-test('trasforma carboidrato cena -> pranzo (A: 60g -> 120g, R mantiene rapporto 90g)', () => {
-  const pane = ingredient('Pane', { ipoTraining: '60g', ipoRest: '60g', manTraining: '60g', manRest: '60g' }, 'bread');
+test('trasforma carboidrato cena -> pranzo (porzione unica per profilo, tabella pranzo A/R)', () => {
+  const pane = ingredient('Pane', { ipo: '60g', man: '60g' }, 'bread');
   const adapted = d.adaptIngredientForSlot(pane, 'dinner', 'lunch');
-  assert.equal(adapted.portions.manTraining, '120g');
-  assert.equal(adapted.portions.manRest, '90g');
-  assert.equal(adapted.portions.ipoTraining, '120g');
-  assert.equal(adapted.portions.ipoRest, '90g');
+  assert.equal(adapted.portions.man, '120g');
+  assert.equal(adapted.portions.ipo, '120g');
+  const adaptedRest = d.adaptIngredientForSlot(pane, 'dinner', 'lunch', 'rest');
+  assert.equal(adaptedRest.portions.man, '90g');
+  assert.equal(adaptedRest.portions.ipo, '90g');
   assert.equal(adapted.name, 'Pane');
   assert.equal(adapted.ingredientId, 'bread');
 });
 
-test('trasforma carboidrato pranzo -> cena (pane 120g -> 60g)', () => {
-  const pane = ingredient('Pane', { ipoTraining: '120g', ipoRest: '90g', manTraining: '120g', manRest: '90g' }, 'bread');
+test('trasforma carboidrato pranzo -> cena (pane: dose cena unica 60g)', () => {
+  const pane = ingredient('Pane', { ipo: '120g', man: '120g' }, 'bread');
   const adapted = d.adaptIngredientForSlot(pane, 'lunch', 'dinner');
-  assert.equal(adapted.portions.manTraining, '60g');
-  assert.equal(adapted.portions.manRest, '60g');
+  assert.equal(adapted.portions.man, '60g');
+  assert.equal(adapted.portions.ipo, '60g');
+  const adaptedRest = d.adaptIngredientForSlot(pane, 'lunch', 'dinner', 'rest');
+  assert.equal(adaptedRest.portions.man, '60g');
 });
 
 test('pranzo -> cena: la pasta resta pasta e usa la dose cena Meller', () => {
-  const pasta = ingredient('Pasta di semola', { ipoTraining: '90g', ipoRest: '70g', manTraining: '90g', manRest: '70g' });
+  const pasta = ingredient('Pasta di semola', { ipo: '90g', man: '90g' });
   const adapted = d.adaptIngredientForSlot(pasta, 'lunch', 'dinner');
   assert.equal(adapted.name, 'Pasta di semola');
   assert.equal(adapted.ingredientId, 'pasta-di-semola');
-  assert.equal(adapted.portions.manTraining, '40g'); // tabella: pranzo R 70g -> cena 40g
-  assert.equal(adapted.portions.manRest, '40g');
-  assert.equal(adapted.portions.ipoTraining, '40g');
-  assert.equal(adapted.portions.ipoRest, '40g');
+  assert.equal(adapted.portions.man, '40g'); // tabella: dose cena unica della pasta
+  assert.equal(adapted.portions.ipo, '40g');
 });
 
 test('pranzo -> cena: dose cena dalla tabella', () => {
   // La dose cena viene dalla tabella, non dalla dose personalizzata.
-  const patate = ingredient('Patate', { ipoTraining: '—', ipoRest: '—', manTraining: '470g', manRest: '350g' });
+  const patate = ingredient('Patate', { ipo: '—', man: '470g' });
   const adapted = d.adaptIngredientForSlot(patate, 'lunch', 'dinner');
   assert.equal(adapted.name, 'Patate');
-  assert.equal(adapted.portions.manTraining, '230g');
-  assert.equal(adapted.portions.manRest, '230g');
+  assert.equal(adapted.portions.man, '230g');
+  assert.equal(adapted.portions.ipo, '230g');
 });
 
 test('cena -> pranzo: pranzo A/R dalla tabella', () => {
-  // Il ritorno legge pranzo A/R dalla tabella.
-  const patate = ingredient('Patate', { ipoTraining: '—', ipoRest: '—', manTraining: '232g', manRest: '232g' });
+  // Il ritorno legge pranzo A/R dalla tabella, selezionata dal tipo di giorno.
+  const patate = ingredient('Patate', { ipo: '—', man: '232g' });
   const adapted = d.adaptIngredientForSlot(patate, 'dinner', 'lunch');
   assert.equal(adapted.name, 'Patate');
-  assert.equal(adapted.portions.manTraining, '450g');
-  assert.equal(adapted.portions.manRest, '350g');
+  assert.equal(adapted.portions.man, '450g');
+  const adaptedRest = d.adaptIngredientForSlot(patate, 'dinner', 'lunch', 'rest');
+  assert.equal(adaptedRest.portions.man, '350g');
 });
 
 test('pranzo -> cena: trofie e cous cous usano la dose cena Meller', () => {
-  const trofie = ingredient('Trofie secche', { ipoTraining: '90g', ipoRest: '70g', manTraining: '90g', manRest: '70g' });
+  const trofie = ingredient('Trofie secche', { ipo: '90g', man: '90g' });
   const adaptedT = d.adaptIngredientForSlot(trofie, 'lunch', 'dinner');
   assert.equal(adaptedT.name, 'Trofie secche');
-  assert.equal(adaptedT.portions.manTraining, '40g');
-  assert.equal(adaptedT.portions.manRest, '40g');
+  assert.equal(adaptedT.portions.man, '40g');
+  assert.equal(adaptedT.portions.ipo, '40g');
 
-  const couscous = ingredient('Cous cous', { ipoTraining: '80g', ipoRest: '60g', manTraining: '80g', manRest: '60g' });
+  const couscous = ingredient('Cous cous', { ipo: '80g', man: '80g' });
   const adaptedC = d.adaptIngredientForSlot(couscous, 'lunch', 'dinner');
   assert.equal(adaptedC.name, 'Cous cous');
-  assert.equal(adaptedC.portions.manTraining, '40g');
-  assert.equal(adaptedC.portions.manRest, '40g');
+  assert.equal(adaptedC.portions.man, '40g');
+  assert.equal(adaptedC.portions.ipo, '40g');
 });
 
 test('ingredienti non carboidrati non vengono trasformati', () => {
@@ -450,12 +452,23 @@ test('batch indipendente da A/R del giorno corrente (domenica R → lunedì A)',
   assert.equal(rice.quantity, '90g'); // man + giorno target A (training)
 });
 
-test('quantità batch dipende dal tipo A/R del giorno target', () => {
+test('quantità batch: piano non contestuale usa la porzione originale qualunque sia il tipo A/R', () => {
   const { days, templates, recipesById } = batchFixture();
   days.monday.type = 'rest';
   const active = d.activeBatch('sunday', planWith(days, { batchTemplates: templates }), templates, recipesById, 'man');
   const rice = active[0].tasks.find(task => task.id === 'cook-rice');
-  assert.equal(rice.quantity, '70g');
+  assert.equal(rice.quantity, '90g');
+});
+
+test('quantità batch: con contesto Meller attivo la dose riposo deriva dalle linee guida', () => {
+  const { days, templates, recipesById } = batchFixture();
+  days.monday.type = 'rest';
+  // Piano migrato (mellerModes + sanitizzazione) = contesto pieno: la dose di
+  // riposo per il riso a pranzo è 70 g dalle linee guida, non una porzione salvata.
+  const plan = d.migratePlan(planWith(days, { batchTemplates: templates }));
+  const active = d.activeBatch('sunday', plan, templates, recipesById, 'man');
+  const rice = active[0].tasks.find(task => task.id === 'cook-rice');
+  assert.equal(rice.quantity, '70 g');
 });
 
 test('batch attraversa domenica → lunedì anche oltre il giorno successivo', () => {
@@ -1090,7 +1103,7 @@ test('buildBackup contiene catalogo, piano, spesa e metadati operazione', () => 
   const plan = d.emptyPlan();
   const shopping = { selectedMeals: {}, includePantry: true, excludedItems: [], customQuantities: {} };
   const backup = d.buildBackup(catalog, plan, shopping, 'import-replace', 'Sostituzione catalogo');
-  assert.equal(backup.schemaVersion, 5);
+  assert.equal(backup.schemaVersion, d.VERSION);
   assert.deepEqual(backup.catalog, catalog);
   assert.deepEqual(backup.plan, plan);
   assert.deepEqual(backup.shoppingList, shopping);
@@ -1130,7 +1143,7 @@ test('migrazione catalogo a schema 5 rimuove frequency da tutte le ricette', () 
       { id: 'B', name: 'B', slot: 'dinner', frequency: '1x', ingredients: [{ name: 'Salmone', portions: PORTIONS }], steps: [] }
     ]
   });
-  assert.equal(catalog.schemaVersion, 5);
+  assert.equal(catalog.schemaVersion, d.VERSION);
   catalog.recipes.forEach(recipe => {
     assert.equal(Object.prototype.hasOwnProperty.call(recipe, 'frequency'), false);
   });
@@ -1388,8 +1401,11 @@ test('categorie spesa: passata di pomodoro e farine in Dispensa', () => {
 // ---------------------------------------------------------------------
 // Grammature del dott. Meller: segnalazione e adattamento one-click.
 // ---------------------------------------------------------------------
+// Schema 6: la quantità originale è una per profilo. Gli argomenti legacy
+// mantengono la semantica (allenamento uomo/donna); le dosi di riposo non
+// vivono più nella ricetta ma derivano dal piano.
 const mportion = (manTraining, manRest = manTraining, ipoTraining = manTraining, ipoRest = manRest) => ({
-  manTraining, manRest, ipoTraining, ipoRest
+  man: manTraining, ipo: ipoTraining
 });
 
 test('Meller: riconosce la famiglia e l\'ordine delle regole', () => {
@@ -1411,10 +1427,10 @@ test('Meller: segnala solo le dosi oltre il riferimento del proprio pasto', () =
   ]);
   const check = d.checkMellerAdaptation(pranzo);
   assert.equal(check.adapted, false);
-  assert.equal(check.summary.length, 2, 'la pasta supera i due riferimenti A/R');
-  assert.deepEqual(check.summary.map(item => item.dayTypeLabel), ['allenamento', 'riposo']);
-  assert.deepEqual(check.summary.map(item => item.expected), [90, 70]);
-  assert.deepEqual(check.summary.map(item => item.actual), [150, 150]);
+  assert.equal(check.summary.length, 1, 'la pasta supera il massimale del pranzo (contesto canonico)');
+  assert.deepEqual(check.summary.map(item => item.dayTypeLabel), ['allenamento']);
+  assert.deepEqual(check.summary.map(item => item.expected), [90]);
+  assert.deepEqual(check.summary.map(item => item.actual), [150]);
 });
 
 test('Linee guida: colazione, spuntini e merenda non sono verificati né adattati', () => {
@@ -1431,14 +1447,21 @@ test('Linee guida: colazione, spuntini e merenda non sono verificati né adattat
   });
 });
 
-test('Linee guida: il riepilogo distingue allenamento e riposo', () => {
-  const onlyRest = recipe('R', 'Pasta', 'lunch', [ingredient('Pasta', mportion('90g'))]);
-  assert.equal(d.checkMellerAdaptation(onlyRest).summary[0].dayTypeLabel, 'riposo');
-  const both = recipe('AR', 'Pasta', 'dinner', [ingredient('Pasta', mportion('100g'))]);
-  assert.equal(d.checkMellerAdaptation(both).summary[0].dayTypeLabel, 'allenamento e riposo');
+test('Linee guida: il riepilogo usa il pasto della ricetta e la dose di riposo deriva dal piano', () => {
+  // Pranzo con 90 g di pasta = dose di allenamento del manuale: nessuna segnalazione.
+  const alignedLunch = recipe('R', 'Pasta', 'lunch', [ingredient('Pasta', mportion('90g'))]);
+  const lunchCheck = d.checkMellerAdaptation(alignedLunch);
+  assert.equal(lunchCheck.adapted, true);
+  assert.equal(lunchCheck.summary.length, 0, 'la dose di riposo non è confrontata: deriva dal piano');
+  // A cena la pasta ha un riferimento proprio (40 g): 90 g viene segnalata.
+  const dinner = recipe('AR', 'Pasta', 'dinner', [ingredient('Pasta', mportion('90g'))]);
+  const dinnerCheck = d.checkMellerAdaptation(dinner);
+  assert.equal(dinnerCheck.adapted, false);
+  assert.equal(dinnerCheck.summary[0].expected, 40, 'riferimento cena della pasta');
+  assert.equal(dinnerCheck.summary[0].dayTypeLabel, 'allenamento');
 });
 
-test('Meller: adatta con un click alle grammature A/R del pasto', () => {
+test('Meller: adatta le quantità originali alle grammature del pasto (contesto riposo derivato)', () => {
   const pranzo = recipe('X2', 'Pasta al pomodoro', 'lunch', [
     ingredient('Pasta', mportion('150g', '150g', '140g', '140g')),
     ingredient('Parmigiano', mportion('40g')),
@@ -1447,12 +1470,12 @@ test('Meller: adatta con un click alle grammature A/R del pasto', () => {
   const result = d.adaptRecipeToMeller(pranzo);
   assert.equal(result.changed, true);
   const pasta = result.recipe.ingredients[0].portions;
-  assert.equal(pasta.manTraining, '90 g');
-  assert.equal(pasta.manRest, '70 g');
-  assert.equal(pasta.ipoTraining, '90 g');
-  assert.equal(pasta.ipoRest, '70 g');
-  assert.equal(result.recipe.ingredients[1].portions.manTraining, '40g', 'sotto il riferimento resta invariato');
-  assert.equal(result.recipe.ingredients[2].portions.manTraining, 'q.b.', 'q.b. invariato');
+  // L'adattamento scrive l'originale per profilo sul riferimento di allenamento;
+  // la dose di riposo (70 g) deriva dal piano contestuale, non dalla ricetta.
+  assert.equal(pasta.man, '90 g');
+  assert.equal(pasta.ipo, '90 g');
+  assert.equal(result.recipe.ingredients[1].portions.man, '40g', 'sotto il riferimento resta invariato');
+  assert.equal(result.recipe.ingredients[2].portions.man, 'q.b.', 'q.b. invariato');
 });
 
 test('Meller: il riferimento cambia con il pasto (pane e pesce a cena)', () => {
@@ -1466,8 +1489,9 @@ test('Meller: il riferimento cambia con il pasto (pane e pesce a cena)', () => {
   assert.equal(byName['Pane'].expected, 60);
   assert.equal(byName['Orata'].expected, 250);
   const result = d.adaptRecipeToMeller(cena);
-  assert.equal(result.recipe.ingredients[0].portions.manTraining, '60 g');
-  assert.equal(result.recipe.ingredients[1].portions.manTraining, '250 g');
+  assert.equal(result.recipe.ingredients[0].portions.man, '60 g');
+  assert.equal(result.recipe.ingredients[0].portions.ipo, '60 g');
+  assert.equal(result.recipe.ingredients[1].portions.man, '250 g');
 });
 
 test('Meller: una ricetta già adattata non viene segnalata né modificata', () => {
@@ -1498,21 +1522,19 @@ test('Meller carboidrati: cena sempre 2/3 del pranzo R e A uguale a R', () => {
 test('Meller regressione: pasta a cena viene controllata e adattata', () => {
   const dinner = recipe('M1', 'Pasta 500g', 'dinner', [ingredient('Pasta', mportion('500g'))]);
   assert.equal(d.checkMellerAdaptation(dinner).summary[0].expected, 40);
-  assert.equal(d.adaptRecipeToMeller(dinner).recipe.ingredients[0].portions.manTraining, '40 g');
+  assert.equal(d.adaptRecipeToMeller(dinner).recipe.ingredients[0].portions.man, '40 g');
 });
 
 test('Meller travaso patate: tabella pranzo A/R e cena unica', () => {
   const lunchToDinner = d.adaptIngredientForSlot(ingredient('Patate', mportion('450g')), 'lunch', 'dinner');
-  const lunchRestToDinner = d.adaptIngredientForSlot(ingredient('Patate', mportion('450g', '350g')), 'lunch', 'dinner');
   const dinnerToLunch = d.adaptIngredientForSlot(ingredient('Patate', mportion('230g')), 'dinner', 'lunch');
-  // pranzo A 450g -> cena 230g
-  assert.equal(lunchToDinner.portions.manTraining, '230g');
-  assert.equal(lunchToDinner.portions.manRest, '230g');
-  // pranzo R 350g -> cena 230g (la cena è unica in A e R)
-  assert.equal(lunchRestToDinner.portions.manRest, '230g');
+  const dinnerToLunchRest = d.adaptIngredientForSlot(ingredient('Patate', mportion('230g')), 'dinner', 'lunch', 'rest');
+  // pranzo 450g -> cena 230g (la cena è unica in A e R)
+  assert.equal(lunchToDinner.portions.man, '230g');
+  assert.equal(lunchToDinner.portions.ipo, '230g');
   // cena 230g -> pranzo A 450g e pranzo R 350g (letti dalla tabella, non 230*2)
-  assert.equal(dinnerToLunch.portions.manTraining, '450g');
-  assert.equal(dinnerToLunch.portions.manRest, '350g');
+  assert.equal(dinnerToLunch.portions.man, '450g');
+  assert.equal(dinnerToLunchRest.portions.man, '350g');
 });
 
 // ---------------------------------------------------------------------
@@ -1630,7 +1652,8 @@ test('Meller grammature: la tabella pranzo A/R resta quella del manuale', () => 
   });
   // L'inversa cena -> pranzo NON è matematica: 230 * 2 = 460, ma il pranzo A è 450.
   const patate = d.adaptIngredientForSlot(ingredient('Patate', mportion('230g')), 'dinner', 'lunch');
-  assert.equal(patate.portions.manTraining, '450g', 'il pranzo A si legge dalla tabella, non si calcola');
+  assert.equal(patate.portions.man, '450g', 'il pranzo A si legge dalla tabella, non si calcola');
+  assert.equal(d.adaptIngredientForSlot(ingredient('Patate', mportion('230g')), 'dinner', 'lunch', 'rest').portions.man, '350g', 'il pranzo R deriva dal tipo di giorno');
 });
 
 test('Meller proteine: stessa dose a pranzo e a cena, mai trasformate', () => {
@@ -1667,7 +1690,7 @@ test('Meller regressione: pasta 500g a cena non è adattata e torna a 40g', () =
   assert.equal(check.summary[0].actual, 500);
   const adapted = d.adaptRecipeToMeller(dinner);
   assert.equal(adapted.changed, true);
-  assert.equal(adapted.recipe.ingredients[0].portions.manTraining, '40 g', 'adattata a 40 g');
+  assert.equal(adapted.recipe.ingredients[0].portions.man, '40 g', 'adattata a 40 g');
 });
 
 test('Meller regressione: cous cous 40g a cena è già adattato', () => {
@@ -1920,8 +1943,8 @@ test('CSS smartphone: titoli ricettario, profilo e tipo giornata non collassano'
 
 test('Meller contestuale: segnala 350 g di pollo, lascia libere le verdure e usa 200 g come riferimento', () => {
   const source = recipe('M1', 'Pollo e zucchine', 'lunch', [
-    ingredient('Pollo', { ipoTraining: '350 g', ipoRest: '350 g', manTraining: '350 g', manRest: '350 g' }),
-    ingredient('Zucchine', { ipoTraining: 'q.b.', ipoRest: 'q.b.', manTraining: 'q.b.', manRest: 'q.b.' })
+    ingredient('Pollo', { ipo: '350 g', man: '350 g' }),
+    ingredient('Zucchine', { ipo: 'q.b.', man: 'q.b.' })
   ]);
   const report = d.checkMellerContext(source, 'lunch');
   assert.equal(report.status, 'needs-adaptation');
@@ -1930,13 +1953,16 @@ test('Meller contestuale: segnala 350 g di pollo, lascia libere le verdure e usa
   assert.deepEqual(report.free.map(item => item.ingredient), ['Zucchine']);
 
   const built = d.buildMellerContextAdaptation(source, 'lunch');
+  // Il contesto contiene la matrice A/R; l'applicazione sceglie la dose per tipo di giorno.
+  assert.equal(built.context.portions[Object.keys(built.context.portions)[0]].training, '200 g');
+  assert.equal(built.context.portions[Object.keys(built.context.portions)[0]].rest, '200 g');
   const effective = d.applyMellerContextAdaptation(source, built.context);
-  assert.equal(effective.ingredients[0].portions.manTraining, '200 g');
-  assert.equal(effective.ingredients[0].portions.manRest, '200 g');
-  assert.equal(effective.ingredients[0].portions.ipoTraining, '200 g');
-  assert.equal(effective.ingredients[0].portions.ipoRest, '200 g');
-  assert.equal(effective.ingredients[1].portions.manTraining, 'q.b.');
-  assert.equal(source.ingredients[0].portions.manTraining, '350 g', 'la sorgente non viene mutata');
+  assert.equal(effective.ingredients[0].portions.man, '200 g');
+  assert.equal(effective.ingredients[0].portions.ipo, '200 g');
+  assert.equal(effective.ingredients[1].portions.man, 'q.b.');
+  const effectiveRest = d.applyMellerContextAdaptation(source, built.context, 'rest');
+  assert.equal(effectiveRest.ingredients[0].portions.man, '200 g', 'proteine: stessa dose in riposo');
+  assert.equal(source.ingredients[0].portions.man, '350 g', 'la sorgente non viene mutata');
 });
 
 test('Meller contestuale: mapping sconosciuto blocca l’applicazione', () => {
@@ -1954,16 +1980,18 @@ test('Meller contestuale: mapping sconosciuto blocca l’applicazione', () => {
 
 test('Meller contestuale: l’adattamento persistente viene riutilizzato senza riscrivere la ricetta', () => {
   const source = recipe('M3', 'Pollo persistente', 'lunch', [
-    ingredient('Pollo', { ipoTraining: '350 g', ipoRest: '350 g', manTraining: '350 g', manRest: '350 g' })
+    ingredient('Pollo', { ipo: '350 g', man: '350 g' })
   ]);
   const stored = { ...source, mellerAdaptations: d.buildMellerAdaptationMetadata(source) };
   const resolved = d.resolveRecipeForPlan(stored, 'lunch', d.MELLER_MODE_MELLER);
   assert.equal(resolved.applied, true);
-  assert.equal(resolved.recipe.ingredients[0].portions.manTraining, '200 g');
-  assert.equal(stored.ingredients[0].portions.manTraining, '350 g');
+  assert.equal(resolved.recipe.ingredients[0].portions.man, '200 g');
+  assert.equal(stored.ingredients[0].portions.man, '350 g');
+  const resolvedRest = d.resolveRecipeForPlan(stored, 'lunch', d.MELLER_MODE_MELLER, 'rest');
+  assert.equal(resolvedRest.recipe.ingredients[0].portions.man, '200 g');
   const original = d.resolveRecipeForPlan(stored, 'lunch', d.MELLER_MODE_ORIGINAL);
   assert.equal(original.applied, false);
-  assert.equal(original.recipe.ingredients[0].portions.manTraining, '350 g');
+  assert.equal(original.recipe.ingredients[0].portions.man, '350 g');
 });
 
 test('Meller contestuale: shopping e batch usano la dose effettiva del piano', () => {
@@ -2034,4 +2062,94 @@ test('SaaS: rule set server-side aggiorna resolver e derivati senza toccare rice
   assert.equal(d.mellerRuleForIngredient('Pasta premium').slots.lunch.training, 91);
   assert.equal(d.CARB_REFERENCE.find(item => item.family === 'pasta').pranzo.training, 91);
   assert.equal(JSON.stringify(recipeSource), before, 'la ricetta originale resta immutata');
+});
+
+// ---------------------------------------------------------------------
+// Schema 6 — Catalogo globale v2, split del seed Meller e toggle piano
+// ---------------------------------------------------------------------
+
+function seedFromDocs() {
+  const extract = JSON.parse(fs.readFileSync(path.join(ROOT, 'docs', 'catalogo-ingredienti-meller.json'), 'utf8'));
+  return d.splitMellerSeed(extract);
+}
+
+test('splitMellerSeed: il JSON Meller si divide in catalogo globale, motore famiglie e seed struttura', () => {
+  const seed = seedFromDocs();
+  // 6 categorie del manuale + la categoria "free" per gli alimenti liberi.
+  assert.equal(seed.categories.length, 7);
+  assert.equal(seed.categories.some(category => category.categoryId === 'free'), true);
+  // 25 famiglie guidate + 50 alimenti liberi, mai i 58 ingredienti provvisori.
+  assert.equal(seed.families.length, 25);
+  assert.equal(seed.ingredients.length, 75);
+  assert.equal(seed.structureSeed.rules.length, 25);
+  assert.deepEqual(seed.structureSeed.alternativeGroups.map(group => group.items.length).sort((a, b) => a - b), [10, 13]);
+  // Il catalogo globale non contiene quantità (le dosi vivono in famiglie/strutture).
+  seed.ingredients.forEach(ingredient => {
+    const quantityKey = Object.keys(ingredient).find(key => /quantit|gram|dose|portion/i.test(key));
+    assert.equal(quantityKey, undefined, `${ingredient.ingredientId}: campo quantità vietato (${quantityKey})`);
+  });
+  const gnocchi = seed.ingredients.find(item => item.ingredientId === 'gnocchi');
+  assert.equal(gnocchi.mappingKind, 'guided');
+  assert.equal(gnocchi.mellerFamilyId, 'gnocchi');
+  const free = seed.ingredients.find(item => item.mappingKind === 'free');
+  assert.equal(free.mellerFamilyId, null);
+  assert.equal(free.categoryId, 'free');
+  // Ogni regola della struttura seed è conforme allo shape dietRule dello schema v2.
+  const rulePane = seed.structureSeed.rules.find(rule => rule.mellerFamilyId === 'pane');
+  assert.deepEqual(rulePane.quantityGrams, { lunch: { training: 120, rest: 90 }, dinner: { training: 60, rest: 60 } });
+  assert.equal(rulePane.enabled, true);
+});
+
+test('structureRevisionToMellerRules: round-trip dal seed alla lista di regole del motore', () => {
+  const seed = seedFromDocs();
+  const index = d.buildCatalogIndex(seed);
+  const parsed = d.structureRevisionToMellerRules({ rules: seed.structureSeed.rules }, index);
+  assert.equal(parsed.rules.length, seed.structureSeed.rules.length);
+  const pane = parsed.rules.find(rule => rule.family === 'pane');
+  assert.equal(pane.slots.lunch.training, 120);
+  assert.equal(pane.slots.lunch.rest, 90);
+  assert.ok(pane.aliases.includes('Pane'));
+  // Le regole disabilitate vengono ignorate, senza errori.
+  const parsedDisabled = d.structureRevisionToMellerRules({
+    rules: [{ ...seed.structureSeed.rules[0], enabled: false }]
+  }, index);
+  assert.equal(parsedDisabled.rules.length, 0);
+  // Le famiglie senza ingredienti in catalogo non inventano quantità altrui:
+  // usano solo il fallback legacy documentato.
+  const legacyOnly = d.structureRevisionToMellerRules({ rules: [{ mellerFamilyId: 'pane', ingredientIds: ['non-esiste'], quantityGrams: seed.structureSeed.rules.find(r => r.mellerFamilyId === 'pane').quantityGrams }] }, d.buildCatalogIndex([], []));
+  assert.equal(legacyOnly.rules.length, 1);
+});
+
+test('autocomplete catalogo: accenti, maiuscole, alias, disambiguazione per categoria e ignoto marcato', () => {
+  const seed = seedFromDocs();
+  const index = d.buildCatalogIndex(seed);
+  assert.equal(d.searchCatalog(index, 'gnocchi')[0].ingredientId, 'gnocchi');
+  assert.equal(d.searchCatalog(index, 'GNOC  ')[0].ingredientId, 'gnocchi', 'token prefisso case-insensitive');
+  assert.equal(d.searchCatalog(index, 'gnòcchi')[0].ingredientId, 'gnocchi', 'accenti tollerati');
+  const zucchin = d.searchCatalog(index, 'zucchin');
+  assert.equal(zucchin[0].ingredientId, 'free-zucchin');
+  assert.ok(zucchin[0].matchedAlias, 'alias evidenziato per lo stem libero');
+  assert.deepEqual(d.searchCatalog(index, 'qwertyzzz'), [], 'niente mapping inventato per nomi ignoti');
+  assert.deepEqual(d.searchCatalog(index, ''), [], 'query vuota → nessun risultato');
+  // Ordinamento deterministico: due chiamate consecutive identiche.
+  assert.deepEqual(d.searchCatalog(index, 'pa'), d.searchCatalog(index, 'pa'));
+  // La categoria accompagna sempre il risultato per disambiguare.
+  assert.ok(d.searchCatalog(index, 'riso').every(item => item.categoryId));
+});
+
+test('toggle quantità adattate: default attivo, scelta esplicita preservata, helper idempotente', () => {
+  assert.equal(d.normalizeAdaptedQuantitiesEnabled({}), true);
+  assert.equal(d.normalizeAdaptedQuantitiesEnabled(null), true);
+  assert.equal(d.normalizeAdaptedQuantitiesEnabled({ adaptedQuantitiesEnabled: false }), false);
+  assert.equal(d.normalizeAdaptedQuantitiesEnabled({ adaptedQuantitiesEnabled: 'no' }), true, 'valori non booleani → default attivo');
+  const plan = d.emptyPlan();
+  assert.equal(plan.adaptedQuantitiesEnabled, true);
+  const off = d.setAdaptedQuantitiesEnabled(plan, false);
+  assert.equal(off.adaptedQuantitiesEnabled, false);
+  const on = d.setAdaptedQuantitiesEnabled(off, true);
+  assert.equal(on.adaptedQuantitiesEnabled, true);
+  // Migrazione: solo false esplicito disattiva; piani legacy senza flag → attivo.
+  const legacy = { schemaVersion: 5, days: {}, defaultDays: {}, batchRules: {}, batchTemplates: [] };
+  assert.equal(d.migratePlan(legacy).adaptedQuantitiesEnabled, true);
+  assert.equal(d.migratePlan({ ...legacy, adaptedQuantitiesEnabled: false }).adaptedQuantitiesEnabled, false);
 });
