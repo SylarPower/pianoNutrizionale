@@ -218,10 +218,18 @@
 
   // Vincoli di default del generatore: derivano dalle frequenze proteiche.
   function buildDefaultConstraints() {
+    return frequencyConstraintsFor(null);
+  }
+
+  // Vincoli del generatore con eventuali frequenze personalizzate del
+  // profilo cliente (override sparsi { key: { min?, max? } } sullo studio).
+  // Puro: non tocca i default, che restano la base per household e ospiti.
+  function frequencyConstraintsFor(overrides) {
     const constraints = {};
     MELLER_PROTEIN_FREQUENCIES.forEach(item => {
-      constraints[`${item.key}Min`] = item.min;
-      constraints[`${item.key}Max`] = item.max;
+      const patch = overrides?.[item.key] || {};
+      constraints[`${item.key}Min`] = Number.isFinite(Number(patch.min)) ? Number(patch.min) : item.min;
+      constraints[`${item.key}Max`] = Number.isFinite(Number(patch.max)) ? Number(patch.max) : item.max;
     });
     return constraints;
   }
@@ -838,11 +846,7 @@ function portionFor(ingredient, profile, dayType, slot, recipeSlot) {
     const pb = parseSimpleAmount(b);
     if (pa.skip && pb.skip) return EMPTY_PORTION;
     if (pa.free || pb.free) return 'q.b.';
-    const fmt = (value, unit) => {
-      const rounded = Math.round(value * 100) / 100;
-      const num = Number.isInteger(rounded) ? String(rounded) : String(rounded).replace('.', ',');
-      return unit === 'pz' ? `${num} pz` : `${num}${unit}`;
-    };
+    const fmt = (value, unit) => formatAmount(value, unit);
     if (!pa.skip && !pb.skip && pa.value !== undefined && pb.value !== undefined) {
       if (pa.unit === pb.unit) return fmt(pa.value + pb.value, pa.unit);
       return `${fmt(pa.value, pa.unit)} + ${fmt(pb.value, pb.unit)}`;
@@ -1027,18 +1031,53 @@ function portionFor(ingredient, profile, dayType, slot, recipeSlot) {
     if (!match) return { opaque: original };
     const numberValue = token => fractionMap[token] ?? Number(token.replace(',', '.'));
     // Per la spesa un intervallo usa prudenzialmente il valore massimo.
-    let value = match[2] ? Math.max(numberValue(match[1]), numberValue(match[2])) : numberValue(match[1]);
-    let unit = (match[3] || 'pz').toLowerCase();
-    // Le misure da cucina vengono normalizzate in grammi per produrre una
-    // quantità acquistabile e aggregabile in tutti i profili porzione.
-    if (unit === 'cucchiaio' || unit === 'cucchiai') {
-      value *= 10;
-      unit = 'g';
-    } else if (unit === 'cucchiaino' || unit === 'cucchiaini') {
-      value *= 5;
-      unit = 'g';
-    }
+    const value = match[2] ? Math.max(numberValue(match[1]), numberValue(match[2])) : numberValue(match[1]);
+    const unitRaw = (match[3] || 'pz').toLowerCase();
+    // Le misure da cucina restano misure da cucina: i cucchiai non vengono
+    // più reinterpretati come grammi (la vecchia conversione inventava dosi
+    // nelle somme). Canonicalizzazione al singolare.
+    let unit = unitRaw;
+    if (unit === 'cucchiai') unit = 'cucchiaio';
+    else if (unit === 'cucchiaini') unit = 'cucchiaino';
     return { value, unit };
+  }
+
+  // Parser stretto delle quantità, usato dall'adattamento Meller e
+  // dall'editor ricette. A differenza di parseSimpleAmount (pensato per la
+  // spesa, con intervalli→max e numeri nudi→pz), qui ogni forma non
+  // rappresentabile resta esplicita e non viene mai reinterpretata:
+  // - { kind: 'empty' } — stringa vuota, "—", "-", zeri ("0", "0 g", "0 ml").
+  // - { kind: 'free' } — "q.b." e varianti ("qb", "libera", "a piacere").
+  // - { kind: 'amount', value, unit } — numero (intero, decimale con punto o
+  //   virgola, frazioni ½/¼/¾) + unità riconosciuta ('g', 'ml', 'pz',
+  //   'cucchiaio', 'cucchiaino') oppure unit: null quando l'unità manca ("2").
+  // - { kind: 'opaque', text } — tutto il resto: intervalli ("8-10 g",
+  //   "1-2 cucchiai"), misure non censite ("1 mazzetto"), note ("a fette").
+  function parseQuantity(raw) {
+    const original = String(raw ?? '').trim();
+    if (isEmptyPortion(original) || /^0(?:[.,]0+)?\s*(g|ml)?$/i.test(original)) return { kind: 'empty' };
+    if (/^(q\.?b\.?|liber[oaie]|a piacere)$/i.test(original)) return { kind: 'free', text: original };
+    const fractionMap = { '½': 0.5, '¼': 0.25, '¾': 0.75 };
+    const match = original.match(/^(\d+(?:[.,]\d+)?|[½¼¾])\s*(g|ml|pz|cucchiaio|cucchiai|cucchiaino|cucchiaini)?$/i);
+    if (!match) return { kind: 'opaque', text: original };
+    const value = fractionMap[match[1]] ?? Number(match[1].replace(',', '.'));
+    if (!Number.isFinite(value)) return { kind: 'opaque', text: original };
+    let unit = match[2] ? match[2].toLowerCase() : null;
+    if (unit === 'cucchiai') unit = 'cucchiaio';
+    else if (unit === 'cucchiaini') unit = 'cucchiaino';
+    return { kind: 'amount', value, unit };
+  }
+
+  // Formatta una quantità numerica con unità: grammi e millilitri restano
+  // compatti ("120g") come nelle somme storiche, le altre unità prendono
+  // spazio e plurale italiano ("2 pz", "2 cucchiai", "1 cucchiaino").
+  function formatAmount(value, unit) {
+    const rounded = Math.round(Number(value) * 100) / 100;
+    const num = Number.isInteger(rounded) ? String(rounded) : String(rounded).replace('.', ',');
+    if (unit === 'pz') return `${num} pz`;
+    if (unit === 'cucchiaio') return `${num} ${rounded === 1 ? 'cucchiaio' : 'cucchiai'}`;
+    if (unit === 'cucchiaino') return `${num} ${rounded === 1 ? 'cucchiaino' : 'cucchiaini'}`;
+    return `${num}${unit || ''}`;
   }
 
   // ----- Trasformazione percentuale carboidrati pranzo <-> cena -----
@@ -1067,22 +1106,26 @@ function portionFor(ingredient, profile, dayType, slot, recipeSlot) {
 
   function parseCarbAmount(raw) {
     if (!raw) return null;
-    const rawText = String(raw);
-    const parsed = parseSimpleAmount(rawText);
-    if (!parsed || parsed.skip || parsed.free || parsed.opaque || !Number.isFinite(parsed.value) || parsed.value <= 0) return null;
-    // I carboidrati sono quasi sempre in grammi: un numero nudo (es. "250")
-    // viene interpretato come grammi, non come "pz".
-    const unit = /\bpz\b/.test(rawText.toLowerCase()) ? 'pz' : 'g';
-    return { value: parsed.value, unit };
+    // Solo grammi espliciti ("60 g", "60g"): numeri nudi ("250"), pezzi,
+    // cucchiai, ml, q.b. e note non sono una base adattabile. Niente più
+    // attribuzione di grammi a quantità senza unità.
+    const parsed = parseQuantity(raw);
+    if (!parsed || parsed.kind !== 'amount' || parsed.unit !== 'g') return null;
+    if (!Number.isFinite(parsed.value) || parsed.value <= 0) return null;
+    return { value: parsed.value, unit: 'g' };
   }
 
   // Quantità di partenza: prima la dose originale della ricetta (profilo
-  // Uomo), poi (solo se mancante o non numerica) il riferimento delle linee
-  // guida per il pasto di origine.
+  // Uomo) quando è in grammi, poi — solo se manca davvero (vuota, "—", "-",
+  // zero) oppure non è numerica (q.b., note) — il riferimento delle linee
+  // guida per il pasto di origine. Numeri senza unità e unità diverse (pz,
+  // cucchiai, ml) restano testuali: né adattamento né fallback.
   function carbBaseAmount(ingredient, source, nativeSlot) {
     const p = normalizePortions(ingredient?.portions || {});
     const native = parseCarbAmount(p.man);
     if (native) return native;
+    const nativeKind = parseQuantity(p.man).kind;
+    if (nativeKind !== 'empty' && nativeKind !== 'free' && nativeKind !== 'opaque') return null;
     const amountObj = nativeSlot === 'lunch' ? source.pranzo : (source.cena || source.pranzo);
     if (amountObj && Number(amountObj.training) > 0) {
       return { value: Number(amountObj.training), unit: 'g' };
@@ -2049,15 +2092,15 @@ const PROTEIN_CATEGORY_LABELS = {
     return amount != null ? amount : (bySlot.training != null ? bySlot.training : null);
   }
 
-  // Quantità numerica confrontabile: solo grammi/millilitri (o misure da
-  // cucina già convertite in grammi da parseSimpleAmount). I pezzi ("2 pz"),
-  // il q.b. e i valori opachi vengono ignorati per non creare falsi positivi.
+  // Quantità numerica confrontabile per l'adattamento: solo grammi
+  // espliciti ("60 g", "60g"). Millilitri, pezzi, cucchiai, numeri senza
+  // unità, q.b. e valori opachi non sono confrontabili: restituiscono null
+  // e l'ingrediente resta testuale, senza adattamenti inventati.
   function mellerComparableAmount(raw) {
-    const parsed = parseSimpleAmount(raw);
-    if (!parsed || parsed.skip || parsed.free || parsed.opaque) return null;
-    if (parsed.unit !== 'g' && parsed.unit !== 'ml') return null;
+    const parsed = parseQuantity(raw);
+    if (!parsed || parsed.kind !== 'amount' || parsed.unit !== 'g') return null;
     if (!Number.isFinite(parsed.value) || parsed.value <= 0) return null;
-    return { value: parsed.value, unit: parsed.unit };
+    return { value: parsed.value, unit: 'g' };
   }
 
   // Chiavi logiche del confronto contestuale: profili persona e giorni A/R.
@@ -2230,6 +2273,11 @@ const PROTEIN_CATEGORY_LABELS = {
     });
     guided.forEach(item => {
       const rule = item.mapping.rule;
+      // Solo grammi espliciti: se nessun profilo ha una dose in grammi
+      // leggibile, l'ingrediente resta testuale e non entra nel contesto
+      // (niente dosi inventate su pz, cucchiai, ml, numeri nudi, q.b., note).
+      const original = normalizePortions(item.ingredient?.portions || {});
+      if (!mellerComparableAmount(original.man) && !mellerComparableAmount(original.ipo)) return;
       const divisor = groupCounts[rule.group] || 1;
       const portions = {};
       MELLER_DAY_TYPES.forEach(dayType => {
@@ -2239,7 +2287,9 @@ const PROTEIN_CATEGORY_LABELS = {
       context.portions[item.id] = portions;
     });
     context.status = 'ready';
-    return { context, report, changed: report.issues.length > 0 };
+    // changed = almeno una dose effettivamente riscritta: le segnalazioni
+    // 'unreadable' (dosi non in grammi, lasciate testuali) non contano.
+    return { context, report, changed: report.issues.some(issue => issue.kind === 'above' || issue.kind === 'below') };
   }
 
   function buildMellerAdaptationMetadata(recipe) {
@@ -2381,8 +2431,8 @@ const PROTEIN_CATEGORY_LABELS = {
         const raw = String(portions[profileKey] ?? '');
         const amount = mellerComparableAmount(raw);
         if (!amount || amount.value <= expected) return;
-        const unit = amount.unit === 'ml' ? ' ml' : ' g';
-        const nextAmount = `${expected}${unit}`;
+        // mellerComparableAmount accetta solo grammi: la correzione è in grammi.
+        const nextAmount = `${expected} g`;
         report.push({ ingredient: ingredient.name, portion: profileKey, from: raw, to: nextAmount });
         portions[profileKey] = nextAmount;
       });
@@ -2689,6 +2739,8 @@ const PROTEIN_CATEGORY_LABELS = {
     INGREDIENT_ALIASES,
     CANONICAL_INGREDIENTS,
     DEFAULT_CONSTRAINTS,
+    MELLER_PROTEIN_FREQUENCIES,
+    frequencyConstraintsFor,
     deepClone,
     aliasKey,
     slug,
@@ -2721,10 +2773,15 @@ const PROTEIN_CATEGORY_LABELS = {
     resolveShopItemOrder,
     isEmptyPortion,
     parseSimpleAmount,
+    parseQuantity,
+    formatAmount,
     CARB_REFERENCE,
     CARB_FAMILIES,
     carbSourceForName,
     isPranzoCenaCross,
+    parseCarbAmount,
+    carbBaseAmount,
+    crossSlotCarbPortions,
     adaptIngredientForSlot,
     aggregateShopping,
     swapMeals,
@@ -2776,6 +2833,7 @@ const PROTEIN_CATEGORY_LABELS = {
     isMellerCarbIngredient,
     isMellerProteinIngredient,
     mellerReferenceAmount,
+    mellerComparableAmount,
     checkMellerAdaptation,
     adaptRecipeToMeller,
     mulberry32,

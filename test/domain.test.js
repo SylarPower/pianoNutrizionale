@@ -151,18 +151,18 @@ test('profilo Coppia somma dosi uomo + donna', () => {
   const list = d.aggregateShopping(planWith(days), recipesById, { monday: ['lunch'] }, 'couple');
   const pollo = list.find(entry => entry.ingredientId === 'petto-di-pollo');
   assert.equal(pollo.totals.g, 350); // 200 uomo + 150 donna IPO
-  assert.deepEqual(d.parseSimpleAmount('1 cucchiaio'), { value: 10, unit: 'g' });
-  assert.deepEqual(d.parseSimpleAmount('3 cucchiai'), { value: 30, unit: 'g' });
-  assert.deepEqual(d.parseSimpleAmount('1 cucchiaino'), { value: 5, unit: 'g' });
-  assert.deepEqual(d.parseSimpleAmount('2 cucchiaini'), { value: 10, unit: 'g' });
+  assert.deepEqual(d.parseSimpleAmount('1 cucchiaio'), { value: 1, unit: 'cucchiaio' });
+  assert.deepEqual(d.parseSimpleAmount('3 cucchiai'), { value: 3, unit: 'cucchiaio' });
+  assert.deepEqual(d.parseSimpleAmount('1 cucchiaino'), { value: 1, unit: 'cucchiaino' });
+  assert.deepEqual(d.parseSimpleAmount('2 cucchiaini'), { value: 2, unit: 'cucchiaino' });
 });
 
 test('parseSimpleAmount usa il massimo degli intervalli e normalizza le unità', () => {
   assert.deepEqual(d.parseSimpleAmount('8-10'), { value: 10, unit: 'pz' });
   assert.deepEqual(d.parseSimpleAmount('8-10 pz'), { value: 10, unit: 'pz' });
-  assert.deepEqual(d.parseSimpleAmount('1-2 cucchiai'), { value: 20, unit: 'g' });
+  assert.deepEqual(d.parseSimpleAmount('1-2 cucchiai'), { value: 2, unit: 'cucchiaio' });
   assert.deepEqual(d.parseSimpleAmount('8–10 pz'), { value: 10, unit: 'pz' });
-  assert.deepEqual(d.parseSimpleAmount('1—2 cucchiai'), { value: 20, unit: 'g' });
+  assert.deepEqual(d.parseSimpleAmount('1—2 cucchiai'), { value: 2, unit: 'cucchiaio' });
 });
 
 test('lista spesa somma valori fissi e intervalli per Uomo, Donna IPO e Coppia', () => {

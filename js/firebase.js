@@ -961,6 +961,15 @@ async function saveWeeklyPlan(plan) {
   const clean = cloneData(plan);
   writeLocalJson("weekly_plan", clean);
   await setDoc(weeklyPlanRef(), clean);
+  // Gancio post-salvataggio (auto-report mapping Meller nuovi): il
+  // salvataggio è già riuscito, quindi errori qui sono solo avvisi.
+  try {
+    if (typeof window !== "undefined" && typeof window.afterWeeklyPlanSaved === "function") {
+      await window.afterWeeklyPlanSaved(clean);
+    }
+  } catch (error) {
+    console.warn("Hook post-salvataggio settimana non riuscito", error);
+  }
 }
 
 async function getShoppingListCloud() {

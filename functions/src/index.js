@@ -14,7 +14,11 @@ const {
   CATALOG_IMPORT_MODES, parseCatalogPayload, validateCatalogImport, catalogImportPreviewId,
   validateInviteOrganizationUser, validateInviteClientLink, validateRespondClientLink,
   validateRemoveClientLink, validateMemberStatus, validateRemoveNutritionist,
-  validateTransferStructureOwnership
+  validateTransferStructureOwnership,
+  CLIENT_FREQUENCY_KEYS, CLIENT_FREQUENCY_LABELS, CLIENT_FREQUENCY_DEFAULTS,
+  DOSE_EDITABLE_ASSIGNMENT_STATUSES,
+  validateClientDoseOverrides, validateGetClientDoses,
+  validateUpdateClientDoseOverrides, validateCopyClientDoses
 } = require('./domain');
 
 initializeApp();
@@ -177,7 +181,21 @@ function publicAssignment(assignment, clientId, rules, catalogs = []) {
     strategy: assignment.strategy,
     rules: resolved.rules,
     freeAliases: resolved.freeAliases,
+    clientOverrides: publicClientOverrides(assignment),
     compatibleClientSchema: rules.compatibleClientSchema || 1
+  };
+}
+
+// Personalizzazioni per cliente (console "Dosi clienti"): override sparsi
+// serviti insieme al profilo. Solo revisione + celle valorizzate: metadati
+// interni (autore, timestamp) non escono mai verso il client.
+function publicClientOverrides(assignment) {
+  const overrides = assignment?.clientOverrides;
+  if (!overrides) return null;
+  return {
+    revision: Number(overrides.revision || 0),
+    doses: overrides.doses || {},
+    frequencies: overrides.frequencies || {}
   };
 }
 
@@ -244,6 +262,7 @@ function publicStructureAssignment({ assignment, clientId, structure, revision, 
       alternativeGroups: revision.alternativeGroups || []
     },
     catalog: publicCatalogSnapshot(catalog),
+    clientOverrides: publicClientOverrides(assignment),
     compatibleClientSchema: 6
   };
 }
@@ -702,6 +721,179 @@ exports.assignClientStructure = callable(async (data, uid) => {
   });
   // La risposta NON include mai il checksum: le versioni chiuse sono interne.
   return { assignmentId, status: immediate ? 'active' : 'scheduled' };
+});
+
+// ---- Dosi e frequenze personalizzate per cliente (console "Dosi clienti") ----
+// Gli override vivono sull'assegnazione (revisionati, non-retroattivi): la
+// revisione della struttura assegnata non viene mai toccata.
+
+// Assegnazione + famiglie dosabili (dosi studio dalla revisione/struttura).
+// Senza assignmentId esplicito usa il puntatore state/activeAssignment.
+async function loadClientDoseContext(actor, client, assignmentId) {
+  let snap;
+  if (assignmentId) {
+    snap = await client.ref.collection('assignments').doc(assignmentId).get();
+    if (!snap.exists) throw new HttpsError('not-found', 'Assegnazione non trovata');
+  } else {
+    const state = await client.ref.collection('state').doc('activeAssignment').get();
+    const activeId = state.data()?.assignmentId;
+    if (!activeId) return { ref: null, assignment: null, families: [] };
+    snap = await client.ref.collection('assignments').doc(activeId).get();
+    if (!snap.exists) return { ref: null, assignment: null, families: [] };
+  }
+  const assignment = snap.data();
+  let families = [];
+  if (assignment.structure?.structureId) {
+    const { doc } = await authorizedStructure(actor, assignment.structure.structureId);
+    const revision = await doc.ref.collection('revisions').doc(String(assignment.structure.revisionId)).get();
+    if (!revision.exists) throw new HttpsError('failed-precondition', 'Revisione della struttura assegnata non trovata');
+    families = (revision.data().rules || [])
+      .filter(rule => rule.enabled !== false && rule.mellerFamilyId)
+      .map(rule => ({ family: rule.mellerFamilyId, studio: rule.quantityGrams || null, ingredientIds: rule.ingredientIds || [] }));
+  } else if (assignment.ruleSet) {
+    const versionRef = await ruleVersionRef(actor.organizationId, assignment.ruleSet);
+    const version = await versionRef.get();
+    if (!version.exists) throw new HttpsError('failed-precondition', 'Versione rule set assegnata non trovata');
+    families = (version.data().rules || [])
+      .filter(rule => rule.family)
+      .map(rule => ({ family: rule.family, label: rule.label || rule.family, studio: rule.slots || null, ingredientIds: [] }));
+  }
+  return { ref: snap.ref, assignment, families };
+}
+
+function isoOrNull(value) {
+  return value?.toDate?.()?.toISOString?.() || null;
+}
+
+exports.getClientDoses = callable(async (data, uid) => {
+  const input = validateGetClientDoses(data);
+  const actor = await membership(input.organizationId, uid);
+  const client = await authorizedClient(actor, input.clientId);
+  const context = await loadClientDoseContext(actor, client, input.assignmentId);
+  if (!context.assignment) {
+    return {
+      clientId: client.id, displayCode: client.displayCode || client.id,
+      assignment: null, families: [], overrides: { doses: {}, frequencies: {} },
+      frequencyDefaults: CLIENT_FREQUENCY_KEYS.map(key => ({ key, label: CLIENT_FREQUENCY_LABELS[key], ...CLIENT_FREQUENCY_DEFAULTS[key] }))
+    };
+  }
+  const catalog = await loadGlobalCatalog();
+  const names = new Map(catalog.ingredients.map(item => [item.ingredientId, item.displayName || item.ingredientId]));
+  return {
+    clientId: client.id,
+    displayCode: client.displayCode || client.id,
+    assignment: {
+      assignmentId: context.assignment.assignmentId || context.ref.id,
+      status: context.assignment.status,
+      structureName: context.assignment.structureName || context.assignment.structure?.structureId || null,
+      effectiveAt: isoOrNull(context.assignment.effectiveAt),
+      expiresAt: isoOrNull(context.assignment.expiresAt),
+      overridesRevision: Number(context.assignment.clientOverrides?.revision || 0)
+    },
+    families: context.families.map(item => ({
+      family: item.family,
+      label: item.label || item.family,
+      ingredients: item.ingredientIds.map(ingredientId => names.get(ingredientId) || ingredientId),
+      studio: item.studio
+    })),
+    overrides: {
+      doses: context.assignment.clientOverrides?.doses || {},
+      frequencies: context.assignment.clientOverrides?.frequencies || {}
+    },
+    frequencyDefaults: CLIENT_FREQUENCY_KEYS.map(key => ({ key, label: CLIENT_FREQUENCY_LABELS[key], ...CLIENT_FREQUENCY_DEFAULTS[key] }))
+  };
+});
+
+exports.updateClientDoseOverrides = callable(async (data, uid) => {
+  const input = validateUpdateClientDoseOverrides(data);
+  const actor = await membership(input.organizationId, uid);
+  const client = await authorizedClient(actor, input.clientId);
+  const context = await loadClientDoseContext(actor, client, input.assignmentId);
+  if (!context.assignment) throw new HttpsError('failed-precondition', 'Il cliente non ha un’assegnazione attiva da personalizzare');
+  if (!DOSE_EDITABLE_ASSIGNMENT_STATUSES.has(context.assignment.status)) {
+    throw new HttpsError('failed-precondition', 'Assegnazione non modificabile: solo quelle attive o programmate accettano dosi personalizzate');
+  }
+  const clean = validateClientDoseOverrides(
+    { doses: input.doses, frequencies: input.frequencies },
+    { families: context.families.map(item => item.family) }
+  );
+  const assignmentId = context.assignment.assignmentId || context.ref.id;
+  const nextRevision = input.expectedRevision + 1;
+  const eventId = checksum(`assignment.doses:${assignmentId}:${nextRevision}`).slice(0, 32);
+  await db.runTransaction(async tx => {
+    const fresh = await tx.get(context.ref);
+    if (!fresh.exists) throw new HttpsError('not-found', 'Assegnazione non trovata');
+    const current = Number(fresh.data()?.clientOverrides?.revision || 0);
+    if (current !== input.expectedRevision) {
+      throw new HttpsError('failed-precondition', 'Le dosi sono state modificate da un altro operatore: ricarica e riprova');
+    }
+    tx.update(context.ref, {
+      clientOverrides: {
+        schemaVersion: 1, revision: nextRevision,
+        doses: clean.doses, frequencies: clean.frequencies,
+        updatedAt: FieldValue.serverTimestamp(), updatedBy: uid
+      },
+      updatedAt: FieldValue.serverTimestamp(), updatedBy: uid
+    });
+    tx.create(auditRef(actor.organizationId, eventId), auditEvent({
+      orgId: actor.organizationId, eventId, type: 'assignment.doses_updated', actor,
+      subject: { type: 'assignment', id: assignmentId }, idempotencyKey: eventId,
+      metadata: { clientId: client.id, assignmentId, revision: nextRevision, families: Object.keys(clean.doses), frequencyKeys: Object.keys(clean.frequencies) }
+    }));
+  });
+  return { revision: nextRevision };
+});
+
+exports.copyClientDoses = callable(async (data, uid) => {
+  const input = validateCopyClientDoses(data);
+  const actor = await membership(input.organizationId, uid);
+  const from = await authorizedClient(actor, input.fromClientId);
+  const to = await authorizedClient(actor, input.toClientId);
+  const fromContext = await loadClientDoseContext(actor, from, null);
+  const toContext = await loadClientDoseContext(actor, to, null);
+  if (!fromContext.assignment || !toContext.assignment) {
+    throw new HttpsError('failed-precondition', 'Entrambi i clienti devono avere un’assegnazione attiva');
+  }
+  if (!DOSE_EDITABLE_ASSIGNMENT_STATUSES.has(toContext.assignment.status)) {
+    throw new HttpsError('failed-precondition', 'Assegnazione di destinazione non modificabile: solo quelle attive o programmate accettano dosi personalizzate');
+  }
+  const toFamilies = new Set(toContext.families.map(item => item.family));
+  const copied = {};
+  const skippedFamilies = [];
+  Object.entries(fromContext.assignment.clientOverrides?.doses || {}).forEach(([family, patch]) => {
+    if (toFamilies.has(family)) copied[family] = patch;
+    else skippedFamilies.push(family);
+  });
+  const clean = validateClientDoseOverrides(
+    { doses: copied, frequencies: fromContext.assignment.clientOverrides?.frequencies || {} },
+    { families: [...toFamilies] }
+  );
+  const assignmentId = toContext.assignment.assignmentId || toContext.ref.id;
+  const nextRevision = input.expectedRevision + 1;
+  const eventId = checksum(`assignment.doses.copy:${assignmentId}:${nextRevision}`).slice(0, 32);
+  await db.runTransaction(async tx => {
+    const fresh = await tx.get(toContext.ref);
+    if (!fresh.exists) throw new HttpsError('not-found', 'Assegnazione non trovata');
+    const current = Number(fresh.data()?.clientOverrides?.revision || 0);
+    if (current !== input.expectedRevision) {
+      throw new HttpsError('failed-precondition', 'Le dosi sono state modificate da un altro operatore: ricarica e riprova');
+    }
+    tx.update(toContext.ref, {
+      clientOverrides: {
+        schemaVersion: 1, revision: nextRevision,
+        doses: clean.doses, frequencies: clean.frequencies,
+        updatedAt: FieldValue.serverTimestamp(), updatedBy: uid,
+        copiedFromClientId: from.id
+      },
+      updatedAt: FieldValue.serverTimestamp(), updatedBy: uid
+    });
+    tx.create(auditRef(actor.organizationId, eventId), auditEvent({
+      orgId: actor.organizationId, eventId, type: 'assignment.doses_copied', actor,
+      subject: { type: 'assignment', id: assignmentId }, idempotencyKey: eventId,
+      metadata: { fromClientId: from.id, toClientId: to.id, assignmentId, revision: nextRevision, copiedFamilies: Object.keys(clean.doses), skippedFamilies }
+    }));
+  });
+  return { revision: nextRevision, copiedFamilies: Object.keys(clean.doses), skippedFamilies };
 });
 
 // Sezione "Strutture dieta" (schema v2, docs/schema-catalogo-strutture-v2.json):

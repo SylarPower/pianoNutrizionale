@@ -145,3 +145,32 @@ test('copy premium comunica valore e sicurezza senza promessa clinica assoluta',
   assert.match(html, /Ogni azione è tracciata/);
   assert.doesNotMatch(html, /garantisce|cura|risultato garantito/i);
 });
+
+test('sezione Dosi clienti: vista, editor override e copia con anteprima', () => {
+  // Voce di menu dopo Clienti (landing invariata).
+  assert.match(html, /data-view="doses"/);
+  assert.match(html, /nav-link active" data-view="clients"/);
+  // Struttura vista: selettori, pannelli, azioni.
+  for (const id of ['view-doses', 'dose-client', 'doses-feedback', 'dose-assignment', 'dose-tables', 'save-doses', 'copy-from', 'copy-to', 'copy-feedback', 'copy-preview', 'preview-copy', 'confirm-copy', 'refresh-doses']) {
+    assert.match(html, new RegExp(`id="${id}"`));
+  }
+  // Callable dedicate (mai scritture dirette Firestore dalla console).
+  for (const callable of ['getClientDoses', 'updateClientDoseOverrides', 'copyClientDoses']) {
+    assert.match(js, new RegExp(`['"]${callable}['"]`));
+  }
+  // Concorrenza ottimistica e conferma cliente esplicita nei testi.
+  assert.match(js, /expectedRevision/);
+  assert.match(js, /dovrà confermare dall’app/);
+  // Anteprima copia: differenze prima della conferma, famiglie saltate esplicite.
+  assert.match(js, /previewDoseCopy/);
+  assert.match(js, /confirmDoseCopy/);
+  assert.match(js, /skipped/);
+  // Celle vuote = studio: validazione anti-refusi prima dell'invio.
+  assert.match(js, /data-dose-family/);
+  assert.match(js, /data-freq-key/);
+  assert.match(js, /Dosi 1–2000 g, frequenze 0–14/);
+  // Accessibilità e responsive della vista.
+  assert.match(js, /aria-label="\$\{escapeAdmin\(item\.label\)\}/);
+  assert.match(css, /\.dose-table/);
+  assert.match(css, /\.copy-grid/);
+});

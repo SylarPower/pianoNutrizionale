@@ -768,6 +768,125 @@ function validateTransferStructureOwnership(input) {
   };
 }
 
+// ---- Dosi e frequenze personalizzate per cliente (console) ----
+// Le frequenze sono il mirror server-side di MELLER_PROTEIN_FREQUENCIES in
+// js/domain.js (chiavi, etichette e default: allineamento verificato dai test
+// client). Max 14 = 7 giorni × 2 pasti principali (vincolo strutturale).
+const CLIENT_FREQUENCY_KEYS = ['poultry', 'beef', 'curedMeats', 'omega', 'otherFish', 'dairy', 'eggs', 'legumes'];
+const CLIENT_FREQUENCY_LABELS = {
+  poultry: 'Pollame',
+  beef: 'Manzo e maiale',
+  curedMeats: 'Affettati e carni miste',
+  omega: 'Pesce ricco di omega-3',
+  otherFish: 'Altro pesce e prodotti ittici',
+  dairy: 'Latticini e formaggi',
+  eggs: 'Uova',
+  legumes: 'Legumi e derivati'
+};
+const CLIENT_FREQUENCY_DEFAULTS = {
+  poultry: { min: 1, max: 2 },
+  beef: { min: 0, max: 1 },
+  curedMeats: { min: 0, max: 1 },
+  omega: { min: 2, max: 3 },
+  otherFish: { min: 1, max: 2 },
+  dairy: { min: 1, max: 2 },
+  eggs: { min: 1, max: 2 },
+  legumes: { min: 3, max: 14 }
+};
+const CLIENT_FREQUENCY_MAX = 14;
+// Solo le assegnazioni correnti o future sono personalizzabili: quelle
+// revocate, sospese o scadute restano immutabili (non-retroattività).
+const DOSE_EDITABLE_ASSIGNMENT_STATUSES = new Set(['active', 'scheduled']);
+
+function frequencyBound(value, name) {
+  if (value == null || value === '') return null;
+  const number = Number(value);
+  if (!Number.isInteger(number) || number < 0 || number > CLIENT_FREQUENCY_MAX) {
+    fail('invalid-argument', `${name} deve essere un intero tra 0 e ${CLIENT_FREQUENCY_MAX}`);
+  }
+  return number;
+}
+
+// Override sparsi { doses, frequencies }: solo le celle valorizzate (=
+// diverse dallo studio) vengono persistite; null/vuoto = default studio.
+// Le famiglie dose devono esistere nella struttura assegnata al cliente.
+function validateClientDoseOverrides(input, { families }) {
+  exactObject(input, ['doses', 'frequencies'], 'overrides');
+  const familySet = new Set(families || []);
+  if (!input.doses || typeof input.doses !== 'object' || Array.isArray(input.doses)) {
+    fail('invalid-argument', 'overrides.doses non valido');
+  }
+  const doses = {};
+  Object.entries(input.doses).forEach(([family, patch]) => {
+    if (!familySet.has(family)) fail('invalid-argument', `Famiglia non presente nella struttura assegnata: ${family}`);
+    exactObject(patch || {}, ['lunch', 'dinner'], `doses.${family}`);
+    const clean = {};
+    ['lunch', 'dinner'].forEach(meal => {
+      const slot = patch[meal];
+      if (slot == null) return;
+      exactObject(slot, ['training', 'rest'], `doses.${family}.${meal}`);
+      const cell = {};
+      const training = grams(slot.training, `doses.${family}.${meal}.training`);
+      const rest = grams(slot.rest, `doses.${family}.${meal}.rest`);
+      if (training != null) cell.training = training;
+      if (rest != null) cell.rest = rest;
+      if (Object.keys(cell).length) clean[meal] = cell;
+    });
+    if (Object.keys(clean).length) doses[family] = clean;
+  });
+  if (!input.frequencies || typeof input.frequencies !== 'object' || Array.isArray(input.frequencies)) {
+    fail('invalid-argument', 'overrides.frequencies non valido');
+  }
+  const frequencies = {};
+  Object.entries(input.frequencies).forEach(([key, patch]) => {
+    if (!CLIENT_FREQUENCY_KEYS.includes(key)) fail('invalid-argument', `Frequenza non valida: ${key}`);
+    exactObject(patch || {}, ['min', 'max'], `frequencies.${key}`);
+    const clean = {};
+    const min = frequencyBound(patch.min, `frequencies.${key}.min`);
+    const max = frequencyBound(patch.max, `frequencies.${key}.max`);
+    if (min != null) clean.min = min;
+    if (max != null) clean.max = max;
+    if (clean.min != null && clean.max != null && clean.min > clean.max) {
+      fail('invalid-argument', `frequencies.${key}: min non può superare max`);
+    }
+    if (Object.keys(clean).length) frequencies[key] = clean;
+  });
+  return { doses, frequencies };
+}
+
+function validateGetClientDoses(input) {
+  exactObject(input, ['organizationId', 'clientId', 'assignmentId']);
+  return {
+    organizationId: id(input.organizationId, 'organizationId'),
+    clientId: id(input.clientId, 'clientId'),
+    assignmentId: input.assignmentId == null || input.assignmentId === '' ? null : id(input.assignmentId, 'assignmentId')
+  };
+}
+
+function validateExpectedRevision(value) {
+  const revision = Number(value);
+  if (!Number.isInteger(revision) || revision < 0) fail('invalid-argument', 'expectedRevision non valida');
+  return revision;
+}
+
+function validateUpdateClientDoseOverrides(input) {
+  exactObject(input, ['organizationId', 'clientId', 'assignmentId', 'doses', 'frequencies', 'expectedRevision']);
+  const base = validateGetClientDoses({ organizationId: input.organizationId, clientId: input.clientId, assignmentId: input.assignmentId });
+  return { ...base, doses: input.doses, frequencies: input.frequencies, expectedRevision: validateExpectedRevision(input.expectedRevision) };
+}
+
+function validateCopyClientDoses(input) {
+  exactObject(input, ['organizationId', 'fromClientId', 'toClientId', 'expectedRevision']);
+  const fromClientId = id(input.fromClientId, 'fromClientId');
+  const toClientId = id(input.toClientId, 'toClientId');
+  if (fromClientId === toClientId) fail('invalid-argument', 'Cliente origine e destinazione devono essere diversi');
+  return {
+    organizationId: id(input.organizationId, 'organizationId'),
+    fromClientId, toClientId,
+    expectedRevision: validateExpectedRevision(input.expectedRevision)
+  };
+}
+
 module.exports = {
   ROLES, REPORT_STATUSES, ASSIGNMENT_STATUSES, ASSIGNMENT_STRATEGIES, MEMBER_STATUSES,
   MELLER_FAMILY_IDS, STRUCTURE_REVISION_SCHEMA_VERSION,
@@ -781,6 +900,10 @@ module.exports = {
   validateCatalogCategory, catalogImportPreviewId,
   validateInviteOrganizationUser, validateInviteClientLink, validateRespondClientLink,
   validateRemoveClientLink, validateMemberStatus, validateRemoveNutritionist,
-  validateTransferStructureOwnership
+  validateTransferStructureOwnership,
+  CLIENT_FREQUENCY_KEYS, CLIENT_FREQUENCY_LABELS, CLIENT_FREQUENCY_DEFAULTS,
+  CLIENT_FREQUENCY_MAX, DOSE_EDITABLE_ASSIGNMENT_STATUSES,
+  frequencyBound, validateClientDoseOverrides, validateGetClientDoses,
+  validateExpectedRevision, validateUpdateClientDoseOverrides, validateCopyClientDoses
 };
 

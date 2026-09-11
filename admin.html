@@ -35,6 +35,7 @@
       <a class="brand-lockup compact" href="#mapping"><span>🥗</span><div><strong>Piano</strong><small>Console professionale</small></div></a>
       <nav aria-label="Console">
         <button class="nav-link active" data-view="clients"><span>♙</span>Clienti</button>
+        <button class="nav-link" data-view="doses"><span>⚖</span>Dosi clienti</button>
         <button class="nav-link" data-view="structures"><span>▦</span>Strutture dieta</button>
         <button class="nav-link" data-view="users"><span>⛉</span>Utenti</button>
         <button class="nav-link" data-view="mapping"><span>◫</span>Coda ingredienti <b id="nav-open-count" class="badge-zero" aria-label="Coda ingredienti: nessun caso in sospeso">0</b></button>
@@ -67,6 +68,12 @@
       <main id="view-clients" class="console-view hidden">>
         <section class="hero-row"><div><p class="eyebrow">PROFILI INDIVIDUALI</p><h1>Il protocollo giusto,<br>assegnato alla persona giusta.</h1><p>Household e account restano separati: ogni assegnazione è personale e storicizzata.</p></div><button id="refresh-clients" class="secondary">↻ Aggiorna clienti</button></section>
         <section class="panel"><div class="panel-head"><div><h2>Clienti autorizzati</h2><p>Vedi solo i profili consentiti dal tuo ruolo.</p></div></div><div id="clients-feedback" class="feedback" role="status"></div><div id="clients-list" class="client-grid"></div></section>
+      </main>
+
+      <main id="view-doses" class="console-view hidden">
+        <section class="hero-row"><div><p class="eyebrow">PERSONALIZZAZIONE</p><h1>Dosi su misura,<br>per ogni cliente.</h1><p>Default della struttura assegnata, con override personali revisionati. Il cliente conferma ogni modifica dall’app.</p></div><button id="refresh-doses" class="secondary">↻ Aggiorna</button></section>
+        <section class="panel"><div class="panel-head"><div><h2>Dosi e frequenze per cliente</h2><p>Cella vuota = dose della struttura. Salva per creare una nuova revisione.</p></div><label>Cliente<select id="dose-client"><option value="">— Seleziona —</option></select></label></div><div id="doses-feedback" class="feedback" role="status"></div><div id="dose-assignment" class="dose-assignment"></div><div id="dose-tables"></div><div class="dose-actions"><button id="save-doses" class="primary" disabled>Salva dosi personalizzate →</button></div></section>
+        <section class="panel"><div class="panel-head"><div><h2>Copia dosi tra clienti</h2><p>Anteprima delle differenze prima della conferma.</p></div></div><div class="copy-grid"><label>Da cliente<select id="copy-from"><option value="">—</option></select></label><label>A cliente<select id="copy-to"><option value="">—</option></select></label></div><div id="copy-feedback" class="feedback" role="status"></div><div id="copy-preview"></div><div class="dose-actions"><button id="preview-copy" class="secondary">Anteprima differenze</button><button id="confirm-copy" class="primary" disabled>Conferma copia →</button></div></section>
       </main>
 
       <main id="view-structures" class="console-view hidden">
