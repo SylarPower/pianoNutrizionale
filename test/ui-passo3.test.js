@@ -188,7 +188,7 @@ test('avviso visibile con mapping mancante, testi di prodotto invariati', () => 
   setRecipes([unknownRecipe()]);
   openModal(unknownRecipe());
   const html = mellerNoticeHtml();
-  assert.match(html, /Mapping Meller incompleto/);
+  assert.match(html, /Mapping delle linee guida incompleto/);
   assert.match(html, /non hanno un mapping nel catalogo attuale/);
   assert.match(html, /mapping mancante/);
   assert.match(html, /Segnala ingredienti non riconosciuti/, 'pulsante manuale preservato');

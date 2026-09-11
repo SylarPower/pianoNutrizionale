@@ -1,6 +1,6 @@
 'use strict';
 
-const adminState = { user: null, reports: [], clients: [], ruleSets: [], structures: [], compareSelection: new Set(), users: null, editingStructure: null, cursor: null, selectedReport: null };
+const adminState = { user: null, reports: [], clients: [], ruleSets: [], structures: [], compareSelection: new Set(), users: null, editingStructure: null, cursor: null, selectedReport: null, pickerSelection: new Set(), isCreator: false };
 let catalogIndexCache = null;
 let catalogCategoriesCache = [];
 const $ = id => document.getElementById(id);
@@ -19,8 +19,6 @@ function adminError(error) {
   return error?.message || 'Operazione non riuscita. Riprova.';
 }
 
-function saveOrg() { /* org singola, niente persistenza */ }
-
 async function loadReports({ append = false } = {}) {
   if (!orgId()) { $('report-feedback').textContent = 'Inserisci l’organizzazione per vedere la coda.'; return; }
   $('report-feedback').textContent = 'Aggiornamento sicuro della coda…';
@@ -31,7 +29,7 @@ async function loadReports({ append = false } = {}) {
     });
     adminState.reports = append ? adminState.reports.concat(result.reports || []) : (result.reports || []);
     adminState.cursor = result.nextCursor || null;
-    renderReports(); saveOrg();
+    renderReports();
     $('report-feedback').textContent = adminState.reports.length ? '' : 'Nessun caso in questa vista. Il catalogo è in ordine.';
   } catch (error) {
     $('report-feedback').textContent = adminError(error);
@@ -115,7 +113,7 @@ async function loadClients() {
   $('clients-feedback').textContent = 'Caricamento profili autorizzati…';
   try {
     const result = await callAdminSaasFunction('listAuthorizedClients', { organizationId: orgId() });
-    adminState.clients = result.clients || []; renderClients(); saveOrg();
+    adminState.clients = result.clients || []; renderClients();
     $('clients-feedback').textContent = adminState.clients.length ? '' : 'Nessun cliente autorizzato.';
   } catch (error) { $('clients-feedback').textContent = adminError(error); adminState.clients = []; renderClients(); }
 }
@@ -209,7 +207,6 @@ async function loadDoseClients() {
     adminState.clients = result.clients || [];
     const options = '<option value="">— Seleziona —</option>' + adminState.clients.map(client => `<option value="${escapeAdmin(client.id)}">${escapeAdmin(client.displayCode)}</option>`).join('');
     ['dose-client', 'copy-from', 'copy-to'].forEach(id => { $(id).innerHTML = options; });
-    saveOrg();
     $('doses-feedback').textContent = adminState.clients.length ? '' : 'Nessun cliente autorizzato.';
   } catch (error) { $('doses-feedback').textContent = adminError(error); }
 }
@@ -433,13 +430,76 @@ function fillCategorySelects() {
   });
 }
 
+// --- Picker catalogo: selezione multipla per raggruppare alimenti con dosi comuni. ---
+
+function renderCatalogPicker(filter = '') {
+  const list = $('catalog-picker-list');
+  if (!list) return;
+  if (!catalogIndexCache?.items?.length) {
+    list.innerHTML = '<p class="picker-empty">Catalogo non disponibile: riprova quando sei online.</p>';
+    updatePickerCount();
+    return;
+  }
+  const query = window.PianoDomain?.aliasKey ? PianoDomain.aliasKey(filter || '') : String(filter || '').toLowerCase().trim();
+  const items = catalogIndexCache.items.filter(entry => !query
+    || entry.key.includes(query)
+    || (entry.aliasKeys || []).some(alias => alias.includes(query))
+    || (entry.tokens || []).some(token => token.startsWith(query)));
+  const byCategory = new Map();
+  items.forEach(entry => {
+    const categoryId = entry.ingredient?.categoryId || '';
+    if (!byCategory.has(categoryId)) byCategory.set(categoryId, []);
+    byCategory.get(categoryId).push(entry);
+  });
+  byCategory.forEach(entries => entries.sort((a, b) => String(a.ingredient?.displayName || '').localeCompare(String(b.ingredient?.displayName || ''), 'it')));
+  const categoryLabel = categoryId => {
+    if (!categoryId) return 'Senza categoria';
+    const found = catalogCategoriesCache.find(item => item.categoryId === categoryId);
+    return found?.displayName || categoryId;
+  };
+  const order = catalogCategoriesCache
+    .slice()
+    .sort((a, b) => (Number(a.sortOrder || 0) - Number(b.sortOrder || 0)) || String(a.displayName || a.categoryId).localeCompare(String(b.displayName || b.categoryId), 'it'))
+    .map(item => item.categoryId)
+    .filter(id => id !== 'free' && byCategory.has(id));
+  [...byCategory.keys()].forEach(id => { if (!order.includes(id) && id !== 'free' && id !== '') order.push(id); });
+  if (byCategory.has('')) order.push('');
+  if (byCategory.has('free')) order.push('free');
+  list.innerHTML = order.map(categoryId => `
+    <div class="picker-category" role="group" aria-label="${escapeAdmin(categoryLabel(categoryId))}">
+      <strong>${escapeAdmin(categoryLabel(categoryId))}</strong>
+      <div class="picker-category-items">${byCategory.get(categoryId).map(entry => {
+        const ingredientId = entry.ingredient?.ingredientId || entry.ingredientId || '';
+        const name = entry.ingredient?.displayName || ingredientId;
+        return `<label class="picker-item"><input type="checkbox" data-picker-ing="${escapeAdmin(ingredientId)}" ${adminState.pickerSelection.has(ingredientId) ? 'checked' : ''} aria-label="Seleziona ${escapeAdmin(name)}">${escapeAdmin(name)}</label>`;
+      }).join('')}</div>
+    </div>`).join('') || '<p class="picker-empty">Nessun alimento corrisponde al filtro.</p>';
+}
+
+function updatePickerCount() {
+  const countEl = $('picker-count');
+  const groupButton = $('picker-group');
+  if (!countEl || !groupButton) return;
+  const count = adminState.pickerSelection.size;
+  countEl.textContent = count === 0 ? 'Nessun alimento selezionato' : (count === 1 ? '1 alimento selezionato' : `${count} alimenti selezionati`);
+  groupButton.disabled = count < 2;
+}
+
+function resetCatalogPicker() {
+  adminState.pickerSelection.clear();
+  if ($('catalog-picker-search')) $('catalog-picker-search').value = '';
+  renderCatalogPicker('');
+  updatePickerCount();
+  if ($('picker-feedback')) $('picker-feedback').textContent = '';
+}
+
 async function loadStructures() {
   if (!orgId()) { $('structures-feedback').textContent = 'Inserisci l’organizzazione.'; return; }
   $('structures-feedback').textContent = 'Caricamento strutture…';
   try {
     const result = await callAdminSaasFunction('listDietStructures', { organizationId: orgId() });
     adminState.structures = result.structures || [];
-    saveOrg(); renderStructures();
+    renderStructures();
     $('structures-feedback').textContent = adminState.structures.length ? '' : 'Nessuna struttura dieta: creane una.';
   } catch (error) { $('structures-feedback').textContent = adminError(error); adminState.structures = []; renderStructures(); }
 }
@@ -482,7 +542,7 @@ function structureRuleRow(rule = {}) {
   return `
   <div class="structure-rule">
     <div class="rule-head">
-      <input class="rule-family" required placeholder="Famiglia (es. riso)" value="${escapeAdmin(rule.mellerFamilyId || '')}" aria-label="Famiglia Meller">
+      <input class="rule-family" required placeholder="Famiglia (es. riso)" value="${escapeAdmin(rule.mellerFamilyId || '')}" aria-label="Famiglia">
       <input class="rule-ings" placeholder="ID ingredienti separati da virgola" value="${escapeAdmin((rule.ingredientIds || []).join(', '))}" aria-label="ID ingredienti">
       <select class="rule-cat" data-value="${escapeAdmin(rule.categoryId || '')}" aria-label="Categoria (opzionale)"><option value="">—</option></select>
       <label><input type="checkbox" class="rule-enabled" ${rule.enabled === false ? '' : 'checked'}>Attiva</label>
@@ -570,13 +630,117 @@ function addStructureRuleRow(rule) {
   $('structure-rules').insertAdjacentHTML('beforeend', structureRuleRow(rule));
 }
 
+// --- Dialog raggruppamento: le dosi comuni diventano regola multi-ingrediente
+// oppure voci di un gruppo alternativo (nuovo o esistente). ---
+
+function toggleGroupDestination() {
+  const toRule = $('group-dest-rule').checked;
+  $('group-rule-fields').classList.toggle('hidden', !toRule);
+  $('group-alt-fields').classList.toggle('hidden', toRule);
+}
+
+function toggleNewGroupFields() {
+  $('group-new-fields').classList.toggle('hidden', $('group-target').value !== '__new__');
+}
+
+function openGroupDialog() {
+  if (adminState.pickerSelection.size < 2) return;
+  $('group-subtitle').textContent = `${adminState.pickerSelection.size} alimenti selezionati: a tutti verranno assegnate le stesse dosi. Potrai modificare le righe create prima di salvare la struttura.`;
+  $('group-error').textContent = '';
+  ['group-family', 'group-la', 'group-lr', 'group-ca', 'group-cr', 'group-new-id', 'group-new-name'].forEach(id => { $(id).value = ''; });
+  const groups = [...$('structure-groups').querySelectorAll('.structure-group')];
+  $('group-target').innerHTML = groups.map((row, index) => {
+    const label = row.querySelector('.group-name')?.value?.trim() || row.querySelector('.group-id')?.value?.trim() || `Gruppo ${index + 1}`;
+    return `<option value="${index}">${escapeAdmin(label)}</option>`;
+  }).join('') + '<option value="__new__">＋ Nuovo gruppo…</option>';
+  $('group-target').value = groups.length ? '0' : '__new__';
+  toggleNewGroupFields();
+  $('group-dest-rule').checked = true;
+  toggleGroupDestination();
+  $('group-dialog').classList.remove('hidden');
+  $('group-family').focus();
+}
+
+function closeGroupDialog() { $('group-dialog').classList.add('hidden'); }
+
+// Stesse regole di collectStructureRules: dosi intere 1–2000, almeno un pasto.
+function collectGroupDoses() {
+  const read = id => {
+    const raw = $(id).value.trim();
+    return raw === '' ? null : Number(raw);
+  };
+  const quantityGrams = {
+    lunch: { training: read('group-la'), rest: read('group-lr') },
+    dinner: { training: read('group-ca'), rest: read('group-cr') }
+  };
+  ['lunch', 'dinner'].forEach(meal => ['training', 'rest'].forEach(day => {
+    const value = quantityGrams[meal][day];
+    if (value != null && (!Number.isInteger(value) || value < 1 || value > 2000)) {
+      throw new Error('Le dosi devono essere numeri interi tra 1 e 2000.');
+    }
+  }));
+  const result = {};
+  ['lunch', 'dinner'].forEach(meal => {
+    result[meal] = (quantityGrams[meal].training == null && quantityGrams[meal].rest == null) ? null : quantityGrams[meal];
+  });
+  if (!result.lunch && !result.dinner) throw new Error('Indica almeno una dose per pranzo o cena.');
+  return result;
+}
+
+function submitGrouping(event) {
+  event.preventDefault();
+  $('group-error').textContent = '';
+  const ingredientIds = [...adminState.pickerSelection].sort((a, b) => a.localeCompare(b, 'it'));
+  try {
+    const quantityGrams = collectGroupDoses();
+    if ($('group-dest-rule').checked) {
+      const typed = $('group-family').value;
+      const mellerFamilyId = engineFamilyId(typed);
+      if (!mellerFamilyId) throw new Error(`La famiglia "${typed.trim() || '?'}" non esiste nel motore delle famiglie.`);
+      const existing = [...$('structure-rules').querySelectorAll('.rule-family')]
+        .map(input => engineFamilyId(input.value)).filter(Boolean);
+      if (existing.includes(mellerFamilyId)) throw new Error(`Famiglia duplicata: ${mellerFamilyId}`);
+      addStructureRuleRow({ mellerFamilyId, ingredientIds, quantityGrams, enabled: true });
+      fillCategorySelects();
+      $('picker-feedback').textContent = `${ingredientIds.length} alimenti raggruppati nella famiglia ${mellerFamilyId}.`;
+    } else {
+      const target = $('group-target').value;
+      if (target === '__new__') {
+        const newId = canonicalId($('group-new-id').value);
+        const newName = $('group-new-name').value.trim();
+        if (!newId) throw new Error('Indica l’ID del nuovo gruppo (es. quasi-cereali).');
+        if (!newName) throw new Error('Indica il nome visualizzato del nuovo gruppo.');
+        addStructureGroupRow({ alternativeGroupId: newId, displayName: newName, items: ingredientIds.map(ingredientId => ({ ingredientId, quantityGrams })) });
+        $('picker-feedback').textContent = `${ingredientIds.length} alimenti raggruppati nel nuovo gruppo «${newName}».`;
+      } else {
+        const groups = [...$('structure-groups').querySelectorAll('.structure-group')];
+        const groupRow = groups[Number(target)];
+        if (!groupRow) throw new Error('Gruppo di destinazione non trovato.');
+        const itemsContainer = groupRow.querySelector('.group-items');
+        [...itemsContainer.querySelectorAll('.group-item')].forEach(row => {
+          if (!row.querySelector('.group-item-ing')?.value?.trim()) row.remove();
+        });
+        ingredientIds.forEach(ingredientId => itemsContainer.insertAdjacentHTML('beforeend', groupItemRow({ ingredientId, quantityGrams })));
+        const name = groupRow.querySelector('.group-name')?.value?.trim() || 'gruppo';
+        $('picker-feedback').textContent = `${ingredientIds.length} alimenti aggiunti al gruppo «${name}».`;
+      }
+    }
+    adminState.pickerSelection.clear();
+    renderCatalogPicker($('catalog-picker-search').value);
+    updatePickerCount();
+    closeGroupDialog();
+  } catch (error) {
+    $('group-error').textContent = error.message;
+  }
+}
+
 function collectStructureRules() {
   const rows = [...$('structure-rules').querySelectorAll('.structure-rule')];
   const dose = (row, cls) => { const raw = row.querySelector(cls).value; return raw === '' ? null : Number(raw); };
   const rules = rows.map((row, index) => {
     const typedFamily = row.querySelector('.rule-family').value;
     const mellerFamilyId = engineFamilyId(typedFamily);
-    if (!mellerFamilyId) throw new Error(`Regola ${index + 1}: la famiglia "${typedFamily.trim() || '?'}" non esiste nel motore Meller.`);
+    if (!mellerFamilyId) throw new Error(`Regola ${index + 1}: la famiglia "${typedFamily.trim() || '?'}" non esiste nel motore delle famiglie.`);
     const quantityGrams = {
       lunch: dose(row, '.rule-la') == null && dose(row, '.rule-lr') == null ? null : { training: dose(row, '.rule-la'), rest: dose(row, '.rule-lr') },
       dinner: dose(row, '.rule-ca') == null && dose(row, '.rule-cr') == null ? null : { training: dose(row, '.rule-ca'), rest: dose(row, '.rule-cr') }
@@ -592,7 +756,7 @@ function collectStructureRules() {
   });
   const families = new Set();
   rules.forEach(rule => { if (families.has(rule.mellerFamilyId)) throw new Error(`Famiglia duplicata: ${rule.mellerFamilyId}`); families.add(rule.mellerFamilyId); });
-  if (!rules.length) throw new Error('Aggiungi almeno una famiglia Meller.');
+  if (!rules.length) throw new Error('Aggiungi almeno una famiglia.');
   return rules;
 }
 
@@ -636,6 +800,7 @@ async function openStructureDialog(structureId = null) {
   $('structure-restore-rev').value = '';
   try { await loadCatalogIndex(); } catch (_) { /* autocomplete non disponibile offline */ }
   fillCategorySelects();
+  resetCatalogPicker();
   addStructureRuleRow();
   if (structureId) {
     $('structure-title').textContent = 'Modifica struttura';
@@ -746,7 +911,7 @@ function renderCompareMatrix(result) {
   $('compare-matrix').innerHTML = `
     <p class="compare-legend"><span><b>≠ diverso</b></span><span><b>= uguale</b></span><span>Le differenze non si affidano al solo colore.</span></p>
     <div class="compare-scroll"><table class="compare-table">
-      <caption>Dosi per famiglia Meller (grammi a crudo, Pranzo/Cena · Allenamento/Riposo)</caption>
+      <caption>Dosi per famiglia (grammi a crudo, Pranzo/Cena · Allenamento/Riposo)</caption>
       <thead><tr><th scope="col">Famiglia</th>${head}</tr></thead>
       <tbody>${familyRows || '<tr><td colspan="9">Nessuna famiglia da confrontare.</td></tr>'}</tbody>
     </table></div>
@@ -778,7 +943,6 @@ async function loadUsers() {
   try {
     const result = await callAdminSaasFunction('listOrganizationUsers', { organizationId: orgId() });
     adminState.users = result;
-    saveOrg();
     renderUsers();
     $('users-feedback').textContent = '';
   } catch (error) {
@@ -874,9 +1038,18 @@ async function submitNutritionistInvite(event) {
   } catch (error) { out.textContent = adminError(error); }
 }
 
+// Link di registrazione pubblica: punta all'app dei clienti (index.html),
+// che interpreta `#/invite/<token>` mostrando la schermata di registrazione.
+function inviteLinkForToken(token) {
+  return new URL(`./#/invite/${token}`, new URL('./index.html', location.href)).href;
+}
+
 async function submitClientInvite(event) {
   event.preventDefault();
   const out = $('invite-client-result');
+  const linkInput = $('invite-client-link');
+  linkInput.classList.add('hidden');
+  linkInput.value = '';
   out.textContent = 'Invito in corso…';
   try {
     const result = await callAdminSaasFunction('inviteClientLink', {
@@ -885,7 +1058,11 @@ async function submitClientInvite(event) {
       idempotencyKey: idem('clientlink')
     });
     if (result.status === 'invited') {
-      out.textContent = `Account non ancora registrato: invito monouso creato (scade ${new Date(result.expiresAt).toLocaleDateString('it-IT')}). Token da consegnare una sola volta: ${result.token}`;
+      out.textContent = `Invito monouso creato (scade ${new Date(result.expiresAt).toLocaleDateString('it-IT')}). Consegna questo link una sola volta, fuori piattaforma: il cliente registrerà l’account con lo username indicato.`;
+      linkInput.value = inviteLinkForToken(result.token);
+      linkInput.classList.remove('hidden');
+      linkInput.focus();
+      linkInput.select();
     } else if (result.status === 'already-invited') {
       out.textContent = 'Invito già esistente: il token non viene rimostrato.';
     } else {
@@ -963,10 +1140,6 @@ function bindAdmin() {
     catch (error) { $('admin-login-error').textContent = adminError(error); }
   });
   $('admin-logout').addEventListener('click', () => adminSignOutUser());
-  const orgInput = $('organization-id');
-  if (orgInput) orgInput.value = SINGLE_ORG_ID;
-  const orgBadge = $('org-badge');
-  if (orgBadge) orgBadge.innerHTML = `<span>◍</span><strong>${escapeAdmin(SINGLE_ORG_ID)}</strong><small style="margin-left:6px;color:var(--text-muted);font-weight:600">unica</small>`;
   $('refresh-reports').addEventListener('click', () => loadReports());
   $('report-status').addEventListener('change', () => loadReports());
   $('load-more-reports').addEventListener('click', () => loadReports({ append: true }));
@@ -1020,6 +1193,20 @@ function bindAdmin() {
   document.querySelectorAll('[data-close-compare]').forEach(node => node.addEventListener('click', closeCompare));
   $('structure-load-revision').addEventListener('click', loadStructureRevision);
   document.querySelectorAll('[data-close-structure]').forEach(node => node.addEventListener('click', closeStructureDialog));
+  $('catalog-picker-search').addEventListener('input', event => renderCatalogPicker(event.target.value));
+  $('catalog-picker-list').addEventListener('change', event => {
+    const box = event.target.closest('[data-picker-ing]');
+    if (!box) return;
+    if (box.checked) adminState.pickerSelection.add(box.dataset.pickerIng);
+    else adminState.pickerSelection.delete(box.dataset.pickerIng);
+    updatePickerCount();
+  });
+  $('picker-clear').addEventListener('click', () => { adminState.pickerSelection.clear(); renderCatalogPicker($('catalog-picker-search').value); updatePickerCount(); });
+  $('picker-group').addEventListener('click', openGroupDialog);
+  document.querySelectorAll('input[name="group-dest"]').forEach(radio => radio.addEventListener('change', toggleGroupDestination));
+  $('group-target').addEventListener('change', toggleNewGroupFields);
+  $('group-form').addEventListener('submit', submitGrouping);
+  document.querySelectorAll('[data-close-group]').forEach(node => node.addEventListener('click', closeGroupDialog));
   $('refresh-users').addEventListener('click', loadUsers);
   document.querySelectorAll('[data-verify-username]').forEach(node => node.addEventListener('click', () => verifyUsername(node.dataset.verifyUsername, node.dataset.verifyOut)));
   $('invite-nutritionist-form').addEventListener('submit', submitNutritionistInvite);
@@ -1064,6 +1251,8 @@ if (!initFirebase()) $('admin-login-error').textContent = 'Firebase non disponib
 observeAdminAuthState(async user => {
   adminState.user = user;
   if (!user) {
+    adminState.isCreator = false;
+    $('invite-nutritionist-form').classList.add('hidden');
     $('admin-login').classList.remove('hidden');
     $('admin-app').classList.add('hidden');
     return;
@@ -1076,6 +1265,9 @@ observeAdminAuthState(async user => {
   try {
     const professional = await callAdminSaasFunction('getMyMemberships', {});
     const allowed = Boolean(professional.platformAdmin) || (professional.memberships || []).length > 0;
+    // Solo il creatore (platform admin) può invitare altri professionisti:
+    // la UI nasconde il form, il server lo impone comunque via requireCreator.
+    adminState.isCreator = Boolean(professional.platformAdmin);
     if (!allowed) {
       $('admin-login-error').textContent = 'Questo account non è abilitato alla console professionale.';
       await adminSignOutUser();
@@ -1092,6 +1284,7 @@ observeAdminAuthState(async user => {
   $('admin-login-error').textContent = '';
   $('admin-login').classList.add('hidden');
   $('admin-app').classList.remove('hidden');
+  $('invite-nutritionist-form').classList.toggle('hidden', !adminState.isCreator);
   const name = usernameFromUser(user) || 'Professionista';
   $('admin-name').textContent = name; $('admin-avatar').textContent = name.slice(0, 1).toUpperCase();
   // Landing: la vista Clienti è la porta d'ingresso della console.

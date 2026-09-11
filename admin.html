@@ -46,11 +46,6 @@
     <div class="workspace">
       <header class="topbar">
         <button id="mobile-menu" class="icon-button" aria-label="Apri menu" aria-expanded="false" aria-controls="console-sidebar">☰</button>
-        <div class="tenant-field">
-          <span>Organizzazione</span>
-          <div class="org-badge" id="org-badge" aria-label="Organizzazione attiva: piano"><span>◍</span><strong>piano</strong><small style="margin-left:6px;color:var(--text-muted);font-weight:600">unica</small></div>
-          <input id="organization-id" type="hidden" value="piano" autocomplete="off">
-        </div>
         <div class="topbar-user"><span class="avatar" id="admin-avatar">A</span><div><strong id="admin-name">Professionista</strong><small>Sessione verificata</small></div></div>
       </header>
 
@@ -91,7 +86,7 @@
         <section class="panel"><div class="panel-head"><div><h2>Invita</h2><p>Cerca per username esatto: nessuna enumerazione, nessun elenco utenti.</p></div></div>
           <div class="invite-grid">
             <form id="invite-nutritionist-form" class="invite-card"><h3>Professionista</h3><label>Username<div class="restore-row"><input id="invite-nutritionist-username" required autocomplete="off" placeholder="username esatto"><button type="button" class="secondary" data-verify-username="invite-nutritionist-username" data-verify-out="invite-nutritionist-result">Verifica</button></div></label><p class="field-hint">Ruolo consentito: solo nutritionist. Se l’account non esiste, ricevi un invito monouso (7 giorni) da consegnare fuori piattaforma.</p><p id="invite-nutritionist-result" class="feedback" role="status"></p><button class="primary" type="submit">Invita professionista →</button></form>
-            <form id="invite-client-form" class="invite-card"><h3>Cliente</h3><label>Username<div class="restore-row"><input id="invite-client-username" required autocomplete="off" placeholder="username esatto"><button type="button" class="secondary" data-verify-username="invite-client-username" data-verify-out="invite-client-result">Verifica</button></div></label><label id="invite-client-nutri-field">Professionista destinatario<select id="invite-client-nutritionist"><option value="">Senza professionista (solo admin)</option></select></label><p class="field-hint">Il cliente accetta o rifiuta dall’app. L’invito non imposta password né credenziali.</p><p id="invite-client-result" class="feedback" role="status"></p><button class="primary" type="submit">Invita cliente →</button></form>
+            <form id="invite-client-form" class="invite-card"><h3>Cliente</h3><label>Username<div class="restore-row"><input id="invite-client-username" required autocomplete="off" placeholder="username esatto"><button type="button" class="secondary" data-verify-username="invite-client-username" data-verify-out="invite-client-result">Verifica</button></div></label><label id="invite-client-nutri-field">Professionista destinatario<select id="invite-client-nutritionist"><option value="">Senza professionista (solo admin)</option></select></label><p class="field-hint">Se il cliente non ha ancora un account ricevi un link di registrazione monouso (7 giorni) da consegnare fuori piattaforma. Se l’account esiste, il cliente accetta o rifiuta dall’app.</p><p id="invite-client-result" class="feedback" role="status"></p><input id="invite-client-link" class="invite-link mono hidden" type="text" readonly aria-label="Link di invito da consegnare al cliente"><button class="primary" type="submit">Invita cliente →</button></form>
           </div>
         </section>
         <section class="panel"><div class="panel-head"><div><h2>Collegamenti e inviti in attesa</h2><p>Richieste da accettare in app e inviti monouso non ancora riscattati.</p></div></div><div id="links-feedback" class="feedback" role="status"></div><div id="links-list" class="report-list"></div></section>
@@ -118,7 +113,16 @@
   <div id="structure-dialog" class="dialog hidden" role="dialog" aria-modal="true" aria-labelledby="structure-title"><div class="dialog-backdrop" data-close-structure></div><section class="dialog-card wide"><button class="dialog-close" data-close-structure aria-label="Chiudi">×</button><p class="eyebrow">STRUTTURA DIETA</p><h2 id="structure-title">Nuova struttura</h2><p id="structure-subtitle" class="dialog-lead"></p>
     <form id="structure-form"><input id="structure-id" type="hidden">
       <label>Nome struttura<input id="structure-name" required minlength="3" maxlength="80" placeholder="es. Base proteine"></label>
-      <fieldset><legend>Dosi per famiglia Meller (grammi a crudo, vuoto = pasto non gestito)</legend>
+      <details id="catalog-picker" class="catalog-picker" open>
+        <summary>Catalogo alimenti <span class="picker-hint">— spunta più alimenti con le stesse dosi e raggruppali in una regola o in un gruppo alternativo</span></summary>
+        <div class="picker-toolbar">
+          <input id="catalog-picker-search" type="search" placeholder="Filtra per nome o alias…" aria-label="Filtra alimenti del catalogo" autocomplete="off">
+          <div class="picker-bar"><span id="picker-count" role="status">Nessun alimento selezionato</span><button type="button" id="picker-clear" class="text-button">Azzera selezione</button><button type="button" id="picker-group" class="secondary" disabled>Raggruppa selezionati</button></div>
+        </div>
+        <div id="catalog-picker-list" class="picker-list"></div>
+        <p id="picker-feedback" class="feedback" role="status"></p>
+      </details>
+      <fieldset><legend>Dosi per famiglia (grammi a crudo, vuoto = pasto non gestito)</legend>
         <div id="structure-rules" class="structure-rules"></div>
         <button type="button" id="structure-add-rule" class="secondary full">＋ Aggiungi famiglia</button>
       </fieldset>
@@ -164,5 +168,34 @@
   <script src="js/domain.js"></script>
   <script src="js/firebase.js"></script>
   <script src="js/admin.js"></script>
+  <div id="group-dialog" class="dialog hidden" role="dialog" aria-modal="true" aria-labelledby="group-title"><div class="dialog-backdrop" data-close-group></div><section class="dialog-card"><button class="dialog-close" data-close-group aria-label="Chiudi">×</button><p class="eyebrow">RAGGRUPPAMENTO</p><h2 id="group-title">Raggruppa gli alimenti selezionati</h2><p id="group-subtitle" class="dialog-lead"></p>
+    <form id="group-form">
+      <fieldset><legend>Destinazione del raggruppamento</legend>
+        <label class="check-row"><input type="radio" name="group-dest" id="group-dest-rule" value="rule" checked><span><strong>Regola: dosi per famiglia</strong><small>Crea una regola che assegna a tutti gli alimenti selezionati le stesse dosi di una famiglia del motore.</small></span></label>
+        <label class="check-row"><input type="radio" name="group-dest" id="group-dest-alt" value="alt"><span><strong>Gruppo alternativo</strong><small>Aggiunge le voci a un gruppo di alternative (nuovo o esistente) con le stesse dosi.</small></span></label>
+      </fieldset>
+      <div id="group-rule-fields">
+        <label>Famiglia del motore<input id="group-family" placeholder="es. pseudo" autocomplete="off"><small class="field-hint">Famiglia di dosi esistente (es. pasta, riso, pseudo): gli alimenti selezionati erediteranno quelle dosi come riferimento.</small></label>
+      </div>
+      <div id="group-alt-fields" class="hidden">
+        <label>Gruppo alternativo di destinazione<select id="group-target"></select></label>
+        <div id="group-new-fields" class="form-grid hidden">
+          <label>ID gruppo<input id="group-new-id" placeholder="es. quasi-cereali" maxlength="40" autocomplete="off"></label>
+          <label>Nome visualizzato<input id="group-new-name" placeholder="es. Quasi-cereali" maxlength="60"></label>
+        </div>
+      </div>
+      <fieldset><legend>Dosi comuni (grammi a crudo, vuoto = pasto non gestito)</legend>
+        <div class="rule-doses group-doses">
+          <label>Pranzo · Allenamento<input id="group-la" type="number" min="1" max="2000" step="1" placeholder="g"></label>
+          <label>Pranzo · Riposo<input id="group-lr" type="number" min="1" max="2000" step="1" placeholder="g"></label>
+          <label>Cena · Allenamento<input id="group-ca" type="number" min="1" max="2000" step="1" placeholder="g"></label>
+          <label>Cena · Riposo<input id="group-cr" type="number" min="1" max="2000" step="1" placeholder="g"></label>
+        </div>
+      </fieldset>
+      <p id="group-error" class="error" role="alert"></p>
+      <div class="dialog-actions"><button type="button" class="secondary" data-close-group>Annulla</button><button class="primary" type="submit">Raggruppa →</button></div>
+    </form>
+  </section></div>
+
 </body>
 </html>

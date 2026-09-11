@@ -129,3 +129,67 @@ test('engineRulesFor: v2 converte revisione+catalogo, v1 passa le regole motore'
   assert.equal(Saas.engineRulesFor({ schemaVersion: 1, rules: [] }), null);
   assert.equal(Saas.engineRulesFor(null), null);
 });
+
+// ---- Export/import legacy (migrazione manuale JSON degli account storici) ----
+
+const fs = require('node:fs');
+const path = require('node:path');
+const vm = require('node:vm');
+const Domain = require('../js/domain.js');
+
+const appSrc = fs.readFileSync(path.join(__dirname, '..', 'js', 'app.js'), 'utf8');
+const firebaseSrc = fs.readFileSync(path.join(__dirname, '..', 'js', 'firebase.js'), 'utf8');
+const dataSrc = fs.readFileSync(path.join(__dirname, '..', 'js', 'data.js'), 'utf8');
+
+test('export legacy: formato stabile piano-nutrizionale-recipes con schema corrente', () => {
+  // Contratto del file JSON consegnato per la migrazione manuale dei dati legacy:
+  // export dall'app e reimport nello stesso profilo niente script server.
+  assert.match(dataSrc, /const CATALOG_SCHEMA_VERSION = 5;/);
+  assert.match(appSrc, /format: "piano-nutrizionale-recipes"/);
+  assert.match(appSrc, /schemaVersion: CATALOG_SCHEMA_VERSION/);
+  assert.match(appSrc, /exportedAt: new Date\(\)\.toISOString\(\)/);
+  assert.match(appSrc, /recipes: recipes\.map\(cleanRecipeForTransfer\)/);
+  assert.match(appSrc, /payload\.plan = window\.PianoDomain \? PianoDomain\.migratePlan\(clone\(appState\.plan\)\) : clone\(appState\.plan\)/);
+  // Il reimport valida ricette + piano e riscrive catalogo/piano/spesa in batch.
+  assert.match(firebaseSrc, /function validateImportedDataset\(dataset\)/);
+  assert.match(firebaseSrc, /function importUserDataset\(dataset\)/);
+  assert.match(firebaseSrc, /schemaVersion: Number\(dataset\.schemaVersion \|\| CATALOG_SCHEMA_VERSION\)/);
+  assert.match(firebaseSrc, /if \(plan\) batch\.set\(weeklyPlanRef\(\), plan\)/);
+  assert.match(firebaseSrc, /const shopping = getDefaultShoppingList\(\)/);
+});
+
+test('round-trip export → import: payload valido accettato, payload manomesso rifiutato', () => {
+  const sandbox = { console, TextEncoder, Date, JSON, Set, Map, Array, Object, String, Number, Boolean, Promise, RegExp, Error, Math, Intl, Symbol, PianoDomain: Domain };
+  vm.createContext(sandbox);
+  vm.runInContext(dataSrc, sandbox, { filename: 'js/data.js' });
+  vm.runInContext(firebaseSrc, sandbox, { filename: 'js/firebase.js' });
+  const { validateImportedDataset } = sandbox;
+  assert.equal(typeof validateImportedDataset, 'function', 'validatore caricato nel sandbox');
+  const recipe = id => ({
+    id: `r-${id}`, name: `Ricetta ${id}`, slot: 'lunch',
+    ingredients: [{ name: 'Pasta', portions: { ipo: '80 g', man: '90 g' } }],
+    steps: ['Porta a bollore, cuoci e scola.']
+  });
+  const days = {};
+  ['monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday', 'sunday'].forEach(day => {
+    days[day] = { type: day === 'sunday' ? 'rest' : 'training', breakfast: 'r-1', snack1: 'r-1', lunch: 'r-2', snack2: 'r-1', dinner: 'r-2' };
+  });
+  const payload = {
+    format: 'piano-nutrizionale-recipes', schemaVersion: 5,
+    exportedAt: new Date().toISOString(), exportedBy: 'gabriele',
+    recipes: [recipe(1), recipe(2)],
+    plan: { schemaVersion: 5, days }
+  };
+  assert.equal(validateImportedDataset(payload), true, 'export prodotto dall’app riimportabile');
+  // File manomessi: nessun dato parziale nel profilo.
+  assert.throws(() => validateImportedDataset({ format: 'piano-nutrizionale-recipes', recipes: [] }), /non contiene ricette/);
+  const missingRef = JSON.parse(JSON.stringify(payload));
+  missingRef.plan.days.monday.lunch = 'r-404';
+  assert.throws(() => validateImportedDataset(missingRef), /non trovata/);
+  const badSlot = JSON.parse(JSON.stringify(payload));
+  badSlot.recipes[0].slot = 'brunch';
+  assert.throws(() => validateImportedDataset(badSlot), /Tipo pasto non valido/);
+  const duplicated = JSON.parse(JSON.stringify(payload));
+  duplicated.recipes.push(duplicated.recipes[0]);
+  assert.throws(() => validateImportedDataset(duplicated), /duplicato/);
+});

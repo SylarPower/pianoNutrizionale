@@ -239,6 +239,37 @@ async function signInWithUsername(username, password) {
   return fb.signInWithEmailAndPassword(auth, usernameToInternalEmail(normalized), password);
 }
 
+// Registrazione pubblica da link invito: username 3-20 caratteri (lettere
+// minuscole, numeri, punto, trattino, underscore — mai spazi) e password di
+// almeno 8 caratteri. Più restrittiva del login (3-32) perché qui lo username
+// nasce da zero e deve restare corto e leggibile. L'email tecnica interna
+// resta `username@utenti.pianonutrizionale.app`, come per gli account creati
+// dalla console: la directory `usernames/{username}` delle Security Rules
+// è vincolata a questo dominio.
+function validateSignUpInput(username, password) {
+  const normalized = normalizeUsername(username);
+  if (!/^[a-z0-9._-]{3,20}$/.test(normalized)) {
+    const error = new Error("Lo username deve contenere 3-20 caratteri: lettere minuscole, numeri, punto, trattino o underscore. Niente spazi.");
+    error.code = "auth/invalid-username";
+    throw error;
+  }
+  if (String(password || "").length < 8) {
+    const error = new Error("La password deve avere almeno 8 caratteri.");
+    error.code = "auth/weak-password";
+    throw error;
+  }
+  return normalized;
+}
+
+async function signUpWithUsername(username, password) {
+  const normalized = validateSignUpInput(username, password);
+  if (hasCompatFirebase()) {
+    return auth.createUserWithEmailAndPassword(usernameToInternalEmail(normalized), password);
+  }
+  await ensureFirebaseReady();
+  return fb.createUserWithEmailAndPassword(auth, usernameToInternalEmail(normalized), password);
+}
+
 async function signOutUser() {
   if (!auth) return;
   if (hasCompatFirebase()) {

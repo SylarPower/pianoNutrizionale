@@ -131,3 +131,40 @@ test('orgId diversa da piano rifiutata nelle callable che richiedono membership'
   });
   await assert.rejects(invoke(api, 'listAuthorizedClients', 'me', { organizationId: 'org-a' }), { code: 'permission-denied' });
 });
+
+test('un nutritionist NON può invitare altri professionisti: operazione riservata al creatore', async () => {
+  const { api } = harness({
+    'organizations/piano': { name: 'Piano' },
+    'organizations/piano/members/me': { role: 'nutritionist', status: 'active', username: 'doctor' }
+  });
+  await assert.rejects(
+    invoke(api, 'inviteOrganizationUser', 'me', {
+      organizationId: 'piano', username: 'nuovo-doc', role: 'nutritionist', idempotencyKey: 'k-noncreator-1'
+    }),
+    error => error.code === 'permission-denied' && /riservata al creatore/.test(error.message)
+  );
+});
+
+test('un admin piattaforma sospeso non può invitare professionisti anche se membro attivo', async () => {
+  const { api } = harness({
+    'organizations/piano': { name: 'Piano' },
+    'platformMembers/me': { role: 'admin', status: 'suspended' },
+    'organizations/piano/members/me': { role: 'nutritionist', status: 'active', username: 'doctor' }
+  });
+  await assert.rejects(
+    invoke(api, 'inviteOrganizationUser', 'me', {
+      organizationId: 'piano', username: 'nuovo-doc', role: 'nutritionist', idempotencyKey: 'k-noncreator-2'
+    }),
+    error => error.code === 'permission-denied' && /riservata al creatore/.test(error.message)
+  );
+});
+
+test('un anonimo o un account cliente non può invitare professionisti', async () => {
+  const { api } = harness({ 'organizations/piano': { name: 'Piano' } });
+  await assert.rejects(
+    invoke(api, 'inviteOrganizationUser', 'me', {
+      organizationId: 'piano', username: 'nuovo-doc', role: 'nutritionist', idempotencyKey: 'k-noncreator-3'
+    }),
+    { code: 'permission-denied' }
+  );
+});

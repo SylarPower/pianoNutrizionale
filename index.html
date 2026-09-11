@@ -33,6 +33,27 @@
     <div class="login-decoration decoration-two"></div>
   </main>
 
+  <main id="invite-screen" class="login-screen hidden">
+    <section class="login-card" aria-labelledby="invite-title">
+      <div class="login-mark">🥗</div>
+      <p class="eyebrow">INVITO CLIENTE</p>
+      <h1 id="invite-title">Crea il tuo account.</h1>
+      <p class="login-subtitle">Hai ricevuto l'invito dal tuo nutrizionista: usa lo username concordato con lui. Non serve alcun indirizzo email.</p>
+      <form id="invite-form" novalidate>
+        <label for="invite-username">Username</label>
+        <div class="login-input-wrap"><span>👤</span><input id="invite-username" name="username" type="text" inputmode="text" autocomplete="username" autocapitalize="none" spellcheck="false" minlength="3" maxlength="20" pattern="[a-z0-9._-]+" placeholder="es. giulia.bianchi" required></div>
+        <small class="login-hint">3-20 caratteri: lettere minuscole, numeri, punto, trattino o underscore. Niente spazi.</small>
+        <label for="invite-password">Password</label>
+        <div class="login-input-wrap"><span>🔒</span><input id="invite-password" name="password" type="password" autocomplete="new-password" minlength="8" placeholder="Almeno 8 caratteri" required></div>
+        <p id="invite-error" class="login-error" role="alert"></p>
+        <button id="invite-submit" class="btn btn-primary login-submit" type="submit">Crea account e collega</button>
+      </form>
+      <p class="login-help">L'invito è personale e monouso: dopo la registrazione il collegamento con il tuo nutrizionista è attivo.</p>
+    </section>
+    <div class="login-decoration decoration-one"></div>
+    <div class="login-decoration decoration-two"></div>
+  </main>
+
   <div id="loading-overlay" class="loading-overlay">
     <div class="loading-brand" aria-hidden="true">🥗</div>
     <div class="loading-spinner" aria-hidden="true"></div>
