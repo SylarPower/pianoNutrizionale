@@ -228,7 +228,7 @@ assert.match(weekMarkup, />Riposo<\/button>/, 'tipo giornata Riposo scritto per 
 assert.doesNotMatch(weekMarkup, />[AR]<\/button>/, 'nessuna abbreviazione ambigua A/R nei selettori giornata');
 appState.deviceSettings.portionProfile = 'couple';
 renderWeek();
-assert.match(document.getElementById('view-week').innerHTML, /Profilo coppia/, 'profilo coppia visibile e contestualizzato');
+assert.doesNotMatch(document.getElementById('view-week').innerHTML, /profile-chip/, 'nessun chip profilo nel titolo settimana (il profilo vive nell’header)');
 appState.deviceSettings.portionProfile = 'man';
 renderWeek();
 
@@ -898,10 +898,10 @@ renderModalContent();
 {
   const editHtml = document.getElementById('modal-ingredients-list')._innerHTML;
   const timeHtml = document.getElementById('modal-time')._innerHTML;
-  // Select per proteinCategory con opzione "Automatica dagli ingredienti"
-  assert.match(timeHtml, /id="edit-recipe-category"/, 'select categoria presente nell\'editor');
-  assert.match(timeHtml, /Automatica dagli ingredienti/, 'opzione fallback automatico presente');
-  assert.match(timeHtml, /title="Opzionale: il generatore riconosce prima la proteina dagli ingredienti/, 'tooltip fallback presente');
+  // Categoria proteica nascosta: resta un campo hidden che preserva il valore
+  // (classificazione automatica), senza select visibile.
+  assert.match(timeHtml, /type="hidden" id="edit-recipe-category"/, 'categoria preservata come campo nascosto');
+  assert.doesNotMatch(timeHtml, /<select[^>]*edit-recipe-category/, 'nessuna select categoria visibile');
   // Assenza del vecchio input Frequenza
   assert.doesNotMatch(timeHtml, /edit-recipe-frequency/, 'input frequenza rimosso dall\'editor');
   assert.doesNotMatch(editHtml, /edit-recipe-frequency/, 'nessun campo frequenza negli ingredienti');
@@ -915,8 +915,10 @@ renderModalContent();
   assert.match(editHtml, /Quantità · Uomo/);
   assert.match(editHtml, /Quantità · Donna/);
   assert.doesNotMatch(editHtml, /IPO/, 'etichetta IPO rimossa dall\'editor');
-  assert.equal((editHtml.match(/placeholder="g"/g) || []).length >= 2, true, 'placeholder "g" su entrambi i campi');
-  assert.match(editHtml, /vale per entrambi/, 'hint fallback condiviso presente');
+  assert.equal((editHtml.match(/placeholder="es\. 60"/g) || []).length >= 2, true, 'placeholder numerico su entrambi i campi');
+  assert.match(editHtml, /id="edit-ing-man-unit-0"/, 'select unità uomo presente');
+  assert.match(editHtml, /id="edit-ing-ipo-unit-0"/, 'select unità donna presente');
+  assert.match(editHtml, /Solo i grammi \(g\) vengono adattati/, 'hint adattamento solo-grammi presente');
   assert.doesNotMatch(editHtml, /edit-ing-man-training-0|edit-ing-ipo-rest-0/, 'campi legacy 4-porzioni rimossi dall\'editor');
   assert.match(editHtml, /role="combobox"/, 'campo nome come combobox accessibile');
   assert.match(editHtml, /ing-suggest-0/, 'listbox suggerimenti catalogo presente');

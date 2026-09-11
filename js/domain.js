@@ -1041,6 +1041,82 @@ function portionFor(ingredient, profile, dayType, slot, recipeSlot) {
     return { value, unit };
   }
 
+  // ----- Unità di misura delle porzioni (editor numero + selettore) -----
+  //
+  // Opzioni ESATTE del selettore: g, pz, cucchiaio, cucchiaino, ml, q.b.
+  // Salvataggio in STRINGA CANONICA "<numero> <unità>" (es. "60 g", "2 pz",
+  // "1 cucchiaio", "q.b."). Le stringhe storiche ("60g", "2", "q.b.", testi
+  // liberi) NON vengono migrate: splitPortionAmount le rende al meglio nel
+  // selettore e joinPortionAmount preserva i testi non numerici così come sono.
+  //
+  // Solo l'unità "g" partecipa all'adattamento delle dosi (Meller o profilo
+  // assegnato): tutte le altre unità restano testuali in settimana, spesa e
+  // stampa. I numeri nudi storici ("80") valgono grammi per convenzione
+  // dell'editor ("In grammi: scrivi solo il numero"), come già in
+  // parseCarbAmount — così nessuna ricetta esistente cambia comportamento.
+  const PORTION_UNITS = ['g', 'pz', 'cucchiaio', 'cucchiaino', 'ml', 'q.b.'];
+  const PORTION_FRACTIONS = { '½': 0.5, '¼': 0.25, '¾': 0.75 };
+
+  // Unità dichiarata di una porzione, SENZA conversioni (i cucchiai restano
+  // cucchiai qui, a differenza di parseSimpleAmount che li normalizza in
+  // grammi per la spesa). Ritorna 'g'|'pz'|'cucchiaio'|'cucchiaino'|'ml'|
+  // 'q.b.' oppure null per vuoto/opaco (non adattabile, resta testuale).
+  function portionUnit(raw) {
+    const original = String(raw ?? '').trim();
+    if (isEmptyPortion(original)) return null;
+    if (/^(q\.?b\.?|liber[oaie]|a piacere)$/i.test(original)) return 'q.b.';
+    const match = original.match(/^(\d+(?:[.,]\d+)?|[½¼¾])(?:\s*[-–—]\s*(\d+(?:[.,]\d+)?|[½¼¾]))?\s*(g|ml|pz|cucchiaio|cucchiai|cucchiaino|cucchiaini)?$/i);
+    if (!match) return null;
+    if (match[2]) return null; // intervallo ("80-100 g"): testuale, mai adattato
+    const token = (match[3] || '').toLowerCase();
+    if (!token) return 'g'; // numero nudo storico = grammi (convenzione editor)
+    if (token === 'cucchiai') return 'cucchiaio';
+    if (token === 'cucchiaini') return 'cucchiaino';
+    return token;
+  }
+
+  // Vera quando la porzione partecipa all'adattamento dosi: unità "g"
+  // (compresi i numeri nudi storici) oppure dose mancante "—" che
+  // l'adattamento compila. q.b., pezzi, cucchiai, ml e testi restano testuali.
+  function isAdaptableGramPortion(raw) {
+    if (isEmptyPortion(raw)) return true;
+    return portionUnit(raw) === 'g';
+  }
+
+  // Scompone una porzione storica per l'editor {text, unit}: text va nel
+  // campo numero (numero puro se leggibile, altrimenti il testo originale
+  // preservato), unit nel selettore. Mai null: vuoto → {text:'', unit:'g'}.
+  function splitPortionAmount(raw) {
+    const original = String(raw ?? '').trim();
+    if (isEmptyPortion(original)) return { text: '', unit: 'g' };
+    if (/^(q\.?b\.?|liber[oaie]|a piacere)$/i.test(original)) return { text: '', unit: 'q.b.' };
+    const match = original.match(/^(\d+(?:[.,]\d+)?|[½¼¾])\s*(g|ml|pz|cucchiaio|cucchiai|cucchiaino|cucchiaini)?$/i);
+    if (match) {
+      const token = (match[2] || '').toLowerCase();
+      const unit = !token ? 'g'
+        : token === 'cucchiai' ? 'cucchiaio'
+        : token === 'cucchiaini' ? 'cucchiaino' : token;
+      return { text: match[1], unit };
+    }
+    return { text: original, unit: portionUnit(original) || 'g' };
+  }
+
+  // Ricompone numero + unità in stringa canonica "<numero> <unità>".
+  // Testi non numerici (es. "un pizzico") e vuoti sono preservati come sono
+  // ("—" per il vuoto): l'editor non distrugge mai i dati storici opachi.
+  function joinPortionAmount(text, unit) {
+    const clean = String(text ?? '').trim();
+    const canonicalUnit = PORTION_UNITS.includes(unit) ? unit : 'g';
+    if (canonicalUnit === 'q.b.') return 'q.b.';
+    if (!clean || clean === '—' || clean === '-') return '—';
+    if (/^(\d+(?:[.,]\d+)?|[½¼¾])$/.test(clean)) {
+      const numeric = PORTION_FRACTIONS[clean] ?? Number(clean.replace(',', '.'));
+      if (!Number.isFinite(numeric) || numeric <= 0) return '—';
+      return `${clean} ${canonicalUnit}`;
+    }
+    return clean;
+  }
+
   // ----- Trasformazione percentuale carboidrati pranzo <-> cena -----
 
   function carbSourceForName(name) {
@@ -1441,6 +1517,40 @@ const PROTEIN_CATEGORY_LABELS = {
   // Le frequenze del generatore si basano prima sugli alimenti effettivi
   // della ricetta, nell'ordine in cui compaiono. `proteinCategory` resta un
   // fallback per ricette legacy o senza ingredienti riconoscibili.
+  const CARB_FREQUENCY_CATEGORIES = ['pastaRice', 'otherCereals', 'bread', 'potatoes'];
+  const CARB_CONSTRAINT_KEYS = {
+    pastaRice: { min: 'pastaRiceMin', max: 'pastaRiceMax' },
+    otherCereals: { min: 'otherCerealsMin', max: 'otherCerealsMax' },
+    bread: { min: 'breadMin', max: 'breadMax' },
+    potatoes: { min: 'potatoesMin', max: 'potatoesMax' }
+  };
+  const CARB_FREQUENCY_LABELS = {
+    pastaRice: 'Pasta e riso',
+    otherCereals: 'Altri cereali',
+    bread: 'Pane e sostituti',
+    potatoes: 'Patate, gnocchi e polenta'
+  };
+  // Tassonomia delle frequenze carboidrati assegnate dal professionista
+  // (PASSO 4): le patate prima (gli gnocchi di patate contengono "patat"),
+  // i cereali generici per ultimi. Una ricetta conta nella prima categoria
+  // che combacia col primo ingrediente utile.
+  const CARB_FREQUENCY_HINTS = [
+    { category: 'potatoes', match: /patat|gnocchi|polenta/ },
+    { category: 'bread', match: /pane|panino|piadina|piada|focaccia|cracker|grissin|crostin|fette biscottate|wasa|tarall/ },
+    { category: 'pastaRice', match: /pasta|spaghett|penne|fusilli|lasagne|tagliatelle|maccheron|trofie|riso|noodle/ },
+    { category: 'otherCereals', match: /farro|orzo|quinoa|cous ?cous|avena|amaranto|grano saraceno|miglio|segale|bulgur|cereali/ }
+  ];
+  function classifyCarbFrequency(recipe) {
+    const ingredients = recipe?.ingredients || [];
+    for (const ingredient of ingredients) {
+      const name = aliasKey(ingredient?.name);
+      if (!name) continue;
+      const hit = CARB_FREQUENCY_HINTS.find(hint => hint.match.test(name));
+      if (hit) return hit.category;
+    }
+    return null;
+  }
+  const FREQUENCY_CONSTRAINT_KEYS = { ...PROTEIN_CONSTRAINT_KEYS, ...CARB_CONSTRAINT_KEYS };
   const PROTEIN_INGREDIENT_HINTS = [
     { category: 'omega', match: /salmone|sgombro|sardine?|aringa|alice|acciug/ },
     { category: 'otherFish', match: /merluzzo|nasello|sogliola|orata|branzino|spigola|tonno|calamar|polpo|seppi|spada|trota|platessa|cozze|vongole|gamber|crostace|mollusch|pesce/ },
@@ -1555,6 +1665,16 @@ const PROTEIN_CATEGORY_LABELS = {
     const currentPlan = options.plan && options.plan.days ? options.plan : emptyPlan();
     const blocks = options.blocks || {};
     const constraints = { ...DEFAULT_CONSTRAINTS, ...(options.constraints || {}) };
+    // Le frequenze carboidrati si valutano solo quando almeno un minimo o un
+    // massimo dedicato è finito (valori assegnati dal professionista). Senza
+    // questi valori carbOf restituisce sempre null e il generatore si comporta
+    // esattamente come prima.
+    const carbConstrained = CARB_FREQUENCY_CATEGORIES.some(key => {
+      const min = Number(constraints[CARB_CONSTRAINT_KEYS[key].min]);
+      const max = Number(constraints[CARB_CONSTRAINT_KEYS[key].max]);
+      return Number.isFinite(min) || Number.isFinite(max);
+    });
+    const carbOf = recipe => (carbConstrained ? classifyCarbFrequency(recipe) : null);
     const warnings = [];
     const recipes = (catalog || []).map(migrateRecipe);
     const recipesById = Object.fromEntries(recipes.map(recipe => [recipe.id, recipe]));
@@ -1568,13 +1688,17 @@ const PROTEIN_CATEGORY_LABELS = {
     const allowCrossSlot = Boolean(options.allowCrossSlot);
 
     const minFor = category => {
-      const key = PROTEIN_CONSTRAINT_KEYS[category]?.min;
+      const key = FREQUENCY_CONSTRAINT_KEYS[category]?.min;
       const value = key ? Number(constraints[key]) : 0;
+      // Campo vuoto/non numerico: nessun minimo imposto; minFor vale zero e
+      // non entra né nel punteggio né nella riparazione né negli avvisi.
       return Number.isFinite(value) ? Math.max(0, value) : 0;
     };
     const maxFor = category => {
-      const key = PROTEIN_CONSTRAINT_KEYS[category]?.max;
+      const key = FREQUENCY_CONSTRAINT_KEYS[category]?.max;
       const value = key ? Number(constraints[key]) : NaN;
+      // Campo vuoto/non numerico: nessun massimo imposto (Infinity) e quindi
+      // nessun vincolo duro. minFor garantisce comunque max >= min finito.
       return Number.isFinite(value) ? Math.max(minFor(category), value) : Infinity;
     };
 
@@ -1592,7 +1716,10 @@ const PROTEIN_CATEGORY_LABELS = {
       return base.concat(opposite);
     };
 
-    const counts = { poultry: 0, beef: 0, curedMeats: 0, omega: 0, otherFish: 0, dairy: 0, eggs: 0, legumes: 0 };
+    const counts = {
+      poultry: 0, beef: 0, curedMeats: 0, omega: 0, otherFish: 0, dairy: 0, eggs: 0, legumes: 0,
+      pastaRice: 0, otherCereals: 0, bread: 0, potatoes: 0
+    };
     const fishToday = {};
     const omegaToday = {};
     const usage = {};
@@ -1615,6 +1742,8 @@ const PROTEIN_CATEGORY_LABELS = {
       if (slot !== 'lunch' && slot !== 'dinner') return;
       const category = classifyProtein(recipe);
       if (category && counts[category] !== undefined) counts[category] += 1;
+      const carb = carbOf(recipe);
+      if (carb && counts[carb] !== undefined) counts[carb] += 1;
       if (isFishy(recipe)) fishToday[day] = fishCountOn(day) + 1;
       if (category === 'omega') omegaToday[day] = (omegaToday[day] || 0) + 1;
     };
@@ -1624,6 +1753,8 @@ const PROTEIN_CATEGORY_LABELS = {
       if (slot !== 'lunch' && slot !== 'dinner') return;
       const category = classifyProtein(recipe);
       if (category && counts[category] !== undefined) counts[category] = Math.max(0, counts[category] - 1);
+      const carb = carbOf(recipe);
+      if (carb && counts[carb] !== undefined) counts[carb] = Math.max(0, counts[carb] - 1);
       if (isFishy(recipe)) fishToday[day] = Math.max(0, fishCountOn(day) - 1);
       if (category === 'omega') omegaToday[day] = Math.max(0, (omegaToday[day] || 0) - 1);
     };
@@ -1718,9 +1849,11 @@ const PROTEIN_CATEGORY_LABELS = {
     };
     const pairCandidateOk = (recipe, anchorDay, targetDay) => {
       const category = classifyProtein(recipe);
+      const carb = carbOf(recipe);
       // La stessa ricetta occupa due posti: deve starci nei suoi tetti.
       if ((usage[recipe.id] || 0) + 2 > maxRepeats) return false;
       if (category && counts[category] + 2 > maxFor(category)) return false;
+      if (carb && counts[carb] + 2 > maxFor(carb)) return false;
       if (isFishy(recipe) && (fishCountOn(anchorDay) >= 1 || fishCountOn(targetDay) >= 1)) return false;
       // Un'accoppiata omega cena → pranzo è adiacente a se stessa per
       // costruzione (è ciò che l'utente ha chiesto), ma non deve mai toccare
@@ -1733,8 +1866,10 @@ const PROTEIN_CATEGORY_LABELS = {
     };
     const pairScore = (recipe, anchorDay, targetDay) => {
       const category = classifyProtein(recipe);
+      const carb = carbOf(recipe);
       let score = rand() * 2;
       if (category && counts[category] < minFor(category)) score += 7;
+      if (carb && counts[carb] < minFor(carb)) score += 7;
       if (!category) score -= 1;
       score -= (usage[recipe.id] || 0) * 3;
       return score;
@@ -1771,8 +1906,10 @@ const PROTEIN_CATEGORY_LABELS = {
     // lasciare il pasto vuoto.
     const candidateHardOk = (recipe, day, { relaxMax = false, relaxRepeats = false, relaxFish = false, relaxOmegaSpacing = false } = {}) => {
       const category = classifyProtein(recipe);
-      if (!category) return true;
-      if (!relaxMax && counts[category] >= maxFor(category)) return false;
+      const carb = carbOf(recipe);
+      if (!category && !carb) return true;
+      if (category && !relaxMax && counts[category] >= maxFor(category)) return false;
+      if (carb && !relaxMax && counts[carb] >= maxFor(carb)) return false;
       if (isFishy(recipe) && !relaxFish && fishCountOn(day) >= 1) return false;
       if (!relaxRepeats && (usage[recipe.id] || 0) >= maxRepeats) return false;
       // Omega-3 distanziati: l'unica adiacenza ammessa è quella costruita
@@ -1784,8 +1921,10 @@ const PROTEIN_CATEGORY_LABELS = {
     };
     const candidateScore = (recipe, day, slot) => {
       const category = classifyProtein(recipe);
+      const carb = carbOf(recipe);
       let score = rand() * 2;
       if (category && counts[category] < minFor(category)) score += 8;
+      if (carb && counts[carb] < minFor(carb)) score += 8;
       score += templatePairBonus(recipe, day, slot) * 4;
       if (!category) score -= 1;
       score -= 3 * (usage[recipe.id] || 0);
@@ -1839,19 +1978,39 @@ const PROTEIN_CATEGORY_LABELS = {
     // Scambia un pasto generato (mai bloccato, mai dentro una coppia batch)
     // con una ricetta della categoria mancante, senza violare massimi, limite
     // di pesce giornaliero né spingere l'altra categoria sotto il suo minimo.
-    PROTEIN_CATEGORIES.forEach(category => {
+    const repairCategories = [...PROTEIN_CATEGORIES, ...(carbConstrained ? CARB_FREQUENCY_CATEGORIES : [])];
+    repairCategories.forEach(category => {
+      const isCarbCategory = CARB_FREQUENCY_CATEGORIES.includes(category);
+      const classify = isCarbCategory ? classifyCarbFrequency : classifyProtein;
       while (counts[category] < minFor(category)) {
         let applied = false;
         const slotsInRandomOrder = shuffle(generatedProteinSlots, rand);
         for (const { day, slot } of slotsInRandomOrder) {
           const currentRecipe = recipesById[chosen[day][slot]];
-          const currentCategory = currentRecipe ? classifyProtein(currentRecipe) : null;
+          const currentCategory = currentRecipe ? classify(currentRecipe) : null;
           if (!currentRecipe || currentCategory === category) continue;
-          if (currentCategory && minFor(currentCategory) > 0 && counts[currentCategory] <= minFor(currentCategory)) continue;
-          const pool = poolFor(slot).filter(recipe => classifyProtein(recipe) === category);
+          // Non spingere sotto il minimo né la categoria proteica né quella
+          // dei carboidrati del pasto da sostituire.
+          const currentProtein = currentRecipe ? classifyProtein(currentRecipe) : null;
+          const currentCarb = carbOf(currentRecipe);
+          if (currentProtein && minFor(currentProtein) > 0 && counts[currentProtein] <= minFor(currentProtein)) continue;
+          if (currentCarb && minFor(currentCarb) > 0 && counts[currentCarb] <= minFor(currentCarb)) continue;
+          const pool = poolFor(slot).filter(recipe => classify(recipe) === category);
           const replacementOk = recipe => {
             if (!recipe || recipe.id === currentRecipe.id) return false;
-            if (counts[category] + 1 > maxFor(category)) return false;
+            // Le sostituzioni non devono violare alcun tetto, nella dimensione
+            // riparata né nell'altra. Il conteggio è netto: si toglie il pasto
+            // attuale prima di aggiungere quello nuovo.
+            const replacementProtein = classifyProtein(recipe);
+            if (replacementProtein) {
+              const after = counts[replacementProtein] + 1 - (currentProtein === replacementProtein ? 1 : 0);
+              if (after > maxFor(replacementProtein)) return false;
+            }
+            const replacementCarb = carbOf(recipe);
+            if (replacementCarb) {
+              const after = counts[replacementCarb] + 1 - (currentCarb === replacementCarb ? 1 : 0);
+              if (after > maxFor(replacementCarb)) return false;
+            }
             if ((usage[recipe.id] || 0) >= maxRepeats) return false;
             if (isFishy(recipe) && fishCountOn(day) - (isFishy(currentRecipe) ? 1 : 0) + 1 > 1) return false;
             // Anche la riparazione delle frequenze minime rispetta la distanza
@@ -1935,6 +2094,26 @@ const PROTEIN_CATEGORY_LABELS = {
         );
       }
     });
+    // Le frequenze carboidrati assegnate vengono segnalate solo quando un
+    // limite è effettivamente impostato: campi vuoti restano senza obiettivo.
+    const carbFrequencyTarget = (min, max) => {
+      if (!Number.isFinite(max)) return `almeno ${min}`;
+      if (min <= 0) return `massimo ${max}`;
+      return `${min}-${max}`;
+    };
+    if (carbConstrained) {
+      CARB_FREQUENCY_CATEGORIES.forEach(category => {
+        const count = counts[category];
+        const min = minFor(category);
+        const max = maxFor(category);
+        const constrained = min > 0 || Number.isFinite(max);
+        if (constrained && (count < min || count > max)) {
+          warnings.push(
+            `${CARB_FREQUENCY_LABELS[category]}: ${count} pasti (obiettivo ${carbFrequencyTarget(min, max)}).`
+          );
+        }
+      });
+    }
     // Blocchi di giorni omega consecutivi, mostrati come intervalli completi
     // ("Mercoledì–Giovedì") anziché come solo primo giorno di ogni coppia.
     // La settimana è circolare: domenica e lunedì sono adiacenti.
@@ -2136,6 +2315,9 @@ const PROTEIN_CATEGORY_LABELS = {
       // sola segnalazione (niente duplicati uomo/donna).
       const profiles = String(original.ipo) === String(original.man) ? ['man'] : MELLER_PROFILE_KEYS;
       profiles.forEach(profileKey => {
+        // Solo i grammi partecipano al confronto: pezzi, cucchiai, ml, q.b.
+        // e testi restano testuali e non generano segnalazioni.
+        if (!isAdaptableGramPortion(original[profileKey])) return;
         ['training'].forEach(dayType => {
           const expected = mellerReferenceAmount(rule, slot, dayType);
           if (expected == null) return;
@@ -2230,6 +2412,10 @@ const PROTEIN_CATEGORY_LABELS = {
     });
     guided.forEach(item => {
       const rule = item.mapping.rule;
+      // Ingredienti interamente non in grammi (pz, cucchiai, ml, q.b., testi):
+      // nessuna dose adattata, restano testuali in settimana/spesa/stampa.
+      const original = normalizePortions(item.ingredient?.portions || {});
+      if (!MELLER_PROFILE_KEYS.some(profileKey => isAdaptableGramPortion(original[profileKey]))) return;
       const divisor = groupCounts[rule.group] || 1;
       const portions = {};
       MELLER_DAY_TYPES.forEach(dayType => {
@@ -2268,7 +2454,17 @@ const PROTEIN_CATEGORY_LABELS = {
       if (!adapted) return ingredient;
       const amount = adapted[day] ?? adapted.training;
       if (amount == null) return ingredient;
-      return { ...ingredient, portions: { ipo: amount, man: amount } };
+      // Conservazione per profilo: solo i profili in grammi (o senza dose)
+      // ricevono la dose adattata; pz, cucchiai, ml, q.b. e testi restano
+      // come scritti nella ricetta originale.
+      const current = normalizePortions(ingredient.portions || {});
+      return {
+        ...ingredient,
+        portions: {
+          ipo: isAdaptableGramPortion(current.ipo) ? amount : current.ipo,
+          man: isAdaptableGramPortion(current.man) ? amount : current.man
+        }
+      };
     });
     return next;
   }
@@ -2524,6 +2720,50 @@ const PROTEIN_CATEGORY_LABELS = {
     return { rules, freeAliases: uniqueStrings(freeAliases) };
   }
 
+  // Applica le grammature personalizzate di un cliente alle regole motore già
+  // verificate, senza mutare gli input. Valori nulli e famiglie sconosciute si
+  // ignorano; valori non validi si scartano cella per cella. Se una famiglia
+  // risultasse con uno slot incompleto, si conserva la regola originale.
+  function applyGramOverridesToRules(rules, overrides) {
+    if (!Array.isArray(rules)) return [];
+    const normalizedOverrides = overrides && typeof overrides === 'object' ? overrides : {};
+    const validSlots = ['lunch', 'dinner'];
+    const validDayTypes = ['training', 'rest'];
+    const validAmount = value => Number.isFinite(Number(value)) && Number(value) > 0;
+    return rules.map(rule => {
+      const original = deepClone(rule || {});
+      const family = original?.family ? String(original.family) : '';
+      const override = family ? normalizedOverrides[family] : null;
+      const quantities = override && typeof override === 'object' ? override.quantityGrams : null;
+      if (!quantities || typeof quantities !== 'object') return original;
+      const merged = {
+        ...original,
+        slots: deepClone(original.slots || {})
+      };
+      validSlots.forEach(slot => {
+        if (!Object.prototype.hasOwnProperty.call(quantities, slot)) return;
+        const overrideSlot = quantities[slot];
+        if (overrideSlot === null || overrideSlot === undefined) return;
+        if (!overrideSlot || typeof overrideSlot !== 'object') return;
+        const originalSlot = merged.slots?.[slot];
+        const mergedSlot = {};
+        validDayTypes.forEach(dayType => {
+          if (Object.prototype.hasOwnProperty.call(overrideSlot, dayType) && overrideSlot[dayType] !== null && overrideSlot[dayType] !== undefined) {
+            if (validAmount(overrideSlot[dayType])) mergedSlot[dayType] = Number(overrideSlot[dayType]);
+            else if (originalSlot && originalSlot[dayType] !== undefined) mergedSlot[dayType] = originalSlot[dayType];
+          } else if (originalSlot && originalSlot[dayType] !== undefined) {
+            mergedSlot[dayType] = originalSlot[dayType];
+          }
+        });
+        // Slot completo o originale: mai valori nulli verso activateMellerRuleSet.
+        if (validAmount(mergedSlot.training) && validAmount(mergedSlot.rest)) {
+          merged.slots[slot] = mergedSlot;
+        }
+      });
+      return merged;
+    });
+  }
+
   // Nomi di visualizzazione editoriali per gli alimenti liberi del seed
   // (verdura, aromi, spezie): completano gli stem del manuale Meller, non
   // contengono quantità né dosi e saranno sostituiti dal catalogo approvato
@@ -2721,6 +2961,11 @@ const PROTEIN_CATEGORY_LABELS = {
     resolveShopItemOrder,
     isEmptyPortion,
     parseSimpleAmount,
+    PORTION_UNITS,
+    portionUnit,
+    isAdaptableGramPortion,
+    splitPortionAmount,
+    joinPortionAmount,
     CARB_REFERENCE,
     CARB_FAMILIES,
     carbSourceForName,
@@ -2742,6 +2987,11 @@ const PROTEIN_CATEGORY_LABELS = {
     PROTEIN_CATEGORIES,
     PROTEIN_CONSTRAINT_KEYS,
     PROTEIN_CATEGORY_LABELS,
+    CARB_FREQUENCY_CATEGORIES,
+    CARB_CONSTRAINT_KEYS,
+    CARB_FREQUENCY_LABELS,
+    FREQUENCY_CONSTRAINT_KEYS,
+    classifyCarbFrequency,
     classifyProtein,
     inferProteinCategoryFromIngredients,
     catalogHasLegacyFrequency,
@@ -2789,6 +3039,7 @@ const PROTEIN_CATEGORY_LABELS = {
     buildCatalogIndex,
     searchCatalog,
     structureRevisionToMellerRules,
+    applyGramOverridesToRules,
     MELLER_FREE_DISPLAY_LABELS,
     splitMellerSeed
   };

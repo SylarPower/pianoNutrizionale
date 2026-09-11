@@ -47,7 +47,8 @@
         structureId: profile.structureId,
         structureRevisionId: String(profile.structureRevisionId),
         structureChecksum: profile.structureChecksum,
-        ingredientCatalogVersion: profile.ingredientCatalogVersion ?? null
+        ingredientCatalogVersion: profile.ingredientCatalogVersion ?? null,
+        gramOverridesRevision: profile.gramOverrides?.revision ?? null
       };
     }
     return {
@@ -67,7 +68,8 @@
       return snap.structureId === profile.structureId &&
         String(snap.structureRevisionId) === String(profile.structureRevisionId) &&
         snap.structureChecksum === profile.structureChecksum &&
-        (snap.ingredientCatalogVersion ?? null) === (profile.ingredientCatalogVersion ?? null);
+        (snap.ingredientCatalogVersion ?? null) === (profile.ingredientCatalogVersion ?? null) &&
+        (snap.gramOverridesRevision ?? null) === (profile.gramOverrides?.revision ?? null);
     }
     return Boolean(
       snap.ruleSetId === profile.ruleSetId &&
@@ -78,9 +80,10 @@
 
   // Regole motore per il profilo assegnato. V1: già in formato motore. V2: la
   // revisione struttura viene convertita nel client con il catalogo incorporato
-  // nel profilo (stesso motore, nessun fork server-side delle dosi). Ritorna
-  // null se la conversione è impossibile o produrrebbe un profilo vuoto: mai
-  // attivare in silenzio un profilo senza dosi.
+  // nel profilo (stesso motore, nessun fork server-side delle dosi) e poi unita
+  // alle grammature personalizzate eventualmente confermate. Ritorna null se la
+  // conversione è impossibile o produrrebbe un profilo vuoto: mai attivare in
+  // silenzio un profilo senza dosi.
   function engineRulesFor(profile) {
     if (!profile) return null;
     if (profile.schemaVersion !== 2) {
@@ -92,8 +95,13 @@
     if (!Domain?.buildCatalogIndex || !Domain?.structureRevisionToMellerRules) return null;
     const converted = Domain.structureRevisionToMellerRules(
       profile.structureRevision || {}, Domain.buildCatalogIndex(profile.catalog || {}));
-    if (!converted.rules.length) return null;
-    return converted;
+    let rules = converted.rules || [];
+    const overrides = profile.gramOverrides?.overrides;
+    if (overrides && typeof Domain.applyGramOverridesToRules === 'function') {
+      rules = Domain.applyGramOverridesToRules(rules, overrides);
+    }
+    if (!rules.length) return null;
+    return { rules, freeAliases: converted.freeAliases || [] };
   }
 
   function applyPolicy(plan, context) {
@@ -114,7 +122,11 @@
     try {
       const value = await call('getMyAssignedProfile', {});
       if (value?.state === 'assigned' && value.profile) {
-        if (!root.PianoDomain?.activateMellerRuleSet?.(value.profile.rules, value.profile.freeAliases)) throw new Error('Rule set non compatibile');
+        const engine = engineRulesFor(value.profile);
+        if (!engine) throw new Error('Profilo assegnato non compatibile');
+        if (!root.PianoDomain?.activateMellerRuleSet?.(engine.rules, engine.freeAliases)) {
+          throw new Error('Rule set non compatibile');
+        }
         localStorage.setItem(cacheKey(uid), JSON.stringify({ ...value, cachedAt: new Date().toISOString() }));
       }
       return value;

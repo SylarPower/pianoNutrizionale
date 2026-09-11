@@ -12,7 +12,12 @@ const {
   parseCatalogPayload, validateCatalogImport, catalogImportPreviewId,
   validateInviteOrganizationUser, validateInviteClientLink, validateRespondClientLink,
   validateRemoveClientLink, validateMemberStatus, validateRemoveNutritionist,
-  validateTransferStructureOwnership
+  validateTransferStructureOwnership,
+  validateSaveStudioRecipe, validateArchiveStudioRecipe,
+  validateAssignStudioRecipes, validateUnassignStudioRecipes,
+  validateSaveClientPersonalRecipe, validateSaveGramOverrides,
+  validateSaveFoodFrequencies, validatePreviewCopyClientData, validateCopyClientData,
+  validateFoodFrequencies, validateGramOverrides
 } = require('../src/domain');
 
 const ClientDomain = require('../../js/domain');
@@ -361,4 +366,111 @@ test('utenti: validatori inviti, link, stati e username normalizzati', () => {
   assert.equal(transfer.newOwnerUid, 'uid-2');
   const remove = validateRemoveNutritionist({ organizationId: 'o', userId: 'uid-2', idempotencyKey: 'k' });
   assert.equal(remove.userId, 'uid-2');
+});
+
+test('frequenze alimentari: vuote = senza limiti, complete normalizzate', () => {
+  const empty = validateFoodFrequencies({ proteins: {}, carbs: {} });
+  assert.deepEqual(empty.proteins.poultry, { min: null, max: null });
+  assert.deepEqual(empty.carbs.bread, { min: null, max: null });
+  const full = validateFoodFrequencies({
+    proteins: { poultry: { min: 1, max: 2 }, legumes: { min: 3, max: null } },
+    carbs: { pastaRice: { min: null, max: 4 } }
+  });
+  assert.deepEqual(full.proteins.poultry, { min: 1, max: 2 });
+  assert.deepEqual(full.proteins.legumes, { min: 3, max: null });
+  assert.deepEqual(full.carbs.pastaRice, { min: null, max: 4 });
+  assert.deepEqual(full.carbs.potatoes, { min: null, max: null }, 'chiavi assenti = senza limiti');
+  assert.throws(() => validateFoodFrequencies({ proteins: { poultry: { min: 5, max: 2 } }, carbs: {} }), /minimo/);
+  assert.throws(() => validateFoodFrequencies({ proteins: { poultry: { min: 0, max: 15 } }, carbs: {} }), /0 e 14/);
+  assert.throws(() => validateFoodFrequencies({ proteins: {}, carbs: {}, dolci: {} }), /campi non ammessi/);
+  assert.throws(() => validateFoodFrequencies({ proteins: { pollo: { min: 1, max: 1 } }, carbs: {} }), /non riconosciute/);
+});
+
+test('override grammature: parziali e null ammessi, famiglie ignote rifiutate', () => {
+  const valid = validateGramOverrides({
+    riso: { quantityGrams: { lunch: { training: 100, rest: null }, dinner: null } },
+    pollame: { quantityGrams: { lunch: null, dinner: { training: 90, rest: 80 } } }
+  });
+  assert.equal(valid.riso.quantityGrams.lunch.training, 100);
+  assert.equal(valid.riso.quantityGrams.lunch.rest, null);
+  assert.equal(valid.riso.quantityGrams.dinner, null);
+  assert.throws(() => validateGramOverrides({ unicorno: { quantityGrams: { lunch: { training: 10, rest: 10 } } } }), /famiglia/);
+  assert.throws(() => validateGramOverrides({ riso: { quantityGrams: { lunch: { training: 0, rest: 10 } } } }), /tra 1 e 2000/);
+  assert.throws(() => validateGramOverrides({ riso: { quantityGrams: { lunch: null, dinner: null } } }), /almeno una dose/);
+  const tooMany = {};
+  for (let index = 0; index < 41; index++) tooMany[`fam${index}`] = { quantityGrams: { lunch: { training: 10, rest: 10 } } };
+  assert.throws(() => validateGramOverrides(tooMany), /40/);
+});
+
+test('ricetta studio: create senza id, update con id, porzioni canoniche', () => {
+  const base = {
+    name: 'Pasta al pomodoro', emoji: '🍝', slot: 'lunch',
+    ingredients: [
+      { name: 'Pasta', portions: { man: '80 g', ipo: '60 g' } },
+      { name: 'Sale', portions: { man: 'q.b.' } }
+    ],
+    steps: ['Cuoci'], notes: [], specialNote: '', proteinCategory: 'legumes'
+  };
+  const created = validateSaveStudioRecipe({ organizationId: 'org-1', recipe: base, idempotencyKey: 'k1' });
+  assert.equal(created.recipe.recipeId, null);
+  const updated = validateSaveStudioRecipe({ organizationId: 'org-1', recipe: { ...base, recipeId: 'abc123' }, idempotencyKey: 'k1' });
+  assert.equal(updated.recipe.recipeId, 'abc123');
+  assert.throws(() => validateSaveStudioRecipe({ organizationId: 'org-1', recipe: { ...base, name: 'x' }, idempotencyKey: 'k1' }), /recipe\.name non valido/);
+  assert.throws(() => validateSaveStudioRecipe({ organizationId: 'org-1', recipe: { ...base, slot: 'brunch' }, idempotencyKey: 'k1' }), /slot/);
+  // Dosi legacy non canoniche accettate (es. «tanta»); serve almeno un lato.
+  const legacy = validateSaveStudioRecipe({
+    organizationId: 'org-1',
+    recipe: { ...base, ingredients: [{ name: 'Pasta', portions: { man: 'tanta' } }] },
+    idempotencyKey: 'k1'
+  });
+  assert.equal(legacy.recipe.ingredients[0].portions.man, 'tanta');
+  assert.throws(() => validateSaveStudioRecipe({
+    organizationId: 'org-1',
+    recipe: { ...base, ingredients: [{ name: 'Pasta', portions: { man: '', ipo: '' } }] },
+    idempotencyKey: 'k1'
+  }), /almeno una dose/);
+  // proteinCategory resta testo libero legacy (max 40): la console propone le
+  // 8 chiavi, ma il server non rifiuta i valori storici delle personali.
+  const legacyCat = validateSaveStudioRecipe({ organizationId: 'org-1', recipe: { ...base, proteinCategory: 'carne' }, idempotencyKey: 'k1' });
+  assert.equal(legacyCat.recipe.proteinCategory, 'carne');
+  assert.throws(() => validateSaveStudioRecipe({ organizationId: 'org-1', recipe: { ...base, proteinCategory: 'x'.repeat(41) }, idempotencyKey: 'k1' }), /proteinCategory non valido/);
+  assert.throws(() => validateSaveStudioRecipe({ organizationId: 'org-1', recipe: { ...base, origin: 'org' }, idempotencyKey: 'k1' }), /campi non ammessi/);
+});
+
+test('ricetta personale: id obbligatorio, marcatori studio sempre rifiutati', () => {
+  const base = {
+    id: 'R1', name: 'Mia pasta', emoji: '', slot: 'dinner',
+    ingredients: [{ name: 'Riso', portions: { man: '70 g' } }],
+    steps: [], notes: [], specialNote: '', proteinCategory: ''
+  };
+  const valid = validateSaveClientPersonalRecipe({ organizationId: 'org-1', clientId: 'c1', recipe: base, idempotencyKey: 'k1' });
+  assert.equal(valid.recipe.id, 'R1');
+  for (const marker of ['origin', 'orgRecipeId', 'assignedByOrgId', 'assignedAt']) {
+    assert.throws(() => validateSaveClientPersonalRecipe({ organizationId: 'org-1', clientId: 'c1', recipe: { ...base, [marker]: 'x' }, idempotencyKey: 'k1' }), /campi non ammessi/, marker);
+  }
+  assert.throws(() => validateSaveClientPersonalRecipe({ organizationId: 'org-1', clientId: 'c1', recipe: { ...base, id: '' }, idempotencyKey: 'k1' }), /id/);
+});
+
+test('assegna/rimuovi: limiti e formati id', () => {
+  const assign = validateAssignStudioRecipes({ organizationId: 'org-1', clientId: 'c1', studioRecipeIds: ['a1b2c3', 'd4e5f6'], idempotencyKey: 'k1' });
+  assert.deepEqual(assign.studioRecipeIds, ['a1b2c3', 'd4e5f6']);
+  assert.throws(() => validateAssignStudioRecipes({ organizationId: 'org-1', clientId: 'c1', studioRecipeIds: [], idempotencyKey: 'k1' }), /tra 1 e 20/);
+  assert.throws(() => validateAssignStudioRecipes({ organizationId: 'org-1', clientId: 'c1', studioRecipeIds: Array.from({ length: 21 }, (_, i) => `id${i}`), idempotencyKey: 'k1' }), /20/);
+  assert.throws(() => validateAssignStudioRecipes({ organizationId: 'org-1', clientId: 'c1', studioRecipeIds: ['no!!'], idempotencyKey: 'k1' }), /studioRecipeIds\[0\] non valido/);
+  const unassign = validateUnassignStudioRecipes({ organizationId: 'org-1', clientId: 'c1', studioRecipeIds: ['a1b2c3'], idempotencyKey: 'k1' });
+  assert.deepEqual(unassign.studioRecipeIds, ['a1b2c3']);
+  assert.throws(() => validateArchiveStudioRecipe({ organizationId: 'org-1', studioRecipeId: 'x', archived: 'si', idempotencyKey: 'k1' }), /archived/);
+});
+
+test('salvataggi cliente e copia: payload completi e auto-copia vietata', () => {
+  const grams = validateSaveGramOverrides({ organizationId: 'org-1', clientId: 'c1', overrides: { riso: { quantityGrams: { lunch: { training: 80, rest: 60 } } } }, note: 'Nota', idempotencyKey: 'k1' });
+  assert.equal(grams.note, 'Nota');
+  const freq = validateSaveFoodFrequencies({ organizationId: 'org-1', clientId: 'c1', proteins: { poultry: { min: 1, max: 2 } }, carbs: {}, idempotencyKey: 'k1' });
+  assert.deepEqual(freq.proteins.poultry, { min: 1, max: 2 });
+  const preview = validatePreviewCopyClientData({ organizationId: 'org-1', sourceClientId: 'c1', targetClientIds: ['c2', 'c3'] });
+  assert.deepEqual(preview.targetClientIds, ['c2', 'c3']);
+  const copy = validateCopyClientData({ organizationId: 'org-1', sourceClientId: 'c1', targetClientIds: ['c2'], idempotencyKey: 'k1' });
+  assert.equal(copy.sourceClientId, 'c1');
+  assert.throws(() => validateCopyClientData({ organizationId: 'org-1', sourceClientId: 'c1', targetClientIds: ['c1'], idempotencyKey: 'k1' }), /sorgente/);
+  assert.throws(() => validatePreviewCopyClientData({ organizationId: 'org-1', sourceClientId: 'c1', targetClientIds: [] }), /tra 1 e 10/);
 });

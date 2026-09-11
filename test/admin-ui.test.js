@@ -145,3 +145,40 @@ test('copy premium comunica valore e sicurezza senza promessa clinica assoluta',
   assert.match(html, /Ogni azione è tracciata/);
   assert.doesNotMatch(html, /garantisce|cura|risultato garantito/i);
 });
+
+test('console PASSO 4: vista Ricette studio, dialoghi e callable gestione cliente', () => {
+  // Vista catalogo studio.
+  assert.match(html, /data-view="studio"/);
+  assert.match(html, /id="view-studio"/);
+  for (const id of ['studio-list', 'studio-feedback', 'new-studio-recipe', 'refresh-studio']) {
+    assert.match(html, new RegExp(`id="${id}"`));
+  }
+  // Dialogo ricetta condiviso (studio + personale).
+  for (const id of ['recipe-dialog', 'recipe-form', 'recipe-mode', 'recipe-id', 'recipe-client-id', 'recipe-name', 'recipe-ingredients', 'recipe-steps', 'recipe-error']) {
+    assert.match(html, new RegExp(`id="${id}"`));
+  }
+  // Dialogo gestione cliente: 5 sezioni (assegnate, personali, grammature, frequenze, copia).
+  for (const id of ['client-dialog', 'client-org-recipes', 'client-assign-list', 'client-personal-recipes', 'client-grams', 'client-grams-note', 'client-freq-proteins', 'client-freq-carbs', 'client-copy-targets', 'client-copy-preview', 'client-copy-confirm', 'client-copy-preview-out']) {
+    assert.match(html, new RegExp(`id="${id}"`));
+  }
+  // Le 15 callable della gestione clienti sono tutte referenziate.
+  for (const callable of ['listStudioRecipes', 'saveStudioRecipe', 'archiveStudioRecipe', 'assignStudioRecipes', 'unassignStudioRecipes', 'listClientRecipes', 'saveClientPersonalRecipe', 'getClientGramOverrides', 'saveClientGramOverrides', 'getClientFoodFrequencies', 'saveClientFoodFrequencies', 'previewCopyClientData', 'copyClientData']) {
+    assert.match(js, new RegExp(`['"]${callable}['"]`), `callable ${callable} non referenziata in admin.js`);
+  }
+  // Pulsante Gestione sulle card clienti + vista agganciata allo showView.
+  assert.match(js, /data-manage-client/);
+  assert.match(js, /openClientWorkspace/);
+  assert.match(js, /loadStudio/);
+  // Copy non tecnico: mai "retroattivo silenzioso" verso lo staff, ma avvisi chiari.
+  assert.match(html, /serve una riassegnazione esplicita/);
+  assert.match(html, /restano intoccabili/);
+  // Stili console per workspace, frequenze e ingredienti.
+  for (const cls of ['workspace-row', 'frequency-grid', 'frequency-row', 'recipe-ingredient']) {
+    assert.match(css, new RegExp(`\\.${cls}`), `classe .${cls} mancante in admin.css`);
+  }
+  // Stili app cliente per copie studio e frequenze assegnate.
+  const clientCss = fs.readFileSync(path.join(root, 'css/style.css'), 'utf8');
+  for (const cls of ['studio-copy-banner', 'studio-copy-flag', 'studio-copy-badge', 'generator-assigned-notice', 'generator-assigned-carbs']) {
+    assert.match(clientCss, new RegExp(`\\.${cls}`), `classe .${cls} mancante in style.css`);
+  }
+});

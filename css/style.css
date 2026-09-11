@@ -262,46 +262,45 @@ h3 { font-size: 1rem; }
   font-weight: 700;
 }
 .global-header select option { color: #111; }
-.header-account { justify-self: end; color: rgba(255,255,255,.86); font-size: .82rem; font-weight: 650; text-decoration: none; }
-.header-actions { display: flex; align-items: center; gap: 10px; justify-self: end; }
+.header-account { justify-self: end; color: rgba(255,255,255,.92); text-decoration: none; }
+.header-actions { display: flex; align-items: center; gap: 6px; justify-self: end; }
 
-/* Campanella del centro notifiche: sempre visibile nell'header quando
-   l'utente è autenticato, tinta con i colori del tema (verde/mint della
-   palette). Con richieste pendenti passa al rosso di segnalazione, mostra
-   il badge numerico e si scuote periodicamente come una campanella che
-   suona: il badge porta comunque il valore, così l'info non dipende dal
-   colore o dal movimento (accessibilità + prefers-reduced-motion). */
-.notification-bell {
-  position: relative;
-  display: grid;
+/* Icone header (⚙️ e 🔔): stessa dimensione tipografica e stesso stile,
+   coerenti con il select del profilo porzioni. Nessun cerchio/bordo/sfondo
+   attorno alle icone: solo il glifo, con hover leggero per il feedback. */
+.header-icon-btn {
+  display: inline-grid;
   place-items: center;
-  width: 42px;
-  height: 42px;
-  padding: 0;
-  border: 1px solid rgba(255,255,255,.4);
-  border-radius: 50%;
-  background: var(--primary-soft);
-  color: var(--primary-strong);
-  font-size: 1.12rem;
+  min-width: 40px;
+  min-height: 40px;
+  padding: 6px;
+  border: none;
+  border-radius: 12px;
+  background: transparent;
+  color: #fff;
+  font-size: 1.32rem;
   line-height: 1;
   cursor: pointer;
+  text-decoration: none;
   transition: transform .15s, background .15s;
+}
+a.header-icon-btn { color: #fff; }
+.header-icon-btn:hover { background: rgba(255,255,255,.14); transform: translateY(-1px); }
+.header-icon-btn:active { transform: scale(.94); }
+.header-icon-btn:focus-visible { outline: 2px solid #fff; outline-offset: 2px; }
+
+/* Campanella del centro notifiche: sempre visibile nell'header quando
+   l'utente è autenticato, senza cerchio attorno all'icona. Con richieste
+   pendenti mostra il badge numerico rosso e si scuote periodicamente come
+   una campanella che suona: il badge porta comunque il valore, così l'info
+   non dipende dal colore o dal movimento (accessibilità +
+   prefers-reduced-motion). */
+.notification-bell {
+  position: relative;
   transform-origin: 50% 4px;
 }
-.notification-bell:hover { transform: translateY(-1px); background: #d4ebdd; }
-.notification-bell:active { transform: scale(.94); }
-.notification-bell:focus-visible { outline: 2px solid #fff; outline-offset: 2px; }
 .notification-bell.has-pending {
-  background: var(--danger);
-  border-color: rgba(255,255,255,.55);
-  color: #fff;
   animation: bell-shake 2.4s ease-in-out infinite;
-}
-.notification-bell.has-pending:hover { background: #b93a44; }
-.notification-bell.has-pending .notification-badge {
-  background: #fff;
-  border-color: rgba(255,255,255,.85);
-  color: var(--danger);
 }
 /* Scuotimento "a campanella": breve squillo all'inizio di ogni ciclo, poi
    pausa — segnale discreto, presente finché restano richieste pendenti. */
@@ -1336,8 +1335,9 @@ body.dark-mode .global-header select {
   color: #FFFFFF;
 }
 
-body.dark-mode .header-account {
-  color: var(--text-muted);
+body.dark-mode .header-account,
+body.dark-mode .header-icon-btn {
+  color: #fff;
 }
 
 /* Banner PWA "nuova versione": in AMOLED resta scuro con bordo verde. */
@@ -1392,10 +1392,8 @@ body.dark-mode .batch-task-status.fresh {
   .global-header { grid-template-columns: auto 1fr auto; padding-inline: 12px; }
   .header-brand strong { display: none; }
   .global-header select { width: 100%; max-width: 230px; justify-self: center; }
-  .header-account { font-size: 0; }
-  .header-account::first-letter { font-size: 1rem; }
-  .header-actions { gap: 7px; }
-  .notification-bell { width: 40px; height: 40px; font-size: 1.05rem; }
+  .header-actions { gap: 4px; }
+  .header-icon-btn { min-width: 38px; min-height: 38px; font-size: 1.25rem; }
   .page-heading { align-items: center; }
   .frequency-grid { grid-template-columns: repeat(2, 1fr); }
   .week-grid { grid-template-columns: 1fr; }
@@ -2442,6 +2440,18 @@ body.dark-mode .generator-slot-lock-badge { background: #141414; color: #b8b8b8;
 .meller-save-actions .btn { flex: 1; min-width: 0; }
 .meller-plan-badge,
 .meller-blocked-badge { display: inline-grid; place-items: center; min-width: 18px; height: 18px; margin-left: 5px; padding: 0 4px; border-radius: 6px; background: var(--primary-soft); color: var(--primary-strong); font-size: .62rem; font-weight: 850; vertical-align: middle; }
+/* Copie dello studio (sola lettura): badge discreti + banner con duplicazione. */
+.studio-copy-flag { display: inline-block; margin-left: 6px; padding: 2px 7px; border-radius: 999px; background: var(--rest-soft); color: var(--rest); font-size: .62rem; font-weight: 850; letter-spacing: .02em; vertical-align: middle; }
+.studio-copy-badge { display: inline-grid; place-items: center; min-width: 18px; height: 18px; margin-left: 5px; padding: 0 6px; border-radius: 6px; background: var(--rest-soft); color: var(--rest); font-size: .62rem; font-weight: 850; vertical-align: middle; }
+.studio-copy-banner { display: flex; align-items: center; justify-content: space-between; gap: 10px; margin: 0 0 10px; padding: 10px 12px; border: 1px solid var(--line); border-radius: 12px; background: var(--rest-soft); }
+.studio-copy-banner strong { display: block; font-size: .82rem; color: var(--text); }
+.studio-copy-banner small { display: block; margin-top: 2px; color: var(--text-muted); font-size: .72rem; line-height: 1.4; }
+.studio-copy-banner .btn { flex-shrink: 0; }
+/* Frequenze assegnate dal professionista nel generatore (sola lettura). */
+.generator-assigned-notice { margin: 8px 0 4px; padding: 8px 10px; border-radius: 10px; background: var(--rest-soft); color: var(--text); font-size: .76rem; line-height: 1.45; }
+.generator-assigned-carbs { list-style: none; margin: 6px 0 8px; padding: 0; display: grid; gap: 6px; }
+.generator-assigned-carbs li { display: flex; align-items: baseline; justify-content: space-between; gap: 10px; padding: 7px 10px; border: 1px solid var(--line); border-radius: 10px; background: var(--surface); font-size: .78rem; }
+.generator-assigned-carbs li span { color: var(--text-muted); text-align: right; }
 .meller-plan-badge.original { background: var(--surface-alt); color: var(--text-muted); }
 .meller-blocked-badge { background: var(--danger-soft); color: var(--danger); }
 .meller-mode-toggle { border: 1px solid var(--line); border-radius: 999px; padding: 6px 10px; background: var(--surface-alt); color: var(--text-muted); font: inherit; font-size: .72rem; font-weight: 800; cursor: pointer; }
@@ -2569,6 +2579,21 @@ body.dark-mode .meller-notice-list li strong { color: #E6A976; }
   .portion-edit-grid-single .ghost-button { justify-self: start; }
 }
 .portion-edit-grid-single label { display: flex; flex-direction: column; gap: 4px; font-size: 0.72rem; color: var(--text-muted); font-weight: 600; }
+/* Editor quantità: numero + selettore unità affiancati per ciascun profilo. */
+.portion-input-wrap { display: flex; gap: 6px; }
+.portion-input-wrap input { flex: 1 1 auto; min-width: 0; }
+.portion-input-wrap select {
+  flex: 0 0 auto;
+  max-width: 118px;
+  min-height: 40px;
+  padding: 7px 6px;
+  border: 1px solid var(--line);
+  border-radius: 11px;
+  background: var(--surface-alt);
+  color: var(--text);
+  font-size: 0.85rem;
+  font-weight: 600;
+}
 .recipe-optional-hint { font-weight: 400; color: var(--text-muted); font-size: 0.7em; }
 .modal-edit-notes { margin-top: 12px; display: grid; gap: 10px; }
 
@@ -2589,10 +2614,21 @@ body.dark-mode .meller-notice-list li strong { color: #E6A976; }
 .switch input:checked + .switch-track { background: var(--primary); }
 .switch input:checked + .switch-track::after { transform: translateX(18px); }
 .switch input:focus-visible + .switch-track { outline: 2px solid var(--primary); outline-offset: 2px; }
-.week-adapted-row { display: inline-flex; align-items: center; gap: 10px; }
-.week-adapted-copy { display: inline-flex; flex-direction: column; }
+/* Riga del toggle "quantità adattate": un'etichetta cliccabile in stile scheda,
+   così anche il testo attiva lo switch (non solo i 44px del selettore). */
+.week-adapted-row {
+  display: inline-flex; align-items: center; gap: 10px;
+  padding: 8px 12px;
+  border: 1px solid var(--line); border-radius: 14px;
+  background: var(--surface);
+  cursor: pointer;
+  transition: border-color .15s;
+}
+.week-adapted-row:hover { border-color: var(--primary); }
+.week-adapted-copy { display: inline-flex; flex-direction: column; gap: 2px; }
 .week-adapted-copy strong { font-size: 0.85rem; }
-.week-adapted-copy small { color: var(--warning); font-size: 0.72rem; max-width: 260px; }
+.week-adapted-copy small { color: var(--warning); font-size: 0.72rem; max-width: 280px; line-height: 1.4; }
+.week-adapted-copy .week-adapted-off-note { color: var(--text-muted); }
 
 /* ---- Modale aggiornamento profilo nutrizionale ---- */
 .profile-update-content { max-width: 480px; }

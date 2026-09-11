@@ -768,6 +768,295 @@ function validateTransferStructureOwnership(input) {
   };
 }
 
+// ---------------------------------------------------------------------
+// Gestione clienti in console (PASSO 4): ricette dello studio, ricette
+// personali, grammature e frequenze per cliente, copia tra clienti.
+// ---------------------------------------------------------------------
+
+// Slot pasto del formato ricette client (js/data.js, schema storico).
+const CLIENT_RECIPE_SLOTS = new Set(['breakfast', 'snack1', 'lunch', 'snack2', 'dinner']);
+
+// Famiglie di frequenza: 8 proteiche (manuale Meller) + 4 carboidrati.
+// Chiavi stabili condivise con il client (js/domain.js): se si aggiunge una
+// famiglia, aggiornare entrambi i lati nello stesso deploy.
+const PROTEIN_FREQUENCY_KEYS = ['poultry', 'beef', 'curedMeats', 'omega', 'otherFish', 'dairy', 'eggs', 'legumes'];
+const CARB_FREQUENCY_KEYS = ['pastaRice', 'otherCereals', 'bread', 'potatoes'];
+
+function frequencyBound(value, name) {
+  if (value == null || value === '') return null;
+  const number = Number(value);
+  if (!Number.isInteger(number) || number < 0 || number > 14) {
+    fail('invalid-argument', `${name} deve essere un intero tra 0 e 14 oppure vuoto (non vincolato)`);
+  }
+  return number;
+}
+
+// Intervallo min–max "volte/settimana": entrambi vuoti = NON vincolato.
+function validateFrequencyRange(value, name) {
+  if (value == null) return { min: null, max: null };
+  exactObject(value, ['min', 'max'], name);
+  const min = frequencyBound(value.min, `${name}.min`);
+  const max = frequencyBound(value.max, `${name}.max`);
+  if (min != null && max != null && min > max) {
+    fail('invalid-argument', `${name}: il minimo non può superare il massimo`);
+  }
+  return { min, max };
+}
+
+function validateFoodFrequencies(input) {
+  exactObject(input, ['proteins', 'carbs']);
+  const section = (raw, keys, name) => {
+    if (raw == null) raw = {};
+    if (!raw || typeof raw !== 'object' || Array.isArray(raw)) fail('invalid-argument', `${name} non valido`);
+    const extra = Object.keys(raw).filter(key => !keys.includes(key));
+    if (extra.length) fail('invalid-argument', `${name}: famiglie non riconosciute (${extra.join(', ')})`);
+    const out = {};
+    keys.forEach(key => { out[key] = validateFrequencyRange(raw[key], `${name}.${key}`); });
+    return out;
+  };
+  return {
+    proteins: section(input.proteins, PROTEIN_FREQUENCY_KEYS, 'proteins'),
+    carbs: section(input.carbs, CARB_FREQUENCY_KEYS, 'carbs')
+  };
+}
+
+// Override grammature per cliente: { famigliaMeller: { quantityGrams } }.
+// Stessa forma delle regole struttura v2 (pranzo/cena × allenamento/riposo),
+// senza flag enabled (resta quello della struttura assegnata).
+function validateGramOverrides(input) {
+  if (!input || typeof input !== 'object' || Array.isArray(input)) {
+    fail('invalid-argument', 'overrides non valido');
+  }
+  const keys = Object.keys(input);
+  if (keys.length > 40) fail('invalid-argument', 'overrides: massimo 40 famiglie');
+  const out = {};
+  keys.forEach(family => {
+    if (!MELLER_FAMILY_IDS.has(family)) {
+      fail('invalid-argument', `overrides: famiglia Meller inesistente ("${family}")`);
+    }
+    const entry = input[family];
+    if (!entry || typeof entry !== 'object') fail('invalid-argument', `overrides.${family} non valido`);
+    exactObject(entry, ['quantityGrams'], `overrides.${family}`);
+    out[family] = { quantityGrams: validateContextQuantity(entry.quantityGrams, `overrides.${family}.quantityGrams`) };
+  });
+  return out;
+}
+
+function validatePortionString(value, name) {
+  if (typeof value !== 'string') fail('invalid-argument', `${name} non valido`);
+  const clean = value.trim();
+  if (!clean || clean.length > 40) fail('invalid-argument', `${name} non valido (max 40 caratteri)`);
+  return clean;
+}
+
+// Nucleo ricetta in formato client (schema storico js/data.js): stessi campi
+// che l'app salva nel catalogo, così console e app restano compatibili.
+function validateRecipeCore(recipe, name = 'recipe') {
+  exactObject(recipe, ['name', 'emoji', 'slot', 'ingredients', 'steps', 'notes', 'specialNote', 'proteinCategory', 'namesByDayType'], name);
+  const slot = text(recipe.slot, `${name}.slot`);
+  if (!CLIENT_RECIPE_SLOTS.has(slot)) fail('invalid-argument', `${name}.slot non valido`);
+  if (!Array.isArray(recipe.ingredients) || !recipe.ingredients.length || recipe.ingredients.length > 60) {
+    fail('invalid-argument', `${name}.ingredients deve contenere tra 1 e 60 ingredienti`);
+  }
+  const ingredients = recipe.ingredients.map((item, index) => {
+    exactObject(item, ['name', 'portions', 'ingredientId'], `${name}.ingredients[${index}]`);
+    exactObject(item.portions || {}, ['man', 'ipo'], `${name}.ingredients[${index}].portions`);
+    // Almeno una dose tra uomo e donna; il lato assente viene normalizzato dal
+    // client (normalizePortions). Di proposito NON si impone il formato
+    // canonico «numero + unità»: la console deve poter ritoccare anche ricette
+    // con dosi legacy senza riscriverle tutte (il form guida al canonico).
+    const manRaw = item.portions?.man;
+    const ipoRaw = item.portions?.ipo;
+    const manEmpty = manRaw == null || String(manRaw).trim() === '';
+    const ipoEmpty = ipoRaw == null || String(ipoRaw).trim() === '';
+    if (manEmpty && ipoEmpty) fail('invalid-argument', `${name}.ingredients[${index}]: almeno una dose tra uomo e donna`);
+    return {
+      name: text(item.name, `${name}.ingredients[${index}].name`, { max: 120 }),
+      portions: {
+        ...(manEmpty ? {} : { man: validatePortionString(manRaw, `${name}.ingredients[${index}].portions.man`) }),
+        ...(ipoEmpty ? {} : { ipo: validatePortionString(ipoRaw, `${name}.ingredients[${index}].portions.ipo`) })
+      },
+      ...(item.ingredientId == null || item.ingredientId === ''
+        ? {}
+        : { ingredientId: id(item.ingredientId, `${name}.ingredients[${index}].ingredientId`) })
+    };
+  });
+  const textList = (raw, key, maxItems, maxLen) => {
+    if (raw == null) return [];
+    if (!Array.isArray(raw) || raw.length > maxItems) fail('invalid-argument', `${name}.${key} non valido`);
+    return raw.map((item, index) => text(item, `${name}.${key}[${index}]`, { max: maxLen }));
+  };
+  let namesByDayType;
+  if (recipe.namesByDayType != null) {
+    exactObject(recipe.namesByDayType, ['training', 'rest'], `${name}.namesByDayType`);
+    namesByDayType = {};
+    if (recipe.namesByDayType.training != null && recipe.namesByDayType.training !== '') {
+      namesByDayType.training = text(recipe.namesByDayType.training, `${name}.namesByDayType.training`, { max: 120 });
+    }
+    if (recipe.namesByDayType.rest != null && recipe.namesByDayType.rest !== '') {
+      namesByDayType.rest = text(recipe.namesByDayType.rest, `${name}.namesByDayType.rest`, { max: 120 });
+    }
+    if (!Object.keys(namesByDayType).length) namesByDayType = undefined;
+  }
+  return {
+    name: text(recipe.name, `${name}.name`, { min: 2, max: 120 }),
+    emoji: recipe.emoji == null || recipe.emoji === '' ? '🍲' : text(recipe.emoji, `${name}.emoji`, { max: 16 }),
+    slot,
+    ingredients,
+    steps: textList(recipe.steps, 'steps', 60, 2000),
+    notes: textList(recipe.notes, 'notes', 30, 1000),
+    specialNote: optionalText(recipe.specialNote, `${name}.specialNote`, 1000) || '',
+    proteinCategory: recipe.proteinCategory == null || recipe.proteinCategory === ''
+      ? ''
+      : text(recipe.proteinCategory, `${name}.proteinCategory`, { max: 40 }),
+    ...(namesByDayType ? { namesByDayType } : {})
+  };
+}
+
+// Ricetta del catalogo studio: recipeId assente = creazione, presente =
+// aggiornamento. Lo status si cambia solo con archiveStudioRecipe.
+function validateStudioRecipe(input) {
+  exactObject(input, ['recipeId', 'name', 'emoji', 'slot', 'ingredients', 'steps', 'notes', 'specialNote', 'proteinCategory', 'namesByDayType']);
+  const { recipeId: _ignored, ...core } = input;
+  void _ignored;
+  return {
+    recipeId: input.recipeId == null || input.recipeId === '' ? null : id(input.recipeId, 'recipe.recipeId'),
+    ...validateRecipeCore(core)
+  };
+}
+
+// Ricetta personale del cliente salvata dalla console: formato client con `id`
+// obbligatorio. Qualunque marcatore di provenienza (origin, orgRecipeId,
+// assignedByOrgId, assignedAt) è RIFIUTATO: le copie assegnate dallo studio si
+// gestiscono solo con assign/unassign, mai come personali.
+function validateClientPersonalRecipe(input) {
+  exactObject(input, ['id', 'name', 'emoji', 'slot', 'ingredients', 'steps', 'notes', 'specialNote', 'proteinCategory', 'namesByDayType', 'mellerAdaptations']);
+  const { id: recipeId, mellerAdaptations: _meta, ...core } = input;
+  void _meta;
+  return {
+    id: id(recipeId, 'recipe.id'),
+    ...validateRecipeCore(core),
+    // Metadati di adattamento esistenti: preservati opachi se già presenti,
+    // mai inventati dalla console.
+    ...(input.mellerAdaptations != null ? { mellerAdaptations: input.mellerAdaptations } : {})
+  };
+}
+
+function validateClientRef(input) {
+  // Solo i due campi di riferimento: l'esattezza dell'intero payload resta a
+  // carico del validatore chiamante (che conosce tutte le chiavi ammesse).
+  return {
+    organizationId: id(input?.organizationId, 'organizationId'),
+    clientId: id(input?.clientId, 'clientId')
+  };
+}
+
+function validateStudioRecipeIds(raw, name = 'studioRecipeIds', { min = 1, max = 50 } = {}) {
+  if (!Array.isArray(raw) || raw.length < min || raw.length > max) {
+    fail('invalid-argument', `${name} deve contenere tra ${min} e ${max} ricette`);
+  }
+  const out = raw.map((value, index) => id(value, `${name}[${index}]`));
+  if (new Set(out).size !== out.length) fail('invalid-argument', `${name} contiene duplicati`);
+  return out;
+}
+
+function validateTargetClientIds(raw) {
+  if (!Array.isArray(raw) || !raw.length || raw.length > 10) {
+    fail('invalid-argument', 'targetClientIds deve contenere tra 1 e 10 clienti');
+  }
+  const out = raw.map((value, index) => id(value, `targetClientIds[${index}]`));
+  if (new Set(out).size !== out.length) fail('invalid-argument', 'targetClientIds contiene duplicati');
+  return out;
+}
+
+function validateSaveStudioRecipe(input) {
+  exactObject(input, ['organizationId', 'recipe', 'idempotencyKey']);
+  if (!input.recipe || typeof input.recipe !== 'object') fail('invalid-argument', 'recipe non valida');
+  return {
+    organizationId: id(input.organizationId, 'organizationId'),
+    recipe: validateStudioRecipe(input.recipe),
+    idempotencyKey: id(input.idempotencyKey, 'idempotencyKey')
+  };
+}
+
+function validateArchiveStudioRecipe(input) {
+  exactObject(input, ['organizationId', 'studioRecipeId', 'archived', 'idempotencyKey']);
+  if (typeof input.archived !== 'boolean') fail('invalid-argument', 'archived deve essere booleano');
+  return {
+    organizationId: id(input.organizationId, 'organizationId'),
+    studioRecipeId: id(input.studioRecipeId, 'studioRecipeId'),
+    archived: input.archived,
+    idempotencyKey: id(input.idempotencyKey, 'idempotencyKey')
+  };
+}
+
+function validateAssignStudioRecipes(input) {
+  exactObject(input, ['organizationId', 'clientId', 'studioRecipeIds', 'idempotencyKey']);
+  return {
+    ...validateClientRef(input),
+    studioRecipeIds: validateStudioRecipeIds(input.studioRecipeIds, 'studioRecipeIds', { min: 1, max: 20 }),
+    idempotencyKey: id(input.idempotencyKey, 'idempotencyKey')
+  };
+}
+
+function validateUnassignStudioRecipes(input) {
+  exactObject(input, ['organizationId', 'clientId', 'studioRecipeIds', 'idempotencyKey']);
+  return {
+    ...validateClientRef(input),
+    studioRecipeIds: validateStudioRecipeIds(input.studioRecipeIds, 'studioRecipeIds', { min: 1, max: 20 }),
+    idempotencyKey: id(input.idempotencyKey, 'idempotencyKey')
+  };
+}
+
+function validateSaveClientPersonalRecipe(input) {
+  exactObject(input, ['organizationId', 'clientId', 'recipe', 'idempotencyKey']);
+  if (!input.recipe || typeof input.recipe !== 'object') fail('invalid-argument', 'recipe non valida');
+  return {
+    ...validateClientRef(input),
+    recipe: validateClientPersonalRecipe(input.recipe),
+    idempotencyKey: id(input.idempotencyKey, 'idempotencyKey')
+  };
+}
+
+function validateSaveGramOverrides(input) {
+  exactObject(input, ['organizationId', 'clientId', 'overrides', 'note', 'idempotencyKey']);
+  return {
+    ...validateClientRef(input),
+    overrides: validateGramOverrides(input.overrides),
+    note: optionalText(input.note, 'note', 500) || '',
+    idempotencyKey: id(input.idempotencyKey, 'idempotencyKey')
+  };
+}
+
+function validateSaveFoodFrequencies(input) {
+  exactObject(input, ['organizationId', 'clientId', 'proteins', 'carbs', 'idempotencyKey']);
+  const { idempotencyKey: _idem, ...rest } = input;
+  void _idem;
+  return {
+    ...validateClientRef(input),
+    ...validateFoodFrequencies({ proteins: input.proteins, carbs: input.carbs }),
+    idempotencyKey: id(input.idempotencyKey, 'idempotencyKey')
+  };
+}
+
+function validatePreviewCopyClientData(input) {
+  exactObject(input, ['organizationId', 'sourceClientId', 'targetClientIds']);
+  const targets = validateTargetClientIds(input.targetClientIds);
+  const source = id(input.sourceClientId, 'sourceClientId');
+  if (targets.includes(source)) fail('invalid-argument', 'Il cliente sorgente non può essere anche destinatario');
+  return { organizationId: id(input.organizationId, 'organizationId'), sourceClientId: source, targetClientIds: targets };
+}
+
+function validateCopyClientData(input) {
+  exactObject(input, ['organizationId', 'sourceClientId', 'targetClientIds', 'idempotencyKey']);
+  const base = validatePreviewCopyClientData({
+    organizationId: input.organizationId,
+    sourceClientId: input.sourceClientId,
+    targetClientIds: input.targetClientIds
+  });
+  return { ...base, idempotencyKey: id(input.idempotencyKey, 'idempotencyKey') };
+}
+
 module.exports = {
   ROLES, REPORT_STATUSES, ASSIGNMENT_STATUSES, ASSIGNMENT_STRATEGIES, MEMBER_STATUSES,
   MELLER_FAMILY_IDS, STRUCTURE_REVISION_SCHEMA_VERSION,
@@ -781,6 +1070,13 @@ module.exports = {
   validateCatalogCategory, catalogImportPreviewId,
   validateInviteOrganizationUser, validateInviteClientLink, validateRespondClientLink,
   validateRemoveClientLink, validateMemberStatus, validateRemoveNutritionist,
-  validateTransferStructureOwnership
+  validateTransferStructureOwnership,
+  CLIENT_RECIPE_SLOTS, PROTEIN_FREQUENCY_KEYS, CARB_FREQUENCY_KEYS,
+  validateFrequencyRange, validateFoodFrequencies, validateGramOverrides,
+  validateRecipeCore, validateStudioRecipe, validateClientPersonalRecipe,
+  validateSaveStudioRecipe, validateArchiveStudioRecipe,
+  validateAssignStudioRecipes, validateUnassignStudioRecipes,
+  validateSaveClientPersonalRecipe, validateSaveGramOverrides,
+  validateSaveFoodFrequencies, validatePreviewCopyClientData, validateCopyClientData
 };
 

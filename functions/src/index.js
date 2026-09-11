@@ -5,7 +5,7 @@ const { onCall, HttpsError } = require('firebase-functions/v2/https');
 const { onSchedule } = require('firebase-functions/v2/scheduler');
 const { logger } = require('firebase-functions');
 const { initializeApp } = require('firebase-admin/app');
-const { getFirestore, FieldValue, FieldPath, Timestamp } = require('firebase-admin/firestore');
+const { getFirestore, FieldValue, Timestamp } = require('firebase-admin/firestore');
 const {
   ROLES, REPORT_STATUSES, STRUCTURE_REVISION_SCHEMA_VERSION, exactObject, text, optionalText, id, checksum,
   hashToken, normalizeUsername,
@@ -14,7 +14,11 @@ const {
   CATALOG_IMPORT_MODES, parseCatalogPayload, validateCatalogImport, catalogImportPreviewId,
   validateInviteOrganizationUser, validateInviteClientLink, validateRespondClientLink,
   validateRemoveClientLink, validateMemberStatus, validateRemoveNutritionist,
-  validateTransferStructureOwnership
+  validateTransferStructureOwnership,
+  validateSaveStudioRecipe, validateArchiveStudioRecipe,
+  validateAssignStudioRecipes, validateUnassignStudioRecipes,
+  validateSaveClientPersonalRecipe, validateSaveGramOverrides,
+  validateSaveFoodFrequencies, validatePreviewCopyClientData, validateCopyClientData
 } = require('./domain');
 
 initializeApp();
@@ -256,9 +260,27 @@ exports.getMyAssignedProfile = callable(async (_data, uid) => {
   if (!client.exists || client.data()?.authUid !== uid || client.data()?.status !== 'active') {
     return { state: 'unassigned', fallback: 'original-only' };
   }
+  // Extra per cliente (PASSO 4): override grammature (v2, con conferma) e
+  // frequenze alimentari (usate dal generatore quando assegnate). Le note
+  // staff non escono mai verso il client.
+  const [overridesSnap, frequenciesSnap] = await Promise.all([
+    db.doc(`organizations/${organizationId}/clients/${clientId}/gramOverrides/current`).get(),
+    db.doc(`organizations/${organizationId}/clients/${clientId}/foodFrequencies/current`).get()
+  ]);
+  const gramOverrides = overridesSnap.exists
+    ? { revision: overridesSnap.data().revision ?? 1, overrides: overridesSnap.data().overrides || {} }
+    : null;
+  const foodFrequencies = frequenciesSnap.exists
+    ? {
+        revision: frequenciesSnap.data().revision ?? 1,
+        proteins: frequenciesSnap.data().proteins || {},
+        carbs: frequenciesSnap.data().carbs || {}
+      }
+    : null;
+  const clientExtras = { foodFrequencies };
   const assignment = await resolveDueAssignment(organizationId, clientId);
   const effective = effectiveAssignment(assignment && assignmentDates(assignment));
-  if (!effective.valid) return { state: effective.reason || 'unassigned', fallback: 'original-only', clientProfileId: clientId };
+  if (!effective.valid) return { state: effective.reason || 'unassigned', fallback: 'original-only', clientProfileId: clientId, clientExtras };
   // Fase 2: le assegnazioni v2 puntano alla revisione di una Struttura dieta
   // (pointer {structureId, revisionId, checksum}); quelle storiche v1 al rule
   // set. La revisione assegnata resta servita anche se la struttura viene
@@ -279,8 +301,12 @@ exports.getMyAssignedProfile = callable(async (_data, uid) => {
       return { state: 'invalid-rule-set', fallback: 'original-only', clientProfileId: clientId };
     }
     return {
-      state: 'assigned', fallback: 'original-only',
-      profile: publicStructureAssignment({ assignment, clientId, structure: structure.data(), revision: revision.data(), catalog })
+      state: 'assigned', fallback: 'original-only', clientExtras,
+      profile: {
+        ...publicStructureAssignment({ assignment, clientId, structure: structure.data(), revision: revision.data(), catalog }),
+        gramOverrides,
+        foodFrequencies
+      }
     };
   }
   const versionRef = await ruleVersionRef(organizationId, assignment.ruleSet);
@@ -293,8 +319,14 @@ exports.getMyAssignedProfile = callable(async (_data, uid) => {
     return { state: 'invalid-rule-set', fallback: 'original-only', clientProfileId: clientId };
   }
   return {
-    state: 'assigned', fallback: 'original-only',
-    profile: publicAssignment(assignment, clientId, version.data(), [globalCatalog.data() || {}, tenantCatalog.data() || {}])
+    state: 'assigned', fallback: 'original-only', clientExtras,
+    // Percorso legacy v1: solo frequenze; gli override grammature vivono
+    // sulle Strutture dieta v2 e qui non vengono applicati.
+    profile: {
+      ...publicAssignment(assignment, clientId, version.data(), [globalCatalog.data() || {}, tenantCatalog.data() || {}]),
+      gramOverrides: null,
+      foodFrequencies
+    }
   };
 });
 
@@ -1196,6 +1228,24 @@ function requireAdmin(actor) {
   if (actor.role !== 'admin') throw new HttpsError('permission-denied', 'Operazione riservata all’amministratore');
 }
 
+// Gestione clienti (PASSO 4): membership attiva sull'organizzazione OPPURE
+// admin di piattaforma, che accede alle stesse viste con ruolo admin.
+async function membershipOrPlatformAdmin(organizationId, uid) {
+  const orgId = id(organizationId, 'organizationId');
+  const [member, platform] = await Promise.all([
+    db.doc(`organizations/${orgId}/members/${uid}`).get(),
+    db.doc(`platformMembers/${uid}`).get()
+  ]);
+  if (platform.exists && platform.data()?.status === 'active' && platform.data()?.role === 'admin') {
+    return { organizationId: orgId, uid, role: 'admin' };
+  }
+  const value = member.data();
+  if (!member.exists || value?.status !== 'active' || !ROLES.has(value?.role)) {
+    throw new HttpsError('permission-denied', 'Membership non valida');
+  }
+  return { organizationId: orgId, uid, role: value.role };
+}
+
 function iso(value) {
   return value?.toDate?.()?.toISOString?.() || null;
 }
@@ -1210,6 +1260,39 @@ async function usernameOfUid(uid) {
   const snap = await db.collection('usernames').where('uid', '==', uid).limit(1).get();
   if (snap.empty) return null;
   return snap.docs[0].id;
+}
+
+// Le organizzazioni sono poche (singole cifre): per le ricerche trasversali
+// (membership dell'utente, richieste di collegamento, inviti per token) si
+// usa enumerazione degli organizations + letture di singoli documenti o query
+// su singola collection. Niente query collection-group: in produzione quelle
+// richiederebbero indici collection-group espliciti (500 FAILED_PRECONDITION
+// senza) e il confronto documentId in collection-group rifiuta gli ID semplici.
+// Stesso pattern ovunque, niente cambi di schema né di regole (PASSO 0).
+async function listOrganizationIds() {
+  const orgs = await db.collection('organizations').select().get();
+  return orgs.docs.map(doc => doc.id);
+}
+
+// Richieste di collegamento destinate a un account, cercate org per org con
+// query su singola collection (uguaglianza su targetUid: solo indice
+// automatico a campo singolo, nessun indice composito da deployare).
+async function findClientLinkRequestsByTargetUid(uid, perOrgLimit = 20) {
+  const orgIds = await listOrganizationIds();
+  const snaps = await Promise.all(orgIds.map(orgId =>
+    db.collection(`organizations/${orgId}/clientLinkRequests`).where('targetUid', '==', uid).limit(perOrgLimit).get()
+  ));
+  return snaps.flatMap(snap => snap.docs);
+}
+
+// Inviti cercati per hash del token opaco, org per org (stesso motivo: niente
+// collection-group, nessun indice da deployare).
+async function findInvitationsByTokenHash(tokenHash) {
+  const orgIds = await listOrganizationIds();
+  const snaps = await Promise.all(orgIds.map(orgId =>
+    db.collection(`organizations/${orgId}/invitations`).where('tokenHash', '==', tokenHash).limit(2).get()
+  ));
+  return snaps.flatMap(snap => snap.docs);
 }
 
 // Sospende assignment attivi/programmati del cliente (revoca associazione).
@@ -1341,9 +1424,9 @@ exports.acceptOrganizationInvite = callable(async (data, uid) => {
   exactObject(data, ['token']);
   const token = text(data.token, 'token', { min: 32, max: 256 });
   const tokenHash = hashToken(token);
-  const snap = await db.collectionGroup('invitations').where('tokenHash', '==', tokenHash).limit(2).get();
-  if (snap.empty || snap.size > 1) throw new HttpsError('not-found', 'Invito non valido o già utilizzato');
-  const inviteDoc = snap.docs[0];
+  const candidates = await findInvitationsByTokenHash(tokenHash);
+  if (!candidates.length || candidates.length > 1) throw new HttpsError('not-found', 'Invito non valido o già utilizzato');
+  const inviteDoc = candidates[0];
   const invite = inviteDoc.data();
   const orgId = inviteDoc.ref.path.split('/')[1];
   const username = await usernameOfUid(uid);
@@ -1513,12 +1596,15 @@ exports.inviteClientLink = callable(async (data, uid) => {
 // Read-only, niente audit: nessuna PII oltre a orgId/ruolo del chiamante.
 exports.getMyMemberships = callable(async (data, uid) => {
   exactObject(data, []);
-  const [snap, platform] = await Promise.all([
-    db.collectionGroup('members').where(FieldPath.documentId(), '==', uid).get(),
+  const [orgs, platform] = await Promise.all([
+    db.collection('organizations').select().get(),
     db.doc(`platformMembers/${uid}`).get()
   ]);
-  const memberships = snap.docs
-    .filter(doc => doc.ref.parent.parent && doc.ref.path.startsWith('organizations/'))
+  const memberSnaps = await Promise.all(
+    orgs.docs.map(org => db.doc(`organizations/${org.id}/members/${uid}`).get())
+  );
+  const memberships = memberSnaps
+    .filter(doc => doc.exists)
     .map(doc => ({
       organizationId: doc.ref.parent.parent.id,
       role: doc.data()?.role,
@@ -1537,11 +1623,11 @@ exports.getMyMemberships = callable(async (data, uid) => {
 // l'account autenticato (app, Impostazioni). Solo i propri dati, mai PII altrui.
 exports.listMyClientLinkRequests = callable(async (data, uid) => {
   exactObject(data, []);
-  const [snap, link] = await Promise.all([
-    db.collectionGroup('clientLinkRequests').where('targetUid', '==', uid).limit(20).get(),
+  const [found, link] = await Promise.all([
+    findClientLinkRequestsByTargetUid(uid, 20),
     db.doc(`accountClientLinks/${uid}`).get()
   ]);
-  const pending = snap.docs.filter(doc => doc.data()?.status === 'pending');
+  const pending = found.filter(doc => doc.data()?.status === 'pending');
   const orgIds = new Set(pending.map(doc => doc.data().organizationId).filter(Boolean));
   if (link.exists && link.data()?.status === 'active' && link.data()?.organizationId) {
     orgIds.add(link.data().organizationId);
@@ -1572,8 +1658,8 @@ exports.listMyClientLinkRequests = callable(async (data, uid) => {
 // ritornano no-op; ogni transizione è registrata in audit.
 exports.respondClientLink = callable(async (data, uid) => {
   const input = validateRespondClientLink(data);
-  const snap = await db.collectionGroup('clientLinkRequests').where('targetUid', '==', uid).limit(20).get();
-  const found = snap.docs.find(doc => doc.id === input.requestId);
+  const candidates = await findClientLinkRequestsByTargetUid(uid, 20);
+  const found = candidates.find(doc => doc.id === input.requestId);
   if (!found) throw new HttpsError('not-found', 'Richiesta non trovata');
   const request = found.data();
   const orgId = found.ref.path.split('/')[1];
@@ -1733,6 +1819,638 @@ exports.transferStructureOwnership = callable(async (data, uid) => {
   return { structureId: ref.id, ownerUid: input.newOwnerUid };
 });
 
+// ---- Gestione clienti in console (PASSO 4) ----
+// Tutte le operazioni sui dati dei clienti passano da queste callable
+// (Admin SDK server-side): il browser non legge/scrive mai direttamente i
+// cataloghi dei clienti. Ruolo verificato server-side (membership attiva o
+// platform admin), audit + idempotencyKey come nelle callable esistenti.
+// "Togliere" revoca/dissocia/archivia con traccia, mai cancella: account,
+// household, ricette personali e backup del cliente non si cancellano da qui.
+//
+// Modello ricette (documentato, senza migrazioni):
+// - catalogo studio: organizations/{org}/studioRecipes/{id}, CRUD + archive;
+// - copia assegnata: stessa ricetta NEL catalogo del cliente (documento
+//   recipeCatalog personale o household) con marcatore {origin:'org',
+//   orgRecipeId, assignedByOrgId, assignedAt}; id stabile "ORG-<studioId>";
+// - ricette SENZA marcatore = personali (tutte le preesistenti), intoccabili
+//   da assign/unassign/copy; l'app le lascia modificare, le copie studio sono
+//   in sola lettura con "Duplica come mia";
+// - modifiche al catalogo studio NON si propagano da sole alle copie (mai
+//   retroattivo silenzioso): serve una riassegnazione esplicita.
+
+// Versione del documento recipeCatalog (mirror di CATALOG_SCHEMA_VERSION in
+// js/data.js): usata solo quando il documento va creato da zero.
+const CATALOG_DOC_SCHEMA_VERSION = 5;
+// Stesso limite del client (validateRecipeCatalog): oltre, il documento
+// diventa ingestibile e il salvataggio viene rifiutato.
+const RECIPE_CATALOG_BYTE_LIMIT = 900000;
+const CONSOLE_CATALOG_RECIPE_LIMIT = 300;
+
+function isOrgCopy(recipe, orgId) {
+  if (!recipe || recipe.origin !== 'org') return false;
+  return !orgId || recipe.assignedByOrgId === orgId;
+}
+
+function catalogRecipes(catalogSnap) {
+  if (!catalogSnap?.exists) return [];
+  const data = catalogSnap.data() || {};
+  return Array.isArray(data.recipes) ? data.recipes : [];
+}
+
+function assertCatalogSize(recipes) {
+  const bytes = Buffer.byteLength(JSON.stringify(recipes), 'utf8');
+  if (bytes > RECIPE_CATALOG_BYTE_LIMIT) {
+    throw new HttpsError('failed-precondition', 'Il catalogo del cliente supera la dimensione sicura: riduci le ricette prima di proseguire');
+  }
+}
+
+// Stessa regola di risoluzione del client (js/firebase.js): se l'account è
+// membro di una household si usa il catalogo condiviso, altrimenti quello
+// personale. I clienti senza account collegato non hanno catalogo gestibile.
+async function clientDataRefs(client) {
+  const authUid = client.authUid;
+  if (!authUid) {
+    throw new HttpsError('failed-precondition', 'Il cliente non ha ancora collegato l’account: sarà gestibile dopo il collegamento');
+  }
+  const households = await db.collection('households').where('memberUids', 'array-contains', authUid).limit(2).get();
+  const household = households.docs.sort((a, b) => a.id.localeCompare(b.id))[0];
+  if (household) {
+    return {
+      scope: 'household', scopeId: household.id,
+      catalogRef: db.doc(`households/${household.id}/content/recipeCatalog`),
+      planRef: db.doc(`households/${household.id}/config/weeklyPlan`)
+    };
+  }
+  return {
+    scope: 'personal', scopeId: authUid,
+    catalogRef: db.doc(`users/${authUid}/content/recipeCatalog`),
+    planRef: db.doc(`users/${authUid}/config/weeklyPlan`)
+  };
+}
+
+// Igiene piano dopo rimozione di copie studio: azzera SOLO gli slot (days e
+// defaultDays) che puntano agli id rimossi; tipi A/R, mode Meller e ricette
+// personali non si toccano mai. Ritorna gli slot svuotati per anteprima/audit.
+function clearPlanSlotsForRecipeIds(plan, removedIds) {
+  if (!plan || typeof plan !== 'object' || !plan.days) return { plan, cleared: [] };
+  const removed = new Set(removedIds);
+  if (!removed.size) return { plan, cleared: [] };
+  const cleared = [];
+  for (const area of ['days', 'defaultDays']) {
+    const days = plan[area];
+    if (!days || typeof days !== 'object') continue;
+    for (const [day, slots] of Object.entries(days)) {
+      if (!slots || typeof slots !== 'object') continue;
+      for (const [slot, recipeId] of Object.entries(slots)) {
+        if (slot === 'type') continue;
+        if (typeof recipeId === 'string' && removed.has(recipeId)) {
+          slots[slot] = null;
+          cleared.push({ area, day, slot, recipeId });
+        }
+      }
+    }
+  }
+  return { plan, cleared };
+}
+
+function studioCopyForClient(studio, orgId, assignedAt) {
+  const copy = {
+    id: `ORG-${studio.recipeId}`,
+    name: studio.name,
+    emoji: studio.emoji || '🍲',
+    slot: studio.slot,
+    ingredients: JSON.parse(JSON.stringify(studio.ingredients || [])),
+    steps: [...(studio.steps || [])],
+    notes: [...(studio.notes || [])],
+    specialNote: studio.specialNote || '',
+    proteinCategory: studio.proteinCategory || '',
+    origin: 'org',
+    orgRecipeId: studio.recipeId,
+    assignedByOrgId: orgId,
+    assignedAt
+  };
+  if (studio.namesByDayType) copy.namesByDayType = JSON.parse(JSON.stringify(studio.namesByDayType));
+  return copy;
+}
+
+function publicStudioRecipe(doc) {
+  const data = doc.data() || {};
+  return {
+    recipeId: doc.id,
+    name: data.name || doc.id,
+    emoji: data.emoji || '🍲',
+    slot: data.slot,
+    status: data.status || 'active',
+    ingredients: data.ingredients || [],
+    steps: data.steps || [],
+    notes: data.notes || [],
+    specialNote: data.specialNote || '',
+    proteinCategory: data.proteinCategory || '',
+    ...(data.namesByDayType ? { namesByDayType: data.namesByDayType } : {}),
+    updatedAt: iso(data.updatedAt)
+  };
+}
+
+exports.listStudioRecipes = callable(async (data, uid) => {
+  exactObject(data, ['organizationId']);
+  const actor = await membershipOrPlatformAdmin(data.organizationId, uid);
+  const snapshot = await db.collection(`organizations/${actor.organizationId}/studioRecipes`).limit(200).get();
+  const recipes = snapshot.docs
+    .map(publicStudioRecipe)
+    .sort((a, b) => String(a.name).localeCompare(String(b.name), 'it'));
+  return { recipes };
+});
+
+exports.saveStudioRecipe = callable(async (data, uid) => {
+  const input = validateSaveStudioRecipe(data);
+  const actor = await membershipOrPlatformAdmin(input.organizationId, uid);
+  const created = !input.recipe.recipeId;
+  const recipeId = input.recipe.recipeId
+    || checksum(`${actor.organizationId}:studio-recipe:${input.recipe.name}:${input.idempotencyKey}`).slice(0, 16);
+  const ref = db.doc(`organizations/${actor.organizationId}/studioRecipes/${recipeId}`);
+  const eventId = checksum(`studio-recipe.saved:${recipeId}:${input.idempotencyKey}`).slice(0, 32);
+  await db.runTransaction(async tx => {
+    const [existing, audit] = await Promise.all([tx.get(ref), tx.get(auditRef(actor.organizationId, eventId))]);
+    if (audit.exists) return;
+    if (!created && !existing.exists) throw new HttpsError('not-found', 'Ricetta dello studio non trovata');
+    const base = {
+      schemaVersion: 1, recipeId,
+      name: input.recipe.name, emoji: input.recipe.emoji, slot: input.recipe.slot,
+      ingredients: input.recipe.ingredients, steps: input.recipe.steps, notes: input.recipe.notes,
+      specialNote: input.recipe.specialNote, proteinCategory: input.recipe.proteinCategory,
+      ...(input.recipe.namesByDayType ? { namesByDayType: input.recipe.namesByDayType } : {}),
+      origin: 'org',
+      status: existing.exists ? (existing.data().status || 'active') : 'active',
+      updatedAt: FieldValue.serverTimestamp(), updatedBy: uid
+    };
+    if (existing.exists) tx.update(ref, base);
+    else tx.create(ref, { ...base, createdAt: FieldValue.serverTimestamp(), createdBy: uid });
+    tx.create(auditRef(actor.organizationId, eventId), auditEvent({
+      orgId: actor.organizationId, eventId, type: 'studio-recipe.saved', actor,
+      subject: { type: 'studioRecipe', id: recipeId }, idempotencyKey: input.idempotencyKey,
+      metadata: { created, name: input.recipe.name }
+    }));
+  });
+  // Le copie già assegnate ai clienti NON vengono toccate (mai retroattivo
+  // silenzioso): serve una riassegnazione esplicita per propagare le modifiche.
+  return { recipeId, created };
+});
+
+exports.archiveStudioRecipe = callable(async (data, uid) => {
+  const input = validateArchiveStudioRecipe(data);
+  const actor = await membershipOrPlatformAdmin(input.organizationId, uid);
+  const ref = db.doc(`organizations/${actor.organizationId}/studioRecipes/${input.studioRecipeId}`);
+  const eventId = checksum(`studio-recipe.status:${input.studioRecipeId}:${input.archived}:${input.idempotencyKey}`).slice(0, 32);
+  await db.runTransaction(async tx => {
+    const [existing, audit] = await Promise.all([tx.get(ref), tx.get(auditRef(actor.organizationId, eventId))]);
+    if (audit.exists) return { status: null };
+    if (!existing.exists) throw new HttpsError('not-found', 'Ricetta dello studio non trovata');
+    const status = input.archived ? 'archived' : 'active';
+    tx.update(ref, { status, updatedAt: FieldValue.serverTimestamp(), updatedBy: uid });
+    tx.create(auditRef(actor.organizationId, eventId), auditEvent({
+      orgId: actor.organizationId, eventId, type: 'studio-recipe.status-changed', actor,
+      subject: { type: 'studioRecipe', id: input.studioRecipeId }, idempotencyKey: input.idempotencyKey,
+      metadata: { status }
+    }));
+  });
+  // Soft-delete: le copie già assegnate restano (si rimuovono solo con
+  // unassign esplicito); le archiviate non si possono più assegnare.
+  return { studioRecipeId: input.studioRecipeId, status: input.archived ? 'archived' : 'active' };
+});
+
+async function loadActiveStudioRecipes(orgId, recipeIds) {
+  const refs = recipeIds.map(recipeId => db.doc(`organizations/${orgId}/studioRecipes/${recipeId}`));
+  const snaps = await Promise.all(refs.map(ref => ref.get()));
+  const missing = [];
+  const archived = [];
+  const active = [];
+  snaps.forEach((snap, index) => {
+    if (!snap.exists) { missing.push(recipeIds[index]); return; }
+    if ((snap.data().status || 'active') === 'archived') { archived.push(snap.data().name || recipeIds[index]); return; }
+    active.push({ recipeId: snap.id, ...snap.data() });
+  });
+  if (missing.length) throw new HttpsError('not-found', `Ricette dello studio non trovate: ${missing.join(', ')}`);
+  if (archived.length) {
+    throw new HttpsError('failed-precondition', `Ricette archiviate (riattivale prima di assegnarle): ${archived.join(', ')}`);
+  }
+  return active;
+}
+
+exports.assignStudioRecipes = callable(async (data, uid) => {
+  const input = validateAssignStudioRecipes(data);
+  const actor = await membershipOrPlatformAdmin(input.organizationId, uid);
+  const client = await authorizedClient(actor, input.clientId);
+  const refs = await clientDataRefs(client);
+  const studios = await loadActiveStudioRecipes(actor.organizationId, input.studioRecipeIds);
+  const assignedAt = new Date().toISOString();
+  const copies = studios.map(studio => studioCopyForClient(studio, actor.organizationId, assignedAt));
+  const eventId = checksum(`studio-recipes.assigned:${client.id}:${input.idempotencyKey}`).slice(0, 32);
+  let replaced = 0;
+  let added = 0;
+  await db.runTransaction(async tx => {
+    const [catalog, audit] = await Promise.all([tx.get(refs.catalogRef), tx.get(auditRef(actor.organizationId, eventId))]);
+    if (audit.exists) return;
+    const recipes = catalogRecipes(catalog);
+    if (recipes.length > CONSOLE_CATALOG_RECIPE_LIMIT) {
+      throw new HttpsError('failed-precondition', 'Catalogo del cliente troppo grande per la gestione in console');
+    }
+    const byId = new Map(recipes.map(item => [item?.id, item]));
+    copies.forEach(copy => {
+      if (byId.has(copy.id)) replaced += 1;
+      else added += 1;
+      byId.set(copy.id, copy);
+    });
+    const next = [...byId.values()];
+    assertCatalogSize(next);
+    const payload = {
+      schemaVersion: catalog.exists ? (catalog.data().schemaVersion || CATALOG_DOC_SCHEMA_VERSION) : CATALOG_DOC_SCHEMA_VERSION,
+      recipes: next, recipeCount: next.length,
+      updatedAt: FieldValue.serverTimestamp(), updatedBy: uid
+    };
+    if (catalog.exists) tx.update(refs.catalogRef, payload);
+    else tx.create(refs.catalogRef, { ...payload, createdAt: FieldValue.serverTimestamp(), createdBy: uid });
+    tx.create(auditRef(actor.organizationId, eventId), auditEvent({
+      orgId: actor.organizationId, eventId, type: 'studio-recipes.assigned', actor,
+      subject: { type: 'client', id: client.id }, idempotencyKey: input.idempotencyKey,
+      metadata: { studioRecipeIds: input.studioRecipeIds, added, replaced, scope: refs.scope }
+    }));
+  });
+  return { clientId: client.id, assigned: copies.length, added, replaced };
+});
+
+exports.unassignStudioRecipes = callable(async (data, uid) => {
+  const input = validateUnassignStudioRecipes(data);
+  const actor = await membershipOrPlatformAdmin(input.organizationId, uid);
+  const client = await authorizedClient(actor, input.clientId);
+  const refs = await clientDataRefs(client);
+  const copyIds = input.studioRecipeIds.map(studioId => `ORG-${studioId}`);
+  const eventId = checksum(`studio-recipes.unassigned:${client.id}:${input.idempotencyKey}`).slice(0, 32);
+  let removed = 0;
+  let clearedSlots = [];
+  await db.runTransaction(async tx => {
+    const [catalog, plan, audit] = await Promise.all([
+      tx.get(refs.catalogRef), tx.get(refs.planRef), tx.get(auditRef(actor.organizationId, eventId))
+    ]);
+    if (audit.exists) return;
+    const recipes = catalogRecipes(catalog);
+    // Solo copie dello studio di QUESTA organizzazione; personali intoccabili.
+    const removable = new Set(copyIds);
+    const next = recipes.filter(item => {
+      if (removable.has(item?.id) && isOrgCopy(item, actor.organizationId)) { removed += 1; return false; }
+      return true;
+    });
+    if (catalog.exists) {
+      tx.update(refs.catalogRef, {
+        recipes: next, recipeCount: next.length,
+        updatedAt: FieldValue.serverTimestamp(), updatedBy: uid
+      });
+    }
+    if (removed && plan.exists) {
+      const hygiene = clearPlanSlotsForRecipeIds(JSON.parse(JSON.stringify(plan.data())), copyIds);
+      clearedSlots = hygiene.cleared;
+      if (clearedSlots.length) tx.update(refs.planRef, { ...hygiene.plan, updatedAt: FieldValue.serverTimestamp(), updatedBy: uid });
+    }
+    tx.create(auditRef(actor.organizationId, eventId), auditEvent({
+      orgId: actor.organizationId, eventId, type: 'studio-recipes.unassigned', actor,
+      subject: { type: 'client', id: client.id }, idempotencyKey: input.idempotencyKey,
+      metadata: { studioRecipeIds: input.studioRecipeIds, removed, clearedSlots: clearedSlots.length, scope: refs.scope }
+    }));
+  });
+  return { clientId: client.id, removed, clearedSlots };
+});
+
+exports.listClientRecipes = callable(async (data, uid) => {
+  exactObject(data, ['organizationId', 'clientId']);
+  const actor = await membershipOrPlatformAdmin(data.organizationId, uid);
+  const client = await authorizedClient(actor, data.clientId);
+  const refs = await clientDataRefs(client);
+  const catalog = await refs.catalogRef.get();
+  const recipes = catalogRecipes(catalog);
+  if (recipes.length > CONSOLE_CATALOG_RECIPE_LIMIT) {
+    throw new HttpsError('failed-precondition', 'Catalogo del cliente troppo grande per la gestione in console');
+  }
+  return {
+    clientId: client.id,
+    scope: refs.scope,
+    updatedAt: iso(catalog.data()?.updatedAt),
+    recipes: recipes.map(item => ({
+      id: item?.id, name: item?.name, emoji: item?.emoji || '🍲', slot: item?.slot,
+      ingredients: item?.ingredients || [], steps: item?.steps || [],
+      notes: item?.notes || [], specialNote: item?.specialNote || '',
+      proteinCategory: item?.proteinCategory || '',
+      ...(item?.namesByDayType ? { namesByDayType: item.namesByDayType } : {}),
+      ...(item?.mellerAdaptations ? { mellerAdaptations: item.mellerAdaptations } : {}),
+      origin: item?.origin || null,
+      orgRecipeId: item?.orgRecipeId || null,
+      assignedByOrgId: item?.assignedByOrgId || null,
+      assignedAt: item?.assignedAt || null
+    }))
+  };
+});
+
+exports.saveClientPersonalRecipe = callable(async (data, uid) => {
+  const input = validateSaveClientPersonalRecipe(data);
+  const actor = await membershipOrPlatformAdmin(input.organizationId, uid);
+  const client = await authorizedClient(actor, input.clientId);
+  const refs = await clientDataRefs(client);
+  const eventId = checksum(`client-recipe.saved:${client.id}:${input.recipe.id}:${input.idempotencyKey}`).slice(0, 32);
+  let created = false;
+  await db.runTransaction(async tx => {
+    const [catalog, audit] = await Promise.all([tx.get(refs.catalogRef), tx.get(auditRef(actor.organizationId, eventId))]);
+    if (audit.exists) return;
+    const recipes = catalogRecipes(catalog);
+    if (recipes.length > CONSOLE_CATALOG_RECIPE_LIMIT) {
+      throw new HttpsError('failed-precondition', 'Catalogo del cliente troppo grande per la gestione in console');
+    }
+    const index = recipes.findIndex(item => item?.id === input.recipe.id);
+    if (index >= 0 && isOrgCopy(recipes[index])) {
+      throw new HttpsError('failed-precondition', 'Questa ricetta è assegnata dallo studio: gestiscila dal catalogo studio, non come personale');
+    }
+    // Le baseline di undo (_original) e gli adattamenti esistenti si
+    // preservano: la console aggiorna i contenuti, non la storia del client.
+    const previous = index >= 0 ? recipes[index] : null;
+    const stored = {
+      ...input.recipe,
+      ...(previous?._original ? { _original: previous._original } : {}),
+      ...(input.recipe.mellerAdaptations === undefined && previous?.mellerAdaptations
+        ? { mellerAdaptations: previous.mellerAdaptations } : {})
+    };
+    const next = recipes.slice();
+    if (index >= 0) next[index] = stored;
+    else { next.push(stored); created = true; }
+    assertCatalogSize(next);
+    const payload = {
+      schemaVersion: catalog.exists ? (catalog.data().schemaVersion || CATALOG_DOC_SCHEMA_VERSION) : CATALOG_DOC_SCHEMA_VERSION,
+      recipes: next, recipeCount: next.length,
+      updatedAt: FieldValue.serverTimestamp(), updatedBy: uid
+    };
+    if (catalog.exists) tx.update(refs.catalogRef, payload);
+    else tx.create(refs.catalogRef, { ...payload, createdAt: FieldValue.serverTimestamp(), createdBy: uid });
+    tx.create(auditRef(actor.organizationId, eventId), auditEvent({
+      orgId: actor.organizationId, eventId, type: 'client-recipe.saved', actor,
+      subject: { type: 'recipe', id: input.recipe.id }, idempotencyKey: input.idempotencyKey,
+      metadata: { clientId: client.id, created, name: input.recipe.name, scope: refs.scope }
+    }));
+  });
+  return { clientId: client.id, recipeId: input.recipe.id, created };
+});
+
+exports.getClientGramOverrides = callable(async (data, uid) => {
+  exactObject(data, ['organizationId', 'clientId']);
+  const actor = await membershipOrPlatformAdmin(data.organizationId, uid);
+  const client = await authorizedClient(actor, data.clientId);
+  const snap = await db.doc(`organizations/${actor.organizationId}/clients/${client.id}/gramOverrides/current`).get();
+  if (!snap.exists) return { clientId: client.id, overrides: null };
+  return {
+    clientId: client.id,
+    overrides: {
+      revision: snap.data().revision ?? 1,
+      overrides: snap.data().overrides || {},
+      note: snap.data().note || '',
+      updatedAt: iso(snap.data().updatedAt)
+    }
+  };
+});
+
+exports.saveClientGramOverrides = callable(async (data, uid) => {
+  const input = validateSaveGramOverrides(data);
+  const actor = await membershipOrPlatformAdmin(input.organizationId, uid);
+  const client = await authorizedClient(actor, input.clientId);
+  const ref = db.doc(`organizations/${actor.organizationId}/clients/${client.id}/gramOverrides/current`);
+  const eventId = checksum(`client-grams.saved:${client.id}:${input.idempotencyKey}`).slice(0, 32);
+  let revision = 1;
+  await db.runTransaction(async tx => {
+    const [existing, audit] = await Promise.all([tx.get(ref), tx.get(auditRef(actor.organizationId, eventId))]);
+    if (audit.exists) {
+      revision = existing.exists ? (existing.data().revision ?? 1) : 1;
+      return;
+    }
+    revision = existing.exists ? (Number(existing.data().revision || 0) + 1) : 1;
+    tx.set(ref, {
+      schemaVersion: 1, revision, overrides: input.overrides, note: input.note,
+      updatedAt: FieldValue.serverTimestamp(), updatedBy: uid,
+      createdAt: existing.exists ? existing.data().createdAt : FieldValue.serverTimestamp(),
+      createdBy: existing.exists ? existing.data().createdBy : uid
+    });
+    tx.create(auditRef(actor.organizationId, eventId), auditEvent({
+      orgId: actor.organizationId, eventId, type: 'client-grams.saved', actor,
+      subject: { type: 'client', id: client.id }, idempotencyKey: input.idempotencyKey,
+      metadata: { clientId: client.id, revision, familyCount: Object.keys(input.overrides).length }
+    }));
+  });
+  // Mai retroattivo silenzioso: il cliente conferma la nuova revisione
+  // dall'app (stesso flusso delle strutture assegnate) prima che le dosi
+  // adattate cambino.
+  return { clientId: client.id, revision, familyCount: Object.keys(input.overrides).length };
+});
+
+exports.getClientFoodFrequencies = callable(async (data, uid) => {
+  exactObject(data, ['organizationId', 'clientId']);
+  const actor = await membershipOrPlatformAdmin(data.organizationId, uid);
+  const client = await authorizedClient(actor, data.clientId);
+  const snap = await db.doc(`organizations/${actor.organizationId}/clients/${client.id}/foodFrequencies/current`).get();
+  if (!snap.exists) return { clientId: client.id, frequencies: null };
+  return {
+    clientId: client.id,
+    frequencies: {
+      revision: snap.data().revision ?? 1,
+      proteins: snap.data().proteins || {},
+      carbs: snap.data().carbs || {},
+      updatedAt: iso(snap.data().updatedAt)
+    }
+  };
+});
+
+exports.saveClientFoodFrequencies = callable(async (data, uid) => {
+  const input = validateSaveFoodFrequencies(data);
+  const actor = await membershipOrPlatformAdmin(input.organizationId, uid);
+  const client = await authorizedClient(actor, input.clientId);
+  const ref = db.doc(`organizations/${actor.organizationId}/clients/${client.id}/foodFrequencies/current`);
+  const eventId = checksum(`client-frequencies.saved:${client.id}:${input.idempotencyKey}`).slice(0, 32);
+  let revision = 1;
+  await db.runTransaction(async tx => {
+    const [existing, audit] = await Promise.all([tx.get(ref), tx.get(auditRef(actor.organizationId, eventId))]);
+    if (audit.exists) {
+      revision = existing.exists ? (existing.data().revision ?? 1) : 1;
+      return;
+    }
+    revision = existing.exists ? (Number(existing.data().revision || 0) + 1) : 1;
+    tx.set(ref, {
+      schemaVersion: 1, revision,
+      proteins: input.proteins, carbs: input.carbs,
+      updatedAt: FieldValue.serverTimestamp(), updatedBy: uid,
+      createdAt: existing.exists ? existing.data().createdAt : FieldValue.serverTimestamp(),
+      createdBy: existing.exists ? existing.data().createdBy : uid
+    });
+    tx.create(auditRef(actor.organizationId, eventId), auditEvent({
+      orgId: actor.organizationId, eventId, type: 'client-frequencies.saved', actor,
+      subject: { type: 'client', id: client.id }, idempotencyKey: input.idempotencyKey,
+      metadata: { clientId: client.id, revision }
+    }));
+  });
+  return { clientId: client.id, revision };
+});
+
+// Anteprima di copia (sola lettura, niente audit): conteggi per destinatario
+// prima della conferma finale. Le personali restano sempre intoccabili.
+async function buildCopyPreview(orgId, sourceClientId, targetClientIds) {
+  const sourceRef = db.doc(`organizations/${orgId}/clients/${sourceClientId}`);
+  const source = await sourceRef.get();
+  if (!source.exists) throw new HttpsError('not-found', 'Cliente sorgente non trovato');
+  const sourceRefs = await clientDataRefs(source.data());
+  const [sourceCatalog, sourceGrams, sourceFreq] = await Promise.all([
+    sourceRefs.catalogRef.get(),
+    db.doc(`organizations/${orgId}/clients/${sourceClientId}/gramOverrides/current`).get(),
+    db.doc(`organizations/${orgId}/clients/${sourceClientId}/foodFrequencies/current`).get()
+  ]);
+  const sourceCopies = catalogRecipes(sourceCatalog).filter(item => isOrgCopy(item, orgId));
+  const sourceCopyIds = new Set(sourceCopies.map(item => item.id));
+  const constrained = section => Object.values(section || {}).filter(range => range?.min != null || range?.max != null).length;
+  const sourceSummary = {
+    orgCopies: sourceCopies.length,
+    gramFamilies: Object.keys(sourceGrams.exists ? (sourceGrams.data().overrides || {}) : {}).length,
+    proteinRanges: sourceFreq.exists ? constrained(sourceFreq.data().proteins) : 0,
+    carbRanges: sourceFreq.exists ? constrained(sourceFreq.data().carbs) : 0
+  };
+  const targets = [];
+  for (const targetId of targetClientIds) {
+    const targetSnap = await db.doc(`organizations/${orgId}/clients/${targetId}`).get();
+    if (!targetSnap.exists) throw new HttpsError('not-found', `Cliente destinatario non trovato: ${targetId}`);
+    const refs = await clientDataRefs(targetSnap.data());
+    const [catalog, plan] = await Promise.all([refs.catalogRef.get(), refs.planRef.get()]);
+    const recipes = catalogRecipes(catalog);
+    const personal = recipes.filter(item => !isOrgCopy(item)).length;
+    const ownCopies = recipes.filter(item => isOrgCopy(item, orgId));
+    // Slot che verranno svuotati: puntano a copie rimosse e non riaggiunte.
+    const removedIds = ownCopies.map(item => item.id).filter(copyId => !sourceCopyIds.has(copyId));
+    let planSlotsToClear = 0;
+    if (plan.exists && removedIds.length) {
+      const hygiene = clearPlanSlotsForRecipeIds(JSON.parse(JSON.stringify(plan.data())), removedIds);
+      planSlotsToClear = hygiene.cleared.filter(slot => slot.area === 'days').length;
+    }
+    targets.push({
+      clientId: targetId,
+      displayCode: targetSnap.data().displayCode || targetId,
+      personalUntouched: personal,
+      orgCopiesToRemove: ownCopies.length,
+      orgCopiesToAdd: sourceCopies.length,
+      planSlotsToClear
+    });
+  }
+  return { sourceClientId, sourceSummary, targets };
+}
+
+exports.previewCopyClientData = callable(async (data, uid) => {
+  const input = validatePreviewCopyClientData(data);
+  const actor = await membershipOrPlatformAdmin(input.organizationId, uid);
+  await authorizedClient(actor, input.sourceClientId);
+  for (const targetId of input.targetClientIds) await authorizedClient(actor, targetId);
+  return buildCopyPreview(actor.organizationId, input.sourceClientId, input.targetClientIds);
+});
+
+exports.copyClientData = callable(async (data, uid) => {
+  const input = validateCopyClientData(data);
+  const actor = await membershipOrPlatformAdmin(input.organizationId, uid);
+  const source = await authorizedClient(actor, input.sourceClientId);
+  for (const targetId of input.targetClientIds) await authorizedClient(actor, targetId);
+  const sourceRefs = await clientDataRefs(source);
+  const [sourceCatalog, sourceGrams, sourceFreq] = await Promise.all([
+    sourceRefs.catalogRef.get(),
+    db.doc(`organizations/${actor.organizationId}/clients/${source.id}/gramOverrides/current`).get(),
+    db.doc(`organizations/${actor.organizationId}/clients/${source.id}/foodFrequencies/current`).get()
+  ]);
+  const sourceCopies = catalogRecipes(sourceCatalog).filter(item => isOrgCopy(item, actor.organizationId));
+  const sourceCopyIds = new Set(sourceCopies.map(item => item.id));
+  const sourceGramsData = sourceGrams.exists ? (sourceGrams.data().overrides || {}) : {};
+  const sourceProteins = sourceFreq.exists ? (sourceFreq.data().proteins || {}) : {};
+  const sourceCarbs = sourceFreq.exists ? (sourceFreq.data().carbs || {}) : {};
+  const assignedAt = new Date().toISOString();
+  const results = [];
+  for (const targetId of input.targetClientIds) {
+    const targetDoc = await db.doc(`organizations/${actor.organizationId}/clients/${targetId}`).get();
+    const refs = await clientDataRefs(targetDoc.data());
+    const gramsRef = db.doc(`organizations/${actor.organizationId}/clients/${targetId}/gramOverrides/current`);
+    const freqRef = db.doc(`organizations/${actor.organizationId}/clients/${targetId}/foodFrequencies/current`);
+    const eventId = checksum(`client-data.copied:${source.id}:${targetId}:${input.idempotencyKey}`).slice(0, 32);
+    const summary = { clientId: targetId, removed: 0, added: 0, personalUntouched: 0, clearedSlots: 0, gramsRevision: null, frequenciesRevision: null };
+    await db.runTransaction(async tx => {
+      const [catalog, plan, grams, freq, audit] = await Promise.all([
+        tx.get(refs.catalogRef), tx.get(refs.planRef), tx.get(gramsRef), tx.get(freqRef),
+        tx.get(auditRef(actor.organizationId, eventId))
+      ]);
+      if (audit.exists) return;
+      const recipes = catalogRecipes(catalog);
+      if (recipes.length > CONSOLE_CATALOG_RECIPE_LIMIT) {
+        throw new HttpsError('failed-precondition', `Catalogo del cliente ${targetId} troppo grande per la copia in console`);
+      }
+      // REGOLA FONDAMENTALE: le personali (senza marcatore) restano intoccabili;
+      // si sostituiscono SOLO le copie con origin dell'organizzazione di provenienza.
+      const kept = recipes.filter(item => {
+        if (isOrgCopy(item, actor.organizationId)) { summary.removed += 1; return false; }
+        return true;
+      });
+      summary.personalUntouched = kept.length;
+      const fresh = sourceCopies.map(copy => ({ ...JSON.parse(JSON.stringify(copy)), assignedAt }));
+      summary.added = fresh.length;
+      const next = [...kept, ...fresh];
+      assertCatalogSize(next);
+      if (catalog.exists) {
+        tx.update(refs.catalogRef, {
+          recipes: next, recipeCount: next.length,
+          updatedAt: FieldValue.serverTimestamp(), updatedBy: uid
+        });
+      } else {
+        tx.create(refs.catalogRef, {
+          schemaVersion: CATALOG_DOC_SCHEMA_VERSION, recipes: next, recipeCount: next.length,
+          createdAt: FieldValue.serverTimestamp(), createdBy: uid,
+          updatedAt: FieldValue.serverTimestamp(), updatedBy: uid
+        });
+      }
+      // Igiene piano: svuota solo gli slot delle copie rimosse e non riaggiunte.
+      if (plan.exists) {
+        const removedIds = recipes
+          .filter(item => isOrgCopy(item, actor.organizationId) && !sourceCopyIds.has(item.id))
+          .map(item => item.id);
+        const hygiene = clearPlanSlotsForRecipeIds(JSON.parse(JSON.stringify(plan.data())), removedIds);
+        summary.clearedSlots = hygiene.cleared.filter(slot => slot.area === 'days').length;
+        if (hygiene.cleared.length) {
+          tx.update(refs.planRef, { ...hygiene.plan, updatedAt: FieldValue.serverTimestamp(), updatedBy: uid });
+        }
+      }
+      // Grammature e frequenze: sostituzione con nuova revisione (mai merge
+      // silenzioso). Le nuove dosi diventano effettive dopo conferma in app.
+      summary.gramsRevision = grams.exists ? (Number(grams.data().revision || 0) + 1) : 1;
+      tx.set(gramsRef, {
+        schemaVersion: 1, revision: summary.gramsRevision,
+        overrides: JSON.parse(JSON.stringify(sourceGramsData)), note: '',
+        updatedAt: FieldValue.serverTimestamp(), updatedBy: uid,
+        createdAt: grams.exists ? grams.data().createdAt : FieldValue.serverTimestamp(),
+        createdBy: grams.exists ? grams.data().createdBy : uid
+      });
+      summary.frequenciesRevision = freq.exists ? (Number(freq.data().revision || 0) + 1) : 1;
+      tx.set(freqRef, {
+        schemaVersion: 1, revision: summary.frequenciesRevision,
+        proteins: JSON.parse(JSON.stringify(sourceProteins)), carbs: JSON.parse(JSON.stringify(sourceCarbs)),
+        updatedAt: FieldValue.serverTimestamp(), updatedBy: uid,
+        createdAt: freq.exists ? freq.data().createdAt : FieldValue.serverTimestamp(),
+        createdBy: freq.exists ? freq.data().createdBy : uid
+      });
+      tx.create(auditRef(actor.organizationId, eventId), auditEvent({
+        orgId: actor.organizationId, eventId, type: 'client-data.copied', actor,
+        subject: { type: 'client', id: targetId }, idempotencyKey: input.idempotencyKey,
+        metadata: {
+          sourceClientId: source.id, removed: summary.removed, added: summary.added,
+          personalUntouched: summary.personalUntouched, clearedSlots: summary.clearedSlots,
+          gramsRevision: summary.gramsRevision, frequenciesRevision: summary.frequenciesRevision,
+          scope: refs.scope
+        }
+      }));
+    });
+    results.push(summary);
+  }
+  return { sourceClientId: source.id, results };
+});
+
 // ---- Entitlement Lista spesa (verifica server-side) ----
 // Con assignment attivo non serve alcun reward. Senza assignment e con flag
 // provider OFF → failed-precondition. Nient'altro: nessuna ricevuta è
@@ -1754,26 +2472,38 @@ exports.requestShoppingReward = callable(async (data, uid) => {
 });
 
 exports.activateScheduledAssignments = onSchedule({ region: REGION, schedule: 'every 15 minutes', timeZone: 'Europe/Rome' }, async () => {
-  const due = await db.collectionGroup('assignments').where('status', '==', 'scheduled').where('effectiveAt', '<=', Timestamp.now()).limit(200).get();
-  for (const doc of due.docs) {
-    const parts = doc.ref.path.split('/');
-    const orgId = parts[1];
-    const clientId = parts[3];
-    await resolveDueAssignment(orgId, clientId);
+  // Stesso pattern anti-500 delle callable: niente collection-group (che in
+  // produzione richiede indici collection-group espliciti), ma enumerazione
+  // org → clienti → query su singola collection (indici COLLECTION già
+  // presenti in firestore.indexes.json). Le organizzazioni sono poche.
+  const now = Timestamp.now();
+  let activated = 0;
+  let expiredCount = 0;
+  const orgIds = await listOrganizationIds();
+  for (const orgId of orgIds) {
+    const clients = await db.collection(`organizations/${orgId}/clients`).select().limit(500).get();
+    for (const client of clients.docs) {
+      const clientId = client.id;
+      const clientRef = db.doc(`organizations/${orgId}/clients/${clientId}`);
+      const due = await clientRef.collection('assignments')
+        .where('status', '==', 'scheduled').where('effectiveAt', '<=', now).limit(5).get();
+      if (!due.empty) {
+        await resolveDueAssignment(orgId, clientId);
+        activated += due.size;
+      }
+      const expired = await clientRef.collection('assignments')
+        .where('status', '==', 'active').where('expiresAt', '<=', now).limit(5).get();
+      for (const doc of expired.docs) {
+        await db.runTransaction(async tx => {
+          const fresh = await tx.get(doc.ref);
+          if (fresh.data()?.status !== 'active') return;
+          tx.update(doc.ref, { status: 'expired', updatedAt: FieldValue.serverTimestamp(), updatedBy: 'system:scheduler' });
+          tx.delete(clientRef.collection('state').doc('activeAssignment'));
+          tx.update(clientRef, { activeAssignment: null, updatedAt: FieldValue.serverTimestamp(), updatedBy: 'system:scheduler' });
+        });
+        expiredCount += 1;
+      }
+    }
   }
-  const expired = await db.collectionGroup('assignments').where('status', '==', 'active').where('expiresAt', '<=', Timestamp.now()).limit(200).get();
-  for (const doc of expired.docs) {
-    const parts = doc.ref.path.split('/');
-    const orgId = parts[1];
-    const clientId = parts[3];
-    const clientRef = db.doc(`organizations/${orgId}/clients/${clientId}`);
-    await db.runTransaction(async tx => {
-      const fresh = await tx.get(doc.ref);
-      if (fresh.data()?.status !== 'active') return;
-      tx.update(doc.ref, { status: 'expired', updatedAt: FieldValue.serverTimestamp(), updatedBy: 'system:scheduler' });
-      tx.delete(clientRef.collection('state').doc('activeAssignment'));
-      tx.update(clientRef, { activeAssignment: null, updatedAt: FieldValue.serverTimestamp(), updatedBy: 'system:scheduler' });
-    });
-  }
-  logger.info('Scheduled assignments processed', { activated: due.size, expired: expired.size });
+  logger.info('Scheduled assignments processed', { activated, expired: expiredCount });
 });

@@ -129,3 +129,85 @@ test('engineRulesFor: v2 converte revisione+catalogo, v1 passa le regole motore'
   assert.equal(Saas.engineRulesFor({ schemaVersion: 1, rules: [] }), null);
   assert.equal(Saas.engineRulesFor(null), null);
 });
+
+test('snapshot v2: la revisione grammature richiede conferma (mai retroattiva)', () => {
+  const v2 = {
+    schemaVersion: 2, clientProfileId: 'client-a', assignmentId: 'asg-1',
+    structureId: 'str-1', structureRevisionId: '3', structureChecksum: 'a'.repeat(64),
+    ingredientCatalogVersion: 'cat-9', gramOverrides: { revision: 1, overrides: {} }
+  };
+  const source = plan();
+  source.nutritionSnapshot = Saas.snapshotFor(v2);
+  assert.equal(source.nutritionSnapshot.gramOverridesRevision, 1);
+  assert.equal(Saas.snapshotMatches(source, v2), true);
+  // Stessa struttura, nuove dosi personalizzate → serve conferma.
+  const grams2 = { ...v2, gramOverrides: { revision: 2, overrides: {} } };
+  assert.equal(Saas.snapshotMatches(source, grams2), false);
+  const result = Saas.applyPolicy(source, { state: 'assigned', profile: grams2 });
+  assert.equal(result.migrationRequired, true);
+  assert.equal(source.nutritionSnapshot.gramOverridesRevision, 1, 'lo snapshot esistente non cambia');
+});
+
+test('snapshot v2 retro-compatibile: profili senza grammature come prima', () => {
+  const v2 = {
+    schemaVersion: 2, clientProfileId: 'client-a', assignmentId: 'asg-1',
+    structureId: 'str-1', structureRevisionId: '3', structureChecksum: 'a'.repeat(64),
+    ingredientCatalogVersion: 'cat-9'
+  };
+  const source = plan();
+  source.nutritionSnapshot = Saas.snapshotFor(v2);
+  assert.equal(source.nutritionSnapshot.gramOverridesRevision, null);
+  assert.equal(Saas.snapshotMatches(source, v2), true);
+  // Snapshot creati prima delle grammature (senza chiave) restano validi.
+  delete source.nutritionSnapshot.gramOverridesRevision;
+  assert.equal(Saas.snapshotMatches(source, v2), true);
+});
+
+test('engineRulesFor v2 applica le grammature confermate alla conversione', () => {
+  const previous = globalThis.PianoDomain;
+  const Domain = require('../js/domain.js');
+  globalThis.PianoDomain = Domain;
+  try {
+    const profile = {
+      schemaVersion: 2,
+      structureRevision: { revisionId: '1', rules: [{ mellerFamilyId: 'riso', ingredientIds: ['riso'], categoryId: 'carb', quantityGrams: { lunch: { training: 90, rest: 70 }, dinner: { training: 40, rest: 40 } }, enabled: true }] },
+      catalog: { ingredients: [{ ingredientId: 'riso', displayName: 'Riso', normalizedName: 'riso', categoryId: 'carb', aliases: ['riso'], searchTokens: ['riso'], mappingKind: 'guided', mellerFamilyId: 'riso', status: 'active' }], categories: [] },
+      gramOverrides: { revision: 2, overrides: { riso: { quantityGrams: { lunch: { training: 100, rest: null }, dinner: null } } } }
+    };
+    const engine = Saas.engineRulesFor(profile);
+    assert.ok(engine.rules.length > 0);
+    assert.equal(engine.rules[0].slots.lunch.training, 100, 'override applicato');
+    assert.equal(engine.rules[0].slots.lunch.rest, 70, 'null conserva la struttura');
+  } finally {
+    if (previous === undefined) delete globalThis.PianoDomain;
+    else globalThis.PianoDomain = previous;
+  }
+});
+
+test('loadContext online attiva i profili v2 convertiti (mai profile.rules grezzo)', async () => {
+  const previousDomain = globalThis.PianoDomain;
+  const previousStorage = globalThis.localStorage;
+  const activated = {};
+  globalThis.PianoDomain = {
+    buildCatalogIndex: () => ({}),
+    structureRevisionToMellerRules: () => ({ rules: [{ family: 'riso', slots: {} }], freeAliases: ['riso'] }),
+    applyGramOverridesToRules: rules => rules,
+    activateMellerRuleSet: (rules, freeAliases) => { activated.rules = rules; activated.freeAliases = freeAliases; return true; }
+  };
+  const store = {};
+  globalThis.localStorage = { getItem: key => store[key] ?? null, setItem: (key, value) => { store[key] = String(value); } };
+  try {
+    const value = await Saas.loadContext('uid-1', async () => ({
+      state: 'assigned',
+      profile: { schemaVersion: 2, clientProfileId: 'c', assignmentId: 'a', structureId: 's', structureRevisionId: '1', structureChecksum: 'x', gramOverrides: null }
+    }));
+    assert.equal(value.state, 'assigned');
+    assert.deepEqual(activated.rules, [{ family: 'riso', slots: {} }], 'attivate le regole convertite, non profile.rules (undefined in v2)');
+    assert.deepEqual(activated.freeAliases, ['riso']);
+  } finally {
+    if (previousDomain === undefined) delete globalThis.PianoDomain;
+    else globalThis.PianoDomain = previousDomain;
+    if (previousStorage === undefined) delete globalThis.localStorage;
+    else globalThis.localStorage = previousStorage;
+  }
+});

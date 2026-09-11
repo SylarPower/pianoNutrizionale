@@ -1,6 +1,6 @@
 'use strict';
 
-const adminState = { user: null, reports: [], clients: [], ruleSets: [], structures: [], compareSelection: new Set(), users: null, editingStructure: null, cursor: null, selectedReport: null };
+const adminState = { user: null, reports: [], clients: [], ruleSets: [], structures: [], studioRecipes: [], compareSelection: new Set(), users: null, editingStructure: null, cursor: null, selectedReport: null, workspace: null };
 let catalogIndexCache = null;
 let catalogCategoriesCache = [];
 const $ = id => document.getElementById(id);
@@ -127,7 +127,7 @@ function assignmentSummary(client) {
 }
 
 function renderClients() {
-  $('clients-list').innerHTML = adminState.clients.map(client => `<article class="client-card"><p class="eyebrow">CLIENTE</p><h3>${escapeAdmin(client.displayCode)}</h3><p>${escapeAdmin(assignmentSummary(client))}</p><div class="card-actions"><button class="secondary" data-assign-client="${escapeAdmin(client.id)}">${client.activeAssignment ? 'Cambia profilo' : 'Assegna profilo'} →</button>${client.status && client.status !== 'active' ? '' : `<button class="text-button archive-toggle" data-unlink-client="${escapeAdmin(client.id)}" data-display="${escapeAdmin(client.displayCode)}">Rimuovi collegamento</button>`}</div></article>`).join('');
+  $('clients-list').innerHTML = adminState.clients.map(client => `<article class="client-card"><p class="eyebrow">CLIENTE</p><h3>${escapeAdmin(client.displayCode)}</h3><p>${escapeAdmin(assignmentSummary(client))}</p><div class="card-actions"><button class="secondary" data-assign-client="${escapeAdmin(client.id)}">${client.activeAssignment ? 'Cambia profilo' : 'Assegna profilo'} →</button><button class="secondary" data-manage-client="${escapeAdmin(client.id)}">Gestisci →</button>${client.status && client.status !== 'active' ? '' : `<button class="text-button archive-toggle" data-unlink-client="${escapeAdmin(client.id)}" data-display="${escapeAdmin(client.displayCode)}">Rimuovi collegamento</button>`}</div></article>`).join('');
 }
 
 async function loadStructuresList() {
@@ -757,6 +757,406 @@ async function submitUnlink(event) {
   } catch (error) { $('unlink-error').textContent = adminError(error); }
 }
 
+// ---- Ricette studio + gestione cliente (PASSO 4) ----
+// Il catalogo studio è condiviso dall'organizzazione; le copie assegnate
+// vivono nel catalogo del cliente con marcatore origin 'org' (sola lettura
+// in app, "Duplica come mia"). Le ricette senza marcatore sono personali:
+// assegnazione, rimozione e copia non le toccano mai.
+
+const SLOT_LABELS = { lunch: 'Pranzo', dinner: 'Cena', breakfast: 'Colazione', snack1: 'Spuntino', snack2: 'Merenda' };
+
+async function loadStudio() {
+  if (!orgId()) { $('studio-feedback').textContent = 'Inserisci l’organizzazione.'; return; }
+  $('studio-feedback').textContent = 'Caricamento catalogo studio…';
+  try {
+    const result = await callAdminSaasFunction('listStudioRecipes', { organizationId: orgId() });
+    adminState.studioRecipes = result.recipes || []; saveOrg(); renderStudio();
+    $('studio-feedback').textContent = adminState.studioRecipes.length ? '' : 'Catalogo vuoto: crea la prima ricetta.';
+  } catch (error) { $('studio-feedback').textContent = adminError(error); adminState.studioRecipes = []; renderStudio(); }
+}
+
+function renderStudio() {
+  $('studio-list').innerHTML = adminState.studioRecipes.map(item => `
+    <article class="client-card ${item.status === 'archived' ? 'structure-archived' : ''}">
+      <p class="eyebrow">RICETTA STUDIO${item.status === 'archived' ? ' · ARCHIVIATA' : ''}</p>
+      <h3>${escapeAdmin(item.emoji || '🍲')} ${escapeAdmin(item.name)}</h3>
+      <p>${escapeAdmin(SLOT_LABELS[item.slot] || item.slot || '')} · ${Number(item.ingredients?.length || 0)} ingredienti</p>
+      <div class="card-actions">
+        <button class="secondary" data-edit-recipe="${escapeAdmin(item.recipeId)}" ${item.status === 'archived' ? 'disabled' : ''}>Modifica →</button>
+        <button class="text-button archive-toggle" data-archive-recipe="${escapeAdmin(item.recipeId)}" data-archived="${item.status === 'archived' ? '1' : '0'}">${item.status === 'archived' ? 'Riattiva' : 'Archivia'}</button>
+      </div>
+    </article>`).join('') || '<p class="feedback">Nessuna ricetta registrata.</p>';
+}
+
+function recipeIngredientRow(ingredient = {}) {
+  return `
+  <div class="recipe-ingredient">
+    <input class="ing-name" required placeholder="Ingrediente (es. Pasta di semola)" value="${escapeAdmin(ingredient.name || '')}" aria-label="Nome ingrediente">
+    <input class="ing-man" placeholder="Dose uomo (es. 80 g)" value="${escapeAdmin(ingredient.portions?.man ?? '')}" aria-label="Dose uomo">
+    <input class="ing-ipo" placeholder="Dose donna (es. 60 g)" value="${escapeAdmin(ingredient.portions?.ipo ?? '')}" aria-label="Dose donna">
+    <button type="button" class="dialog-close ing-remove" aria-label="Rimuovi ingrediente">×</button>
+  </div>`;
+}
+
+function openRecipeDialog({ mode, recipe = {}, clientId = '', clientCode = '' }) {
+  $('recipe-mode').value = mode;
+  $('recipe-id').value = mode === 'studio' ? (recipe.recipeId || '') : (recipe.id || '');
+  $('recipe-client-id').value = clientId;
+  $('recipe-eyebrow').textContent = mode === 'studio' ? 'RICETTA STUDIO' : 'RICETTA PERSONALE';
+  $('recipe-title').textContent = mode === 'studio'
+    ? (recipe.recipeId ? 'Modifica ricetta studio' : 'Nuova ricetta studio')
+    : 'Modifica ricetta personale';
+  $('recipe-subtitle').textContent = mode === 'studio'
+    ? 'Catalogo condiviso dell’organizzazione.'
+    : `Cliente ${clientCode} · id ${recipe.id || ''}`;
+  $('recipe-name').value = recipe.name || '';
+  $('recipe-emoji').value = recipe.emoji || '';
+  $('recipe-slot').value = recipe.slot || 'lunch';
+  $('recipe-protein').value = recipe.proteinCategory || '';
+  $('recipe-ingredients').innerHTML = (recipe.ingredients?.length ? recipe.ingredients : [{}]).map(recipeIngredientRow).join('');
+  $('recipe-steps').value = (recipe.steps || []).join('\n');
+  $('recipe-notes').value = (recipe.notes || []).join('\n');
+  $('recipe-special').value = recipe.specialNote || '';
+  $('recipe-callout').textContent = mode === 'studio'
+    ? 'Il salvataggio non modifica le copie già assegnate ai clienti: serve una riassegnazione esplicita.'
+    : 'Si aggiorna la ricetta personale del cliente, senza toccare piano né copie studio.';
+  $('recipe-submit').textContent = mode === 'studio' ? 'Salva ricetta →' : 'Salva personale →';
+  $('recipe-error').textContent = '';
+  $('recipe-dialog').classList.remove('hidden');
+  $('recipe-name').focus();
+}
+
+function closeRecipeDialog() { $('recipe-dialog').classList.add('hidden'); }
+
+function collectRecipeForm() {
+  const rows = [...$('recipe-ingredients').querySelectorAll('.recipe-ingredient')];
+  const ingredients = rows.map((row, index) => {
+    const name = row.querySelector('.ing-name').value.trim();
+    const man = row.querySelector('.ing-man').value.trim();
+    const ipo = row.querySelector('.ing-ipo').value.trim();
+    if (!name) throw new Error(`Ingrediente ${index + 1}: indica il nome.`);
+    if (!man && !ipo) throw new Error(`Ingrediente ${index + 1} (${name}): almeno una dose tra uomo e donna.`);
+    const portions = {};
+    if (man) portions.man = man;
+    if (ipo) portions.ipo = ipo;
+    return { name, portions };
+  });
+  if (!ingredients.length) throw new Error('Aggiungi almeno un ingrediente.');
+  return {
+    name: $('recipe-name').value.trim(),
+    emoji: $('recipe-emoji').value.trim(),
+    slot: $('recipe-slot').value,
+    proteinCategory: $('recipe-protein').value || '',
+    ingredients,
+    steps: $('recipe-steps').value.split('\n').map(line => line.trim()).filter(Boolean),
+    notes: $('recipe-notes').value.split('\n').map(line => line.trim()).filter(Boolean),
+    specialNote: $('recipe-special').value.trim()
+  };
+}
+
+async function submitRecipeForm(event) {
+  event.preventDefault();
+  $('recipe-error').textContent = '';
+  const mode = $('recipe-mode').value;
+  let recipe;
+  try { recipe = collectRecipeForm(); } catch (error) { $('recipe-error').textContent = error.message; return; }
+  if (recipe.name.length < 2) { $('recipe-error').textContent = 'Il nome deve avere almeno 2 caratteri.'; return; }
+  try {
+    if (mode === 'studio') {
+      const recipeId = $('recipe-id').value || undefined;
+      const result = await callAdminSaasFunction('saveStudioRecipe', {
+        organizationId: orgId(), recipe: { ...recipe, ...(recipeId ? { recipeId } : {}) },
+        idempotencyKey: idem('studio-recipe')
+      });
+      closeRecipeDialog(); await loadStudio();
+      $('studio-feedback').textContent = result.created
+        ? 'Ricetta creata nel catalogo studio.'
+        : 'Ricetta aggiornata. Le copie assegnate restano com’erano: riassegna per propagare.';
+    } else {
+      await callAdminSaasFunction('saveClientPersonalRecipe', {
+        organizationId: orgId(), clientId: $('recipe-client-id').value,
+        recipe: { ...recipe, id: $('recipe-id').value },
+        idempotencyKey: idem('client-recipe')
+      });
+      closeRecipeDialog(); await refreshWorkspaceRecipes();
+      $('client-feedback').textContent = 'Ricetta personale aggiornata.';
+    }
+  } catch (error) { $('recipe-error').textContent = adminError(error); }
+}
+
+async function toggleStudioArchive(recipeId, archived) {
+  try {
+    await callAdminSaasFunction('archiveStudioRecipe', { organizationId: orgId(), studioRecipeId: recipeId, archived, idempotencyKey: idem('studio-archive') });
+    await loadStudio();
+    $('studio-feedback').textContent = archived
+      ? 'Ricetta archiviata: le copie assegnate restano, non si può più assegnare.'
+      : 'Ricetta riattivata.';
+  } catch (error) { $('studio-feedback').textContent = adminError(error); }
+}
+
+// ---- Area di lavoro cliente ----
+
+async function openClientWorkspace(clientId) {
+  const client = adminState.clients.find(item => item.id === clientId);
+  if (!client) return;
+  adminState.workspace = { clientId: client.id, displayCode: client.displayCode, recipes: [], grams: null, freq: null };
+  $('client-title').textContent = `Gestione · ${client.displayCode}`;
+  $('client-subtitle').textContent = 'Ricette, grammature, frequenze e copia dati.';
+  $('client-feedback').textContent = 'Caricamento dati cliente…';
+  ['client-org-recipes', 'client-assign-list', 'client-personal-recipes', 'client-grams', 'client-freq-proteins', 'client-freq-carbs', 'client-copy-targets'].forEach(id => { $(id).innerHTML = ''; });
+  $('client-grams-note').value = '';
+  $('client-grams-meta').textContent = '';
+  $('client-freq-meta').textContent = '';
+  $('client-copy-preview-out').textContent = '';
+  $('client-copy-confirm').disabled = true;
+  $('client-dialog').classList.remove('hidden');
+  try {
+    const [catalog, grams, freq, studio] = await Promise.all([
+      callAdminSaasFunction('listClientRecipes', { organizationId: orgId(), clientId: client.id }),
+      callAdminSaasFunction('getClientGramOverrides', { organizationId: orgId(), clientId: client.id }),
+      callAdminSaasFunction('getClientFoodFrequencies', { organizationId: orgId(), clientId: client.id }),
+      callAdminSaasFunction('listStudioRecipes', { organizationId: orgId() })
+    ]);
+    adminState.workspace.recipes = catalog.recipes || [];
+    adminState.workspace.grams = grams.overrides || null;
+    adminState.workspace.freq = freq.frequencies || null;
+    adminState.studioRecipes = studio.recipes || [];
+    renderWorkspace();
+    $('client-subtitle').textContent = `Catalogo ${catalog.scope === 'household' ? 'condiviso (household)' : 'personale'} · ${catalog.recipes?.length || 0} ricette.`;
+    $('client-feedback').textContent = '';
+  } catch (error) { $('client-feedback').textContent = adminError(error); }
+}
+
+function closeClientWorkspace() { $('client-dialog').classList.add('hidden'); adminState.workspace = null; }
+
+async function refreshWorkspaceRecipes() {
+  const workspace = adminState.workspace;
+  if (!workspace) return;
+  const catalog = await callAdminSaasFunction('listClientRecipes', { organizationId: orgId(), clientId: workspace.clientId });
+  workspace.recipes = catalog.recipes || [];
+  renderWorkspaceRecipes(); renderWorkspaceAssign();
+}
+
+function renderWorkspace() {
+  renderWorkspaceRecipes(); renderWorkspaceAssign(); renderWorkspaceGrams(); renderWorkspaceFreq(); renderWorkspaceCopy();
+}
+
+function renderWorkspaceRecipes() {
+  const recipes = adminState.workspace?.recipes || [];
+  const org = recipes.filter(item => item.origin === 'org');
+  const personal = recipes.filter(item => item.origin !== 'org');
+  $('client-org-recipes').innerHTML = org.length ? org.map(item => `
+    <div class="workspace-row"><input type="checkbox" data-unassign-recipe="${escapeAdmin(item.orgRecipeId || '')}" ${item.orgRecipeId ? '' : 'disabled'} aria-label="Seleziona ${escapeAdmin(item.name)} per la rimozione">
+    <span><strong>${escapeAdmin(item.emoji || '🍲')} ${escapeAdmin(item.name)}</strong><small>${escapeAdmin(SLOT_LABELS[item.slot] || '')}${item.assignedAt ? ` · assegnata il ${formatDateOnly(item.assignedAt)}` : ''}</small></span>
+    ${item.orgRecipeId ? `<button type="button" class="secondary" data-reassign-recipe="${escapeAdmin(item.orgRecipeId)}">Riassegna</button>` : ''}</div>`).join('')
+    : '<p class="field-hint">Nessuna ricetta dello studio assegnata.</p>';
+  $('client-personal-recipes').innerHTML = personal.length ? personal.map(item => `
+    <div class="workspace-row"><span><strong>${escapeAdmin(item.emoji || '🍲')} ${escapeAdmin(item.name)}</strong><small>${escapeAdmin(SLOT_LABELS[item.slot] || '')} · id ${escapeAdmin(item.id || '')}</small></span>
+    <button type="button" class="secondary" data-edit-personal="${escapeAdmin(item.id || '')}">Modifica</button></div>`).join('')
+    : '<p class="field-hint">Nessuna ricetta personale.</p>';
+}
+
+function renderWorkspaceAssign() {
+  const assigned = new Set((adminState.workspace?.recipes || []).filter(item => item.origin === 'org').map(item => item.orgRecipeId));
+  const available = (adminState.studioRecipes || []).filter(item => item.status !== 'archived' && !assigned.has(item.recipeId));
+  $('client-assign-list').innerHTML = available.length ? available.map(item => `
+    <label class="workspace-row"><input type="checkbox" data-assign-recipe="${escapeAdmin(item.recipeId)}">
+    <span><strong>${escapeAdmin(item.emoji || '🍲')} ${escapeAdmin(item.name)}</strong><small>${escapeAdmin(SLOT_LABELS[item.slot] || '')}</small></span></label>`).join('')
+    : '<p class="field-hint">Nessuna ricetta studio da assegnare (catalogo vuoto, tutto archiviato o già assegnato).</p>';
+}
+
+async function submitWorkspaceAssign() {
+  const ids = [...$('client-assign-list').querySelectorAll('[data-assign-recipe]:checked')].map(input => input.dataset.assignRecipe);
+  if (!ids.length) { $('client-feedback').textContent = 'Seleziona almeno una ricetta da assegnare.'; return; }
+  try {
+    const result = await callAdminSaasFunction('assignStudioRecipes', { organizationId: orgId(), clientId: adminState.workspace.clientId, studioRecipeIds: ids, idempotencyKey: idem('assign') });
+    await refreshWorkspaceRecipes();
+    $('client-feedback').textContent = `Assegnate ${result.assigned} ricette (${result.added} nuove, ${result.replaced} aggiornate).`;
+  } catch (error) { $('client-feedback').textContent = adminError(error); }
+}
+
+async function submitWorkspaceUnassign() {
+  const ids = [...$('client-org-recipes').querySelectorAll('[data-unassign-recipe]:checked')].map(input => input.dataset.unassignRecipe).filter(Boolean);
+  if (!ids.length) { $('client-feedback').textContent = 'Seleziona almeno una ricetta da rimuovere.'; return; }
+  if (!confirm(`Rimuovere ${ids.length} ricette dello studio da questo cliente?\n\nLe ricette personali non si toccano. I pasti del piano che usavano queste ricette diventeranno vuoti.`)) return;
+  try {
+    const result = await callAdminSaasFunction('unassignStudioRecipes', { organizationId: orgId(), clientId: adminState.workspace.clientId, studioRecipeIds: ids, idempotencyKey: idem('unassign') });
+    await refreshWorkspaceRecipes();
+    $('client-feedback').textContent = `Rimosse ${result.removed} ricette dello studio${result.clearedSlots?.length ? ` (${result.clearedSlots.length} slot del piano svuotati)` : ''}.`;
+  } catch (error) { $('client-feedback').textContent = adminError(error); }
+}
+
+async function reassignWorkspaceRecipe(studioRecipeId) {
+  try {
+    await callAdminSaasFunction('assignStudioRecipes', { organizationId: orgId(), clientId: adminState.workspace.clientId, studioRecipeIds: [studioRecipeId], idempotencyKey: idem('reassign') });
+    await refreshWorkspaceRecipes();
+    $('client-feedback').textContent = 'Copia aggiornata con l’ultima versione dello studio.';
+  } catch (error) { $('client-feedback').textContent = adminError(error); }
+}
+
+function mellerFamilyOptions() {
+  return (window.PianoDomain?.MELLER_GRAMMATURE || []).map(rule => `<option value="${escapeAdmin(rule.family)}">${escapeAdmin(rule.label || rule.family)}</option>`).join('');
+}
+
+let gramsRowCounter = 0;
+
+function gramsRow(family = '', quantities = {}) {
+  const listId = `grams-family-list-${++gramsRowCounter}`;
+  const q = meal => quantities?.[meal] || {};
+  return `
+  <div class="structure-rule">
+    <div class="rule-head grams-head">
+      <input class="grams-family" list="${listId}" required placeholder="Famiglia (es. riso)" value="${escapeAdmin(family)}" aria-label="Famiglia Meller">
+      <datalist id="${listId}">${mellerFamilyOptions()}</datalist>
+      <button type="button" class="dialog-close grams-remove" aria-label="Rimuovi famiglia">×</button>
+    </div>
+    <div class="rule-doses">
+      <label>Pranzo · Allenamento<input class="grams-la" type="number" min="1" max="2000" step="1" placeholder="g" value="${q('lunch').training ?? ''}"></label>
+      <label>Pranzo · Riposo<input class="grams-lr" type="number" min="1" max="2000" step="1" placeholder="g" value="${q('lunch').rest ?? ''}"></label>
+      <label>Cena · Allenamento<input class="grams-ca" type="number" min="1" max="2000" step="1" placeholder="g" value="${q('dinner').training ?? ''}"></label>
+      <label>Cena · Riposo<input class="grams-cr" type="number" min="1" max="2000" step="1" placeholder="g" value="${q('dinner').rest ?? ''}"></label>
+    </div>
+  </div>`;
+}
+
+function renderWorkspaceGrams() {
+  const grams = adminState.workspace?.grams;
+  const entries = grams ? Object.entries(grams.overrides || {}) : [];
+  $('client-grams').innerHTML = entries.length
+    ? entries.map(([family, value]) => gramsRow(family, value?.quantityGrams || {})).join('')
+    : gramsRow();
+  $('client-grams-note').value = grams?.note || '';
+  $('client-grams-meta').textContent = grams
+    ? `Revisione n. ${grams.revision} · aggiornata il ${formatDateOnly(grams.updatedAt)}`
+    : 'Nessuna grammatura personalizzata: si usano le dosi della struttura.';
+}
+
+function collectGrams() {
+  const known = new Set((window.PianoDomain?.MELLER_GRAMMATURE || []).map(rule => rule.family));
+  const rows = [...$('client-grams').querySelectorAll('.structure-rule')];
+  const dose = (row, cls) => { const raw = row.querySelector(cls).value; return raw === '' ? null : Number(raw); };
+  const overrides = {};
+  rows.forEach(row => {
+    const family = row.querySelector('.grams-family').value.trim();
+    if (!family) return;
+    if (!known.has(family)) throw new Error(`Famiglia «${family}» non presente nel motore Meller: sceglila dall’elenco.`);
+    if (overrides[family]) throw new Error(`Famiglia duplicata: ${family}`);
+    const quantityGrams = {
+      lunch: dose(row, '.grams-la') == null && dose(row, '.grams-lr') == null ? null : { training: dose(row, '.grams-la'), rest: dose(row, '.grams-lr') },
+      dinner: dose(row, '.grams-ca') == null && dose(row, '.grams-cr') == null ? null : { training: dose(row, '.grams-ca'), rest: dose(row, '.grams-cr') }
+    };
+    if (!quantityGrams.lunch && !quantityGrams.dinner) throw new Error(`Famiglia ${family}: almeno una dose.`);
+    for (const meal of ['lunch', 'dinner']) for (const day of ['training', 'rest']) {
+      const value = quantityGrams[meal]?.[day];
+      if (value != null && (!Number.isInteger(value) || value < 1 || value > 2000)) throw new Error(`Famiglia ${family}: le dosi devono essere interi tra 1 e 2000.`);
+    }
+    overrides[family] = { quantityGrams };
+  });
+  return overrides;
+}
+
+async function submitWorkspaceGrams() {
+  let overrides;
+  try { overrides = collectGrams(); } catch (error) { $('client-feedback').textContent = error.message; return; }
+  try {
+    const result = await callAdminSaasFunction('saveClientGramOverrides', {
+      organizationId: orgId(), clientId: adminState.workspace.clientId,
+      overrides, note: $('client-grams-note').value.trim(), idempotencyKey: idem('grams')
+    });
+    adminState.workspace.grams = { revision: result.revision, overrides, note: $('client-grams-note').value.trim(), updatedAt: new Date().toISOString() };
+    renderWorkspaceGrams();
+    $('client-feedback').textContent = `Grammature salvate (revisione n. ${result.revision}). Il cliente conferma dall’app: niente cambia in silenzio.`;
+  } catch (error) { $('client-feedback').textContent = adminError(error); }
+}
+
+function renderWorkspaceFreq() {
+  const freq = adminState.workspace?.freq;
+  const proteins = freq?.proteins || {};
+  const carbs = freq?.carbs || {};
+  const proteinKeys = window.PianoDomain?.PROTEIN_CATEGORIES || ['poultry', 'beef', 'curedMeats', 'omega', 'otherFish', 'dairy', 'eggs', 'legumes'];
+  const proteinLabels = window.PianoDomain?.PROTEIN_CATEGORY_LABELS || {};
+  const carbKeys = window.PianoDomain?.CARB_FREQUENCY_CATEGORIES || ['pastaRice', 'otherCereals', 'bread', 'potatoes'];
+  const carbLabels = window.PianoDomain?.CARB_FREQUENCY_LABELS || {};
+  const row = (key, label, range) => `
+    <div class="frequency-row"><strong>${escapeAdmin(label)}</strong>
+      <label>Min<input type="number" min="0" max="14" step="1" data-freq-key="${escapeAdmin(key)}" data-freq-side="min" value="${range?.min ?? ''}" placeholder="—" aria-label="Minimo ${escapeAdmin(label)}"></label>
+      <label>Max<input type="number" min="0" max="14" step="1" data-freq-key="${escapeAdmin(key)}" data-freq-side="max" value="${range?.max ?? ''}" placeholder="—" aria-label="Massimo ${escapeAdmin(label)}"></label>
+    </div>`;
+  $('client-freq-proteins').innerHTML = proteinKeys.map(key => row(key, proteinLabels[key] || key, proteins[key])).join('');
+  $('client-freq-carbs').innerHTML = carbKeys.map(key => row(key, carbLabels[key] || key, carbs[key])).join('');
+  $('client-freq-meta').textContent = freq
+    ? `Revisione n. ${freq.revision} · aggiornata il ${formatDateOnly(freq.updatedAt)}`
+    : 'Nessuna frequenza assegnata: si usano gli obiettivi standard.';
+}
+
+function collectFreq(sectionId) {
+  const section = {};
+  $(sectionId).querySelectorAll('[data-freq-key]').forEach(input => {
+    const key = input.dataset.freqKey;
+    section[key] = section[key] || {};
+    section[key][input.dataset.freqSide] = input.value === '' ? null : Number(input.value);
+  });
+  return section;
+}
+
+async function submitWorkspaceFreq() {
+  const proteins = collectFreq('client-freq-proteins');
+  const carbs = collectFreq('client-freq-carbs');
+  try {
+    const result = await callAdminSaasFunction('saveClientFoodFrequencies', {
+      organizationId: orgId(), clientId: adminState.workspace.clientId, proteins, carbs, idempotencyKey: idem('freq')
+    });
+    adminState.workspace.freq = { revision: result.revision, proteins, carbs, updatedAt: new Date().toISOString() };
+    renderWorkspaceFreq();
+    $('client-feedback').textContent = `Frequenze salvate (revisione n. ${result.revision}).`;
+  } catch (error) { $('client-feedback').textContent = adminError(error); }
+}
+
+function renderWorkspaceCopy() {
+  const workspace = adminState.workspace;
+  const others = (adminState.clients || []).filter(item => item.id !== workspace.clientId);
+  $('client-copy-targets').innerHTML = others.length ? others.map(item => `
+    <label class="workspace-row"><input type="checkbox" data-copy-target="${escapeAdmin(item.id)}">
+    <span><strong>${escapeAdmin(item.displayCode)}</strong><small>${escapeAdmin(assignmentSummary(item))}</small></span></label>`).join('')
+    : '<p class="field-hint">Nessun altro cliente autorizzato.</p>';
+}
+
+function copyTargetIds() {
+  return [...$('client-copy-targets').querySelectorAll('[data-copy-target]:checked')].map(input => input.dataset.copyTarget);
+}
+
+async function previewWorkspaceCopy() {
+  const targets = copyTargetIds();
+  if (!targets.length) { $('client-copy-preview-out').textContent = 'Seleziona almeno un cliente destinatario.'; return; }
+  $('client-copy-preview-out').textContent = 'Calcolo anteprima…';
+  $('client-copy-confirm').disabled = true;
+  try {
+    const preview = await callAdminSaasFunction('previewCopyClientData', { organizationId: orgId(), sourceClientId: adminState.workspace.clientId, targetClientIds: targets });
+    const source = preview.sourceSummary;
+    $('client-copy-preview-out').innerHTML = `
+      <p><strong>Da copiare:</strong> ${source.orgCopies} ricette studio · ${source.gramFamilies} famiglie grammature · ${source.proteinRanges} fasce proteine · ${source.carbRanges} fasce carboidrati.</p>
+      ${preview.targets.map(target => `<p><strong>${escapeAdmin(target.displayCode)}:</strong> ${target.personalUntouched} personali intoccate · ${target.orgCopiesToRemove} copie da sostituire con ${target.orgCopiesToAdd} · ${target.planSlotsToClear} slot del piano da svuotare.</p>`).join('')}`;
+    $('client-copy-confirm').disabled = false;
+  } catch (error) { $('client-copy-preview-out').textContent = adminError(error); }
+}
+
+async function confirmWorkspaceCopy() {
+  const targets = copyTargetIds();
+  if (!targets.length) return;
+  if (!confirm(`Copiare ricette studio, grammature e frequenze verso ${targets.length} clienti?\n\nLe ricette personali dei destinatari restano intoccabili. L’operazione è registrata nell’audit.`)) return;
+  $('client-copy-confirm').disabled = true;
+  try {
+    const result = await callAdminSaasFunction('copyClientData', { organizationId: orgId(), sourceClientId: adminState.workspace.clientId, targetClientIds: targets, idempotencyKey: idem('copy') });
+    const codeOf = id => (adminState.clients.find(item => item.id === id)?.displayCode) || id;
+    $('client-copy-preview-out').innerHTML = result.results.map(item =>
+      `<p><strong>${escapeAdmin(codeOf(item.clientId))}:</strong> ${item.added} copie, ${item.personalUntouched} personali intoccate, ${item.clearedSlots} slot svuotati, grammature rev. ${item.gramsRevision}, frequenze rev. ${item.frequenciesRevision}.</p>`).join('');
+    $('client-feedback').textContent = 'Copia completata e registrata nell’audit.';
+  } catch (error) {
+    $('client-copy-preview-out').textContent = adminError(error);
+    $('client-copy-confirm').disabled = false;
+  }
+}
+
 function showView(view) {
   document.querySelectorAll('.console-view').forEach(node => node.classList.toggle('hidden', node.id !== `view-${view}`));
   document.querySelectorAll('.nav-link').forEach(node => node.classList.toggle('active', node.dataset.view === view));
@@ -766,6 +1166,7 @@ function showView(view) {
   $('mobile-menu')?.setAttribute('aria-expanded', 'false');
   if (view === 'clients') loadClients();
   else if (view === 'structures') loadStructures();
+  else if (view === 'studio') loadStudio();
   else if (view === 'users') loadUsers();
   else loadReports();
 }
@@ -787,7 +1188,11 @@ function bindAdmin() {
   $('mapping-form').addEventListener('submit', submitMapping);
   document.querySelectorAll('[data-close-dialog]').forEach(node => node.addEventListener('click', closeMapping));
   $('refresh-clients').addEventListener('click', loadClients);
-  $('clients-list').addEventListener('click', event => { const button = event.target.closest('[data-assign-client]'); if (button) openAssignment(button.dataset.assignClient); });
+  $('clients-list').addEventListener('click', event => {
+    const manage = event.target.closest('[data-manage-client]');
+    if (manage) { openClientWorkspace(manage.dataset.manageClient); return; }
+    const button = event.target.closest('[data-assign-client]'); if (button) openAssignment(button.dataset.assignClient);
+  });
   $('assignment-form').addEventListener('submit', submitAssignment);
   $('assignment-no-expiry').addEventListener('change', () => { $('assignment-expires').disabled = $('assignment-no-expiry').checked; if ($('assignment-no-expiry').checked) $('assignment-expires').value = ''; });
   document.querySelectorAll('[data-close-assignment]').forEach(node => node.addEventListener('click', closeAssignment));
@@ -843,6 +1248,35 @@ function bindAdmin() {
   });
   $('unlink-form').addEventListener('submit', submitUnlink);
   document.querySelectorAll('[data-close-unlink]').forEach(node => node.addEventListener('click', closeUnlink));
+  $('refresh-studio').addEventListener('click', loadStudio);
+  $('new-studio-recipe').addEventListener('click', () => openRecipeDialog({ mode: 'studio' }));
+  $('studio-list').addEventListener('click', event => {
+    const edit = event.target.closest('[data-edit-recipe]');
+    if (edit) { const recipe = adminState.studioRecipes.find(item => item.recipeId === edit.dataset.editRecipe); if (recipe) openRecipeDialog({ mode: 'studio', recipe }); return; }
+    const archive = event.target.closest('[data-archive-recipe]');
+    if (archive) toggleStudioArchive(archive.dataset.archiveRecipe, archive.dataset.archived !== '1');
+  });
+  $('recipe-form').addEventListener('submit', submitRecipeForm);
+  $('recipe-add-ingredient').addEventListener('click', () => $('recipe-ingredients').insertAdjacentHTML('beforeend', recipeIngredientRow()));
+  $('recipe-ingredients').addEventListener('click', event => { const remove = event.target.closest('.ing-remove'); if (remove) remove.closest('.recipe-ingredient').remove(); });
+  document.querySelectorAll('[data-close-recipe]').forEach(node => node.addEventListener('click', closeRecipeDialog));
+  $('client-assign').addEventListener('click', submitWorkspaceAssign);
+  $('client-unassign').addEventListener('click', submitWorkspaceUnassign);
+  $('client-org-recipes').addEventListener('click', event => { const button = event.target.closest('[data-reassign-recipe]'); if (button) reassignWorkspaceRecipe(button.dataset.reassignRecipe); });
+  $('client-personal-recipes').addEventListener('click', event => {
+    const button = event.target.closest('[data-edit-personal]');
+    if (!button || !adminState.workspace) return;
+    const recipe = adminState.workspace.recipes.find(item => item.id === button.dataset.editPersonal);
+    if (recipe) openRecipeDialog({ mode: 'personal', recipe, clientId: adminState.workspace.clientId, clientCode: adminState.workspace.displayCode });
+  });
+  $('client-grams-add').addEventListener('click', () => $('client-grams').insertAdjacentHTML('beforeend', gramsRow()));
+  $('client-grams').addEventListener('click', event => { const remove = event.target.closest('.grams-remove'); if (remove) remove.closest('.structure-rule').remove(); });
+  $('client-grams-save').addEventListener('click', submitWorkspaceGrams);
+  $('client-freq-save').addEventListener('click', submitWorkspaceFreq);
+  $('client-copy-preview').addEventListener('click', previewWorkspaceCopy);
+  $('client-copy-confirm').addEventListener('click', confirmWorkspaceCopy);
+  $('client-copy-targets').addEventListener('change', () => { $('client-copy-confirm').disabled = true; $('client-copy-preview-out').textContent = ''; });
+  document.querySelectorAll('[data-close-client]').forEach(node => node.addEventListener('click', closeClientWorkspace));
   // Drawer mobile accessibile: backdrop click-to-close, Escape, focus sulla
   // prima voce all'apertura, aria-expanded sul bottone.
   const sidebar = () => document.querySelector('.sidebar');

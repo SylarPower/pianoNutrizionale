@@ -36,6 +36,7 @@
       <nav aria-label="Console">
         <button class="nav-link active" data-view="clients"><span>♙</span>Clienti</button>
         <button class="nav-link" data-view="structures"><span>▦</span>Strutture dieta</button>
+        <button class="nav-link" data-view="studio"><span>🍲</span>Ricette studio</button>
         <button class="nav-link" data-view="users"><span>⛉</span>Utenti</button>
         <button class="nav-link" data-view="mapping"><span>◫</span>Coda ingredienti <b id="nav-open-count" class="badge-zero" aria-label="Coda ingredienti: nessun caso in sospeso">0</b></button>
       </nav>
@@ -72,6 +73,11 @@
       <main id="view-structures" class="console-view hidden">
         <section class="hero-row"><div><p class="eyebrow">STRUTTURE DIETA</p><h1>Le tue strutture,<br>revisionate e tracciate.</h1><p>Ogni modifica crea una nuova revisione: le precedenti restano intatte e ripristinabili.</p></div><div class="hero-actions"><button id="new-structure" class="primary small-primary">＋ Nuova struttura</button><button id="refresh-structures" class="secondary">↻ Aggiorna</button></div></section>
         <section class="panel"><div class="panel-head"><div><h2>Strutture dieta</h2><p id="structures-scope">Vedi tutte le strutture che il tuo ruolo autorizza.</p></div><div class="hero-actions"><button id="compare-structures" class="secondary" disabled>Confronta (0)</button></div></div><div id="structures-feedback" class="feedback" role="status"></div><div id="compare-hint" class="feedback" role="status">Seleziona almeno 2 strutture per confrontarle.</div><div id="structures-list" class="client-grid"></div></section>
+      </main>
+
+      <main id="view-studio" class="console-view hidden">
+        <section class="hero-row"><div><p class="eyebrow">CATALOGO CONDIVISO</p><h1>Le ricette dello studio,<br>pronte da assegnare.</h1><p>Le modifiche qui non toccano le copie già assegnate: serve una riassegnazione esplicita per propagarle.</p></div><div class="hero-actions"><button id="new-studio-recipe" class="primary small-primary">＋ Nuova ricetta</button><button id="refresh-studio" class="secondary">↻ Aggiorna</button></div></section>
+        <section class="panel"><div class="panel-head"><div><h2>Ricette studio</h2><p>Catalogo dell’organizzazione: le archiviate non si possono più assegnare.</p></div></div><div id="studio-feedback" class="feedback" role="status"></div><div id="studio-list" class="client-grid"></div></section>
       </main>
 
       <main id="view-users" class="console-view hidden">
@@ -138,6 +144,60 @@
       <p class="callout">Nulla viene applicato in silenzio: il cliente conferma l'aggiornamento dall'app e le sue ricette restano invariate.</p>
       <p id="assignment-error" class="error" role="alert"></p><div class="dialog-actions"><button type="button" class="secondary" data-close-assignment>Annulla</button><button class="primary" type="submit">Conferma assegnazione →</button></div>
     </form>
+  </section></div>
+
+  <div id="recipe-dialog" class="dialog hidden" role="dialog" aria-modal="true" aria-labelledby="recipe-title"><div class="dialog-backdrop" data-close-recipe></div><section class="dialog-card wide"><button class="dialog-close" data-close-recipe aria-label="Chiudi">×</button><p class="eyebrow" id="recipe-eyebrow">RICETTA STUDIO</p><h2 id="recipe-title">Nuova ricetta</h2><p id="recipe-subtitle" class="dialog-lead"></p>
+    <form id="recipe-form"><input id="recipe-mode" type="hidden" value="studio"><input id="recipe-id" type="hidden"><input id="recipe-client-id" type="hidden">
+      <div class="form-grid"><label>Nome ricetta<input id="recipe-name" required minlength="2" maxlength="80" placeholder="es. Pasta al pomodoro"></label><label>Emoji<input id="recipe-emoji" maxlength="8" placeholder="🍝"></label></div>
+      <div class="form-grid"><label>Tipo pasto<select id="recipe-slot"><option value="lunch">Pranzo</option><option value="dinner">Cena</option><option value="breakfast">Colazione</option><option value="snack1">Spuntino</option><option value="snack2">Merenda</option></select></label><label>Categoria proteica (opzionale)<select id="recipe-protein"><option value="">—</option><option value="poultry">Pollame</option><option value="beef">Manzo e maiale</option><option value="curedMeats">Affettati e carni miste</option><option value="omega">Pesce ricco di omega-3</option><option value="otherFish">Altro pesce</option><option value="dairy">Latticini e formaggi</option><option value="eggs">Uova</option><option value="legumes">Legumi e derivati</option></select></label></div>
+      <fieldset><legend>Ingredienti (almeno uno; dose uomo e/o donna)</legend>
+        <p class="field-hint">Formato dose: numero + unità, es. «80 g», «2 pz», «1 cucchiaio», «q.b.». Solo i grammi vengono adattati alle linee guida.</p>
+        <div id="recipe-ingredients" class="recipe-ingredients"></div>
+        <button type="button" id="recipe-add-ingredient" class="secondary full">＋ Aggiungi ingrediente</button>
+      </fieldset>
+      <label>Preparazione (un passaggio per riga)<textarea id="recipe-steps" maxlength="4000" placeholder="Cuoci la pasta…"></textarea></label>
+      <label>Note (una per riga)<textarea id="recipe-notes" maxlength="2000"></textarea></label>
+      <label>Nota speciale<input id="recipe-special" maxlength="500"></label>
+      <p class="callout" id="recipe-callout">Il salvataggio non modifica le copie già assegnate ai clienti: serve una riassegnazione esplicita.</p>
+      <p id="recipe-error" class="error" role="alert"></p><div class="dialog-actions"><button type="button" class="secondary" data-close-recipe>Annulla</button><button id="recipe-submit" class="primary" type="submit">Salva ricetta →</button></div>
+    </form>
+  </section></div>
+
+  <div id="client-dialog" class="dialog hidden" role="dialog" aria-modal="true" aria-labelledby="client-title"><div class="dialog-backdrop" data-close-client></div><section class="dialog-card wide"><button class="dialog-close" data-close-client aria-label="Chiudi gestione cliente">×</button><p class="eyebrow">GESTIONE CLIENTE</p><h2 id="client-title">Cliente</h2><p id="client-subtitle" class="dialog-lead"></p>
+    <div id="client-feedback" class="feedback" role="status"></div>
+    <details class="tech-details" open><summary>Ricette dello studio assegnate</summary>
+      <div id="client-org-recipes" class="workspace-list"></div>
+      <div class="dialog-actions"><button type="button" id="client-unassign" class="secondary">Rimuovi selezionate</button></div>
+      <h3>Assegna dal catalogo studio</h3>
+      <div id="client-assign-list" class="workspace-list"></div>
+      <div class="dialog-actions"><button type="button" id="client-assign" class="primary">Assegna selezionate →</button></div>
+    </details>
+    <details class="tech-details"><summary>Ricette personali del cliente</summary>
+      <p class="field-hint">Senza marcatore studio: si modificano qui, mai toccate da assegna/rimuovi/copia.</p>
+      <div id="client-personal-recipes" class="workspace-list"></div>
+    </details>
+    <details class="tech-details"><summary>Grammature personalizzate</summary>
+      <p class="field-hint">Dosi per famiglia Meller (grammi a crudo). Campi vuoti = dose della struttura. Il cliente conferma la nuova revisione dall’app.</p>
+      <div id="client-grams" class="structure-rules"></div>
+      <button type="button" id="client-grams-add" class="secondary full">＋ Aggiungi famiglia</button>
+      <label>Nota interna (solo staff)<input id="client-grams-note" maxlength="500" placeholder="es. Porzioni ridotte per intolleranza"></label>
+      <p id="client-grams-meta" class="field-hint"></p>
+      <div class="dialog-actions"><button type="button" id="client-grams-save" class="primary">Salva grammature →</button></div>
+    </details>
+    <details class="tech-details"><summary>Frequenze alimentari</summary>
+      <p class="field-hint">Pasti a settimana per categoria (0–14). Campi vuoti = senza limiti. Proteine: sostituiscono gli obiettivi standard; carboidrati: solo le fasce compilate vengono valutate.</p>
+      <h3>Proteine</h3><div id="client-freq-proteins" class="frequency-grid"></div>
+      <h3>Carboidrati</h3><div id="client-freq-carbs" class="frequency-grid"></div>
+      <p id="client-freq-meta" class="field-hint"></p>
+      <div class="dialog-actions"><button type="button" id="client-freq-save" class="primary">Salva frequenze →</button></div>
+    </details>
+    <details class="tech-details"><summary>Copia dati tra clienti</summary>
+      <p class="field-hint">Copia ricette dello studio, grammature e frequenze di QUESTO cliente verso altri clienti. Le ricette personali dei destinatari restano intoccabili; i pasti del piano che usavano copie rimosse diventano vuoti.</p>
+      <div id="client-copy-targets" class="workspace-list"></div>
+      <div class="dialog-actions"><button type="button" id="client-copy-preview" class="secondary">Mostra anteprima</button><button type="button" id="client-copy-confirm" class="primary" disabled>Copia i dati →</button></div>
+      <div id="client-copy-preview-out" class="feedback" role="status"></div>
+    </details>
+    <div class="dialog-actions"><button type="button" class="secondary" data-close-client>Chiudi</button></div>
   </section></div>
 
   <div id="unlink-dialog" class="dialog hidden" role="dialog" aria-modal="true" aria-labelledby="unlink-title"><div class="dialog-backdrop" data-close-unlink></div><section class="dialog-card"><button class="dialog-close" data-close-unlink aria-label="Chiudi">×</button><p class="eyebrow">RIMOZIONE ASSOCIAZIONE</p><h2 id="unlink-title">Rimuovere il collegamento?</h2><p id="unlink-client" class="dialog-lead"></p>

@@ -1026,6 +1026,25 @@ async function deleteBackup() {
   await deleteDocRef(backupsRef());
 }
 
+// Igiene del piano ripristinato: svuota solo gli slot che puntano a ricette
+// assenti dal catalogo risultante (il resto del piano resta com'è).
+function sanitizeRestoredPlanForCatalog(plan, recipes) {
+  const clean = cloneData(plan || {});
+  const ids = new Set((recipes || []).map(recipe => recipe.id));
+  const days = ["monday", "tuesday", "wednesday", "thursday", "friday", "saturday", "sunday"];
+  days.forEach(day => {
+    ["days", "defaultDays"].forEach(area => {
+      const slots = clean?.[area]?.[day];
+      if (!slots || typeof slots !== "object") return;
+      Object.keys(slots).forEach(slot => {
+        if (slot === "type") return;
+        if (slots[slot] != null && !ids.has(slots[slot])) slots[slot] = null;
+      });
+    });
+  });
+  return clean;
+}
+
 // Ripristino atomico: legge il backup, ripristina catalogo/piano/spesa e
 // cancella il backup nello stesso batch. Se il backup era stato creato quando
 // l'utente era ancora in ambito personale ma ora si trova in una household,
@@ -1038,7 +1057,6 @@ async function restoreBackupAtomic() {
   const backup = snapData(backupDoc);
   const recipes = Array.isArray(backup?.catalog) ? backup.catalog : backup?.catalog?.recipes;
   if (!Array.isArray(recipes) || !backup?.plan) throw new Error("Il backup non è valido");
-  backup.catalog = { schemaVersion: CATALOG_SCHEMA_VERSION, recipes };
 
   const restorePersonalState = backup.scope === "personal";
   const leaveHousehold = restorePersonalState && Boolean(currentHousehold);
@@ -1052,11 +1070,27 @@ async function restoreBackupAtomic() {
     ? personalShoppingListRef()
     : shoppingListRef();
 
+  // Le copie dello studio (origin 'org') sono gestite dal professionista: il
+  // ripristino conserva quelle ATTUALI e ignora quelle del backup (niente
+  // resurrezioni da backup vecchi né cancellazioni silenziose).
+  const currentCatalogSnap = await getDoc(targetCatalogRef);
+  const currentRecipes = snapExists(currentCatalogSnap) && Array.isArray(snapData(currentCatalogSnap)?.recipes)
+    ? snapData(currentCatalogSnap).recipes
+    : [];
+  const preservedCopies = currentRecipes.filter(recipe => recipe?.origin === "org");
+  const preservedIds = new Set(preservedCopies.map(recipe => recipe.id));
+  const mergedRecipes = [
+    ...recipes.filter(recipe => recipe?.origin !== "org" && !preservedIds.has(recipe?.id)),
+    ...preservedCopies
+  ].sort((a, b) => String(a.id).localeCompare(String(b.id), "it", { numeric: true }));
+  backup.catalog = { schemaVersion: CATALOG_SCHEMA_VERSION, recipes: cloneData(mergedRecipes) };
+  backup.plan = sanitizeRestoredPlanForCatalog(backup.plan, mergedRecipes);
+
   const batch = writeBatch();
   batch.set(targetCatalogRef, {
     schemaVersion: CATALOG_SCHEMA_VERSION,
-    recipes: cloneData(recipes),
-    recipeCount: recipes.length,
+    recipes: cloneData(backup.catalog.recipes),
+    recipeCount: backup.catalog.recipes.length,
     restoredAt: serverTimestamp(),
     updatedAt: serverTimestamp()
   });

@@ -131,3 +131,25 @@ tr.same .diff-mark{background:var(--green);color:#fff}
 .unlink-points{display:grid;gap:9px;padding-left:20px;margin:0 0 16px;color:#34463f}
 @media(max-width:840px){.invite-grid{grid-template-columns:1fr}.invite-card:first-child{border-right:0;border-bottom:1px solid var(--line)}}
 .group-add-item{justify-self:start}
+
+/* ---- Ricette studio + gestione cliente ---- */
+#client-dialog .tech-details{margin-bottom:12px}
+#client-dialog h3{font-size:.95rem;margin:14px 0 8px}
+.workspace-list{display:grid;gap:8px;margin-bottom:6px}
+.workspace-row{display:flex;align-items:center;gap:12px;border:1px solid var(--line);border-radius:11px;padding:10px 12px;background:#fff}
+.workspace-row input[type=checkbox]{width:18px;height:18px;flex-shrink:0;accent-color:var(--green)}
+.workspace-row>span{display:grid;gap:2px;flex:1;min-width:0}
+.workspace-row small{color:var(--muted)}
+.workspace-row .secondary{padding:8px 12px;flex-shrink:0}
+.recipe-ingredients{display:grid;gap:10px;margin-bottom:14px}
+.recipe-ingredient{display:grid;grid-template-columns:2fr 1fr 1fr auto;gap:9px;align-items:center;border:1px solid var(--line);border-radius:11px;padding:10px}
+.recipe-ingredient .ing-remove{position:static;font-size:1.4rem;line-height:1;padding:4px 8px}
+.frequency-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(220px,1fr));gap:10px;margin-bottom:6px}
+.frequency-row{border:1px solid var(--line);border-radius:11px;padding:10px 12px;background:#fff;display:grid;gap:8px}
+.frequency-row strong{font-size:.82rem}
+.frequency-row label{display:grid;grid-template-columns:auto 1fr;align-items:center;gap:8px;font-size:.75rem}
+.rule-head.grams-head{grid-template-columns:1fr auto}
+.rule-head.grams-head .grams-remove{position:static;font-size:1.4rem;line-height:1;padding:4px 8px}
+#client-copy-preview-out:not(:empty){padding-top:12px}
+#client-copy-preview-out p{margin:6px 0;font-size:.85rem}
+@media(max-width:840px){.recipe-ingredient{grid-template-columns:1fr 1fr}.recipe-ingredient .ing-name{grid-column:1/-1}}

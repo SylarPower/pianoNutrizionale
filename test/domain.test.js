@@ -2153,3 +2153,108 @@ test('toggle quantità adattate: default attivo, scelta esplicita preservata, he
   assert.equal(d.migratePlan(legacy).adaptedQuantitiesEnabled, true);
   assert.equal(d.migratePlan({ ...legacy, adaptedQuantitiesEnabled: false }).adaptedQuantitiesEnabled, false);
 });
+
+// ---- Frequenze carboidrati assegnate (PASSO 4) ----
+
+test('classifyCarbFrequency: tassonomia pasta/riso, altri cereali, pane, patate', () => {
+  const lunch = name => recipe('R', name, 'lunch', [ingredient(name)]);
+  assert.equal(d.classifyCarbFrequency(lunch('Pasta di semola')), 'pastaRice');
+  assert.equal(d.classifyCarbFrequency(lunch('Riso venere')), 'pastaRice');
+  assert.equal(d.classifyCarbFrequency(lunch('Farro perlato')), 'otherCereals');
+  assert.equal(d.classifyCarbFrequency(lunch('Quinoa')), 'otherCereals');
+  assert.equal(d.classifyCarbFrequency(lunch('Pane integrale')), 'bread');
+  assert.equal(d.classifyCarbFrequency(lunch('Piadina')), 'bread');
+  assert.equal(d.classifyCarbFrequency(lunch('Patate')), 'potatoes');
+  assert.equal(d.classifyCarbFrequency(lunch('Gnocchi di patate')), 'potatoes', 'gli gnocchi di patate contano come patate');
+  assert.equal(d.classifyCarbFrequency(lunch('Polenta')), 'potatoes');
+  assert.equal(d.classifyCarbFrequency(lunch('Zucchine')), null, 'senza carboidrati classificati → non conteggiata');
+  assert.equal(d.classifyCarbFrequency(recipe('R', 'Vuota', 'lunch', [])), null);
+});
+
+function carbRecipe(id, slot, firstIngredient) {
+  return recipe(id, firstIngredient, slot, [ingredient(firstIngredient), ingredient('Olio extravergine')]);
+}
+
+function carbCatalog() {
+  const catalog = [];
+  ['Pasta di semola', 'Riso', 'Spaghetti', 'Penne'].forEach((name, index) => {
+    catalog.push(carbRecipe(`PA${index}`, 'lunch', name));
+    catalog.push(carbRecipe(`PD${index}`, 'dinner', name));
+  });
+  ['Pane integrale', 'Piadina', 'Cracker', 'Focaccia'].forEach((name, index) => {
+    catalog.push(carbRecipe(`PA-B${index}`, 'lunch', name));
+    catalog.push(carbRecipe(`PD-B${index}`, 'dinner', name));
+  });
+  ['Patate', 'Gnocchi di patate', 'Polenta', 'Patate dolci'].forEach((name, index) => {
+    catalog.push(carbRecipe(`PA-P${index}`, 'lunch', name));
+    catalog.push(carbRecipe(`PD-P${index}`, 'dinner', name));
+  });
+  return catalog;
+}
+
+test('generatore: tetto carboidrati assegnato rispettato senza rilassamenti', () => {
+  const result = d.generateWeek(carbCatalog(), {
+    seed: 42, batchPairs: 0, maxRepeats: 2,
+    constraints: { ...d.DEFAULT_CONSTRAINTS, pastaRiceMin: 0, pastaRiceMax: 0 }
+  });
+  assert.equal(result.counts.pastaRice, 0);
+  assert.ok(result.warnings.every(warning => !warning.startsWith('Vincoli rilassati')), 'nessun rilassamento atteso');
+});
+
+test('generatore: minimo carboidrati assegnato raggiunto con riparazione', () => {
+  const result = d.generateWeek(carbCatalog(), {
+    seed: 7, batchPairs: 0, maxRepeats: 2,
+    constraints: { ...d.DEFAULT_CONSTRAINTS, pastaRiceMin: 4, pastaRiceMax: 6 }
+  });
+  assert.ok(result.counts.pastaRice >= 4, `attesi almeno 4 pasti di pasta/riso, trovati ${result.counts.pastaRice}`);
+  assert.ok(result.counts.pastaRice <= 6, `attesi al massimo 6 pasti di pasta/riso, trovati ${result.counts.pastaRice}`);
+});
+
+test('generatore: senza fasce carboidrati il comportamento resta invariato', () => {
+  const result = d.generateWeek(carbCatalog(), { seed: 7, batchPairs: 0, maxRepeats: 2, constraints: { ...d.DEFAULT_CONSTRAINTS } });
+  assert.equal(result.counts.pastaRice, 0, 'chiavi presenti ma mai conteggiate senza vincoli');
+  assert.equal(result.counts.bread, 0);
+  const carbWarnings = result.warnings.filter(warning => /Pasta e riso|Altri cereali|Pane e sostituti|Patate, gnocchi/.test(warning));
+  assert.deepEqual(carbWarnings, [], 'nessun avviso carboidrati senza fasce assegnate');
+});
+
+test('generatore: avviso finale con obiettivo parziale (solo minimo)', () => {
+  const catalog = [carbRecipe('B1', 'lunch', 'Pane integrale'), carbRecipe('B2', 'dinner', 'Pane integrale')];
+  const result = d.generateWeek(catalog, {
+    seed: 3, batchPairs: 0, maxRepeats: 7,
+    constraints: { ...d.DEFAULT_CONSTRAINTS, pastaRiceMin: 5 }
+  });
+  assert.ok(result.warnings.some(warning => warning.includes('Pasta e riso') && warning.includes('almeno 5')), JSON.stringify(result.warnings));
+});
+
+// ---- Override grammature per cliente (PASSO 4) ----
+
+function engineRules() {
+  return [
+    { family: 'riso', group: 'carb', label: 'Riso', aliases: ['riso'], slots: { lunch: { training: 90, rest: 70 }, dinner: { training: 40, rest: 40 } } },
+    { family: 'pollo', group: 'protein', label: 'Pollo', aliases: ['pollo'], slots: { lunch: { training: 120, rest: 100 }, dinner: { training: 100, rest: 100 } } }
+  ];
+}
+
+test('applyGramOverridesToRules: merge parziale, null conserva, ignoti e invalidi scartati', () => {
+  const before = engineRules();
+  const merged = d.applyGramOverridesToRules(before, {
+    riso: { quantityGrams: { lunch: { training: 100, rest: null }, dinner: null } },
+    sconosciuta: { quantityGrams: { lunch: { training: 10, rest: 10 } } },
+    pollo: { quantityGrams: { lunch: { training: 0, rest: -5 }, dinner: { training: 'x', rest: null } } }
+  });
+  assert.equal(merged[0].slots.lunch.training, 100);
+  assert.equal(merged[0].slots.lunch.rest, 70, 'null conserva la dose della struttura');
+  assert.deepEqual(merged[0].slots.dinner, { training: 40, rest: 40 }, 'slot null conserva tutto');
+  assert.deepEqual(merged[1].slots.lunch, { training: 120, rest: 100 }, 'valori non validi scartati cella per cella');
+  assert.equal(merged.length, 2, 'nessuna regola inventata per famiglie sconosciute');
+  assert.deepEqual(before, engineRules(), 'gli input non vengono mutati');
+});
+
+test('applyGramOverridesToRules: slot incompleti mai verso il motore', () => {
+  const rules = [{ family: 'riso', group: 'carb', label: 'Riso', aliases: ['riso'], slots: { lunch: { training: 90, rest: 70 } } }];
+  const incomplete = d.applyGramOverridesToRules(rules, { riso: { quantityGrams: { dinner: { training: 50, rest: null } } } });
+  assert.ok(!incomplete[0].slots.dinner, 'cena parziale senza originale: regola originale conservata');
+  const complete = d.applyGramOverridesToRules(rules, { riso: { quantityGrams: { dinner: { training: 50, rest: 45 } } } });
+  assert.deepEqual(complete[0].slots.dinner, { training: 50, rest: 45 }, 'slot override completo accettato');
+});
