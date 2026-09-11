@@ -2375,7 +2375,7 @@ function renderClientLinkSection() {
     return `<section class="settings-section"><p class="eyebrow">PROFESSIONISTA</p><h2>Collegamento professionista</h2><p class="text-muted">Verifica del collegamento…</p></section>`;
   }
   if (state.error) {
-    return `<section class="settings-section"><p class="eyebrow">PROFESSIONISTA</p><h2>Collegamento professionista</h2><p class="text-muted">Stato non disponibile offline. Riprova con la connessione attiva.</p><button class="btn btn-outline" onclick="refreshClientLinkState()">Riprova</button></section>`;
+    return `<section class="settings-section"><p class="eyebrow">PROFESSIONISTA</p><h2>Collegamento professionista</h2><p class="text-muted">Stato del collegamento non disponibile. Riprova; se il problema persiste, contatta il professionista.</p><button class="btn btn-outline" onclick="refreshClientLinkState()">Riprova</button></section>`;
   }
   const requests = Array.isArray(state.requests) ? state.requests : [];
   const link = state.link || null;
