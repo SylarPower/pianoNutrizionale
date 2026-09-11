@@ -39,7 +39,10 @@
       clientProfileId: profile.clientProfileId,
       assignmentId: profile.assignmentId,
       resolvedAt: now.toISOString(),
-      migrationDecision: 'confirmed'
+      migrationDecision: 'confirmed',
+      // Dosi/frequenze personalizzate: una modifica in console richiede una
+      // nuova conferma esplicita (mai applicazioni silenziose).
+      overridesRevision: Number(profile.clientOverrides?.revision || 0)
     };
     if (profile.structureId) {
       return {
@@ -63,6 +66,9 @@
     const snap = plan?.nutritionSnapshot;
     if (!snap || !profile) return false;
     if (snap.clientProfileId !== profile.clientProfileId || snap.assignmentId !== profile.assignmentId) return false;
+    // Snapshot legacy senza campo = revisione 0: restano validi finché il
+    // profilo non riceve davvero degli override (niente nudge spuri).
+    if ((snap.overridesRevision ?? 0) !== Number(profile.clientOverrides?.revision || 0)) return false;
     if (profile.structureId || snap.structureId) {
       return snap.structureId === profile.structureId &&
         String(snap.structureRevisionId) === String(profile.structureRevisionId) &&
@@ -81,19 +87,55 @@
   // nel profilo (stesso motore, nessun fork server-side delle dosi). Ritorna
   // null se la conversione è impossibile o produrrebbe un profilo vuoto: mai
   // attivare in silenzio un profilo senza dosi.
+  // Le personalizzazioni del cliente valgono solo in ambito personale: nei
+  // piani famiglia condivisi si usano sempre le dosi dello studio.
+  function saasPersonalScope() {
+    try {
+      return !root.getCurrentHousehold || !root.getCurrentHousehold();
+    } catch (_) {
+      return true;
+    }
+  }
+
+  // Applica gli override dose del cliente (sparsi, per famiglia Meller) sopra
+  // le regole dello studio. Non muta l'input: restituisce un motore nuovo.
+  function applyDoseOverrides(engine, overrides) {
+    if (!engine || !overrides?.doses || !Object.keys(overrides.doses).length) return engine;
+    const rules = (engine.rules || []).map(rule => {
+      const patch = overrides.doses[rule.family];
+      if (!patch) return rule;
+      const slots = JSON.parse(JSON.stringify(rule.slots || {}));
+      ['lunch', 'dinner'].forEach(meal => {
+        ['training', 'rest'].forEach(dayType => {
+          const value = patch[meal]?.[dayType];
+          if (Number.isFinite(Number(value)) && Number(value) > 0) {
+            slots[meal] = slots[meal] || {};
+            slots[meal][dayType] = Number(value);
+          }
+        });
+      });
+      return { ...rule, slots };
+    });
+    return { rules, freeAliases: engine.freeAliases || [] };
+  }
+
   function engineRulesFor(profile) {
     if (!profile) return null;
+    let engine = null;
     if (profile.schemaVersion !== 2) {
-      return Array.isArray(profile.rules) && profile.rules.length
+      engine = Array.isArray(profile.rules) && profile.rules.length
         ? { rules: profile.rules, freeAliases: profile.freeAliases || [] }
         : null;
+    } else {
+      const Domain = root.PianoDomain;
+      if (!Domain?.buildCatalogIndex || !Domain?.structureRevisionToMellerRules) return null;
+      const converted = Domain.structureRevisionToMellerRules(
+        profile.structureRevision || {}, Domain.buildCatalogIndex(profile.catalog || {}));
+      if (!converted.rules.length) return null;
+      engine = converted;
     }
-    const Domain = root.PianoDomain;
-    if (!Domain?.buildCatalogIndex || !Domain?.structureRevisionToMellerRules) return null;
-    const converted = Domain.structureRevisionToMellerRules(
-      profile.structureRevision || {}, Domain.buildCatalogIndex(profile.catalog || {}));
-    if (!converted.rules.length) return null;
-    return converted;
+    // Override solo in ambito personale (mai negli household condivisi).
+    return saasPersonalScope() ? applyDoseOverrides(engine, profile.clientOverrides) : engine;
   }
 
   function applyPolicy(plan, context) {
@@ -114,7 +156,13 @@
     try {
       const value = await call('getMyAssignedProfile', {});
       if (value?.state === 'assigned' && value.profile) {
-        if (!root.PianoDomain?.activateMellerRuleSet?.(value.profile.rules, value.profile.freeAliases)) throw new Error('Rule set non compatibile');
+        // Stesso percorso del fallback offline: conversione v2 + override
+        // dose via engineRulesFor (il vecchio accesso diretto a profile.rules
+        // non copriva i profili v2, privi di quel campo).
+        const engine = engineRulesFor(value.profile);
+        if (!engine || !root.PianoDomain?.activateMellerRuleSet?.(engine.rules, engine.freeAliases)) {
+          throw new Error('Rule set non compatibile');
+        }
         localStorage.setItem(cacheKey(uid), JSON.stringify({ ...value, cachedAt: new Date().toISOString() }));
       }
       return value;
@@ -167,5 +215,5 @@
     return grant;
   }
 
-  return { config, originalOnlyPlan, snapshotFor, snapshotMatches, engineRulesFor, applyPolicy, loadContext, shoppingAccess, requestShoppingReward };
+  return { config, originalOnlyPlan, snapshotFor, snapshotMatches, engineRulesFor, applyDoseOverrides, saasPersonalScope, applyPolicy, loadContext, shoppingAccess, requestShoppingReward };
 });

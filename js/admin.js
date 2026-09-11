@@ -196,6 +196,190 @@ async function submitAssignment(event) {
   } catch (error) { $('assignment-error').textContent = adminError(error); }
 }
 
+// ---- Sezione Dosi clienti ----
+// Override personali sopra la struttura assegnata: celle vuote = studio.
+// Ogni salvataggio crea una revisione; il cliente conferma dall'app.
+
+async function loadDoseClients() {
+  if (!orgId()) { $('doses-feedback').textContent = 'Inserisci l’organizzazione.'; return; }
+  $('doses-feedback').textContent = 'Caricamento clienti…';
+  try {
+    const result = await callAdminSaasFunction('listAuthorizedClients', { organizationId: orgId() });
+    adminState.clients = result.clients || [];
+    const options = '<option value="">— Seleziona —</option>' + adminState.clients.map(client => `<option value="${escapeAdmin(client.id)}">${escapeAdmin(client.displayCode)}</option>`).join('');
+    ['dose-client', 'copy-from', 'copy-to'].forEach(id => { $(id).innerHTML = options; });
+    saveOrg();
+    $('doses-feedback').textContent = adminState.clients.length ? '' : 'Nessun cliente autorizzato.';
+  } catch (error) { $('doses-feedback').textContent = adminError(error); }
+}
+
+const doseStudioCell = (studio, meal, dayType) => {
+  const value = studio?.[meal]?.[dayType];
+  return Number.isFinite(Number(value)) ? `${value} g` : '—';
+};
+const doseStudioValue = (studio, meal, dayType) => {
+  const value = studio?.[meal]?.[dayType];
+  return Number.isFinite(Number(value)) ? String(value) : '';
+};
+
+async function loadClientDoseEditor() {
+  const clientId = $('dose-client').value;
+  $('dose-assignment').innerHTML = '';
+  $('dose-tables').innerHTML = '';
+  $('save-doses').disabled = true;
+  adminState.doseData = null;
+  if (!clientId) { $('doses-feedback').textContent = ''; return; }
+  $('doses-feedback').textContent = 'Caricamento dosi…';
+  try {
+    const data = await callAdminSaasFunction('getClientDoses', { organizationId: orgId(), clientId });
+    adminState.doseData = data;
+    renderDoseEditor(data);
+    $('doses-feedback').textContent = '';
+  } catch (error) { $('doses-feedback').textContent = adminError(error); }
+}
+
+function renderDoseEditor(data) {
+  const assignment = data.assignment;
+  if (!assignment) {
+    $('dose-assignment').innerHTML = '<p class="callout">Il cliente non ha un’assegnazione attiva: assegna prima un profilo dalla sezione Clienti.</p>';
+    return;
+  }
+  const format = iso => iso ? new Date(iso).toLocaleDateString('it-IT', { day: '2-digit', month: 'short', year: 'numeric' }) : '—';
+  $('dose-assignment').innerHTML = `<p class="callout"><strong>${escapeAdmin(data.displayCode)}</strong> · ${escapeAdmin(assignment.structureName || 'Profilo')} · ${escapeAdmin(assignment.status)} · dal ${format(assignment.effectiveAt)}${assignment.expiresAt ? ` al ${format(assignment.expiresAt)}` : ''} · revisione dosi n. ${assignment.overridesRevision}</p>`;
+  const overrides = data.overrides || { doses: {}, frequencies: {} };
+  const familyRows = data.families.map(item => {
+    const patch = overrides.doses?.[item.family] || {};
+    const cell = (meal, dayType, label) => {
+      const current = patch[meal]?.[dayType];
+      return `<td><label class="dose-cell"><span class="dose-studio" title="Dose della struttura">${doseStudioCell(item.studio, meal, dayType)}</span><input type="number" min="1" max="2000" inputmode="numeric" placeholder="${doseStudioValue(item.studio, meal, dayType)}" value="${current ?? ''}" data-dose-family="${escapeAdmin(item.family)}" data-dose-meal="${meal}" data-dose-day="${dayType}" aria-label="${escapeAdmin(item.label)} ${label}"></label></td>`;
+    };
+    const ingredients = item.ingredients?.length ? `<small>${escapeAdmin(item.ingredients.slice(0, 4).join(', '))}${item.ingredients.length > 4 ? '…' : ''}</small>` : '';
+    return `<tr><th scope="row">${escapeAdmin(item.label)}${ingredients}</th>${cell('lunch', 'training', 'Pranzo allenamento')}${cell('lunch', 'rest', 'Pranzo riposo')}${cell('dinner', 'training', 'Cena allenamento')}${cell('dinner', 'rest', 'Cena riposo')}</tr>`;
+  }).join('');
+  const freqRows = data.frequencyDefaults.map(item => {
+    const patch = overrides.frequencies?.[item.key] || {};
+    return `<tr><th scope="row">${escapeAdmin(item.label)}</th><td><span class="dose-studio" title="Default studio">${item.min}–${item.max}/sett</span></td><td><input type="number" min="0" max="14" inputmode="numeric" placeholder="${item.min}" value="${patch.min ?? ''}" data-freq-key="${escapeAdmin(item.key)}" data-freq-bound="min" aria-label="${escapeAdmin(item.label)} minimo"></td><td><input type="number" min="0" max="14" inputmode="numeric" placeholder="${item.max}" value="${patch.max ?? ''}" data-freq-key="${escapeAdmin(item.key)}" data-freq-bound="max" aria-label="${escapeAdmin(item.label)} massimo"></td></tr>`;
+  }).join('');
+  $('dose-tables').innerHTML = `
+    <div class="dose-table-wrap"><table class="dose-table"><caption>Dosi in grammi a crudo (vuoto = struttura)</caption><thead><tr><th scope="col">Famiglia</th><th scope="col">Pranzo A</th><th scope="col">Pranzo R</th><th scope="col">Cena A</th><th scope="col">Cena R</th></tr></thead><tbody>${familyRows}</tbody></table></div>
+    <div class="dose-table-wrap"><table class="dose-table"><caption>Frequenze proteiche settimanali (vuoto = default)</caption><thead><tr><th scope="col">Fonte proteica</th><th scope="col">Studio</th><th scope="col">Min</th><th scope="col">Max</th></tr></thead><tbody>${freqRows}</tbody></table></div>`;
+  $('save-doses').disabled = false;
+}
+
+function collectDoseOverrides() {
+  const doses = {};
+  const frequencies = {};
+  const bad = [];
+  document.querySelectorAll('#dose-tables [data-dose-family]').forEach(input => {
+    const raw = input.value.trim();
+    if (!raw) return;
+    const value = Number(raw);
+    if (!Number.isInteger(value) || value < 1 || value > 2000) { bad.push(input.getAttribute('aria-label')); return; }
+    const family = input.dataset.doseFamily;
+    doses[family] = doses[family] || {};
+    doses[family][input.dataset.doseMeal] = doses[family][input.dataset.doseMeal] || {};
+    doses[family][input.dataset.doseMeal][input.dataset.doseDay] = value;
+  });
+  document.querySelectorAll('#dose-tables [data-freq-key]').forEach(input => {
+    const raw = input.value.trim();
+    if (!raw) return;
+    const value = Number(raw);
+    if (!Number.isInteger(value) || value < 0 || value > 14) { bad.push(input.getAttribute('aria-label')); return; }
+    const key = input.dataset.freqKey;
+    frequencies[key] = frequencies[key] || {};
+    frequencies[key][input.dataset.freqBound] = value;
+  });
+  Object.entries(frequencies).forEach(([key, patch]) => {
+    if (patch.min != null && patch.max != null && patch.min > patch.max) bad.push(`Frequenza ${key}: min oltre max`);
+  });
+  return { doses, frequencies, bad };
+}
+
+async function submitDoseOverrides() {
+  const data = adminState.doseData;
+  if (!data?.assignment) return;
+  const { doses, frequencies, bad } = collectDoseOverrides();
+  if (bad.length) { $('doses-feedback').textContent = `Valori non validi: ${bad.slice(0, 3).join('; ')}${bad.length > 3 ? '…' : ''}. Dosi 1–2000 g, frequenze 0–14.`; return; }
+  $('doses-feedback').textContent = 'Salvataggio revisione…';
+  try {
+    const result = await callAdminSaasFunction('updateClientDoseOverrides', {
+      organizationId: orgId(), clientId: $('dose-client').value, doses, frequencies,
+      expectedRevision: data.assignment.overridesRevision
+    });
+    $('doses-feedback').textContent = `Revisione n. ${result.revision} salvata. Il cliente dovrà confermare dall’app.`;
+    await loadClientDoseEditor();
+  } catch (error) { $('doses-feedback').textContent = adminError(error); }
+}
+
+// ---- Copia dosi tra clienti ----
+
+async function previewDoseCopy() {
+  const fromId = $('copy-from').value;
+  const toId = $('copy-to').value;
+  $('copy-preview').innerHTML = '';
+  $('confirm-copy').disabled = true;
+  adminState.copyPreview = null;
+  if (!fromId || !toId) { $('copy-feedback').textContent = 'Seleziona entrambi i clienti.'; return; }
+  if (fromId === toId) { $('copy-feedback').textContent = 'Cliente origine e destinazione devono essere diversi.'; return; }
+  $('copy-feedback').textContent = 'Calcolo differenze…';
+  try {
+    const [from, to] = await Promise.all([
+      callAdminSaasFunction('getClientDoses', { organizationId: orgId(), clientId: fromId }),
+      callAdminSaasFunction('getClientDoses', { organizationId: orgId(), clientId: toId })
+    ]);
+    if (!from.assignment || !to.assignment) { $('copy-feedback').textContent = 'Entrambi i clienti devono avere un’assegnazione attiva.'; return; }
+    const toFamilies = new Map(to.families.map(item => [item.family, item]));
+    const toDoses = to.overrides?.doses || {};
+    const rows = [];
+    const skipped = [];
+    Object.entries(from.overrides?.doses || {}).forEach(([family, patch]) => {
+      const target = toFamilies.get(family);
+      if (!target) { skipped.push(family); return; }
+      ['lunch', 'dinner'].forEach(meal => {
+        ['training', 'rest'].forEach(dayType => {
+          const value = patch[meal]?.[dayType];
+          if (value == null) return;
+          const current = toDoses[family]?.[meal]?.[dayType];
+          const base = current != null ? `${current} g (personale)` : doseStudioCell(target.studio, meal, dayType);
+          rows.push(`<tr><td>${escapeAdmin(target.label)}</td><td>${meal === 'lunch' ? 'Pranzo' : 'Cena'} ${dayType === 'training' ? 'A' : 'R'}</td><td>${escapeAdmin(base)}</td><td><strong>${value} g</strong></td></tr>`);
+        });
+      });
+    });
+    const toFreq = to.overrides?.frequencies || {};
+    Object.entries(from.overrides?.frequencies || {}).forEach(([key, patch]) => {
+      const label = (to.frequencyDefaults.find(item => item.key === key) || {}).label || key;
+      ['min', 'max'].forEach(bound => {
+        if (patch[bound] == null) return;
+        const current = toFreq[key]?.[bound];
+        const base = current != null ? String(current) : 'default studio';
+        rows.push(`<tr><td>${escapeAdmin(label)}</td><td>Frequenza ${bound}</td><td>${escapeAdmin(base)}</td><td><strong>${patch[bound]}</strong></td></tr>`);
+      });
+    });
+    adminState.copyPreview = { fromId, toId, toRevision: to.assignment.overridesRevision };
+    $('copy-preview').innerHTML = `
+      ${rows.length ? `<div class="dose-table-wrap"><table class="dose-table"><caption>Copia ${escapeAdmin(from.displayCode)} → ${escapeAdmin(to.displayCode)}</caption><thead><tr><th scope="col">Voce</th><th scope="col">Cella</th><th scope="col">Valore attuale</th><th scope="col">Nuovo valore</th></tr></thead><tbody>${rows.join('')}</tbody></table></div>` : '<p class="callout">Nessuna differenza: l’origine non ha personalizzazioni da copiare.</p>'}
+      ${skipped.length ? `<p class="callout">Famiglie non copiate (assenti nella struttura di destinazione): ${skipped.map(family => escapeAdmin(family)).join(', ')}.</p>` : ''}`;
+    $('copy-feedback').textContent = rows.length ? `${rows.length} celle da aggiornare.` : '';
+    $('confirm-copy').disabled = !rows.length;
+  } catch (error) { $('copy-feedback').textContent = adminError(error); }
+}
+
+async function confirmDoseCopy() {
+  const preview = adminState.copyPreview;
+  if (!preview) return;
+  $('copy-feedback').textContent = 'Copia in corso…';
+  try {
+    const result = await callAdminSaasFunction('copyClientDoses', {
+      organizationId: orgId(), fromClientId: preview.fromId, toClientId: preview.toId,
+      expectedRevision: preview.toRevision
+    });
+    adminState.copyPreview = null;
+    $('confirm-copy').disabled = true;
+    $('copy-feedback').textContent = `Copiate ${result.copiedFamilies.length} famiglie (revisione n. ${result.revision})${result.skippedFamilies?.length ? `; saltate: ${result.skippedFamilies.join(', ')}` : ''}. Il cliente dovrà confermare dall’app.`;
+    $('copy-preview').innerHTML = '';
+  } catch (error) { $('copy-feedback').textContent = adminError(error); }
+}
+
 // ---- Sezione Strutture dieta ----
 // Il nutritionist vede solo le proprie strutture (filtro server-side); l'admin
 // org le vede tutte. Ogni salvataggio pubblica una nuova revisione immutabile:
@@ -765,6 +949,7 @@ function showView(view) {
   if (backdrop) backdrop.hidden = true;
   $('mobile-menu')?.setAttribute('aria-expanded', 'false');
   if (view === 'clients') loadClients();
+  else if (view === 'doses') loadDoseClients();
   else if (view === 'structures') loadStructures();
   else if (view === 'users') loadUsers();
   else loadReports();
@@ -791,6 +976,11 @@ function bindAdmin() {
   $('assignment-form').addEventListener('submit', submitAssignment);
   $('assignment-no-expiry').addEventListener('change', () => { $('assignment-expires').disabled = $('assignment-no-expiry').checked; if ($('assignment-no-expiry').checked) $('assignment-expires').value = ''; });
   document.querySelectorAll('[data-close-assignment]').forEach(node => node.addEventListener('click', closeAssignment));
+  $('refresh-doses').addEventListener('click', loadDoseClients);
+  $('dose-client').addEventListener('change', loadClientDoseEditor);
+  $('save-doses').addEventListener('click', submitDoseOverrides);
+  $('preview-copy').addEventListener('click', previewDoseCopy);
+  $('confirm-copy').addEventListener('click', confirmDoseCopy);
   document.querySelectorAll('.nav-link').forEach(node => node.addEventListener('click', () => showView(node.dataset.view)));
   $('refresh-structures').addEventListener('click', loadStructures);
   $('new-structure').addEventListener('click', () => openStructureDialog());

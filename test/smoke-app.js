@@ -898,10 +898,10 @@ renderModalContent();
 {
   const editHtml = document.getElementById('modal-ingredients-list')._innerHTML;
   const timeHtml = document.getElementById('modal-time')._innerHTML;
-  // Select per proteinCategory con opzione "Automatica dagli ingredienti"
-  assert.match(timeHtml, /id="edit-recipe-category"/, 'select categoria presente nell\'editor');
-  assert.match(timeHtml, /Automatica dagli ingredienti/, 'opzione fallback automatico presente');
-  assert.match(timeHtml, /title="Opzionale: il generatore riconosce prima la proteina dagli ingredienti/, 'tooltip fallback presente');
+  // Categoria proteica: nessun controllo editabile nell'editor. Il valore
+  // salvato resta come fallback di classifyProtein e non viene azzerato.
+  assert.doesNotMatch(timeHtml, /id="edit-recipe-category"/, 'select categoria rimosso dall\'editor');
+  assert.doesNotMatch(timeHtml, /Categoria proteica/, 'etichetta categoria rimossa dall\'editor');
   // Assenza del vecchio input Frequenza
   assert.doesNotMatch(timeHtml, /edit-recipe-frequency/, 'input frequenza rimosso dall\'editor');
   assert.doesNotMatch(editHtml, /edit-recipe-frequency/, 'nessun campo frequenza negli ingredienti');
@@ -909,14 +909,16 @@ renderModalContent();
   // niente tab Batch in modifica (le note sono nella tab Preparazione).
   assert.match(editHtml, /id="edit-ing-man-0"/, 'quantità uomo singola presente');
   assert.match(editHtml, /id="edit-ing-ipo-0"/, 'quantità donna singola presente');
-  // Primo campo Uomo, poi Donna (etichetta senza "IPO"), unità "g" suggerita e
-  // hint chiaro: un solo campo compilato vale per entrambi i profili.
+  // Primo campo Uomo, poi Donna (etichetta senza "IPO"), selettore unità e
+  // hint chiaro: numero + unità, valori particolari conservati.
   assert.ok(editHtml.indexOf('id="edit-ing-man-0"') < editHtml.indexOf('id="edit-ing-ipo-0"'), 'il campo Uomo precede il campo Donna');
   assert.match(editHtml, /Quantità · Uomo/);
   assert.match(editHtml, /Quantità · Donna/);
   assert.doesNotMatch(editHtml, /IPO/, 'etichetta IPO rimossa dall\'editor');
-  assert.equal((editHtml.match(/placeholder="g"/g) || []).length >= 2, true, 'placeholder "g" su entrambi i campi');
-  assert.match(editHtml, /vale per entrambi/, 'hint fallback condiviso presente');
+  assert.match(editHtml, /id="edit-ing-man-0" type="number"/, 'numero uomo presente');
+  assert.match(editHtml, /id="edit-ing-man-0-unit"/, 'selettore unità uomo presente');
+  assert.match(editHtml, /id="edit-ing-ipo-0-unit"/, 'selettore unità donna presente');
+  assert.match(editHtml, /numero e unità di misura/, 'hint numero+unità presente');
   assert.doesNotMatch(editHtml, /edit-ing-man-training-0|edit-ing-ipo-rest-0/, 'campi legacy 4-porzioni rimossi dall\'editor');
   assert.match(editHtml, /role="combobox"/, 'campo nome come combobox accessibile');
   assert.match(editHtml, /ing-suggest-0/, 'listbox suggerimenti catalogo presente');
