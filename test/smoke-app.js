@@ -128,6 +128,11 @@ global.firebase.auth.Auth = { Persistence: { LOCAL: 'local' } };
 for (const file of ['js/domain.js', 'js/saas-config.js', 'js/saas.js', 'js/data.js', 'js/prices.js', 'js/firebase.js', 'js/app.js']) {
   vm.runInThisContext(fs.readFileSync(path.join(ROOT, file), 'utf8'), { filename: file });
 }
+// Lo smoke prova i flussi core senza il gate SaaS sulla spesa (lo sponsor
+// sbloccherebbe UI che qui non esiste); i comportamenti SaaS — collegamento
+// professionale e sezione "Profilo nutrizionale" condizionale — sono coperti
+// dai test dedicati (test/app-ui-state.test.js).
+window.PIANO_SAAS_CONFIG.enabled = false;
 
 // ---- Set up stato applicativo finto ----
 const R = (id, name, slot, cat) => ({
@@ -208,6 +213,8 @@ setRecipes(recipes);
 // ---- Percorsi di rendering ----
 renderGlobalHeader();
 assert.match(document.getElementById('global-header-container').innerHTML, /header-brand-icon/, 'brand premium generato nell’header');
+assert.match(document.getElementById('global-header-container').innerHTML, /id="notification-bell"/, 'campanella notifiche sempre presente in header');
+assert.match(document.getElementById('global-header-container').innerHTML, /aria-haspopup="dialog"/, 'campanella accessibile da tastiera');
 appState.deviceSettings.portionProfile = 'ipo';
 renderGlobalHeader();
 assert.match(document.getElementById('global-header-container').innerHTML, />👩 Profilo donna<\/option>/, 'profilo donna rinominato nell’header');
@@ -569,9 +576,16 @@ const startupChecks = (async () => {
 })();
 renderSettings();
 assert.match(document.getElementById('view-settings').innerHTML, /Account collegati/);
-assert.match(document.getElementById('view-settings').innerHTML, /Backup e annullamento/);
-assert.match(document.getElementById('view-settings').innerHTML, /Importazioni che sostituiscono tutte le ricette/);
-assert.match(document.getElementById('view-settings').innerHTML, /Nessun backup/);
+// Soluzione A: la sezione "Backup e annullamento" non compare più nelle
+// Impostazioni (titolo, badge "Backup pronto" e pulsante di annullamento);
+// il meccanismo interno di backup/ripristino resta attivo (verificato sotto).
+assert.doesNotMatch(document.getElementById('view-settings').innerHTML, /Backup e annullamento/);
+assert.doesNotMatch(document.getElementById('view-settings').innerHTML, /Annulla ultima modifica/);
+assert.doesNotMatch(document.getElementById('view-settings').innerHTML, /backup-status/);
+assert.doesNotMatch(document.getElementById('view-settings').innerHTML, /Dati e sincronizzazione/, 'sezione "Dati e sincronizzazione" rimossa come quella dei backup');
+assert.doesNotMatch(document.getElementById('view-settings').innerHTML, /cloud-section/, 'niente debug cloud/import dedicati nelle Impostazioni');
+// I pulsanti "Ricevute" sono sostituiti dalla campanella del centro notifiche.
+assert.doesNotMatch(document.getElementById('view-settings').innerHTML, /📥 Ricevute/, 'pulsanti Ricevute rimossi dalle Impostazioni');
 assert.doesNotMatch(document.getElementById('view-settings').innerHTML, /aria-controls="guide-struttura-della-dieta"/, 'Struttura della dieta non è più un accordion autonomo');
 assert.match(document.getElementById('view-settings').innerHTML, /aria-controls="guide-altre-informazioni-e-faq"[\s\S]*<h3>Struttura della dieta<\/h3>/, 'la struttura è contenuta in Altre informazioni e FAQ');
 
@@ -937,14 +951,11 @@ assert.equal(
   true
 );
 
-// ---- Backup e annullamento: stato "pronto" e ripristino ----
+// ---- Backup/ripristino: meccanica interna preservata, senza UI dedicata ----
 // Gira dopo startupChecks, che sostituisce temporaneamente readLocalJson.
 backupChecks = startupChecks.then(async () => {
-  renderSettings();
-  const emptyHtml = document.getElementById('view-settings').innerHTML;
-  assert.doesNotMatch(emptyHtml, /Annulla ultima modifica/, 'nessun pulsante senza backup');
-  assert.match(emptyHtml, /Appena esegui una di queste operazioni/, 'testo di stato vuoto');
-
+  // La meta del backup è solo il supporto interno del ripristino: le
+  // Impostazioni non la mostrano mai, neppure quando un backup è pronto.
   writeLocalJson('backup_meta', {
     operation: 'Eliminazione ricette',
     description: '3 ricette eliminate',
@@ -952,10 +963,9 @@ backupChecks = startupChecks.then(async () => {
   });
   renderSettings();
   const readyHtml = document.getElementById('view-settings').innerHTML;
-  assert.match(readyHtml, /backup-status ready/, 'badge "Backup pronto"');
-  assert.match(readyHtml, /Eliminazione ricette/, 'operazione salvata mostrata');
-  assert.match(readyHtml, /3 ricette eliminate/, 'descrizione mostrata');
-  assert.match(readyHtml, /onclick="undoLastModification\(\)"/, 'pulsante di annullamento presente');
+  assert.doesNotMatch(readyHtml, /Backup e annullamento/, 'sezione backup assente anche con backup pronto');
+  assert.doesNotMatch(readyHtml, /Backup pronto/, 'badge di stato backup non esposto');
+  assert.doesNotMatch(readyHtml, /Annulla ultima modifica/, 'pulsante di annullamento non esposto');
 
   // Ripristino: restoreBackupAtomic riporta lo stato e consuma il punto di ripristino.
   const originalRestore = global.restoreBackupAtomic;
@@ -977,7 +987,8 @@ backupChecks = startupChecks.then(async () => {
     assert.equal(appState.recipes.some(recipe => recipe.id === 'L7'), true, 'catalogo ripristinato dal backup');
     assert.equal(readLocalJson('backup_meta', null), null, 'punto di ripristino consumato');
     renderSettings();
-    assert.match(document.getElementById('view-settings').innerHTML, /Nessun backup/, 'sezione tornata vuota');
+    assert.doesNotMatch(document.getElementById('view-settings').innerHTML, /Annulla ultima modifica/, 'le Impostazioni non espongono il ripristino dopo l’annullamento');
+    assert.doesNotMatch(document.getElementById('view-settings').innerHTML, /Backup e annullamento/, 'la sezione dedicata non ricompare mai');
   } finally {
     global.restoreBackupAtomic = originalRestore;
     global.startAccountRealtimeSync = originalSync;

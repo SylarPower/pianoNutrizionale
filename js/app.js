@@ -765,8 +765,16 @@ async function initApp() {
   observeAuthState(async user => {
     if (!user) {
       stopAccountRealtimeSync();
+      stopNotificationsSync();
       clearDataScope();
       writeSessionCache(null);
+      // Pulizia dello stato notifiche prima di azzerare il proprietario dati:
+      // la chiave locale del conteggio è ancora prefissata con il suo uid.
+      incomingRecipeShares = [];
+      incomingAccountLinks = [];
+      notificationsLoadError = false;
+      writeLocalJson(NOTIF_COUNT_CACHE, 0);
+      appState.clientLink = null;
       setLocalDataOwner(null);
       appState.user = null;
       appState.household = null;
@@ -780,6 +788,7 @@ async function initApp() {
     });
     await loadUserData(user, { silent: canBoot });
     startAccountRealtimeSync();
+    startNotificationsSync();
   });
 }
 
@@ -847,6 +856,9 @@ function handleRoute() {
   if (hash === "#shop") renderShop();
   if (hash === "#prices") renderPrices();
   if (hash === "#settings") renderSettings();
+  // La campanella resta sincronizzata anche sui cambi pagina, senza richiedere
+  // l'apertura manuale del pannello notifiche.
+  updateNotificationBadge();
   lastRenderedRoute = hash;
 
   if (!outgoingView) {
@@ -894,6 +906,7 @@ function renderGlobalHeader() {
     document.body.prepend(header);
   }
   const profile = getPortionProfile();
+  const pending = pendingNotificationCount();
   header.innerHTML = `
     <div class="header-brand"><span class="header-brand-icon" aria-hidden="true">🥗</span><strong>Piano</strong></div>
     <select aria-label="Profilo porzioni" onchange="changePortionProfile(this.value)">
@@ -901,7 +914,13 @@ function renderGlobalHeader() {
       <option value="ipo" ${profile === "ipo" ? "selected" : ""}>👩 Profilo donna</option>
       <option value="couple" ${profile === "couple" ? "selected" : ""}>👥 Profilo coppia</option>
     </select>
-    <a href="#settings" class="header-account" title="Impostazioni" aria-label="Impostazioni">⚙️ ${escapeHtml(usernameFromUser(appState.user))}</a>
+    <div class="header-actions">
+      <a href="#settings" class="header-account" title="Impostazioni" aria-label="Impostazioni">⚙️ ${escapeHtml(usernameFromUser(appState.user))}</a>
+      <button type="button" id="notification-bell" class="notification-bell ${pending ? "has-pending" : ""}" onclick="openIncomingShares()" aria-label="${notificationBellLabel(pending)}" aria-haspopup="dialog" aria-expanded="false" aria-controls="incoming-shares-modal">
+        <span aria-hidden="true">🔔</span>
+        <span id="notification-badge" class="notification-badge ${pending ? "" : "hidden"}" aria-hidden="true">${pending > 9 ? "9+" : pending}</span>
+      </button>
+    </div>
   `;
 }
 
@@ -1495,7 +1514,6 @@ function renderRecipes({ loading = false } = {}) {
     <div class="page-heading recipes-heading">
       <div><p class="eyebrow">${appState.recipes.length} ricette · sincronizzate nel cloud</p><h1>Ricettario</h1><p>Puoi creare, esportare, importare e condividere le ricette del tuo account.</p></div>
       <div class="recipe-toolbar">
-        <button class="btn btn-outline" onclick="openIncomingShares()">📥 Ricevute</button>
         <label class="btn btn-outline file-import-button">Importa<input type="file" accept="application/json,.json" onchange="prepareRecipeImport(this.files[0]); this.value='' "></label>
         <button class="btn btn-outline" onclick="exportAllRecipes()">Esporta</button>
         <button class="btn btn-outline" onclick="openShareDialog()">Invia tutte</button>
@@ -2300,7 +2318,6 @@ function renderLinkedAccountsSection() {
       ${linkedUsernames.length ? `<div class="linked-member-list">${linkedUsernames.map(username => `<div class="linked-member"><span class="account-avatar small">${escapeHtml(username.slice(0, 1).toUpperCase())}</span><div><strong>${escapeHtml(username)}</strong><small>Può leggere e modificare tutti i dati condivisi</small></div></div>`).join("")}</div>` : `<p class="linked-empty">Nessun altro account collegato. Il profilo porzioni resta sempre personale e salvato solo su questo dispositivo.</p>`}
       <div class="linked-account-actions">
         <button class="btn btn-primary" onclick="openAccountLinkDialog()">+ Collega account</button>
-        <button class="btn btn-outline" onclick="openIncomingShares()">📥 Ricevute</button>
         ${household ? `<button class="btn btn-danger" onclick="disconnectAccount()">Scollega questo account</button>` : ""}
       </div>
     </section>`;
@@ -2308,8 +2325,16 @@ function renderLinkedAccountsSection() {
 
 function renderSaasProfileSection() {
   if (!window.PianoSaas?.config().enabled) return "";
+  // La sezione "Profilo nutrizionale" esiste SOLO con un collegamento
+  // professionale ATTIVO (appState.clientLink.link, restituito dal server).
+  // Niente sezione quando: non c'è collegamento, la richiesta è solo
+  // pendente, il collegamento è stato rifiutato/rimosso, oppure lo stato è
+  // sconosciuto (caricamento o errore di rete): in tutti questi casi la UI
+  // non deve mostrare un profilo che non esiste (niente lampo iniziale).
+  if (!appState.clientLink || appState.clientLink.error || !appState.clientLink.link) return "";
   const context = appState.saasContext || {};
   if (context.state !== "assigned" || !context.profile) {
+    // Collegamento attivo ma nessun profilo assegnato: sezione informativa.
     return `<section class="settings-section"><p class="eyebrow">PROFILO NUTRIZIONALE</p><h2>Dosi originali attive</h2><p class="text-muted">Non hai un profilo nutrizionale valido assegnato. Nessun protocollo viene applicato automaticamente.</p></section>`;
   }
   const profile = context.profile;
@@ -2452,7 +2477,10 @@ window.confirmAssignedNutritionProfile = async function() {
 
 function renderSettings() {
   const container = document.getElementById("view-settings");
-  const breakfastCount = appState.recipes.filter(recipe => recipe.slot === "breakfast").length;
+  // Come per "Backup e annullamento": la sezione "Dati e sincronizzazione"
+  // non è più mostrata qui. L'importazione/restauro delle ricette resta
+  // disponibile dal pulsante "Importa" del Ricettario e la sincronizzazione
+  // cloud continua a funzionare in background.
   container.innerHTML = `
     <div class="page-heading"><div><p class="eyebrow">Preferenze e manuale alimentare</p><h1>Impostazioni</h1></div></div>
     <section class="settings-section account-card">
@@ -2479,43 +2507,6 @@ function renderSettings() {
     ${settingsAccordion("Alternative alimentari", `<div class="alternatives-grid">${alternativesTableHtml(MELLER_GUIDE.alternatives.carbohydrates)}${alternativesTableHtml(MELLER_GUIDE.alternatives.proteins)}</div>`)}
     ${settingsAccordion("Frequenze proteiche", `<div class="alternative-table frequency-table">${MELLER_GUIDE.proteinFrequencies.map(row => `<div><span>${escapeHtml(row[0])}</span><strong>${escapeHtml(row[1])}</strong></div>`).join("")}</div>`)}
     ${settingsAccordion("Altre informazioni e FAQ", `<h3>Struttura della dieta</h3><ul class="guide-list">${MELLER_GUIDE.structure.map(item => `<li>${escapeHtml(item)}</li>`).join("")}</ul><h3>Altre informazioni</h3><ul class="guide-list">${MELLER_GUIDE.faq.map(item => `<li>${escapeHtml(item)}</li>`).join("")}</ul>`)}
-
-    <section class="settings-section cloud-section">
-      <div><h2>Dati e sincronizzazione</h2><p class="text-muted">${appState.recipes.length} ricette totali · ${breakfastCount} colazioni</p><p class="cloud-call-info">⚡ Dati sincronizzati tra i tuoi dispositivi.</p></div>
-      <label class="btn btn-outline file-import-button">Importa o ripristina ricette<input type="file" accept="application/json,.json" onchange="prepareRecipeImport(this.files[0]); this.value='' "></label>
-    </section>
-
-    ${renderBackupSection()}
-  `;
-}
-
-function renderBackupSection() {
-  const meta = readLocalJson("backup_meta", null);
-  const hasBackup = Boolean(meta?.operation || meta?.description || meta?.createdAt);
-  const protectedOperations = [
-    "Importazioni che sostituiscono tutte le ricette",
-    "Condivisioni che sovrascrivono ricette o settimana",
-    "Applicazione del generatore settimana",
-    "Eliminazione di una o più ricette",
-    "Collegamento o scollegamento account"
-  ];
-  return `
-    <section class="settings-section backup-section">
-      <div class="flex-between"><h2>Backup e annullamento</h2><span class="backup-status ${hasBackup ? "ready" : "idle"}">${hasBackup ? "Backup pronto" : "Nessun backup"}</span></div>
-      <p class="text-muted backup-note">Prima delle operazioni più pesanti salviamo automaticamente una copia di <strong>ricette, settimana e lista spesa</strong>. La copia più recente sostituisce quella precedente.</p>
-      <ul class="backup-covered-list">${protectedOperations.map(item => `<li>${escapeHtml(item)}</li>`).join("")}</ul>
-      ${hasBackup ? `
-        <div class="backup-meta">
-          <div><small>Ultima operazione</small><strong>${escapeHtml(meta.operation || "—")}</strong></div>
-          <div><small>Descrizione</small><strong>${escapeHtml(meta.description || "—")}</strong></div>
-          <div><small>Data backup</small><strong>${escapeHtml(formatBackupDate(meta.createdAt) || "—")}</strong></div>
-        </div>
-        <button class="btn btn-danger full-width" onclick="undoLastModification()">↩ Annulla ultima modifica</button>
-        <p class="text-muted backup-note">Il ripristino è disponibile una sola volta: dopo l'annullamento la copia di sicurezza viene eliminata.</p>
-      ` : `
-        <p class="text-muted backup-note">Appena esegui una di queste operazioni, qui comparirà l'ultimo punto di ripristino disponibile.</p>
-      `}
-    </section>
   `;
 }
 
@@ -2535,7 +2526,99 @@ let pendingShareRecipeIds = [];
 let incomingRecipeShares = [];
 let incomingAccountLinks = [];
 
+// ---- Centro notifiche (campanella) ----
+// Source of truth = documenti Firestore `recipeShares` pendenti: il badge e
+// il pannello si aggiornano da un listener realtime e l'inserimento avviene
+// solo quando il server conferma (accettazione, rifiuto o completamento).
+// Una copia del CONTEGGIO resta in cache locale per non azzerare il badge
+// quando la connessione cade: non sostituisce mai lo stato del server.
+const NOTIF_COUNT_CACHE = "notif_count";
+let stopNotificationsObserver = null;
+let notificationsLoadError = false;
+let notificationsReturnFocus = null;
+
+function readCachedNotificationCount() {
+  const value = Number(readLocalJson(NOTIF_COUNT_CACHE, 0));
+  return Number.isFinite(value) && value > 0 ? Math.floor(value) : 0;
+}
+
+// Conteggio mostrato dalla campanella. Se l'ultimo caricamento è fallito
+// (offline) e non ho dati live, si usa l'ultimo conteggio noto: le notifiche
+// pendenti non devono sparire visivamente per un errore di rete.
+function pendingNotificationCount() {
+  const live = incomingAccountLinks.length + incomingRecipeShares.length;
+  if (live || !notificationsLoadError) return live;
+  return readCachedNotificationCount();
+}
+
+function notificationBellLabel(count) {
+  if (count <= 0) return "Notifiche: nessuna richiesta in attesa";
+  return count === 1 ? "Notifiche: 1 richiesta in attesa" : `Notifiche: ${count} richieste in attesa`;
+}
+
+function updateNotificationBadge() {
+  const count = pendingNotificationCount();
+  const bell = document.getElementById("notification-bell");
+  const badge = document.getElementById("notification-badge");
+  if (bell) {
+    bell.setAttribute("aria-label", notificationBellLabel(count));
+    // Campanella "suona" solo con pendenti: rossa con scuotimento periodico.
+    bell.classList.toggle("has-pending", count > 0);
+  }
+  if (badge) {
+    badge.classList.toggle("hidden", count === 0);
+    badge.textContent = count > 9 ? "9+" : String(count);
+  }
+}
+
+// Punto unico di applicazione dello stato: aggiorna elenchi, badge e cache
+// del conteggio, e ridisegna il pannello SOLO se è aperto. Le richieste
+// pendenti restano tali finché il server non le considera gestite.
+function applyIncomingRequests(recipeShares, accountLinks) {
+  notificationsLoadError = false;
+  incomingRecipeShares = Array.isArray(recipeShares) ? recipeShares : [];
+  incomingAccountLinks = Array.isArray(accountLinks) ? accountLinks : [];
+  writeLocalJson(NOTIF_COUNT_CACHE, incomingRecipeShares.length + incomingAccountLinks.length);
+  updateNotificationBadge();
+  const modal = document.getElementById("incoming-shares-modal");
+  if (modal && !modal.classList.contains("hidden")) renderIncomingShares();
+}
+
+// Alias breve per i punti che hanno appena modificato gli elenchi in locale
+// (accetta/rifiuta): la notifica sparisce SOLO dopo il successo dell'operazione.
+function syncIncomingRequests() {
+  applyIncomingRequests(incomingRecipeShares, incomingAccountLinks);
+}
+
+function markNotificationsLoadFailed() {
+  notificationsLoadError = true;
+  updateNotificationBadge();
+}
+
+function startNotificationsSync() {
+  stopNotificationsSync();
+  if (!appState.user?.uid || typeof observeIncomingRequests !== "function") return;
+  stopNotificationsObserver = observeIncomingRequests(snapshot => {
+    const { recipeShares, accountLinks } = pendingRequestsFromSnapshot(snapshot);
+    applyIncomingRequests(recipeShares, accountLinks);
+  }, () => {
+    // Offline/errore listener: NON azzerare elenchi né badge: i pendenti
+    // noti restano visibili finché un caricamento riuscito non li aggiorna.
+    markNotificationsLoadFailed();
+  });
+}
+
+function stopNotificationsSync() {
+  stopNotificationsObserver?.();
+  stopNotificationsObserver = null;
+}
+
 // ---- Backup precedente (users/{uid}/backups/previous) ----
+// Meccanismo INTERNO di sicurezza: non è più esposto in una sezione dedicata
+// delle Impostazioni, ma i backup automatici continuano a proteggere le
+// operazioni distruttive (importazioni sostitutive, condivisioni,
+// collegamento account, generatore settimana, eliminazioni) e il ripristino
+// atomico resta disponibile a livello applicativo.
 
 async function createBackup(catalog, plan, shopping, operation, description) {
   const snapshot = await saveBackup(catalog, plan, shopping, operation, description);
@@ -2545,13 +2628,6 @@ async function createBackup(catalog, plan, shopping, operation, description) {
     createdAt: snapshot.createdAt
   });
   return snapshot;
-}
-
-function formatBackupDate(value) {
-  if (!value) return "";
-  const date = new Date(value);
-  if (Number.isNaN(date.getTime())) return String(value);
-  return date.toLocaleString("it-IT", { dateStyle: "short", timeStyle: "short" });
 }
 
 window.undoLastModification = async function() {
@@ -2828,9 +2904,9 @@ function setupTransferModals() {
         <button id="share-send-button" class="btn btn-primary full-width" onclick="submitRecipeShare()">Invia richiesta</button>
       </div>
     </div>
-    <div id="incoming-shares-modal" class="modal hidden" role="dialog" aria-modal="true">
+    <div id="incoming-shares-modal" class="modal hidden" role="dialog" aria-modal="true" aria-labelledby="incoming-shares-title">
       <div class="modal-content incoming-modal-content">
-        <div class="modal-header"><div><p class="eyebrow">RICHIESTE RICEVUTE</p><h2>Condivisioni e collegamenti</h2></div><button class="btn-icon" onclick="closeIncomingShares()">&times;</button></div>
+        <div class="modal-header"><div><p class="eyebrow">NOTIFICHE</p><h2 id="incoming-shares-title">Richieste in attesa</h2></div><button class="btn-icon" onclick="closeIncomingShares()" aria-label="Chiudi notifiche">&times;</button></div>
         <div id="incoming-shares-list"></div>
       </div>
     </div>
@@ -2858,6 +2934,26 @@ function setupTransferModals() {
   bindModalOutsideClose("incoming-shares-modal", () => window.closeIncomingShares());
   bindModalOutsideClose("share-conflict-modal", () => window.closeShareConflictModal());
   bindModalOutsideClose("account-link-modal", () => window.closeAccountLinkDialog());
+  bindTransferEscapeKeys();
+}
+
+// Escape chiude prima la modale più in cima (anteprima conflitti), poi il
+// centro notifiche: lo stato pendente non cambia mai alla semplice chiusura.
+// Separato da setupTransferModals e idempotente: può essere riattivato in
+// qualunque contesto senza doppie registrazioni.
+let transferEscapeBound = false;
+function bindTransferEscapeKeys() {
+  if (transferEscapeBound) return;
+  transferEscapeBound = true;
+  document.addEventListener("keydown", event => {
+    if (event.key !== "Escape") return;
+    const conflictModal = document.getElementById("share-conflict-modal");
+    const sharesModal = document.getElementById("incoming-shares-modal");
+    const conflictOpen = Boolean(conflictModal) && !conflictModal.classList.contains("hidden");
+    const sharesOpen = Boolean(sharesModal) && !sharesModal.classList.contains("hidden");
+    if (conflictOpen) window.closeShareConflictModal();
+    else if (sharesOpen) window.closeIncomingShares();
+  });
 }
 
 window.openAccountLinkDialog = function() {
@@ -2972,28 +3068,44 @@ window.submitRecipeShare = async function() {
   }
 };
 
+// Apertura del centro notifiche dalla campanella: apre il pannello accessibile
+// e ricarica le richieste dal server. Aprire il pannello NON segna nulla come
+// letto: le notifiche restano finché non vengono gestite davvero.
 window.openIncomingShares = async function() {
   const modal = document.getElementById("incoming-shares-modal");
   const list = document.getElementById("incoming-shares-list");
+  const active = typeof HTMLElement !== "undefined" && document.activeElement instanceof HTMLElement
+    ? document.activeElement : null;
+  notificationsReturnFocus = active || document.getElementById("notification-bell") || null;
   list.innerHTML = `<div class="empty-state"><div class="loading-spinner"></div><p>Caricamento richieste…</p></div>`;
   modal.classList.remove("hidden");
+  document.getElementById("notification-bell")?.setAttribute("aria-expanded", "true");
   try {
     // Una sola query server: i documenti (che incorporano interi cataloghi
     // ricette) vengono letti una volta e ripartiti tra i due elenchi.
     const { recipeShares, accountLinks } = await getPendingIncomingRequests();
-    incomingRecipeShares = recipeShares;
-    incomingAccountLinks = accountLinks;
-    renderIncomingShares();
+    applyIncomingRequests(recipeShares, accountLinks);
   } catch (error) {
     console.error(error);
-    list.innerHTML = `<div class="empty-state"><span>⚠️</span><p>${escapeHtml(error.message || "Impossibile caricare le richieste")}</p></div>`;
+    // Il caricamento fallito non deve azzerare notifiche già pendenti.
+    markNotificationsLoadFailed();
+    if (!incomingRecipeShares.length && !incomingAccountLinks.length) {
+      list.innerHTML = `<div class="empty-state"><span>⚠️</span><p>${escapeHtml(error.message || "Impossibile caricare le richieste")}</p></div>`;
+    } else {
+      renderIncomingShares();
+    }
   }
+  setTimeout(() => modal.querySelector(".btn-icon")?.focus(), 50);
 };
 
 function renderIncomingShares() {
   const list = document.getElementById("incoming-shares-list");
   if (!incomingRecipeShares.length && !incomingAccountLinks.length) {
-    list.innerHTML = `<div class="empty-state"><span>📭</span><h3>Nessuna richiesta</h3><p>Le ricette condivise e gli inviti a collegare un account compariranno qui.</p></div>`;
+    // Offline dopo un caricamento fallito con pendenti noti: il messaggio non
+    // deve dichiarare "nessuna richiesta" finché il server non è consultabile.
+    list.innerHTML = notificationsLoadError && readCachedNotificationCount() > 0
+      ? `<div class="empty-state"><span>📡</span><h3>Connessione assente</h3><p>Hai richieste in attesa: appariranno appena torni online. Finché non le gestisci restano salvate.</p></div>`
+      : `<div class="empty-state"><span>📭</span><h3>Nessuna richiesta</h3><p>Le ricette condivise e gli inviti a collegare un account compariranno qui.</p></div>`;
     return;
   }
   const linkCards = incomingAccountLinks.map(request => `
@@ -3028,6 +3140,13 @@ function renderIncomingShares() {
 
 window.closeIncomingShares = function() {
   document.getElementById("incoming-shares-modal")?.classList.add("hidden");
+  document.getElementById("notification-bell")?.setAttribute("aria-expanded", "false");
+  // Focus restituito al punto di apertura (tipicamente la campanella).
+  const target = notificationsReturnFocus && typeof notificationsReturnFocus.focus === "function"
+    ? notificationsReturnFocus
+    : document.getElementById("notification-bell");
+  notificationsReturnFocus = null;
+  target?.focus?.();
 };
 
 window.acceptPendingAccountLink = async function(shareId, base) {
@@ -3046,6 +3165,7 @@ window.acceptPendingAccountLink = async function(shareId, base) {
     );
     await acceptAccountLink(shareId, base, appState.recipes, appState.plan, appState.shopping);
     incomingAccountLinks = incomingAccountLinks.filter(item => item.id !== shareId);
+    syncIncomingRequests();
     closeIncomingShares();
     await loadUserData(appState.user, { silent: true });
     startAccountRealtimeSync();
@@ -3064,7 +3184,7 @@ window.rejectPendingAccountLink = async function(shareId) {
   try {
     await rejectAccountLink(shareId);
     incomingAccountLinks = incomingAccountLinks.filter(item => item.id !== shareId);
-    renderIncomingShares();
+    syncIncomingRequests();
     showToast("Richiesta di collegamento rifiutata");
   } catch (error) {
     console.error(error);
@@ -3205,7 +3325,7 @@ window.applyShareAccept = async function() {
     if (nextPlan) appState.plan = nextPlan;
     incomingRecipeShares = incomingRecipeShares.filter(item => item.id !== shareId);
     closeShareConflictModal();
-    renderIncomingShares();
+    syncIncomingRequests();
     handleRoute();
     const toast = mode === "plan"
       ? (nulledRefs ? `Settimana importata: rimossi ${nulledRefs} riferimenti a ricette mancanti ⚠️` : "Settimana importata e salvata ✅")
@@ -3224,7 +3344,7 @@ window.rejectSharedRecipes = async function(shareId) {
   try {
     await rejectRecipeShare(shareId);
     incomingRecipeShares = incomingRecipeShares.filter(item => item.id !== shareId);
-    renderIncomingShares();
+    syncIncomingRequests();
     showToast("Richiesta rifiutata");
   } catch (error) {
     console.error(error);
