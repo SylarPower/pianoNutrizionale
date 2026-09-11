@@ -14,6 +14,7 @@ function adminError(error) {
   if (code === 'permission-denied') return 'Non hai i permessi per questa operazione.';
   if (code === 'failed-precondition') return error.message || 'Controlla versione e checksum.';
   if (code === 'resource-exhausted') return 'Troppe richieste. Attendi qualche minuto.';
+  if (code === 'not-found' || code === 'unimplemented') return 'Backend della console non aggiornato: ripubblicare le Cloud Functions.';
   return error?.message || 'Operazione non riuscita. Riprova.';
 }
 
@@ -23,7 +24,7 @@ async function loadReports({ append = false } = {}) {
   if (!orgId()) { $('report-feedback').textContent = 'Inserisci l’organizzazione per vedere la coda.'; return; }
   $('report-feedback').textContent = 'Aggiornamento sicuro della coda…';
   try {
-    const result = await callSaasFunction('listMappingReports', {
+    const result = await callAdminSaasFunction('listMappingReports', {
       organizationId: orgId(), status: $('report-status').value || undefined,
       pageSize: 25, cursor: append ? adminState.cursor : undefined
     });
@@ -94,11 +95,11 @@ async function submitMapping(event) {
     } : null
   };
   try {
-    const proposal = await callSaasFunction('proposeMapping', {
+    const proposal = await callAdminSaasFunction('proposeMapping', {
       organizationId: orgId(), reportId: $('mapping-report-id').value, mapping,
       rationale: $('mapping-rationale').value, idempotencyKey: idem('proposal')
     });
-    await callSaasFunction('publishMapping', {
+    await callAdminSaasFunction('publishMapping', {
       organizationId: orgId(), proposalId: proposal.proposalId,
       targetScope: $('mapping-global').checked ? 'global' : 'tenant', idempotencyKey: idem('publish')
     });
@@ -112,7 +113,7 @@ async function loadClients() {
   if (!orgId()) { $('clients-feedback').textContent = 'Inserisci l’organizzazione.'; return; }
   $('clients-feedback').textContent = 'Caricamento profili autorizzati…';
   try {
-    const result = await callSaasFunction('listAuthorizedClients', { organizationId: orgId() });
+    const result = await callAdminSaasFunction('listAuthorizedClients', { organizationId: orgId() });
     adminState.clients = result.clients || []; renderClients(); saveOrg();
     $('clients-feedback').textContent = adminState.clients.length ? '' : 'Nessun cliente autorizzato.';
   } catch (error) { $('clients-feedback').textContent = adminError(error); adminState.clients = []; renderClients(); }
@@ -132,7 +133,7 @@ function renderClients() {
 async function loadStructuresList() {
   if (!orgId()) { adminState.ruleSets = []; return; }
   try {
-    const result = await callSaasFunction('listDietStructures', { organizationId: orgId() });
+    const result = await callAdminSaasFunction('listDietStructures', { organizationId: orgId() });
     // Solo strutture attive assegnabili; le archiviate restano consultabili
     // nella sezione Strutture ma non si possono assegnare.
     adminState.ruleSets = (result.structures || []).filter(item => item.status !== 'archived');
@@ -181,7 +182,7 @@ async function submitAssignment(event) {
     return;
   }
   try {
-    const result = await callSaasFunction('assignClientStructure', {
+    const result = await callAdminSaasFunction('assignClientStructure', {
       organizationId: orgId(), clientId: $('assignment-client-id').value,
       structureId: chosen.id,
       effectiveAt: isoFromLocal($('assignment-effective').value),
@@ -205,9 +206,11 @@ const canonicalId = value => String(value || '').normalize('NFD').replace(/[\u03
 
 async function loadCatalogIndex() {
   if (catalogIndexCache) return catalogIndexCache;
+  // Letture fatte con il Firestore della console (Auth nominata): l'identità
+  // valutata dalle Security Rules è quella dell'account professionale.
   const [ings, cats] = await Promise.all([
-    getDocsQuery(queryLimit(collectionAt('globalIngredientCatalog/current/ingredients'), 500)),
-    getDocsQuery(queryLimit(collectionAt('globalIngredientCatalog/current/categories'), 100))
+    adminGetDocsQuery(adminQueryLimit(adminCollectionAt('globalIngredientCatalog/current/ingredients'), 500)),
+    adminGetDocsQuery(adminQueryLimit(adminCollectionAt('globalIngredientCatalog/current/categories'), 100))
   ]);
   const ingredients = [];
   const categories = [];
@@ -249,7 +252,7 @@ async function loadStructures() {
   if (!orgId()) { $('structures-feedback').textContent = 'Inserisci l’organizzazione.'; return; }
   $('structures-feedback').textContent = 'Caricamento strutture…';
   try {
-    const result = await callSaasFunction('listDietStructures', { organizationId: orgId() });
+    const result = await callAdminSaasFunction('listDietStructures', { organizationId: orgId() });
     adminState.structures = result.structures || [];
     saveOrg(); renderStructures();
     $('structures-feedback').textContent = adminState.structures.length ? '' : 'Nessuna struttura dieta: creane una.';
@@ -453,7 +456,7 @@ async function openStructureDialog(structureId = null) {
     $('structure-title').textContent = 'Modifica struttura';
     $('structure-subtitle').textContent = 'Il salvataggio pubblica una nuova revisione: le precedenti restano intatte e ripristinabili.';
     try {
-      const result = await callSaasFunction('getDietStructureRevision', { organizationId: orgId(), structureId });
+      const result = await callAdminSaasFunction('getDietStructureRevision', { organizationId: orgId(), structureId });
       adminState.editingStructure = result;
       $('structure-id').value = structureId;
       $('structure-name').value = result.structure.name || '';
@@ -487,7 +490,7 @@ async function loadStructureRevision() {
   const rev = Number($('structure-restore-rev').value);
   if (!structureId || !Number.isInteger(rev) || rev < 1) { $('structure-error').textContent = 'Indica il numero della revisione da caricare.'; return; }
   try {
-    const result = await callSaasFunction('getDietStructureRevision', { organizationId: orgId(), structureId, revisionId: String(rev) });
+    const result = await callAdminSaasFunction('getDietStructureRevision', { organizationId: orgId(), structureId, revisionId: String(rev) });
     $('structure-rules').innerHTML = '';
     (result.revision.rules || []).forEach(addStructureRuleRow);
     fillCategorySelects();
@@ -510,14 +513,14 @@ async function submitStructureForm(event) {
   const restoredFrom = $('structure-restore-rev').value;
   try {
     if (structureId) {
-      await callSaasFunction('updateDietStructureRevision', {
+      await callAdminSaasFunction('updateDietStructureRevision', {
         organizationId: orgId(), structureId, name: $('structure-name').value.trim(),
         rules, alternativeGroups, changelog: $('structure-changelog').value.trim() || null,
         restoredFromRevisionId: restoredFrom ? String(Number(restoredFrom)) : null,
         idempotencyKey: idem('structure')
       });
     } else {
-      await callSaasFunction('createDietStructure', {
+      await callAdminSaasFunction('createDietStructure', {
         organizationId: orgId(), name: $('structure-name').value.trim(), rules, alternativeGroups, idempotencyKey: idem('structure')
       });
     }
@@ -529,7 +532,7 @@ async function submitStructureForm(event) {
 async function toggleStructureArchive(structureId, archived) {
   $('structures-feedback').textContent = '';
   try {
-    await callSaasFunction('archiveDietStructure', { organizationId: orgId(), structureId, archived, idempotencyKey: idem('structure-status') });
+    await callAdminSaasFunction('archiveDietStructure', { organizationId: orgId(), structureId, archived, idempotencyKey: idem('structure-status') });
     await loadStructures();
     $('structures-feedback').textContent = archived ? 'Struttura archiviata (soft-delete): non è più assegnabile ma resta consultabile.' : 'Struttura riattivata.';
   } catch (error) { $('structures-feedback').textContent = adminError(error); }
@@ -571,7 +574,7 @@ async function openCompare() {
   $('compare-matrix').innerHTML = '';
   $('compare-dialog').classList.remove('hidden');
   try {
-    const result = await callSaasFunction('compareDietStructures', {
+    const result = await callAdminSaasFunction('compareDietStructures', {
       organizationId: orgId(), structureIds: [...adminState.compareSelection]
     });
     $('compare-subtitle').textContent = `Sola lettura · confronto del ${new Date(result.comparedAt).toLocaleString('it-IT')}.`;
@@ -588,7 +591,7 @@ async function loadUsers() {
   if (!orgId()) { $('users-feedback').textContent = 'Inserisci l’organizzazione.'; return; }
   $('users-feedback').textContent = 'Caricamento utenti autorizzati…';
   try {
-    const result = await callSaasFunction('listOrganizationUsers', { organizationId: orgId() });
+    const result = await callAdminSaasFunction('listOrganizationUsers', { organizationId: orgId() });
     adminState.users = result;
     saveOrg();
     renderUsers();
@@ -658,7 +661,7 @@ async function verifyUsername(inputId, outId) {
   if (!username) { out.textContent = 'Digita uno username esatto da verificare.'; return; }
   out.textContent = 'Verifica…';
   try {
-    const result = await callSaasFunction('searchUserByUsername', { organizationId: orgId(), username });
+    const result = await callAdminSaasFunction('searchUserByUsername', { organizationId: orgId(), username });
     out.textContent = result.found
       ? 'Account trovato: l’invito invierà una richiesta da accettare in app.'
       : 'Nessun account con questo username: verrà creato un invito monouso (7 giorni).';
@@ -670,7 +673,7 @@ async function submitNutritionistInvite(event) {
   const out = $('invite-nutritionist-result');
   out.textContent = 'Invito in corso…';
   try {
-    const result = await callSaasFunction('inviteOrganizationUser', {
+    const result = await callAdminSaasFunction('inviteOrganizationUser', {
       organizationId: orgId(), username: $('invite-nutritionist-username').value.trim(),
       role: 'nutritionist', idempotencyKey: idem('invite')
     });
@@ -691,7 +694,7 @@ async function submitClientInvite(event) {
   const out = $('invite-client-result');
   out.textContent = 'Invito in corso…';
   try {
-    const result = await callSaasFunction('inviteClientLink', {
+    const result = await callAdminSaasFunction('inviteClientLink', {
       organizationId: orgId(), username: $('invite-client-username').value.trim(),
       nutritionistUid: $('invite-client-nutritionist').value || null,
       idempotencyKey: idem('clientlink')
@@ -711,7 +714,7 @@ async function submitClientInvite(event) {
 async function changeMemberStatus(userId, status) {
   $('users-feedback').textContent = '';
   try {
-    await callSaasFunction('setMemberStatus', { organizationId: orgId(), userId, status, idempotencyKey: idem('member') });
+    await callAdminSaasFunction('setMemberStatus', { organizationId: orgId(), userId, status, idempotencyKey: idem('member') });
     await loadUsers();
     $('users-feedback').textContent = status === 'suspended' ? 'Membership sospesa.' : 'Membership riattivata.';
   } catch (error) { $('users-feedback').textContent = adminError(error); }
@@ -722,7 +725,7 @@ async function removeNutritionist(userId) {
   if (!confirm(`Rimuovere ${label} dall’organizzazione?\n\nLa rimozione è bloccata se restano clienti collegati o in attesa. Le sue strutture dieta restano visibili a te (admin) con il proprietario invariato e non vengono trasferite a nessuno.`)) return;
   $('users-feedback').textContent = '';
   try {
-    await callSaasFunction('removeNutritionist', { organizationId: orgId(), userId, idempotencyKey: idem('member-remove') });
+    await callAdminSaasFunction('removeNutritionist', { organizationId: orgId(), userId, idempotencyKey: idem('member-remove') });
     await loadUsers();
     $('users-feedback').textContent = 'Professionista rimosso. Le sue strutture restano consultabili senza trasferimento.';
   } catch (error) { $('users-feedback').textContent = adminError(error); }
@@ -744,7 +747,7 @@ async function submitUnlink(event) {
   event.preventDefault();
   $('unlink-error').textContent = '';
   try {
-    await callSaasFunction('removeClientLink', {
+    await callAdminSaasFunction('removeClientLink', {
       organizationId: orgId(), clientId: $('unlink-client-id').value,
       reason: $('unlink-reason').value.trim(), idempotencyKey: idem('unlink')
     });
@@ -770,10 +773,10 @@ function showView(view) {
 function bindAdmin() {
   $('admin-login-form').addEventListener('submit', async event => {
     event.preventDefault(); $('admin-login-error').textContent = '';
-    try { await signInWithUsername($('admin-username').value, $('admin-password').value); }
+    try { await adminSignInWithUsername($('admin-username').value, $('admin-password').value); }
     catch (error) { $('admin-login-error').textContent = adminError(error); }
   });
-  $('admin-logout').addEventListener('click', () => signOutUser());
+  $('admin-logout').addEventListener('click', () => adminSignOutUser());
   $('organization-id').value = localStorage.getItem('piano_admin_org') || '';
   $('organization-id').addEventListener('change', () => { saveOrg(); loadReports(); });
   $('refresh-reports').addEventListener('click', () => loadReports());
@@ -862,14 +865,42 @@ function bindAdmin() {
 
 bindAdmin();
 if (!initFirebase()) $('admin-login-error').textContent = 'Firebase non disponibile.';
-observeAuthState(user => {
+// Sessione SEPARATA dall'app cliente (Firebase App "admin-console"): questo
+// observer ascolta l'Auth della console, quindi una sessione cliente attiva
+// nella stessa origine NON apre la dashboard, e i logout restano indipendenti.
+observeAdminAuthState(async user => {
   adminState.user = user;
-  $('admin-login').classList.toggle('hidden', Boolean(user));
-  $('admin-app').classList.toggle('hidden', !user);
-  if (user) {
-    const name = usernameFromUser(user) || 'Professionista';
-    $('admin-name').textContent = name; $('admin-avatar').textContent = name.slice(0, 1).toUpperCase();
-    // Landing: la vista Clienti è la porta d'ingresso della console.
-    showView('clients');
+  if (!user) {
+    $('admin-login').classList.remove('hidden');
+    $('admin-app').classList.add('hidden');
+    return;
   }
+  // Il gate professionale è deciso dal server: l'Auth dice solo CHI è
+  // l'utente, le membership vere (getMyMemberships) dicono SE è un
+  // professionista. Nessun ruolo viene letto da storage locali: un account
+  // cliente autenticato non ottiene mai la dashboard né le operazioni.
+  $('admin-login-error').textContent = 'Verifica dell’autorizzazione alla console…';
+  try {
+    const professional = await callAdminSaasFunction('getMyMemberships', {});
+    const allowed = Boolean(professional.platformAdmin) || (professional.memberships || []).length > 0;
+    if (!allowed) {
+      $('admin-login-error').textContent = 'Questo account non è abilitato alla console professionale.';
+      await adminSignOutUser();
+      return;
+    }
+  } catch (error) {
+    $('admin-login-error').textContent = adminError(error);
+    await adminSignOutUser();
+    return;
+  }
+  // Se nel frattempo la sessione è stata chiusa (logout su altra scheda),
+  // non riaprire la dashboard per un utente che non è più autenticato.
+  if (getAdminCurrentUser()?.uid !== user.uid) return;
+  $('admin-login-error').textContent = '';
+  $('admin-login').classList.add('hidden');
+  $('admin-app').classList.remove('hidden');
+  const name = usernameFromUser(user) || 'Professionista';
+  $('admin-name').textContent = name; $('admin-avatar').textContent = name.slice(0, 1).toUpperCase();
+  // Landing: la vista Clienti è la porta d'ingresso della console.
+  showView('clients');
 });

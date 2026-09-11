@@ -5,7 +5,7 @@ const { onCall, HttpsError } = require('firebase-functions/v2/https');
 const { onSchedule } = require('firebase-functions/v2/scheduler');
 const { logger } = require('firebase-functions');
 const { initializeApp } = require('firebase-admin/app');
-const { getFirestore, FieldValue, Timestamp } = require('firebase-admin/firestore');
+const { getFirestore, FieldValue, FieldPath, Timestamp } = require('firebase-admin/firestore');
 const {
   ROLES, REPORT_STATUSES, STRUCTURE_REVISION_SCHEMA_VERSION, exactObject, text, optionalText, id, checksum,
   hashToken, normalizeUsername,
@@ -1504,6 +1504,33 @@ exports.inviteClientLink = callable(async (data, uid) => {
   });
   if (!created) return { status: 'already-invited', clientId, inviteId };
   return { status: 'invited', clientId, inviteId, expiresAt: expiresAt.toISOString(), token };
+});
+
+// Membership professionali dell'utente autenticato (console professionisti).
+// È il gate deciso dal server per l'accesso alla dashboard: le membership
+// vere in Firestore (organizations/{org}/members/{uid}) sono la fonte
+// autorevole, senza fidarsi di ruoli scritti nel browser né di custom claims.
+// Read-only, niente audit: nessuna PII oltre a orgId/ruolo del chiamante.
+exports.getMyMemberships = callable(async (data, uid) => {
+  exactObject(data, []);
+  const [snap, platform] = await Promise.all([
+    db.collectionGroup('members').where(FieldPath.documentId(), '==', uid).get(),
+    db.doc(`platformMembers/${uid}`).get()
+  ]);
+  const memberships = snap.docs
+    .filter(doc => doc.ref.parent.parent && doc.ref.path.startsWith('organizations/'))
+    .map(doc => ({
+      organizationId: doc.ref.parent.parent.id,
+      role: doc.data()?.role,
+      status: doc.data()?.status,
+      username: doc.data()?.username || null
+    }))
+    .filter(item => item.status === 'active' && ROLES.has(item.role))
+    .map(item => ({ organizationId: item.organizationId, role: item.role, username: item.username }));
+  return {
+    memberships,
+    platformAdmin: platform.exists && platform.data()?.status === 'active' && platform.data()?.role === 'admin'
+  };
 });
 
 // Richieste di collegamento in attesa + stato del collegamento attuale per

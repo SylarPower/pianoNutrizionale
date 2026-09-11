@@ -215,7 +215,7 @@ function usernameFromUser(user) {
   return user.email.split("@")[0];
 }
 
-async function signInWithUsername(username, password) {
+function validateSignInInput(username, password) {
   const normalized = normalizeUsername(username);
   if (!isValidUsername(normalized)) {
     const error = new Error("Lo username deve contenere 3-32 caratteri: lettere minuscole, numeri, punto, trattino o underscore.");
@@ -227,6 +227,11 @@ async function signInWithUsername(username, password) {
     error.code = "auth/missing-password";
     throw error;
   }
+  return normalized;
+}
+
+async function signInWithUsername(username, password) {
+  const normalized = validateSignInInput(username, password);
   if (hasCompatFirebase()) {
     return auth.signInWithEmailAndPassword(usernameToInternalEmail(normalized), password);
   }
@@ -265,6 +270,179 @@ function observeAuthState(callback) {
 function requireUser() {
   if (!currentUser) throw new Error("Autenticazione richiesta");
   return currentUser;
+}
+
+// =====================================================================
+// Ambito "console professionisti" (admin.html): Firebase App NOMINATO con
+// Auth, Firestore e Functions dedicati, separati da quelli dell'app cliente.
+//
+// Perché funziona: con l'SDK modulare la persistenza dell'Auth è salvata in
+// IndexedDB con chiave che include il NOME dell'app
+// (firebase:authUser:<apiKey>:<appName>). Un'app nominata diversa ha quindi
+// una sessione completamente indipendente: login, persistenza e logout della
+// console non toccano la sessione dell'app cliente e viceversa; entrambe
+// possono essere attive contemporaneamente nella stessa origine.
+//
+// Firestore e Functions della console sono agganciati allo stesso app
+// nominato: ogni chiamata porta il token dell'utente autenticato NELLA
+// console (i controlli ruolo server-side vedono l'account professionale),
+// mai quello dell'eventuale sessione cliente presente nella stessa pagina.
+// =====================================================================
+
+const ADMIN_APP_NAME = "admin-console";
+let adminAuth = null;
+let adminDb = null;
+let adminFunctionsService = null;
+let adminCurrentUser = null;
+let adminServicesPromise = null;
+
+function ensureAdminServices() {
+  if (adminServicesPromise) return adminServicesPromise;
+  adminServicesPromise = (async () => {
+    if (hasCompatFirebase()) {
+      // Percorso legacy (smoke test): named app compat, se supportata.
+      const compat = window.firebase;
+      let app = (compat.apps || []).find(item => item?.name === ADMIN_APP_NAME) || null;
+      if (!app) app = compat.initializeApp(firebaseConfig, ADMIN_APP_NAME) || null;
+      if (compatsAppCheckAvailable(compat) && APP_CHECK_SITE_KEY && !APP_CHECK_SITE_KEY.startsWith("REPLACE_")) {
+        try { (typeof app?.appCheck === "function" ? app.appCheck() : compat.appCheck())?.activate?.(APP_CHECK_SITE_KEY, true); }
+        catch (error) { console.warn("Firebase App Check (console) non disponibile", error); }
+      }
+      adminAuth = typeof app?.auth === "function" ? app.auth() : compat.auth(app || undefined);
+      adminDb = typeof app?.firestore === "function" ? app.firestore() : compat.firestore(app || undefined);
+      if (typeof app?.functions === "function") adminFunctionsService = app.functions("europe-west1");
+      else if (typeof compat.functions === "function") adminFunctionsService = compat.functions("europe-west1");
+      if (!adminAuth) throw new Error("Auth della console non disponibile");
+      adminAuth.setPersistence?.(window.firebase?.auth?.Auth?.Persistence?.LOCAL)
+        ?.catch?.(error => console.warn("Persistenza autenticazione console non disponibile", error));
+      return;
+    }
+    await firebaseReady;
+    if (!fb) throw new Error("Firebase non inizializzato");
+    // Se l'app nominata esiste già la riuso: un retry dopo un errore a metà
+    // inizializzazione non deve rilanciare initializeApp (che solleverebbe
+    // "app already exists").
+    const app = fb.getApps().find(item => item.name === ADMIN_APP_NAME)
+      || fb.initializeApp(firebaseConfig, ADMIN_APP_NAME);
+    if (APP_CHECK_SITE_KEY && !APP_CHECK_SITE_KEY.startsWith("REPLACE_")) {
+      try {
+        fb.initializeAppCheck(app, {
+          provider: new fb.ReCaptchaV3Provider(APP_CHECK_SITE_KEY),
+          isTokenAutoRefreshEnabled: true
+        });
+      } catch (error) {
+        // Già attiva su questa app (doppio bind) oppure ambiente senza supporto.
+        console.warn("Firebase App Check (console) non disponibile", error);
+      }
+    }
+    // Cache Firestore IN MEMORIA per la console: è uno strumento operativo
+    // "live" e una seconda cache persistente multi-scheda contenderebbe
+    // IndexedDB con quella dell'app cliente (stessa chiave di persistenza).
+    try {
+      adminDb = fb.initializeFirestore(app, { localCache: fb.memoryLocalCache() });
+    } catch (error) {
+      console.warn("Cache Firestore della console non configurabile, uso quella predefinita", error);
+      adminDb = fb.getFirestore(app);
+    }
+    adminAuth = fb.getAuth(app);
+    adminFunctionsService = fb.getFunctions(app, "europe-west1");
+    if (typeof location !== "undefined" && ["localhost", "127.0.0.1"].includes(location.hostname)) {
+      fb.connectAuthEmulator(adminAuth, "http://127.0.0.1:9099", { disableWarnings: true });
+      fb.connectFirestoreEmulator(adminDb, "127.0.0.1", 8080);
+      fb.connectFunctionsEmulator(adminFunctionsService, "127.0.0.1", 5001);
+    }
+    fb.setPersistence(adminAuth, fb.browserLocalPersistence).catch(error => {
+      console.warn("Persistenza autenticazione console non disponibile", error);
+    });
+  })().catch(error => {
+    // Un'inizializzazione fallita non resta "appiccicata": i retry ripartono
+    // da zero (es. rete assente al primo avvio della console).
+    adminServicesPromise = null;
+    throw error;
+  });
+  return adminServicesPromise;
+}
+
+function compatsAppCheckAvailable(compat) {
+  return typeof compat.appCheck === "function";
+}
+
+// Login della console: stessa validazione di input, ma sull'Auth separato.
+async function adminSignInWithUsername(username, password) {
+  const normalized = validateSignInInput(username, password);
+  await ensureAdminServices();
+  if (hasCompatFirebase()) {
+    return adminAuth.signInWithEmailAndPassword(usernameToInternalEmail(normalized), password);
+  }
+  return fb.signInWithEmailAndPassword(adminAuth, usernameToInternalEmail(normalized), password);
+}
+
+// Logout SOLO della console: opera sull'Auth dell'app nominata, quindi la
+// sessione dell'app cliente (e viceversa) resta intatta.
+async function adminSignOutUser() {
+  if (!adminAuth) return;
+  if (hasCompatFirebase()) {
+    await adminAuth.signOut();
+    return;
+  }
+  await ensureAdminServices();
+  await fb.signOut(adminAuth);
+}
+
+function getAdminCurrentUser() {
+  return adminCurrentUser;
+}
+
+// Osserva SOLO lo stato dell'Auth della console: una sessione attiva
+// nell'app cliente non viene mai rilevata qui.
+function observeAdminAuthState(callback) {
+  let unsubscribe = () => {};
+  ensureAdminServices().then(() => {
+    if (!adminAuth) { callback(null); return; }
+    const handler = user => {
+      adminCurrentUser = user || null;
+      callback(adminCurrentUser);
+    };
+    if (hasCompatFirebase()) unsubscribe = adminAuth.onAuthStateChanged(handler);
+    else unsubscribe = fb.onAuthStateChanged(adminAuth, handler);
+  }).catch(error => {
+    console.error("Servizi della console non disponibili", error);
+    callback(null);
+  });
+  return () => unsubscribe && unsubscribe();
+}
+
+// Callable invocata con l'identità della console: token Auth e App Check
+// provengono dall'app nominata, quindi il server autorizza l'account
+// professionale e NON l'eventuale sessione dell'app cliente.
+async function callAdminSaasFunction(name, data = {}) {
+  await ensureAdminServices();
+  if (!adminFunctionsService) throw new Error("Servizio SaaS non disponibile");
+  const cleanData = JSON.parse(JSON.stringify(data));
+  if (hasCompatFirebase()) {
+    const response = await adminFunctionsService.httpsCallable(name)(cleanData);
+    return response.data;
+  }
+  const response = await fb.httpsCallable(adminFunctionsService, name)(cleanData);
+  return response.data;
+}
+
+// ---- Letture Firestore della console (es. autocomplete catalogo globale) ----
+
+function adminCollectionAt(path) {
+  if (hasCompatFirebase()) return adminDb.collection(path);
+  return fb.collection(adminDb, path);
+}
+
+function adminQueryLimit(collectionRef, limit) {
+  if (hasCompatFirebase()) return collectionRef.limit(limit);
+  return fb.query(collectionRef, fb.limit(limit));
+}
+
+async function adminGetDocsQuery(query) {
+  if (hasCompatFirebase()) return query.get();
+  await ensureAdminServices();
+  return fb.getDocs(query);
 }
 
 // ----- Riferimenti Firestore (API modulare a documenti/collezioni) -----
@@ -990,8 +1168,7 @@ async function getIncomingRequestsSnapshot() {
 // (le regole lo consentono), quindi la discriminante è `type === "accountLink"`
 // per i collegamenti e tutto il resto per le ricette. Il filtro su status/type
 // resta in JavaScript: un secondo `where` richiederebbe un indice composito.
-async function getPendingIncomingRequests() {
-  const snapshot = await getIncomingRequestsSnapshot();
+function pendingRequestsFromSnapshot(snapshot) {
   const recipeShares = [];
   const accountLinks = [];
   snapForEach(snapshot, doc => {
@@ -1003,6 +1180,38 @@ async function getPendingIncomingRequests() {
   recipeShares.sort(byCreatedAtDesc);
   accountLinks.sort(byCreatedAtDesc);
   return { recipeShares, accountLinks };
+}
+
+async function getPendingIncomingRequests() {
+  const snapshot = await getIncomingRequestsSnapshot();
+  return pendingRequestsFromSnapshot(snapshot);
+}
+
+// Listener realtime delle richieste in arrivo (badge notifiche): stessa query
+// di getIncomingRequestsSnapshot ma in ascolto, così il badge si aggiorna da
+// solo dopo ogni cambiamento lato server (inclusa la gestione fatta da un
+// altro dispositivo). Le Security Rules consentono al destinatario la lettura
+// dei soli documenti con recipientUid == auth.uid, quindi la query è legittima
+// e non tocca documenti altrui. Niente scritture né "segna come letta":
+// aprire/ascoltare non consuma mai la richiesta.
+function observeIncomingRequests(onNext, onError = null) {
+  const user = requireUser();
+  const handleError = error => {
+    console.warn("Sincronizzazione notifiche non disponibile", error);
+    if (onError) onError(error);
+  };
+  let unsubscribe = () => {};
+  const attach = () => {
+    const q = queryWhere(collectionAt("recipeShares"), "recipientUid", "==", user.uid);
+    if (hasCompatFirebase()) {
+      unsubscribe = q.onSnapshot(onNext, handleError);
+    } else {
+      unsubscribe = fb.onSnapshot(q, onNext, handleError);
+    }
+  };
+  if (hasCompatFirebase()) attach();
+  else firebaseReady.then(attach).catch(handleError);
+  return () => unsubscribe && unsubscribe();
 }
 
 async function getPendingRecipeShares() {
