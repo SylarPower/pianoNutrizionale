@@ -5,7 +5,7 @@ const { onCall, HttpsError } = require('firebase-functions/v2/https');
 const { onSchedule } = require('firebase-functions/v2/scheduler');
 const { logger } = require('firebase-functions');
 const { initializeApp } = require('firebase-admin/app');
-const { getFirestore, FieldValue, FieldPath, Timestamp } = require('firebase-admin/firestore');
+const { getFirestore, FieldValue, Timestamp } = require('firebase-admin/firestore');
 const {
   ROLES, REPORT_STATUSES, STRUCTURE_REVISION_SCHEMA_VERSION, exactObject, text, optionalText, id, checksum,
   hashToken, normalizeUsername,
@@ -1513,12 +1513,15 @@ exports.inviteClientLink = callable(async (data, uid) => {
 // Read-only, niente audit: nessuna PII oltre a orgId/ruolo del chiamante.
 exports.getMyMemberships = callable(async (data, uid) => {
   exactObject(data, []);
-  const [snap, platform] = await Promise.all([
-    db.collectionGroup('members').where(FieldPath.documentId(), '==', uid).get(),
+  const [orgs, platform] = await Promise.all([
+    db.collection('organizations').select().get(),
     db.doc(`platformMembers/${uid}`).get()
   ]);
-  const memberships = snap.docs
-    .filter(doc => doc.ref.parent.parent && doc.ref.path.startsWith('organizations/'))
+  const memberSnaps = await Promise.all(
+    orgs.docs.map(org => db.doc(`organizations/${org.id}/members/${uid}`).get())
+  );
+  const memberships = memberSnaps
+    .filter(doc => doc.exists)
     .map(doc => ({
       organizationId: doc.ref.parent.parent.id,
       role: doc.data()?.role,
@@ -1533,12 +1536,24 @@ exports.getMyMemberships = callable(async (data, uid) => {
   };
 });
 
+// Le organizzazioni sono poche. Query di collezione (indice automatico),
+// non collection-group: nessun nuovo indice o schema richiesto. Il filtro UID
+// resta server-side. Nessun limit prima del filtro di stato: gli inviti storici
+// non devono nascondere quelli pendenti né impedire una risposta idempotente.
+async function clientLinkRequestsForUid(uid) {
+  const orgs = await db.collection('organizations').select().get();
+  const snapshots = await Promise.all(orgs.docs.map(org =>
+    db.collection(`organizations/${org.id}/clientLinkRequests`).where('targetUid', '==', uid).get()
+  ));
+  return { docs: snapshots.flatMap(snap => snap.docs) };
+}
+
 // Richieste di collegamento in attesa + stato del collegamento attuale per
 // l'account autenticato (app, Impostazioni). Solo i propri dati, mai PII altrui.
 exports.listMyClientLinkRequests = callable(async (data, uid) => {
   exactObject(data, []);
   const [snap, link] = await Promise.all([
-    db.collectionGroup('clientLinkRequests').where('targetUid', '==', uid).limit(20).get(),
+    clientLinkRequestsForUid(uid),
     db.doc(`accountClientLinks/${uid}`).get()
   ]);
   const pending = snap.docs.filter(doc => doc.data()?.status === 'pending');
@@ -1572,7 +1587,7 @@ exports.listMyClientLinkRequests = callable(async (data, uid) => {
 // ritornano no-op; ogni transizione è registrata in audit.
 exports.respondClientLink = callable(async (data, uid) => {
   const input = validateRespondClientLink(data);
-  const snap = await db.collectionGroup('clientLinkRequests').where('targetUid', '==', uid).limit(20).get();
+  const snap = await clientLinkRequestsForUid(uid);
   const found = snap.docs.find(doc => doc.id === input.requestId);
   if (!found) throw new HttpsError('not-found', 'Richiesta non trovata');
   const request = found.data();
