@@ -3,7 +3,9 @@
  *  - validatori puri degli override;
  *  - getClientDoses / updateClientDoseOverrides / copyClientDoses con ruoli,
  *    concorrenza ottimistica, audit e non-retroattività;
- *  - getMyAssignedProfile serve gli override al cliente. */
+ *  - getMyAssignedProfile serve gli override al cliente.
+ *  Singola org: 'piano'. */
+
 const test = require('node:test');
 const assert = require('node:assert/strict');
 const fs = require('node:fs');
@@ -115,20 +117,21 @@ const RULES = [
 const REVISION_CHECKSUM = domain.structureRevisionChecksum({ schemaVersion: 1, rules: RULES, alternativeGroups: [] });
 
 function orgEntries({ clients = ['c1'], overrides = null, assignmentStatus = 'active' } = {}) {
+  const orgId = 'piano';
   const entries = {
-    'organizations/o1/members/me': { role: 'nutritionist', status: 'active', username: 'doctor' },
-    'organizations/o1/dietStructures/s1': { ownerUid: 'me', status: 'active', currentRevisionId: 'r1', latestChecksum: REVISION_CHECKSUM },
-    'organizations/o1/dietStructures/s1/revisions/r1': { status: 'published', schemaVersion: 1, rules: RULES, alternativeGroups: [], checksum: REVISION_CHECKSUM },
+    [`organizations/${orgId}/members/me`]: { role: 'nutritionist', status: 'active', username: 'doctor' },
+    [`organizations/${orgId}/dietStructures/s1`]: { ownerUid: 'me', status: 'active', currentRevisionId: 'r1', latestChecksum: REVISION_CHECKSUM },
+    [`organizations/${orgId}/dietStructures/s1/revisions/r1`]: { status: 'published', schemaVersion: 1, rules: RULES, alternativeGroups: [], checksum: REVISION_CHECKSUM },
     'globalIngredientCatalog/current/meta/summary': { catalogVersion: 7, checksum: 'cat' },
     'globalIngredientCatalog/current/ingredients/pasta-semola': { displayName: 'Pasta di semola', status: 'active' },
     'globalIngredientCatalog/current/ingredients/petto-pollo': { displayName: 'Petto di pollo', status: 'active' }
   };
   clients.forEach((clientId, index) => {
-    entries[`organizations/o1/clients/${clientId}`] = {
+    entries[`organizations/${orgId}/clients/${clientId}`] = {
       status: 'active', nutritionistUids: ['me'], displayCode: `CLI-${clientId}`, authUid: `user-${clientId}`
     };
-    entries[`organizations/o1/clients/${clientId}/state/activeAssignment`] = { assignmentId: `a-${clientId}` };
-    entries[`organizations/o1/clients/${clientId}/assignments/a-${clientId}`] = {
+    entries[`organizations/${orgId}/clients/${clientId}/state/activeAssignment`] = { assignmentId: `a-${clientId}` };
+    entries[`organizations/${orgId}/clients/${clientId}/assignments/a-${clientId}`] = {
       schemaVersion: 2, assignmentId: `a-${clientId}`, clientId,
       structure: { structureId: 's1', revisionId: 'r1', checksum: REVISION_CHECKSUM },
       structureName: 'Base',
@@ -169,15 +172,15 @@ test('validateClientDoseOverrides: rifiuti (famiglie, grammi, frequenze, chiavi)
 });
 
 test('validateCopyClientDoses: origine e destinazione diversi, revisioni sane', () => {
-  assert.throws(() => domain.validateCopyClientDoses({ organizationId: 'o1', fromClientId: 'c1', toClientId: 'c1', expectedRevision: 0 }), /diversi/);
-  assert.throws(() => domain.validateUpdateClientDoseOverrides({ organizationId: 'o1', clientId: 'c1', assignmentId: null, doses: {}, frequencies: {}, expectedRevision: -1 }), /expectedRevision/);
+  assert.throws(() => domain.validateCopyClientDoses({ organizationId: 'piano', fromClientId: 'c1', toClientId: 'c1', expectedRevision: 0 }), /diversi/);
+  assert.throws(() => domain.validateUpdateClientDoseOverrides({ organizationId: 'piano', clientId: 'c1', assignmentId: null, doses: {}, frequencies: {}, expectedRevision: -1 }), /expectedRevision/);
 });
 
 // ---- getClientDoses ----
 
 test('getClientDoses: famiglie studio, nomi catalogo, default frequenze', async () => {
   const { api } = harness(orgEntries());
-  const result = plain(await invoke(api, 'getClientDoses', 'me', { organizationId: 'o1', clientId: 'c1' }));
+  const result = plain(await invoke(api, 'getClientDoses', 'me', { organizationId: 'piano', clientId: 'c1' }));
   assert.equal(result.clientId, 'c1');
   assert.equal(result.assignment.overridesRevision, 0);
   assert.equal(result.assignment.status, 'active');
@@ -189,43 +192,44 @@ test('getClientDoses: famiglie studio, nomi catalogo, default frequenze', async 
 });
 
 test('getClientDoses: senza assegnazione restituisce struttura vuota', async () => {
+  const orgId = 'piano';
   const { api } = harness({
-    'organizations/o1/members/me': { role: 'admin', status: 'active' },
-    'organizations/o1/clients/c9': { status: 'active', nutritionistUids: [], displayCode: 'CLI-c9' }
+    [`organizations/${orgId}/members/me`]: { role: 'nutritionist', status: 'active' },
+    [`organizations/${orgId}/clients/c9`]: { status: 'active', nutritionistUids: ['me'], displayCode: 'CLI-c9' }
   });
-  const result = plain(await invoke(api, 'getClientDoses', 'me', { organizationId: 'o1', clientId: 'c9' }));
+  const result = plain(await invoke(api, 'getClientDoses', 'me', { organizationId: orgId, clientId: 'c9' }));
   assert.equal(result.assignment, null);
   assert.deepEqual(result.families, []);
 });
 
 test('getClientDoses: ruoli (non autenticato, cliente altrui, cliente archiviato)', async () => {
   const { api } = harness(orgEntries());
-  await assert.rejects(invoke(api, 'getClientDoses', null, { organizationId: 'o1', clientId: 'c1' }), /Autenticazione richiesta/);
+  await assert.rejects(invoke(api, 'getClientDoses', null, { organizationId: 'piano', clientId: 'c1' }), /Autenticazione richiesta/);
   const other = harness({
     ...orgEntries(),
-    'organizations/o1/clients/c1': { status: 'active', nutritionistUids: ['other'], displayCode: 'CLI-c1' }
+    'organizations/piano/clients/c1': { status: 'active', nutritionistUids: ['other'], displayCode: 'CLI-c1' }
   });
-  await assert.rejects(invoke(other.api, 'getClientDoses', 'me', { organizationId: 'o1', clientId: 'c1' }), /Cliente non autorizzato/);
+  await assert.rejects(invoke(other.api, 'getClientDoses', 'me', { organizationId: 'piano', clientId: 'c1' }), /Cliente non autorizzato/);
   const deleted = harness({
     ...orgEntries(),
-    'organizations/o1/clients/c1': { status: 'deleted', nutritionistUids: ['me'] }
+    'organizations/piano/clients/c1': { status: 'deleted', nutritionistUids: ['me'] }
   });
-  await assert.rejects(invoke(deleted.api, 'getClientDoses', 'me', { organizationId: 'o1', clientId: 'c1' }), /Cliente non trovato/);
+  await assert.rejects(invoke(deleted.api, 'getClientDoses', 'me', { organizationId: 'piano', clientId: 'c1' }), /Cliente non trovato/);
 });
 
 // ---- updateClientDoseOverrides ----
 
 test('updateClientDoseOverrides: scrive override revisionati con audit, revisione intatta', async () => {
   const { api, store } = harness(orgEntries());
-  const before = JSON.stringify(store.get('organizations/o1/dietStructures/s1/revisions/r1'));
+  const before = JSON.stringify(store.get('organizations/piano/dietStructures/s1/revisions/r1'));
   const result = plain(await invoke(api, 'updateClientDoseOverrides', 'me', {
-    organizationId: 'o1', clientId: 'c1',
+    organizationId: 'piano', clientId: 'c1',
     doses: { pasta: { lunch: { training: 120 } } },
     frequencies: { legumes: { min: 2, max: 4 } },
     expectedRevision: 0
   }));
   assert.equal(result.revision, 1);
-  const saved = plain(store.get('organizations/o1/clients/c1/assignments/a-c1').clientOverrides);
+  const saved = plain(store.get('organizations/piano/clients/c1/assignments/a-c1').clientOverrides);
   assert.equal(saved.revision, 1);
   assert.deepEqual(saved.doses, { pasta: { lunch: { training: 120 } } });
   assert.deepEqual(saved.frequencies, { legumes: { min: 2, max: 4 } });
@@ -233,24 +237,24 @@ test('updateClientDoseOverrides: scrive override revisionati con audit, revision
   const audits = [...store.keys()].filter(key => key.includes('/auditLog/'));
   assert.equal(audits.length, 1);
   assert.equal(store.get(audits[0]).type, 'assignment.doses_updated');
-  assert.equal(JSON.stringify(store.get('organizations/o1/dietStructures/s1/revisions/r1')), before, 'revisione struttura non toccata (non-retroattività)');
+  assert.equal(JSON.stringify(store.get('organizations/piano/dietStructures/s1/revisions/r1')), before, 'revisione struttura non toccata (non-retroattività)');
 });
 
 test('updateClientDoseOverrides: concorrenza, validazione, stati non modificabili', async () => {
   const { api } = harness(orgEntries());
   await invoke(api, 'updateClientDoseOverrides', 'me', {
-    organizationId: 'o1', clientId: 'c1', doses: {}, frequencies: {}, expectedRevision: 0
+    organizationId: 'piano', clientId: 'c1', doses: {}, frequencies: {}, expectedRevision: 0
   });
   await assert.rejects(invoke(api, 'updateClientDoseOverrides', 'me', {
-    organizationId: 'o1', clientId: 'c1', doses: {}, frequencies: {}, expectedRevision: 0
+    organizationId: 'piano', clientId: 'c1', doses: {}, frequencies: {}, expectedRevision: 0
   }), /altro operatore/);
   await assert.rejects(invoke(api, 'updateClientDoseOverrides', 'me', {
-    organizationId: 'o1', clientId: 'c1',
+    organizationId: 'piano', clientId: 'c1',
     doses: { riso: { lunch: { training: 80 } } }, frequencies: {}, expectedRevision: 1
   }), /non presente nella struttura/);
   const revoked = harness(orgEntries({ assignmentStatus: 'revoked' }));
   await assert.rejects(invoke(revoked.api, 'updateClientDoseOverrides', 'me', {
-    organizationId: 'o1', clientId: 'c1', doses: {}, frequencies: {}, expectedRevision: 0
+    organizationId: 'piano', clientId: 'c1', doses: {}, frequencies: {}, expectedRevision: 0
   }), /non modificabile/);
 });
 
@@ -266,38 +270,38 @@ test('copyClientDoses: copia con intersezione famiglie, audit e provenienza', as
     }
   }));
   const result = plain(await invoke(api, 'copyClientDoses', 'me', {
-    organizationId: 'o1', fromClientId: 'c1', toClientId: 'c2', expectedRevision: 0
+    organizationId: 'piano', fromClientId: 'c1', toClientId: 'c2', expectedRevision: 0
   }));
   assert.equal(result.revision, 1);
   assert.deepEqual(result.copiedFamilies, ['pasta']);
   assert.deepEqual(result.skippedFamilies, ['quinoa'], 'famiglia assente nella struttura di destinazione');
-  const saved = plain(store.get('organizations/o1/clients/c2/assignments/a-c2').clientOverrides);
+  const saved = plain(store.get('organizations/piano/clients/c2/assignments/a-c2').clientOverrides);
   assert.deepEqual(saved.doses, { pasta: { lunch: { training: 120 } } });
   assert.deepEqual(saved.frequencies, { legumes: { min: 2 } });
   assert.equal(saved.copiedFromClientId, 'c1');
   const audits = [...store.keys()].filter(key => key.includes('/auditLog/'));
   assert.equal(store.get(audits[0]).type, 'assignment.doses_copied');
   // L'origine resta intatta.
-  assert.equal(store.get('organizations/o1/clients/c1/assignments/a-c1').clientOverrides.revision, 2);
+  assert.equal(store.get('organizations/piano/clients/c1/assignments/a-c1').clientOverrides.revision, 2);
 });
 
 test('copyClientDoses: rifiuti (stesso cliente, concorrenza, ruoli)', async () => {
   const { api } = harness(orgEntries({ clients: ['c1', 'c2'] }));
   await assert.rejects(invoke(api, 'copyClientDoses', 'me', {
-    organizationId: 'o1', fromClientId: 'c1', toClientId: 'c1', expectedRevision: 0
+    organizationId: 'piano', fromClientId: 'c1', toClientId: 'c1', expectedRevision: 0
   }), /diversi/);
   await invoke(api, 'updateClientDoseOverrides', 'me', {
-    organizationId: 'o1', clientId: 'c2', doses: {}, frequencies: {}, expectedRevision: 0
+    organizationId: 'piano', clientId: 'c2', doses: {}, frequencies: {}, expectedRevision: 0
   });
   await assert.rejects(invoke(api, 'copyClientDoses', 'me', {
-    organizationId: 'o1', fromClientId: 'c1', toClientId: 'c2', expectedRevision: 0
+    organizationId: 'piano', fromClientId: 'c1', toClientId: 'c2', expectedRevision: 0
   }), /altro operatore/);
   const other = harness({
     ...orgEntries({ clients: ['c1', 'c2'] }),
-    'organizations/o1/clients/c2': { status: 'active', nutritionistUids: ['other'], displayCode: 'CLI-c2' }
+    'organizations/piano/clients/c2': { status: 'active', nutritionistUids: ['other'], displayCode: 'CLI-c2' }
   });
   await assert.rejects(invoke(other.api, 'copyClientDoses', 'me', {
-    organizationId: 'o1', fromClientId: 'c1', toClientId: 'c2', expectedRevision: 0
+    organizationId: 'piano', fromClientId: 'c1', toClientId: 'c2', expectedRevision: 0
   }), /Cliente non autorizzato/);
 });
 
@@ -312,7 +316,7 @@ test('getMyAssignedProfile include gli override del cliente (metadati esclusi)',
   };
   const { api } = harness({
     ...orgEntries({ overrides }),
-    'accountClientLinks/user-c1': { status: 'active', organizationId: 'o1', clientId: 'c1' }
+    'accountClientLinks/user-c1': { status: 'active', organizationId: 'piano', clientId: 'c1' }
   });
   const result = plain(await invoke(api, 'getMyAssignedProfile', 'user-c1', {}));
   assert.equal(result.state, 'assigned');
@@ -321,4 +325,9 @@ test('getMyAssignedProfile include gli override del cliente (metadati esclusi)',
     doses: { pasta: { lunch: { training: 120 } } },
     frequencies: { legumes: { min: 2 } }
   });
+});
+
+test('orgId diversa da piano rifiutata', async () => {
+  const { api } = harness(orgEntries());
+  await assert.rejects(invoke(api, 'getClientDoses', 'me', { organizationId: 'vecchia', clientId: 'c1' }), /Organizzazione non valida/);
 });

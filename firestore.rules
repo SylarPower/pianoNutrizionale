@@ -178,27 +178,41 @@ service cloud.firestore {
       allow read, write, delete: if signedIn() && request.auth.uid == userId;
     }
 
-    // ----- Piano SaaS multi-tenant -----
+    // ----- Piano SaaS multi-tenant (singola org 'piano') -----
     // Le membership sono la fonte autorevole; i custom claims non bastano.
     // Tutte le mutazioni SaaS passano da Cloud Functions/Admin SDK. Il client
     // può leggere direttamente soltanto la propria membership e i clienti che
     // il tenant gli ha assegnato. Profilo attivo, regole e coda mapping vengono
     // restituiti da callable per impedire IDOR e selezione autonoma del ruleSet.
-    function activeTenantMember(organizationId) {
-      return signedIn()
-        && exists(/databases/$(database)/documents/organizations/$(organizationId)/members/$(request.auth.uid))
-        && get(/databases/$(database)/documents/organizations/$(organizationId)/members/$(request.auth.uid)).data.status == 'active'
-        && get(/databases/$(database)/documents/organizations/$(organizationId)/members/$(request.auth.uid)).data.role in ['admin', 'nutritionist'];
+    // Unica organizzazione: 'piano'. Ruolo org: solo nutritionist. Creatore:
+    // platformMembers/{uid} role admin.
+
+    function isSingleOrg(organizationId) {
+      return organizationId == 'piano';
     }
 
+    function isCreator() {
+      return signedIn()
+        && exists(/databases/$(database)/documents/platformMembers/$(request.auth.uid))
+        && get(/databases/$(database)/documents/platformMembers/$(request.auth.uid)).data.status == 'active'
+        && get(/databases/$(database)/documents/platformMembers/$(request.auth.uid)).data.role == 'admin';
+    }
+
+    function activeTenantMember(organizationId) {
+      return signedIn()
+        && isSingleOrg(organizationId)
+        && exists(/databases/$(database)/documents/organizations/$(organizationId)/members/$(request.auth.uid))
+        && get(/databases/$(database)/documents/organizations/$(organizationId)/members/$(request.auth.uid)).data.status == 'active'
+        && get(/databases/$(database)/documents/organizations/$(organizationId)/members/$(request.auth.uid)).data.role == 'nutritionist';
+    }
+
+    // Alias per compatibilità: admin organizzazione non esiste più, solo creatore.
     function tenantAdmin(organizationId) {
-      return activeTenantMember(organizationId)
-        && get(/databases/$(database)/documents/organizations/$(organizationId)/members/$(request.auth.uid)).data.role == 'admin';
+      return isCreator() && isSingleOrg(organizationId);
     }
 
     function authorizedNutritionist(organizationId, clientId) {
       return activeTenantMember(organizationId)
-        && get(/databases/$(database)/documents/organizations/$(organizationId)/members/$(request.auth.uid)).data.role == 'nutritionist'
         && get(/databases/$(database)/documents/organizations/$(organizationId)/clients/$(clientId)).data.nutritionistUids.hasAny([request.auth.uid]);
     }
 
@@ -237,22 +251,22 @@ service cloud.firestore {
     }
 
     match /organizations/{organizationId} {
-      allow read: if activeTenantMember(organizationId);
+      allow read: if isCreator() || activeTenantMember(organizationId);
       allow write: if false;
     }
 
     match /organizations/{organizationId}/members/{userId} {
-      allow read: if activeTenantMember(organizationId) && (request.auth.uid == userId || tenantAdmin(organizationId));
+      allow read: if isCreator() || (activeTenantMember(organizationId) && (request.auth.uid == userId || isCreator()));
       allow write: if false;
     }
 
     match /organizations/{organizationId}/clients/{clientId} {
-      allow read: if tenantAdmin(organizationId) || authorizedNutritionist(organizationId, clientId);
+      allow read: if isCreator() || authorizedNutritionist(organizationId, clientId);
       allow write: if false;
     }
 
     match /organizations/{organizationId}/clients/{clientId}/{document=**} {
-      allow read: if tenantAdmin(organizationId) || authorizedNutritionist(organizationId, clientId);
+      allow read: if isCreator() || authorizedNutritionist(organizationId, clientId);
       allow write: if false;
     }
 
@@ -267,19 +281,19 @@ service cloud.firestore {
       allow read, write: if false;
     }
 
-    // Inviti monouso: lettura ai contraenti (admin + chi ha creato l'invito).
+    // Inviti monouso: lettura al creatore + chi ha creato l'invito.
     // Il token in chiaro non è mai nel documento (solo hash); riscatto via
     // callable con binding allo username invitato.
     match /organizations/{organizationId}/invitations/{inviteId} {
-      allow read: if tenantAdmin(organizationId)
+      allow read: if isCreator()
         || (activeTenantMember(organizationId) && resource.data.createdBy == request.auth.uid);
       allow write: if false;
     }
 
-    // Richieste di collegamento: lettura ai contraenti (admin, professionista
-    // proponente, cliente destinatario). Accettazione solo via callable.
+    // Richieste di collegamento: lettura al creatore, professionista
+    // proponente, cliente destinatario. Accettazione solo via callable.
     match /organizations/{organizationId}/clientLinkRequests/{requestId} {
-      allow read: if tenantAdmin(organizationId)
+      allow read: if isCreator()
         || (activeTenantMember(organizationId) && resource.data.nutritionistUid == request.auth.uid)
         || (signedIn() && resource.data.targetUid == request.auth.uid);
       allow write: if false;

@@ -46,7 +46,11 @@
     <div class="workspace">
       <header class="topbar">
         <button id="mobile-menu" class="icon-button" aria-label="Apri menu" aria-expanded="false" aria-controls="console-sidebar">☰</button>
-        <label class="tenant-field"><span>Organizzazione</span><input id="organization-id" placeholder="organization-id" autocomplete="off"></label>
+        <div class="tenant-field">
+          <span>Organizzazione</span>
+          <div class="org-badge" id="org-badge" aria-label="Organizzazione attiva: piano"><span>◍</span><strong>piano</strong><small style="margin-left:6px;color:var(--text-muted);font-weight:600">unica</small></div>
+          <input id="organization-id" type="hidden" value="piano" autocomplete="off">
+        </div>
         <div class="topbar-user"><span class="avatar" id="admin-avatar">A</span><div><strong id="admin-name">Professionista</strong><small>Sessione verificata</small></div></div>
       </header>
 

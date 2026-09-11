@@ -4,8 +4,9 @@ const adminState = { user: null, reports: [], clients: [], ruleSets: [], structu
 let catalogIndexCache = null;
 let catalogCategoriesCache = [];
 const $ = id => document.getElementById(id);
+const SINGLE_ORG_ID = (typeof window !== 'undefined' && (window.PIANO_SINGLE_ORG_ID || window.PIANO_SAAS_CONFIG?.singleOrganizationId)) || 'piano';
 const escapeAdmin = value => String(value ?? '').replace(/[&<>'"]/g, char => ({ '&':'&amp;','<':'&lt;','>':'&gt;',"'":'&#39;','"':'&quot;' }[char]));
-const orgId = () => $('organization-id').value.trim();
+const orgId = () => SINGLE_ORG_ID;
 const isoFromLocal = value => value ? new Date(value).toISOString() : null;
 const idem = prefix => `${prefix}-${Date.now()}-${Math.random().toString(36).slice(2, 9)}`;
 
@@ -18,7 +19,7 @@ function adminError(error) {
   return error?.message || 'Operazione non riuscita. Riprova.';
 }
 
-function saveOrg() { localStorage.setItem('piano_admin_org', orgId()); }
+function saveOrg() { /* org singola, niente persistenza */ }
 
 async function loadReports({ append = false } = {}) {
   if (!orgId()) { $('report-feedback').textContent = 'Inserisci l’organizzazione per vedere la coda.'; return; }
@@ -962,8 +963,10 @@ function bindAdmin() {
     catch (error) { $('admin-login-error').textContent = adminError(error); }
   });
   $('admin-logout').addEventListener('click', () => adminSignOutUser());
-  $('organization-id').value = localStorage.getItem('piano_admin_org') || '';
-  $('organization-id').addEventListener('change', () => { saveOrg(); loadReports(); });
+  const orgInput = $('organization-id');
+  if (orgInput) orgInput.value = SINGLE_ORG_ID;
+  const orgBadge = $('org-badge');
+  if (orgBadge) orgBadge.innerHTML = `<span>◍</span><strong>${escapeAdmin(SINGLE_ORG_ID)}</strong><small style="margin-left:6px;color:var(--text-muted);font-weight:600">unica</small>`;
   $('refresh-reports').addEventListener('click', () => loadReports());
   $('report-status').addEventListener('change', () => loadReports());
   $('load-more-reports').addEventListener('click', () => loadReports({ append: true }));

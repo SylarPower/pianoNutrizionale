@@ -4,7 +4,7 @@ process.env.FIREBASE_AUTH_EMULATOR_HOST ||= '127.0.0.1:9099';
 const { initializeApp } = require('firebase-admin/app');
 const { getAuth } = require('firebase-admin/auth');
 const { getFirestore, Timestamp } = require('firebase-admin/firestore');
-const { checksum, structureRevisionChecksum, STRUCTURE_REVISION_SCHEMA_VERSION } = require('../src/domain');
+const { checksum } = require('../src/domain');
 const Domain = require('../../js/domain');
 
 initializeApp({ projectId: 'piano-nutrizionale-test' });
@@ -19,10 +19,11 @@ async function user(username) {
 }
 
 (async () => {
-  const [admin, nutritionist, patientA, patientB] = await Promise.all([
+  const [creator, nutritionist, patientA, patientB] = await Promise.all([
     user('admin-demo'), user('nutri-demo'), user('cliente-a'), user('cliente-b')
   ]);
   const now = Timestamp.now();
+  const orgId = 'piano';
   const rules = Domain.MELLER_GRAMMATURE.map(rule => ({
     family: rule.family, group: rule.group, label: rule.label,
     aliases: [rule.label], slots: JSON.parse(JSON.stringify(rule.slots))
@@ -30,17 +31,16 @@ async function user(username) {
   const body = { schemaVersion: 1, ruleSetId: 'base', version: '3', rules, overrides: [] };
   const ruleChecksum = checksum(body);
   const batch = db.batch();
-  batch.set(db.doc('organizations/demo'), { schemaVersion: 1, name: 'Studio Demo', status: 'active', createdAt: now, updatedAt: now, createdBy: admin.uid, updatedBy: admin.uid });
-  batch.set(db.doc(`organizations/demo/members/${admin.uid}`), { schemaVersion: 1, role: 'admin', status: 'active', createdAt: now, updatedAt: now, createdBy: admin.uid, updatedBy: admin.uid });
-  batch.set(db.doc(`organizations/demo/members/${nutritionist.uid}`), { schemaVersion: 1, role: 'nutritionist', status: 'active', createdAt: now, updatedAt: now, createdBy: admin.uid, updatedBy: admin.uid });
-  batch.set(db.doc('organizations/demo/clients/client-a'), { schemaVersion: 1, authUid: patientA.uid, displayCode: 'CL-001', status: 'active', nutritionistUids: [nutritionist.uid], createdAt: now, updatedAt: now, createdBy: admin.uid, updatedBy: admin.uid });
-  batch.set(db.doc('organizations/demo/clients/client-b'), { schemaVersion: 1, authUid: patientB.uid, displayCode: 'CL-002', status: 'active', nutritionistUids: [], createdAt: now, updatedAt: now, createdBy: admin.uid, updatedBy: admin.uid });
-  batch.set(db.doc(`accountClientLinks/${patientA.uid}`), { schemaVersion: 1, organizationId: 'demo', clientId: 'client-a', status: 'active', createdAt: now, updatedAt: now });
-  batch.set(db.doc(`accountClientLinks/${patientB.uid}`), { schemaVersion: 1, organizationId: 'demo', clientId: 'client-b', status: 'active', createdAt: now, updatedAt: now });
-  batch.set(db.doc(`platformMembers/${admin.uid}`), { schemaVersion: 1, role: 'admin', status: 'active', createdAt: now, updatedAt: now });
+  batch.set(db.doc(`organizations/${orgId}`), { schemaVersion: 1, name: 'Piano', status: 'active', createdAt: now, updatedAt: now, createdBy: creator.uid, updatedBy: creator.uid });
+  // Creatore = platformMembers admin (può tutto, non serve membership org admin)
+  batch.set(db.doc(`platformMembers/${creator.uid}`), { schemaVersion: 1, role: 'admin', status: 'active', username: 'admin-demo', createdAt: now, updatedAt: now });
+  // Nutritionist nella singola org
+  batch.set(db.doc(`organizations/${orgId}/members/${nutritionist.uid}`), { schemaVersion: 1, role: 'nutritionist', status: 'active', username: 'nutri-demo', createdAt: now, updatedAt: now, createdBy: creator.uid, updatedBy: creator.uid });
+  batch.set(db.doc(`organizations/${orgId}/clients/client-a`), { schemaVersion: 1, authUid: patientA.uid, displayCode: 'CL-001', status: 'active', nutritionistUids: [nutritionist.uid], createdAt: now, updatedAt: now, createdBy: creator.uid, updatedBy: creator.uid });
+  batch.set(db.doc(`organizations/${orgId}/clients/client-b`), { schemaVersion: 1, authUid: patientB.uid, displayCode: 'CL-002', status: 'active', nutritionistUids: [], createdAt: now, updatedAt: now, createdBy: creator.uid, updatedBy: creator.uid });
+  batch.set(db.doc(`accountClientLinks/${patientA.uid}`), { schemaVersion: 1, organizationId: orgId, clientId: 'client-a', status: 'active', createdAt: now, updatedAt: now });
+  batch.set(db.doc(`accountClientLinks/${patientB.uid}`), { schemaVersion: 1, organizationId: orgId, clientId: 'client-b', status: 'active', createdAt: now, updatedAt: now });
   // Catalogo globale v2 + struttura dieta seed derivati dallo split
-  // deterministico dell'estratto Meller autorevole (nessun ingrediente
-  // provvisorio, nessuna quantità nel catalogo ingredienti).
   const extract = JSON.parse(require('fs').readFileSync(require('path').join(__dirname, '../../docs/catalogo-ingredienti-meller.json'), 'utf8'));
   const seed = Domain.splitMellerSeed(extract);
   const catalogChecksum = checksum({ schemaVersion: 1, categories: seed.categories, ingredients: seed.ingredients });
@@ -48,10 +48,10 @@ async function user(username) {
   seed.ingredients.forEach(ingredient => batch.set(db.doc(`globalIngredientCatalog/current/ingredients/${ingredient.ingredientId}`), { schemaVersion: 1, ...ingredient, catalogVersion: 1, updatedAt: now }));
   batch.set(db.doc('globalIngredientCatalog/current/meta/summary'), { schemaVersion: 1, catalogVersion: 1, ingredientCount: seed.ingredients.length, categoryCount: seed.categories.length, checksum: catalogChecksum, updatedAt: now });
   const structureChecksum = checksum({ schemaVersion: 1, rules: seed.structureSeed.rules, alternativeGroups: seed.structureSeed.alternativeGroups });
-  batch.set(db.doc('organizations/demo/dietStructures/struttura-base'), { schemaVersion: 1, name: 'Struttura base Meller', status: 'active', ownerUid: nutritionist.uid, createdBy: nutritionist.uid, currentRevisionId: '1', latestChecksum: structureChecksum, ruleCount: seed.structureSeed.rules.length, ingredientCatalogVersion: 1, createdAt: now, updatedAt: now });
-  batch.set(db.doc('organizations/demo/dietStructures/struttura-base/revisions/1'), { schemaVersion: 1, revisionId: '1', structureId: 'struttura-base', rules: seed.structureSeed.rules, alternativeGroups: seed.structureSeed.alternativeGroups, status: 'published', checksum: structureChecksum, compatibleClientSchema: 6, effectiveAt: now, changelog: 'Seed emulator da split Meller', createdAt: now, updatedAt: now, createdBy: nutritionist.uid, publishedAt: now, publishedBy: nutritionist.uid });
-  batch.set(db.doc('globalRuleSets/base'), { schemaVersion: 1, ruleSetId: 'base', scope: 'global', latestPublishedVersion: '3', latestChecksum: ruleChecksum, createdAt: now, updatedAt: now, createdBy: admin.uid, updatedBy: admin.uid });
-  batch.set(db.doc('globalRuleSets/base/versions/3'), { ...body, scope: 'global', status: 'published', checksum: ruleChecksum, compatibleClientSchema: 1, effectiveAt: now, changelog: 'Fixture emulator', createdAt: now, updatedAt: now, createdBy: admin.uid, updatedBy: admin.uid, publishedAt: now, publishedBy: admin.uid });
+  batch.set(db.doc(`organizations/${orgId}/dietStructures/struttura-base`), { schemaVersion: 1, name: 'Struttura base Meller', status: 'active', ownerUid: nutritionist.uid, createdBy: nutritionist.uid, currentRevisionId: '1', latestChecksum: structureChecksum, ruleCount: seed.structureSeed.rules.length, ingredientCatalogVersion: 1, createdAt: now, updatedAt: now });
+  batch.set(db.doc(`organizations/${orgId}/dietStructures/struttura-base/revisions/1`), { schemaVersion: 1, revisionId: '1', structureId: 'struttura-base', rules: seed.structureSeed.rules, alternativeGroups: seed.structureSeed.alternativeGroups, status: 'published', checksum: structureChecksum, compatibleClientSchema: 6, effectiveAt: now, changelog: 'Seed emulator da split Meller', createdAt: now, updatedAt: now, createdBy: nutritionist.uid, publishedAt: now, publishedBy: nutritionist.uid });
+  batch.set(db.doc('globalRuleSets/base'), { schemaVersion: 1, ruleSetId: 'base', scope: 'global', latestPublishedVersion: '3', latestChecksum: ruleChecksum, createdAt: now, updatedAt: now, createdBy: creator.uid, updatedBy: creator.uid });
+  batch.set(db.doc('globalRuleSets/base/versions/3'), { ...body, scope: 'global', status: 'published', checksum: ruleChecksum, compatibleClientSchema: 1, effectiveAt: now, changelog: 'Fixture emulator', createdAt: now, updatedAt: now, createdBy: creator.uid, updatedBy: creator.uid, publishedAt: now, publishedBy: creator.uid });
   await batch.commit();
-  console.log(JSON.stringify({ organizationId: 'demo', usernames: ['admin-demo','nutri-demo','cliente-a','cliente-b'], password, ruleSet: { scope: 'global', ruleSetId: 'base', version: '3', checksum: ruleChecksum } }, null, 2));
+  console.log(JSON.stringify({ organizationId: orgId, usernames: ['admin-demo','nutri-demo','cliente-a','cliente-b'], password, ruleSet: { scope: 'global', ruleSetId: 'base', version: '3', checksum: ruleChecksum } }, null, 2));
 })().catch(error => { console.error(error); process.exitCode = 1; });

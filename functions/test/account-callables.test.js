@@ -6,7 +6,7 @@ const vm = require('node:vm');
 const domain = require('../src/domain');
 
 // Carica le callable reali, inclusi wrapper autenticazione e gestione errori.
-// Lo stub rifiuta collectionGroup: riproduce il percorso che falliva in prod.
+// Singola org 'piano', creatore = platformMembers admin.
 function harness(entries = {}) {
   const store = new Map(Object.entries(entries));
   const reads = [];
@@ -52,21 +52,30 @@ function harness(entries = {}) {
 }
 const invoke = (api, name, uid = 'me', data = {}) => api[name]({ auth: uid ? { uid } : null, data });
 
-test('membership legge doc UID senza campo uid; esclude ruoli/status non autorizzati', async () => {
+test('membership legge doc UID senza campo uid; solo nutritionist nella singola org', async () => {
   const { api, reads } = harness({
-    'organizations/a': {}, 'organizations/b': {}, 'organizations/c': {}, 'organizations/d': {}, 'organizations/e': {},
-    'organizations/a/members/me': { role: 'nutritionist', status: 'active', username: 'doctor' },
-    'organizations/b/members/me': { role: 'admin', status: 'active' },
-    'organizations/c/members/me': { role: 'admin', status: 'suspended' },
-    'organizations/d/members/me': { role: 'client', status: 'active' },
-    'organizations/e/members/other': { role: 'admin', status: 'active' },
+    'organizations/piano': { name: 'Piano' },
+    'organizations/piano/members/me': { role: 'nutritionist', status: 'active', username: 'doctor' },
     'platformMembers/me': { role: 'admin', status: 'active' }
   });
   const result = await invoke(api, 'getMyMemberships');
-  assert.deepEqual(JSON.parse(JSON.stringify(result)), {
-    memberships: [{ organizationId: 'a', role: 'nutritionist', username: 'doctor' }, { organizationId: 'b', role: 'admin', username: null }], platformAdmin: true
+  assert.deepEqual(JSON.parse(JSON.stringify(result)).memberships, [{ organizationId: 'piano', role: 'nutritionist', username: 'doctor' }]);
+  assert.equal(result.platformAdmin, true);
+  assert.equal(result.singleOrganizationId, 'piano');
+  assert.ok(!reads.some(path => path.includes('/other')));
+});
+
+test('membership vecchia org diversa da piano è ignorata', async () => {
+  const { api } = harness({
+    'organizations/org-a': { name: 'Vecchia' },
+    'organizations/org-a/members/me': { role: 'nutritionist', status: 'active', username: 'doctor' },
+    'organizations/piano/members/me': { role: 'nutritionist', status: 'suspended' },
+    'platformMembers/me': { role: 'admin', status: 'active' }
   });
-  assert.ok(!reads.some(path => path.endsWith('/other')));
+  const result = await invoke(api, 'getMyMemberships');
+  // Vecchia org ignorata, piano sospesa → nessuna membership attiva, ma platformAdmin true
+  assert.equal(result.memberships.length, 0);
+  assert.equal(result.platformAdmin, true);
 });
 
 test('membership vuote e admin piattaforma inattivo restano fail-closed', async () => {
@@ -78,23 +87,23 @@ test('membership vuote e admin piattaforma inattivo restano fail-closed', async 
 
 test('lista inviti isola UID, risolve nomi e non nasconde pendenti dopo 20 storici', async () => {
   const entries = {
-    'organizations/a': { name: 'Studio A' }, 'organizations/b': { name: 'Studio B' },
-    'accountClientLinks/me': { organizationId: 'b', clientId: 'client-me', status: 'active' },
-    'organizations/a/clientLinkRequests/foreign': { targetUid: 'other', status: 'pending', organizationId: 'a' }
+    'organizations/piano': { name: 'Studio Piano' },
+    'accountClientLinks/me': { organizationId: 'piano', clientId: 'client-me', status: 'active' },
+    'organizations/piano/clientLinkRequests/foreign': { targetUid: 'other', status: 'pending', organizationId: 'piano' }
   };
-  for (let i = 0; i < 25; i++) entries[`organizations/a/clientLinkRequests/old${i}`] = { targetUid: 'me', status: 'rejected', organizationId: 'a' };
-  entries['organizations/a/clientLinkRequests/pending'] = { targetUid: 'me', status: 'pending', organizationId: 'a' };
+  for (let i = 0; i < 25; i++) entries[`organizations/piano/clientLinkRequests/old${i}`] = { targetUid: 'me', status: 'rejected', organizationId: 'piano' };
+  entries['organizations/piano/clientLinkRequests/pending'] = { targetUid: 'me', status: 'pending', organizationId: 'piano' };
   const { api } = harness(entries);
   const result = await invoke(api, 'listMyClientLinkRequests');
   assert.equal(result.requests.length, 1);
   assert.equal(result.requests[0].requestId, 'pending');
-  assert.equal(result.requests[0].organizationName, 'Studio A');
-  assert.equal(result.link.organizationName, 'Studio B');
+  assert.equal(result.requests[0].organizationName, 'Studio Piano');
+  assert.equal(result.link.organizationName, 'Studio Piano');
   assert.equal(result.link.clientId, 'client-me');
 });
 
 test('assenza di inviti e link revocato non diventano errore o link attivo', async () => {
-  const { api } = harness({ 'accountClientLinks/me': { organizationId: 'a', status: 'revoked' } });
+  const { api } = harness({ 'accountClientLinks/me': { organizationId: 'piano', status: 'revoked' } });
   const result = await invoke(api, 'listMyClientLinkRequests');
   assert.equal(result.requests.length, 0);
   assert.equal(result.link, null);
@@ -102,8 +111,8 @@ test('assenza di inviti e link revocato non diventano errore o link attivo', asy
 
 test('risposta a invito altrui non può accedere al documento e usa query senza group', async () => {
   const { api } = harness({
-    'organizations/a': {},
-    'organizations/a/clientLinkRequests/foreign': { targetUid: 'other', status: 'pending', organizationId: 'a' }
+    'organizations/piano': {},
+    'organizations/piano/clientLinkRequests/foreign': { targetUid: 'other', status: 'pending', organizationId: 'piano' }
   });
   await assert.rejects(invoke(api, 'respondClientLink', 'me', { requestId: 'foreign', decision: 'accept' }), { code: 'not-found' });
 });
@@ -114,4 +123,11 @@ test('callable richiedono autenticazione e rifiutano payload inattesi', async ()
     await assert.rejects(invoke(api, name, null), { code: 'unauthenticated' });
     await assert.rejects(invoke(api, name, 'me', { uid: 'other' }), { code: 'invalid-argument' });
   }
+});
+
+test('orgId diversa da piano rifiutata nelle callable che richiedono membership', async () => {
+  const { api } = harness({
+    'organizations/piano/members/me': { role: 'nutritionist', status: 'active' }
+  });
+  await assert.rejects(invoke(api, 'listAuthorizedClients', 'me', { organizationId: 'org-a' }), { code: 'permission-denied' });
 });

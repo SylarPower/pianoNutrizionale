@@ -21,6 +21,7 @@
   // controllo piano «quantità adattate alle linee guida», catalogo globale e
   // Strutture dieta v2.
   const VERSION = 6;
+  const SINGLE_ORGANIZATION_ID = 'piano';
   const DAYS = ['monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday', 'sunday'];
   const SLOTS = ['breakfast', 'snack1', 'lunch', 'snack2', 'dinner'];
   const MELLER_MAIN_SLOTS = ['lunch', 'dinner'];
@@ -2848,6 +2849,7 @@ const PROTEIN_CATEGORY_LABELS = {
     searchCatalog,
     structureRevisionToMellerRules,
     MELLER_FREE_DISPLAY_LABELS,
-    splitMellerSeed
+    splitMellerSeed,
+    SINGLE_ORGANIZATION_ID
   };
 });
