@@ -313,3 +313,25 @@ test('Profilo nutrizionale: flag SaaS disattivato non mostra mai la sezione', ()
     window.PIANO_SAAS_CONFIG.enabled = previous;
   }
 });
+
+test('errore collegamento non viene attribuito alla modalità offline e consente riprova', async () => {
+  const previous = window.callSaasFunction;
+  const previousLocation = window.location;
+  window.location = { hash: '#settings' };
+  window.callSaasFunction = async () => { throw new Error('internal'); };
+  try {
+    await refreshClientLinkState();
+    assert.equal(appState.clientLink.error, true);
+    const html = renderClientLinkSection();
+    assert.match(html, /Stato del collegamento non disponibile/);
+    assert.doesNotMatch(html, /offline|Nessun collegamento/);
+    assert.match(html, /onclick="refreshClientLinkState\(\)"/);
+    window.callSaasFunction = async () => ({ requests: [], link: { organizationId: 'org-1', organizationName: 'Studio ripristinato', clientId: 'c1' } });
+    await refreshClientLinkState();
+    assert.match(renderClientLinkSection(), /Studio ripristinato/);
+    assert.doesNotMatch(renderClientLinkSection(), /Stato del collegamento non disponibile/);
+  } finally {
+    window.callSaasFunction = previous;
+    window.location = previousLocation;
+  }
+});
