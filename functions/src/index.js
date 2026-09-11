@@ -7,7 +7,7 @@ const { logger } = require('firebase-functions');
 const { initializeApp } = require('firebase-admin/app');
 const { getFirestore, FieldValue, Timestamp } = require('firebase-admin/firestore');
 const {
-  ROLES, REPORT_STATUSES, STRUCTURE_REVISION_SCHEMA_VERSION, exactObject, text, optionalText, id, checksum,
+  SINGLE_ORGANIZATION_ID, ROLES, REPORT_STATUSES, STRUCTURE_REVISION_SCHEMA_VERSION, exactObject, text, optionalText, id, checksum,
   hashToken, normalizeUsername,
   reportKey, validateReport, validateMapping, validateRuleSetRules, validateAssignment, validateStructureAssignment,
   validateDietStructureRules, validateAlternativeGroups, structureRevisionChecksum, verifyStructureRevision, effectiveAssignment,
@@ -45,22 +45,49 @@ function callable(handler) {
   });
 }
 
-async function membership(organizationId, uid) {
+// ---- Organizzazione singola ----
+// Tutta la piattaforma usa una sola organizzazione: 'piano'. Qualunque orgId
+// diverso è rifiutato (restringimento, mai allentamento). Il campo org non è
+// più digitabile in console: è assegnato di default.
+function enforceSingleOrg(organizationId) {
   const orgId = id(organizationId, 'organizationId');
+  if (orgId !== SINGLE_ORGANIZATION_ID) {
+    throw new HttpsError('permission-denied', 'Organizzazione non valida: usa quella predefinita');
+  }
+  return orgId;
+}
+
+async function membership(organizationId, uid) {
+  const orgId = enforceSingleOrg(organizationId);
   const snap = await db.doc(`organizations/${orgId}/members/${uid}`).get();
   const value = snap.data();
   if (!snap.exists || value?.status !== 'active' || !ROLES.has(value?.role)) {
     throw new HttpsError('permission-denied', 'Membership non valida');
   }
-  return { organizationId: orgId, uid, role: value.role };
+  return { organizationId: orgId, uid, role: value.role, isCreator: false };
 }
 
 async function platformAdmin(uid) {
   const snap = await db.doc(`platformMembers/${uid}`).get();
   if (!snap.exists || snap.data()?.status !== 'active' || snap.data()?.role !== 'admin') {
-    throw new HttpsError('permission-denied', 'Ruolo platform admin richiesto');
+    throw new HttpsError('permission-denied', 'Ruolo creatore richiesto');
   }
-  return { uid, role: 'admin' };
+  return { uid, role: 'creator', isCreator: true, organizationId: SINGLE_ORGANIZATION_ID };
+}
+
+async function isCreatorUid(uid) {
+  const snap = await db.doc(`platformMembers/${uid}`).get();
+  return snap.exists && snap.data()?.status === 'active' && snap.data()?.role === 'admin';
+}
+
+// Actor: creatore (platformMembers admin) ha pieni poteri e bypassa la
+// membership org; altrimenti serve membership nutritionist attiva nella org singola.
+async function actorContext(organizationId, uid) {
+  const orgId = enforceSingleOrg(organizationId);
+  if (await isCreatorUid(uid)) {
+    return { organizationId: orgId, uid, role: 'creator', isCreator: true };
+  }
+  return await membership(orgId, uid);
 }
 
 async function authorizedClient(actor, clientId) {
@@ -71,6 +98,7 @@ async function authorizedClient(actor, clientId) {
   if (actor.role === 'nutritionist' && !(client.nutritionistUids || []).includes(actor.uid)) {
     throw new HttpsError('permission-denied', 'Cliente non autorizzato');
   }
+  // creator bypassa il controllo nutritionistUids
   return { ref, id: snap.id, ...client };
 }
 
@@ -271,6 +299,10 @@ exports.getMyAssignedProfile = callable(async (_data, uid) => {
   const link = await db.doc(`accountClientLinks/${uid}`).get();
   if (!link.exists || link.data()?.status !== 'active') return { state: 'unassigned', fallback: 'original-only' };
   const { organizationId, clientId } = link.data();
+  if (organizationId !== SINGLE_ORGANIZATION_ID) {
+    // Vecchie org diverse dalla singola non servono più profili: original-only
+    return { state: 'unassigned', fallback: 'original-only' };
+  }
   const client = await db.doc(`organizations/${organizationId}/clients/${clientId}`).get();
   if (!client.exists || client.data()?.authUid !== uid || client.data()?.status !== 'active') {
     return { state: 'unassigned', fallback: 'original-only' };
@@ -321,6 +353,7 @@ exports.listMyNotifications = callable(async (data, uid) => {
   exactObject(data, []);
   const link = await db.doc(`accountClientLinks/${uid}`).get();
   if (!link.exists || link.data()?.status !== 'active') return { notifications: [] };
+  if (link.data().organizationId !== SINGLE_ORGANIZATION_ID) return { notifications: [] };
   const snapshot = await db.collection(`organizations/${link.data().organizationId}/notifications`)
     .where('recipientUid', '==', uid).orderBy('createdAt', 'desc').limit(30).get();
   return { notifications: snapshot.docs.map(doc => ({ id: doc.id, type: doc.data().type, subjectId: doc.data().subjectId, readAt: doc.data().readAt, createdAt: doc.data().createdAt })) };
@@ -330,6 +363,7 @@ exports.markNotificationRead = callable(async (data, uid) => {
   exactObject(data, ['notificationId']);
   const link = await db.doc(`accountClientLinks/${uid}`).get();
   if (!link.exists || link.data()?.status !== 'active') throw new HttpsError('permission-denied', 'Profilo non autorizzato');
+  if (link.data().organizationId !== SINGLE_ORGANIZATION_ID) throw new HttpsError('permission-denied', 'Profilo non autorizzato');
   const ref = db.doc(`organizations/${link.data().organizationId}/notifications/${id(data.notificationId, 'notificationId')}`);
   await db.runTransaction(async tx => {
     const snap = await tx.get(ref);
@@ -346,6 +380,7 @@ exports.submitMappingReport = callable(async (data, uid) => {
     throw new HttpsError('permission-denied', 'Profilo cliente non autorizzato');
   }
   const { organizationId, clientId } = link.data();
+  if (organizationId !== SINGLE_ORGANIZATION_ID) throw new HttpsError('permission-denied', 'Profilo cliente non autorizzato');
   const client = await db.doc(`organizations/${organizationId}/clients/${clientId}`).get();
   if (!client.exists || client.data()?.authUid !== uid) throw new HttpsError('permission-denied', 'Profilo cliente non autorizzato');
 
@@ -393,7 +428,7 @@ exports.submitMappingReport = callable(async (data, uid) => {
 
 exports.listMappingReports = callable(async (data, uid) => {
   exactObject(data, ['organizationId', 'status', 'pageSize', 'cursor']);
-  const actor = await membership(data.organizationId, uid);
+  const actor = await actorContext(data.organizationId, uid);
   const pageSize = Math.min(Math.max(Number(data.pageSize || 25), 1), 50);
   const status = data.status ? text(data.status, 'status') : null;
   if (status && !REPORT_STATUSES.has(status)) throw new HttpsError('invalid-argument', 'Stato non valido');
@@ -419,7 +454,7 @@ exports.listMappingReports = callable(async (data, uid) => {
 
 exports.proposeMapping = callable(async (data, uid) => {
   exactObject(data, ['organizationId', 'reportId', 'mapping', 'rationale', 'idempotencyKey']);
-  const actor = await membership(data.organizationId, uid);
+  const actor = await actorContext(data.organizationId, uid);
   const reportId = id(data.reportId, 'reportId');
   const mapping = validateMapping(data.mapping);
   const rationale = text(data.rationale, 'rationale', { min: 3, max: 500 });
@@ -448,8 +483,8 @@ exports.publishMapping = callable(async (data, uid) => {
   const idem = id(data.idempotencyKey, 'idempotencyKey');
   let actor;
   if (targetScope === 'global') actor = await platformAdmin(uid);
-  else actor = await membership(data.organizationId, uid);
-  const orgId = id(data.organizationId, 'organizationId');
+  else actor = await actorContext(data.organizationId, uid);
+  const orgId = enforceSingleOrg(data.organizationId);
   const proposalRef = db.doc(`organizations/${orgId}/mappingProposals/${proposalId}`);
   const proposal = await proposalRef.get();
   if (!proposal.exists) throw new HttpsError('not-found', 'Proposta non trovata');
@@ -480,7 +515,7 @@ exports.publishMapping = callable(async (data, uid) => {
 
 exports.listAuthorizedClients = callable(async (data, uid) => {
   exactObject(data, ['organizationId']);
-  const actor = await membership(data.organizationId, uid);
+  const actor = await actorContext(data.organizationId, uid);
   let query = db.collection(`organizations/${actor.organizationId}/clients`).where('status', '==', 'active');
   if (actor.role === 'nutritionist') query = query.where('nutritionistUids', 'array-contains', uid);
   const snapshot = await query.limit(100).get();
@@ -490,8 +525,8 @@ exports.listAuthorizedClients = callable(async (data, uid) => {
 exports.publishRuleSetVersion = callable(async (data, uid) => {
   exactObject(data, ['organizationId', 'scope', 'ruleSetId', 'version', 'rules', 'overrides', 'effectiveAt', 'changelog', 'reviewNotes', 'idempotencyKey']);
   const scope = text(data.scope, 'scope', { pattern: /^(tenant|global)$/ });
-  const orgId = id(data.organizationId, 'organizationId');
-  const actor = scope === 'global' ? await platformAdmin(uid) : await membership(orgId, uid);
+  const orgId = enforceSingleOrg(data.organizationId);
+  const actor = scope === 'global' ? await platformAdmin(uid) : await actorContext(orgId, uid);
   const ruleSetId = id(data.ruleSetId, 'ruleSetId');
   const version = id(String(data.version), 'version');
   const rules = validateRuleSetRules(data.rules);
@@ -529,7 +564,7 @@ exports.publishRuleSetVersion = callable(async (data, uid) => {
 exports.previewClientRuleSet = callable(async (data, uid) => {
   exactObject(data, ['organizationId', 'clientId', 'ruleSet']);
   exactObject(data.ruleSet, ['scope', 'ruleSetId', 'version', 'checksum'], 'ruleSet');
-  const actor = await membership(data.organizationId, uid);
+  const actor = await actorContext(data.organizationId, uid);
   const client = await authorizedClient(actor, data.clientId);
   const pointer = {
     scope: text(data.ruleSet.scope, 'ruleSet.scope', { pattern: /^(global|tenant)$/ }),
@@ -558,7 +593,7 @@ exports.previewClientRuleSet = callable(async (data, uid) => {
 
 exports.assignClientRuleSet = callable(async (data, uid) => {
   const input = validateAssignment(data);
-  const actor = await membership(input.organizationId, uid);
+  const actor = await actorContext(input.organizationId, uid);
   const client = await authorizedClient(actor, input.clientId);
   const versionRef = await ruleVersionRef(actor.organizationId, input.ruleSet);
   const version = await versionRef.get();
@@ -606,7 +641,7 @@ exports.assignClientRuleSet = callable(async (data, uid) => {
 // client già rilasciati che risolvono ancora ruleSets legacy.
 exports.listRuleSets = callable(async (data, uid) => {
   exactObject(data, ['organizationId']);
-  const actor = await membership(data.organizationId, uid);
+  const actor = await actorContext(data.organizationId, uid);
   let query = db.collection(`organizations/${actor.organizationId}/ruleSets`);
   if (actor.role === 'nutritionist') query = query.where('createdBy', '==', uid);
   const snapshot = await query.limit(50).get();
@@ -631,7 +666,7 @@ exports.listRuleSets = callable(async (data, uid) => {
 // `ruleSetId` resta SOLO per retrocompatibilità dei client già rilasciati.
 exports.assignClientStructure = callable(async (data, uid) => {
   const input = validateStructureAssignment(data);
-  const actor = await membership(input.organizationId, uid);
+  const actor = await actorContext(input.organizationId, uid);
   const client = await authorizedClient(actor, input.clientId);
   let structurePointer = null;
   let legacyPointer = null;
@@ -767,7 +802,7 @@ function isoOrNull(value) {
 
 exports.getClientDoses = callable(async (data, uid) => {
   const input = validateGetClientDoses(data);
-  const actor = await membership(input.organizationId, uid);
+  const actor = await actorContext(input.organizationId, uid);
   const client = await authorizedClient(actor, input.clientId);
   const context = await loadClientDoseContext(actor, client, input.assignmentId);
   if (!context.assignment) {
@@ -806,7 +841,7 @@ exports.getClientDoses = callable(async (data, uid) => {
 
 exports.updateClientDoseOverrides = callable(async (data, uid) => {
   const input = validateUpdateClientDoseOverrides(data);
-  const actor = await membership(input.organizationId, uid);
+  const actor = await actorContext(input.organizationId, uid);
   const client = await authorizedClient(actor, input.clientId);
   const context = await loadClientDoseContext(actor, client, input.assignmentId);
   if (!context.assignment) throw new HttpsError('failed-precondition', 'Il cliente non ha un’assegnazione attiva da personalizzare');
@@ -846,7 +881,7 @@ exports.updateClientDoseOverrides = callable(async (data, uid) => {
 
 exports.copyClientDoses = callable(async (data, uid) => {
   const input = validateCopyClientDoses(data);
-  const actor = await membership(input.organizationId, uid);
+  const actor = await actorContext(input.organizationId, uid);
   const from = await authorizedClient(actor, input.fromClientId);
   const to = await authorizedClient(actor, input.toClientId);
   const fromContext = await loadClientDoseContext(actor, from, null);
@@ -898,8 +933,8 @@ exports.copyClientDoses = callable(async (data, uid) => {
 
 // Sezione "Strutture dieta" (schema v2, docs/schema-catalogo-strutture-v2.json):
 // aggregato mutabile + revisioni immutabili, privacy per ownerUid. Il
-// nutritionist vede/tocca solo le proprie strutture; l'admin org le vede
-// tutte. Niente campo "Versione" verso l'UI; il checksum è riservato all'admin.
+// nutritionist vede/tocca solo le proprie strutture; il creatore le vede
+// tutte. Niente campo "Versione" verso l'UI; il checksum è riservato al creatore.
 
 function structureDoc(structure, { includeChecksum = false } = {}) {
   const data = structure.data();
@@ -946,7 +981,7 @@ async function authorizedStructure(actor, structureId, { mustOwn = false } = {})
   const ref = db.doc(`organizations/${actor.organizationId}/dietStructures/${structureId}`);
   const doc = await ref.get();
   if (!doc.exists) throw new HttpsError('not-found', 'Struttura dieta non trovata');
-  if ((mustOwn || actor.role === 'nutritionist') && (doc.data().ownerUid || doc.data().createdBy) !== actor.uid) {
+  if (!actor.isCreator && (mustOwn || actor.role === 'nutritionist') && (doc.data().ownerUid || doc.data().createdBy) !== actor.uid) {
     throw new HttpsError('permission-denied', 'Puoi gestire soltanto le tue strutture dieta');
   }
   return { ref, doc };
@@ -954,7 +989,7 @@ async function authorizedStructure(actor, structureId, { mustOwn = false } = {})
 
 exports.listDietStructures = callable(async (data, uid) => {
   exactObject(data, ['organizationId']);
-  const actor = await membership(data.organizationId, uid);
+  const actor = await actorContext(data.organizationId, uid);
   let query = db.collection(`organizations/${actor.organizationId}/dietStructures`);
   if (actor.role === 'nutritionist') query = query.where('ownerUid', '==', uid);
   const snapshot = await query.limit(100).get();
@@ -966,7 +1001,7 @@ exports.listDietStructures = callable(async (data, uid) => {
 
 exports.getDietStructureRevision = callable(async (data, uid) => {
   exactObject(data, ['organizationId', 'structureId', 'revisionId']);
-  const actor = await membership(data.organizationId, uid);
+  const actor = await actorContext(data.organizationId, uid);
   const { doc } = await authorizedStructure(actor, data.structureId);
   const revisionId = data.revisionId == null || data.revisionId === ''
     ? doc.data().currentRevisionId
@@ -974,7 +1009,7 @@ exports.getDietStructureRevision = callable(async (data, uid) => {
   if (!revisionId) throw new HttpsError('not-found', 'Nessuna revisione pubblicata');
   const revision = await doc.ref.collection('revisions').doc(revisionId).get();
   if (!revision.exists) throw new HttpsError('not-found', 'Revisione non trovata');
-  const structure = structureDoc(doc, { includeChecksum: actor.role === 'admin' });
+  const structure = structureDoc(doc, { includeChecksum: Boolean(actor.isCreator) });
   return {
     structure,
     revision: {
@@ -982,7 +1017,7 @@ exports.getDietStructureRevision = callable(async (data, uid) => {
       rules: revision.data().rules || [],
       alternativeGroups: revision.data().alternativeGroups || [],
       ingredientCatalogVersion: revision.data().ingredientCatalogVersion ?? null,
-      checksum: actor.role === 'admin' ? revision.data().checksum || null : undefined,
+      checksum: actor.isCreator ? revision.data().checksum || null : undefined,
       publishedAt: revision.data().publishedAt?.toDate?.()?.toISOString() || null,
       changelog: revision.data().changelog || null,
       restoredFromRevisionId: revision.data().restoredFromRevisionId || null
@@ -992,7 +1027,7 @@ exports.getDietStructureRevision = callable(async (data, uid) => {
 
 exports.createDietStructure = callable(async (data, uid) => {
   exactObject(data, ['organizationId', 'name', 'rules', 'alternativeGroups', 'idempotencyKey']);
-  const actor = await membership(data.organizationId, uid);
+  const actor = await actorContext(data.organizationId, uid);
   const name = text(data.name, 'name', { min: 3, max: 80 });
   const rules = validateDietStructureRules(data.rules);
   const alternativeGroups = validateAlternativeGroups(data.alternativeGroups);
@@ -1025,7 +1060,7 @@ exports.createDietStructure = callable(async (data, uid) => {
 
 exports.updateDietStructureRevision = callable(async (data, uid) => {
   exactObject(data, ['organizationId', 'structureId', 'name', 'rules', 'alternativeGroups', 'changelog', 'restoredFromRevisionId', 'idempotencyKey']);
-  const actor = await membership(data.organizationId, uid);
+  const actor = await actorContext(data.organizationId, uid);
   const rules = validateDietStructureRules(data.rules);
   const alternativeGroups = validateAlternativeGroups(data.alternativeGroups);
   const idem = id(data.idempotencyKey, 'idempotencyKey');
@@ -1063,7 +1098,7 @@ exports.updateDietStructureRevision = callable(async (data, uid) => {
 
 exports.archiveDietStructure = callable(async (data, uid) => {
   exactObject(data, ['organizationId', 'structureId', 'archived', 'idempotencyKey']);
-  const actor = await membership(data.organizationId, uid);
+  const actor = await actorContext(data.organizationId, uid);
   const idem = id(data.idempotencyKey, 'idempotencyKey');
   if (typeof data.archived !== 'boolean') throw new HttpsError('invalid-argument', 'archived deve essere booleano');
   const { ref } = await authorizedStructure(actor, data.structureId, { mustOwn: actor.role === 'nutritionist' });
@@ -1079,11 +1114,11 @@ exports.archiveDietStructure = callable(async (data, uid) => {
 
 // CONFRONTA (sola lettura, matrice server-side): confronta le revisioni
 // correnti di 2-8 strutture. Il nutritionist può confrontare solo le proprie;
-// l'admin tutte. Non modifica dati; le differenze sono calcolate per famiglia
+// il creatore tutte. Non modifica dati; le differenze sono calcolate per famiglia
 // (presenza, stato, ingredienti, dosi) e per gruppi alternativi.
 exports.compareDietStructures = callable(async (data, uid) => {
   exactObject(data, ['organizationId', 'structureIds']);
-  const actor = await membership(data.organizationId, uid);
+  const actor = await actorContext(data.organizationId, uid);
   if (!Array.isArray(data.structureIds)) throw new HttpsError('invalid-argument', 'structureIds non valido');
   const ids = [...new Set(data.structureIds.map(value => id(value, 'structureId')))];
   if (ids.length < 2 || ids.length > 8) {
@@ -1141,7 +1176,7 @@ exports.compareDietStructures = callable(async (data, uid) => {
   };
 });
 
-// ---- Import catalogo globale (platform admin, docs/catalog-import-format.md) ----
+// ---- Import catalogo globale (creatore, docs/catalog-import-format.md) ----
 
 // Feature flag CATALOG_IMPORT_ENABLED: variabile d'ambiente se impostata,
 // altrimenti documento config, altrimenti default sicuro (ON in emulatore per
@@ -1350,7 +1385,7 @@ exports.importGlobalIngredientCatalog = callable(async (data, uid) => {
 
 exports.updateAssignmentStatus = callable(async (data, uid) => {
   exactObject(data, ['organizationId', 'clientId', 'assignmentId', 'status', 'reason', 'idempotencyKey']);
-  const actor = await membership(data.organizationId, uid);
+  const actor = await actorContext(data.organizationId, uid);
   const client = await authorizedClient(actor, data.clientId);
   const assignmentId = id(data.assignmentId, 'assignmentId');
   const status = text(data.status, 'status', { pattern: /^(suspended|revoked)$/ });
@@ -1378,14 +1413,15 @@ exports.updateAssignmentStatus = callable(async (data, uid) => {
   return { assignmentId, status };
 });
 
-// ---- Utenti, inviti e associazioni nutritionist-cliente (Fase 2) ----
+// ---- Utenti, inviti e associazioni nutritionist-cliente ----
 // Account, membership, associazione professionale, assignment e household
 // restano concetti separati: nessuno conferisce privilegi negli altri.
 // "Rimuovere" revoca sempre e solo l'associazione: mai Auth, household,
 // ricette o backup (conservati) e mai strutture altrui (ownerUid mantenuto).
+// Unica org: 'piano'. Creatore = platformMembers admin, può fare tutto.
 
-function requireAdmin(actor) {
-  if (actor.role !== 'admin') throw new HttpsError('permission-denied', 'Operazione riservata all’amministratore');
+function requireCreator(actor) {
+  if (!actor.isCreator) throw new HttpsError('permission-denied', 'Operazione riservata al creatore');
 }
 
 function iso(value) {
@@ -1423,14 +1459,14 @@ async function suspendClientAssignmentsTx(tx, clientRef, uid, reason) {
 // PII: nessuna enumerazione, nessun prefisso, nessuna lista.
 exports.searchUserByUsername = callable(async (data, uid) => {
   exactObject(data, ['organizationId', 'username']);
-  await membership(data.organizationId, uid);
+  await actorContext(data.organizationId, uid);
   const userId = await usernameOwner(data.username);
   return { found: Boolean(userId), userId: userId || null };
 });
 
 exports.listOrganizationUsers = callable(async (data, uid) => {
   exactObject(data, ['organizationId']);
-  const actor = await membership(data.organizationId, uid);
+  const actor = await actorContext(data.organizationId, uid);
   const orgId = actor.organizationId;
   if (actor.role === 'nutritionist') {
     const [clientsSnap, requestsSnap] = await Promise.all([
@@ -1478,13 +1514,13 @@ exports.listOrganizationUsers = callable(async (data, uid) => {
   };
 });
 
-// Invito nutritionist (admin): account esistente → membership immediata;
+// Invito nutritionist (creatore): account esistente → membership immediata;
 // account inesistente → invito monouso con scadenza 7gg. Il token in chiaro
 // è restituito UNA sola volta; nel documento resta solo l'hash SHA-256.
 exports.inviteOrganizationUser = callable(async (data, uid) => {
   const input = validateInviteOrganizationUser(data);
-  const actor = await membership(input.organizationId, uid);
-  requireAdmin(actor);
+  const actor = await actorContext(input.organizationId, uid);
+  requireCreator(actor);
   const targetUid = await usernameOwner(input.username);
   const inviteId = checksum(`${actor.organizationId}:member:${input.username}:${input.idempotencyKey}`).slice(0, 32);
   const inviteRef = db.doc(`organizations/${actor.organizationId}/invitations/${inviteId}`);
@@ -1538,6 +1574,7 @@ exports.acceptOrganizationInvite = callable(async (data, uid) => {
   const inviteDoc = snap.docs[0];
   const invite = inviteDoc.data();
   const orgId = inviteDoc.ref.path.split('/')[1];
+  if (orgId !== SINGLE_ORGANIZATION_ID) throw new HttpsError('permission-denied', 'Invito non valido per questa organizzazione');
   const username = await usernameOfUid(uid);
   if (!username || username !== invite.targetUsername) {
     throw new HttpsError('failed-precondition', 'Registra prima l’account con lo username invitato');
@@ -1590,24 +1627,18 @@ exports.acceptOrganizationInvite = callable(async (data, uid) => {
   return { status: 'link-active', organizationId: orgId, clientId: invite.clientId };
 });
 
-// Attivazione/sospensione membership (admin). Non si può modificare il proprio
-// stato né sospendere l'ultimo admin attivo (anti-lockout).
+// Attivazione/sospensione membership (creatore). Non si può modificare il proprio
+// stato.
 exports.setMemberStatus = callable(async (data, uid) => {
   const input = validateMemberStatus(data);
-  const actor = await membership(input.organizationId, uid);
-  requireAdmin(actor);
+  const actor = await actorContext(input.organizationId, uid);
+  requireCreator(actor);
   if (input.userId === uid) throw new HttpsError('failed-precondition', 'Non puoi modificare il tuo stato');
   const memberRef = db.doc(`organizations/${actor.organizationId}/members/${input.userId}`);
   const eventId = checksum(`member.status:${input.userId}:${input.status}:${input.idempotencyKey}`).slice(0, 32);
   const member = await memberRef.get();
   if (!member.exists || member.data()?.status === 'removed') throw new HttpsError('not-found', 'Membership non trovata: usa un nuovo invito');
   if (member.data()?.status === input.status) return { userId: input.userId, status: input.status, unchanged: true };
-  if (member.data()?.role === 'admin' && input.status === 'suspended') {
-    const admins = await db.collection(`organizations/${actor.organizationId}/members`)
-      .where('role', '==', 'admin').where('status', '==', 'active').limit(2).get();
-    const others = admins.docs.filter(doc => doc.id !== input.userId);
-    if (!others.length) throw new HttpsError('failed-precondition', 'Non puoi sospendere l’ultimo amministratore attivo');
-  }
   await db.runTransaction(async tx => {
     if ((await tx.get(auditRef(actor.organizationId, eventId))).exists) return;
     tx.update(memberRef, { status: input.status, updatedAt: FieldValue.serverTimestamp(), updatedBy: uid });
@@ -1618,11 +1649,11 @@ exports.setMemberStatus = callable(async (data, uid) => {
 
 // Invito di collegamento cliente: account esistente → richiesta da accettare
 // in app; account inesistente → invito monouso (7gg, solo hash conservato).
-// Il nutritionist invita solo per sé; l'admin può indicare il nutritionist
+// Il nutritionist invita solo per sé; il creatore può indicare il nutritionist
 // destinatario oppure lasciarlo temporaneamente senza professionista.
 exports.inviteClientLink = callable(async (data, uid) => {
   const input = validateInviteClientLink(data);
-  const actor = await membership(input.organizationId, uid);
+  const actor = await actorContext(input.organizationId, uid);
   let nutritionistUid = input.nutritionistUid;
   if (actor.role === 'nutritionist') {
     if (nutritionistUid && nutritionistUid !== uid) {
@@ -1703,41 +1734,36 @@ exports.inviteClientLink = callable(async (data, uid) => {
 // vere in Firestore (organizations/{org}/members/{uid}) sono la fonte
 // autorevole, senza fidarsi di ruoli scritti nel browser né di custom claims.
 // Read-only, niente audit: nessuna PII oltre a orgId/ruolo del chiamante.
+// Unica org: 'piano'. Creatore = platformMembers admin.
 exports.getMyMemberships = callable(async (data, uid) => {
   exactObject(data, []);
-  const [orgs, platform] = await Promise.all([
-    db.collection('organizations').select().get(),
+  const orgId = SINGLE_ORGANIZATION_ID;
+  const [memberSnap, platform] = await Promise.all([
+    db.doc(`organizations/${orgId}/members/${uid}`).get(),
     db.doc(`platformMembers/${uid}`).get()
   ]);
-  const memberSnaps = await Promise.all(
-    orgs.docs.map(org => db.doc(`organizations/${org.id}/members/${uid}`).get())
-  );
-  const memberships = memberSnaps
-    .filter(doc => doc.exists)
-    .map(doc => ({
-      organizationId: doc.ref.parent.parent.id,
-      role: doc.data()?.role,
-      status: doc.data()?.status,
-      username: doc.data()?.username || null
-    }))
-    .filter(item => item.status === 'active' && ROLES.has(item.role))
-    .map(item => ({ organizationId: item.organizationId, role: item.role, username: item.username }));
+  const memberships = [];
+  if (memberSnap.exists) {
+    const value = memberSnap.data();
+    if (value?.status === 'active' && ROLES.has(value?.role)) {
+      memberships.push({ organizationId: orgId, role: value.role, username: value?.username || null });
+    }
+  }
+  const platformAdminActive = platform.exists && platform.data()?.status === 'active' && platform.data()?.role === 'admin';
   return {
     memberships,
-    platformAdmin: platform.exists && platform.data()?.status === 'active' && platform.data()?.role === 'admin'
+    platformAdmin: platformAdminActive,
+    platformCreator: platformAdminActive,
+    singleOrganizationId: orgId
   };
 });
 
-// Le organizzazioni sono poche. Query di collezione (indice automatico),
-// non collection-group: nessun nuovo indice o schema richiesto. Il filtro UID
-// resta server-side. Nessun limit prima del filtro di stato: gli inviti storici
-// non devono nascondere quelli pendenti né impedire una risposta idempotente.
+// Singola organizzazione: query diretta su organizzazioni/piano, niente
+// collectionGroup, nessun indice aggiuntivo.
 async function clientLinkRequestsForUid(uid) {
-  const orgs = await db.collection('organizations').select().get();
-  const snapshots = await Promise.all(orgs.docs.map(org =>
-    db.collection(`organizations/${org.id}/clientLinkRequests`).where('targetUid', '==', uid).get()
-  ));
-  return { docs: snapshots.flatMap(snap => snap.docs) };
+  const orgId = SINGLE_ORGANIZATION_ID;
+  const snap = await db.collection(`organizations/${orgId}/clientLinkRequests`).where('targetUid', '==', uid).get();
+  return { docs: snap.docs };
 }
 
 // Richieste di collegamento in attesa + stato del collegamento attuale per
@@ -1751,7 +1777,7 @@ exports.listMyClientLinkRequests = callable(async (data, uid) => {
   const pending = snap.docs.filter(doc => doc.data()?.status === 'pending');
   const orgIds = new Set(pending.map(doc => doc.data().organizationId).filter(Boolean));
   if (link.exists && link.data()?.status === 'active' && link.data()?.organizationId) {
-    orgIds.add(link.data().organizationId);
+    if (link.data().organizationId === SINGLE_ORGANIZATION_ID) orgIds.add(link.data().organizationId);
   }
   const orgNames = new Map();
   await Promise.all([...orgIds].map(async orgId => {
@@ -1765,7 +1791,7 @@ exports.listMyClientLinkRequests = callable(async (data, uid) => {
       organizationName: orgNames.get(doc.data().organizationId) || doc.data().organizationId,
       createdAt: iso(doc.data().createdAt)
     })),
-    link: link.exists && link.data()?.status === 'active'
+    link: link.exists && link.data()?.status === 'active' && link.data().organizationId === SINGLE_ORGANIZATION_ID
       ? {
           organizationId: link.data().organizationId,
           organizationName: orgNames.get(link.data().organizationId) || link.data().organizationId,
@@ -1783,7 +1809,8 @@ exports.respondClientLink = callable(async (data, uid) => {
   const found = snap.docs.find(doc => doc.id === input.requestId);
   if (!found) throw new HttpsError('not-found', 'Richiesta non trovata');
   const request = found.data();
-  const orgId = found.ref.path.split('/')[1];
+  const orgId = SINGLE_ORGANIZATION_ID;
+  if (request.organizationId && request.organizationId !== orgId) throw new HttpsError('not-found', 'Richiesta non trovata');
   const clientRef = db.doc(`organizations/${orgId}/clients/${request.clientId}`);
   const actor = { uid, role: 'client' };
   const linkRef = db.doc(`accountClientLinks/${uid}`);
@@ -1841,6 +1868,7 @@ exports.requestClientUnlink = callable(async (data, uid) => {
   const link = await linkRef.get();
   if (!link.exists || link.data()?.status !== 'active') return { status: 'already-unlinked' };
   const { organizationId: orgId, clientId } = link.data();
+  if (orgId !== SINGLE_ORGANIZATION_ID) return { status: 'already-unlinked' };
   const clientRef = db.doc(`organizations/${orgId}/clients/${clientId}`);
   const eventId = checksum(`client.unlinked:${orgId}:${clientId}:${uid}`).slice(0, 32);
   const actor = { uid, role: 'client' };
@@ -1865,7 +1893,7 @@ exports.requestClientUnlink = callable(async (data, uid) => {
 // la Spesa inclusa al successivo refresh.
 exports.removeClientLink = callable(async (data, uid) => {
   const input = validateRemoveClientLink(data);
-  const actor = await membership(input.organizationId, uid);
+  const actor = await actorContext(input.organizationId, uid);
   const client = await authorizedClient(actor, input.clientId);
   const eventId = checksum(`client.link-removed:${client.id}:${input.idempotencyKey}`).slice(0, 32);
   let suspended = 0;
@@ -1890,13 +1918,13 @@ exports.removeClientLink = callable(async (data, uid) => {
   return { clientId: client.id, status: 'unlinked', suspendedAssignments: suspended };
 });
 
-// Rimozione nutritionist (admin): BLOCCATA se restano clienti collegati o in
+// Rimozione nutritionist (creatore): BLOCCATA se restano clienti collegati o in
 // attesa (conteggio + elenco in risposta). Le strutture restano con ownerUid
-// invariato (visibili all'admin, non trasferite in silenzio).
+// invariato (visibili al creatore, non trasferite in silenzio).
 exports.removeNutritionist = callable(async (data, uid) => {
   const input = validateRemoveNutritionist(data);
-  const actor = await membership(input.organizationId, uid);
-  requireAdmin(actor);
+  const actor = await actorContext(input.organizationId, uid);
+  requireCreator(actor);
   if (input.userId === uid) throw new HttpsError('failed-precondition', 'Non puoi rimuovere la tua membership da qui');
   const memberRef = db.doc(`organizations/${actor.organizationId}/members/${input.userId}`);
   const member = await memberRef.get();
@@ -1917,12 +1945,12 @@ exports.removeNutritionist = callable(async (data, uid) => {
   return { userId: input.userId, status: 'removed' };
 });
 
-// Passaggio di proprietà struttura (SOLO admin, mai silenzioso): audit
+// Passaggio di proprietà struttura (SOLO creatore, mai silenzioso): audit
 // completo, nessun trasferimento implicito alla rimozione del professionista.
 exports.transferStructureOwnership = callable(async (data, uid) => {
   const input = validateTransferStructureOwnership(data);
-  const actor = await membership(input.organizationId, uid);
-  requireAdmin(actor);
+  const actor = await actorContext(input.organizationId, uid);
+  requireCreator(actor);
   const { ref, doc } = await authorizedStructure(actor, input.structureId);
   const target = await db.doc(`organizations/${actor.organizationId}/members/${input.newOwnerUid}`).get();
   if (!target.exists || target.data()?.status !== 'active' || !ROLES.has(target.data()?.role)) {
@@ -1948,7 +1976,7 @@ exports.requestShoppingReward = callable(async (data, uid) => {
   // receipt/placement tollerati ma MAI considerati attendibili senza provider.
   exactObject(data, ['receipt', 'placement']);
   const link = await db.doc(`accountClientLinks/${uid}`).get();
-  if (link.exists && link.data()?.status === 'active') {
+  if (link.exists && link.data()?.status === 'active' && link.data()?.organizationId === SINGLE_ORGANIZATION_ID) {
     const { organizationId, clientId } = link.data();
     const assignment = await resolveDueAssignment(organizationId, clientId);
     const effective = effectiveAssignment(assignment && assignmentDates(assignment));
@@ -1961,19 +1989,28 @@ exports.requestShoppingReward = callable(async (data, uid) => {
 });
 
 exports.activateScheduledAssignments = onSchedule({ region: REGION, schedule: 'every 15 minutes', timeZone: 'Europe/Rome' }, async () => {
-  const due = await db.collectionGroup('assignments').where('status', '==', 'scheduled').where('effectiveAt', '<=', Timestamp.now()).limit(200).get();
+  // Solo org singola
+  const orgId = SINGLE_ORGANIZATION_ID;
+  const due = await db.collection(`organizations/${orgId}/clients`).get().then(async clientsSnap => {
+    const all = [];
+    for (const clientDoc of clientsSnap.docs) {
+      const dueSnap = await db.collection(`organizations/${orgId}/clients/${clientDoc.id}/assignments`).where('status', '==', 'scheduled').where('effectiveAt', '<=', Timestamp.now()).limit(20).get();
+      all.push(...dueSnap.docs);
+    }
+    return { size: all.length, docs: all };
+  });
   for (const doc of due.docs) {
     const parts = doc.ref.path.split('/');
-    const orgId = parts[1];
     const clientId = parts[3];
     await resolveDueAssignment(orgId, clientId);
   }
   const expired = await db.collectionGroup('assignments').where('status', '==', 'active').where('expiresAt', '<=', Timestamp.now()).limit(200).get();
   for (const doc of expired.docs) {
     const parts = doc.ref.path.split('/');
-    const orgId = parts[1];
+    const orgIdPart = parts[1];
+    if (orgIdPart !== SINGLE_ORGANIZATION_ID) continue;
     const clientId = parts[3];
-    const clientRef = db.doc(`organizations/${orgId}/clients/${clientId}`);
+    const clientRef = db.doc(`organizations/${orgIdPart}/clients/${clientId}`);
     await db.runTransaction(async tx => {
       const fresh = await tx.get(doc.ref);
       if (fresh.data()?.status !== 'active') return;

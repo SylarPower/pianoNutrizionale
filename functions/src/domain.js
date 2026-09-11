@@ -2,7 +2,8 @@
 
 const crypto = require('node:crypto');
 
-const ROLES = new Set(['admin', 'nutritionist']);
+const SINGLE_ORGANIZATION_ID = 'piano';
+const ROLES = new Set(['nutritionist']);
 const REPORT_STATUSES = new Set(['open', 'triaged', 'needs-review', 'resolved', 'rejected', 'duplicate']);
 const ASSIGNMENT_STATUSES = new Set(['scheduled', 'active', 'suspended', 'revoked', 'expired']);
 const ASSIGNMENT_STRATEGIES = new Set(['freeze', 'migrate-on-confirmation', 'original-only']);
@@ -888,6 +889,7 @@ function validateCopyClientDoses(input) {
 }
 
 module.exports = {
+  SINGLE_ORGANIZATION_ID,
   ROLES, REPORT_STATUSES, ASSIGNMENT_STATUSES, ASSIGNMENT_STRATEGIES, MEMBER_STATUSES,
   MELLER_FAMILY_IDS, STRUCTURE_REVISION_SCHEMA_VERSION,
   fail, exactObject, text, optionalText, id, isoDate, canonicalJson, checksum,
