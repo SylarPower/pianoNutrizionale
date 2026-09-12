@@ -1,4 +1,6 @@
-# 🥗 Piano Nutrizionale
+<img src="assets/loghi/logo-app.svg" alt="" width="52" height="52">
+
+# Piano Nutrizionale
 
 WebApp PWA privata per gestire colazioni, spuntini, pranzi, cene, batch cooking e lista della spesa. Usa Firebase Authentication e Cloud Firestore.
 

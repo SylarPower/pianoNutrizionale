@@ -36,7 +36,7 @@ In parallelo, `MELLER_GRAMMATURE` mescolava: identità degli ingredienti (nomi, 
 
 7. **Sezione Prezzi sospesa**: flag `PRICES_FEATURE_ENABLED = false` in `js/app.js` nasconde menu e rotta senza cancellare logica né dati.
 
-8. **Font Inter self-hosted** (OFL 1.1, `assets/fonts/`), fallback Verdana; nessuna chiamata Google Fonts a runtime.
+8. **Font self-hosted** (OFL 1.1, `assets/fonts/`), fallback Verdana; nessuna chiamata Google Fonts a runtime. _(Storicamente Inter; sostituito da **Author** con il restyle del 2026-09: vedi `css/style.css`.)_
 
 9. **Import batch del catalogo globale**: gli ingredienti del catalogo si importano solo da **platform admin** via job applicativo (JSON/CSV) con validazione, deduplica e controllo collisioni alias; anteprima con diff, **dry-run** di default e commit atomico versionato ai numeri di catalogo (`catalogVersion`). La funzione è **reversibile con feature flag** (`CATALOG_IMPORT_ENABLED`, default disattivo in produzione finché il catalogo definitivo del dott. Meller non è pronto). Il formato esatto e le fixture vedi `docs/catalog-import-format.md`.
 
