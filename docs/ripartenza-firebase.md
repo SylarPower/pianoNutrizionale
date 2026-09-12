@@ -315,3 +315,8 @@ mancante (Passo 5) e il catalogo non importato (Passo 6).
 8. Collega i clienti (gabriele, martina, cliente) e assegna loro una struttura.
 9. Re-importa le ricette di gabriele e martina dal Ricettario.
 10. Pulisci le organizzazioni vecchie e verifica tutto.
+
+
+### Nome visualizzato e inviti esistenti
+
+Un invito a un account già esistente compare nella campanella dell’app, con il nome del professionista e i pulsanti per accettare o rifiutare. Nome e cognome sono facoltativi: si possono salvare dalla sezione di collegamento professionista (cliente) o dalla console (professionista).

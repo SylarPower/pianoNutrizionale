@@ -308,3 +308,10 @@ Deprecati lato UI ma mantenuti per i client legacy: `publishRuleSetVersion`,
   metadata: {} // mai testo libero sensibile o ricette
 }
 ```
+
+
+## Profili mostrati
+
+Le risposte di `listAuthorizedClients` e `listOrganizationUsers` includono `displayName` (facoltativo), `username` e `status` per i clienti autorizzati. I membri includono `displayName`; il nome visualizzato segue `displayName || username || displayCode`. `listMyClientLinkRequests` include `nutritionistUsername` e `nutritionistDisplayName` sia nelle richieste sia nel collegamento attivo, senza mai esporre token.
+
+Il campo facoltativo `displayName` può comparire in `clients/{id}` e `members/{uid}` soltanto tramite le callable `updateMyClientProfile` e `updateMyMemberProfile`, entrambe idempotenti e con audit.

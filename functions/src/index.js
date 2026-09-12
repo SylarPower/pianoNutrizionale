@@ -519,7 +519,14 @@ exports.listAuthorizedClients = callable(async (data, uid) => {
   let query = db.collection(`organizations/${actor.organizationId}/clients`).where('status', '==', 'active');
   if (actor.role === 'nutritionist') query = query.where('nutritionistUids', 'array-contains', uid);
   const snapshot = await query.limit(100).get();
-  return { clients: snapshot.docs.map(doc => ({ id: doc.id, displayCode: doc.data().displayCode || doc.id, activeAssignment: doc.data().activeAssignment || null })) };
+  const rows = snapshot.docs.map(doc => ({ doc, data: doc.data() }));
+  const fallbackUsernames = await Promise.all(rows.map(row => row.data.invitedUsername || !row.data.authUid ? null : usernameOfUid(row.data.authUid)));
+  return { clients: rows.map((row, index) => ({
+    id: row.doc.id, displayCode: row.data.displayCode || row.doc.id,
+    displayName: row.data.displayName || null,
+    username: row.data.invitedUsername || fallbackUsernames[index] || null,
+    status: row.data.status || 'active', activeAssignment: row.data.activeAssignment || null
+  })) };
 });
 
 exports.publishRuleSetVersion = callable(async (data, uid) => {
@@ -1473,12 +1480,16 @@ exports.listOrganizationUsers = callable(async (data, uid) => {
       db.collection(`organizations/${orgId}/clients`).where('nutritionistUids', 'array-contains', uid).limit(100).get(),
       db.collection(`organizations/${orgId}/clientLinkRequests`).where('nutritionistUid', '==', uid).limit(50).get()
     ]);
+    const clients = clientsSnap.docs.map(doc => ({ id: doc.id, data: doc.data() }));
+    const usernames = await Promise.all(clients.map(item => item.data.invitedUsername ? null : usernameOfUid(item.data.authUid)));
+    const pendingRequests = requestsSnap.docs.filter(doc => doc.data()?.status === 'pending');
     return {
-      clients: clientsSnap.docs.map(doc => ({
-        id: doc.id, displayCode: doc.data().displayCode || doc.id, status: doc.data().status || 'active',
-        activeAssignment: doc.data().activeAssignment || null, updatedAt: iso(doc.data().updatedAt)
+      clients: clients.map((item, index) => ({
+        id: item.id, displayCode: item.data.displayCode || item.id, displayName: item.data.displayName || null,
+        username: item.data.invitedUsername || usernames[index] || null, status: item.data.status || 'active',
+        activeAssignment: item.data.activeAssignment || null, updatedAt: iso(item.data.updatedAt)
       })),
-      requests: requestsSnap.docs.map(doc => ({
+      requests: pendingRequests.map(doc => ({
         requestId: doc.id, clientId: doc.data().clientId || null, targetUsername: doc.data().targetUsername || null,
         status: doc.data().status, createdAt: iso(doc.data().createdAt)
       })),
@@ -1491,14 +1502,18 @@ exports.listOrganizationUsers = callable(async (data, uid) => {
     db.collection(`organizations/${orgId}/invitations`).where('status', '==', 'pending').limit(50).get(),
     db.collection(`organizations/${orgId}/clientLinkRequests`).where('status', '==', 'pending').limit(50).get()
   ]);
+  const clientRows = clientsSnap.docs.map(doc => ({ doc, data: doc.data() }));
+  const clientFallbackUsernames = await Promise.all(clientRows.map(row => row.data.invitedUsername || !row.data.authUid ? null : usernameOfUid(row.data.authUid)));
   return {
     members: membersSnap.docs.map(doc => ({
-      userId: doc.id, username: doc.data().username || null, role: doc.data().role, status: doc.data().status, updatedAt: iso(doc.data().updatedAt)
+      userId: doc.id, username: doc.data().username || null, displayName: doc.data().displayName || null,
+      role: doc.data().role, status: doc.data().status, updatedAt: iso(doc.data().updatedAt)
     })),
-    clients: clientsSnap.docs.map(doc => ({
-      id: doc.id, displayCode: doc.data().displayCode || doc.id, status: doc.data().status || 'active',
-      nutritionistUids: doc.data().nutritionistUids || [], activeAssignment: doc.data().activeAssignment || null,
-      updatedAt: iso(doc.data().updatedAt)
+    clients: clientRows.map((row, index) => ({
+      id: row.doc.id, displayCode: row.data.displayCode || row.doc.id, displayName: row.data.displayName || null,
+      username: row.data.invitedUsername || clientFallbackUsernames[index] || null, status: row.data.status || 'active',
+      nutritionistUids: row.data.nutritionistUids || [], activeAssignment: row.data.activeAssignment || null,
+      updatedAt: iso(row.data.updatedAt)
     })),
     // Mai tokenHash in risposta: il token in chiaro è mostrato una sola volta
     // al momento della creazione dell'invito.
@@ -1780,25 +1795,85 @@ exports.listMyClientLinkRequests = callable(async (data, uid) => {
     if (link.data().organizationId === SINGLE_ORGANIZATION_ID) orgIds.add(link.data().organizationId);
   }
   const orgNames = new Map();
+  const memberNames = new Map();
+  const memberRefs = new Map();
+  let activeMemberRef = null;
+  let activeClientDisplayName = null;
+  pending.forEach(doc => { const value = doc.data(); if (value.nutritionistUid) memberRefs.set(`${value.organizationId}/${value.nutritionistUid}`, value); });
+  if (link.exists && link.data()?.status === 'active' && link.data().organizationId === SINGLE_ORGANIZATION_ID) {
+    const client = await db.doc(`organizations/${SINGLE_ORGANIZATION_ID}/clients/${link.data().clientId}`).get();
+    activeClientDisplayName = client.data()?.displayName || null;
+    const nutritionistUid = client.data()?.nutritionistUids?.[0];
+    if (nutritionistUid) {
+      activeMemberRef = { organizationId: SINGLE_ORGANIZATION_ID, nutritionistUid };
+      memberRefs.set(`${SINGLE_ORGANIZATION_ID}/${nutritionistUid}`, activeMemberRef);
+    }
+  }
   await Promise.all([...orgIds].map(async orgId => {
     const org = await db.doc(`organizations/${orgId}`).get();
     orgNames.set(orgId, org.exists ? (org.data()?.name || orgId) : orgId);
   }));
+  await Promise.all([...memberRefs.entries()].map(async ([key, value]) => {
+    const member = await db.doc(`organizations/${value.organizationId}/members/${value.nutritionistUid}`).get();
+    memberNames.set(key, member.exists ? { username: member.data()?.username || null, displayName: member.data()?.displayName || null } : { username: null, displayName: null });
+  }));
+  const person = value => memberNames.get(`${value.organizationId}/${value.nutritionistUid}`) || { username: null, displayName: null };
   return {
     requests: pending.map(doc => ({
-      requestId: doc.id,
-      organizationId: doc.data().organizationId,
+      requestId: doc.id, organizationId: doc.data().organizationId,
       organizationName: orgNames.get(doc.data().organizationId) || doc.data().organizationId,
+      nutritionistUsername: doc.data().nutritionistUid ? person(doc).username : null,
+      nutritionistDisplayName: doc.data().nutritionistUid ? person(doc).displayName : null,
       createdAt: iso(doc.data().createdAt)
     })),
     link: link.exists && link.data()?.status === 'active' && link.data().organizationId === SINGLE_ORGANIZATION_ID
-      ? {
-          organizationId: link.data().organizationId,
-          organizationName: orgNames.get(link.data().organizationId) || link.data().organizationId,
-          clientId: link.data().clientId
-        }
+      ? { organizationId: link.data().organizationId, organizationName: orgNames.get(link.data().organizationId) || link.data().organizationId,
+          clientId: link.data().clientId, displayName: activeClientDisplayName,
+          nutritionistUsername: activeMemberRef ? person(activeMemberRef).username : null,
+          nutritionistDisplayName: activeMemberRef ? person(activeMemberRef).displayName : null }
       : null
   };
+});
+
+// Aggiorna il nome mostrato al professionista, senza passare da Auth.
+exports.updateMyClientProfile = callable(async (data, uid) => {
+  exactObject(data, ['displayName', 'idempotencyKey']);
+  const displayName = optionalText(data.displayName, 'displayName', 120);
+  const idem = id(data.idempotencyKey, 'idempotencyKey');
+  const linkRef = db.doc(`accountClientLinks/${uid}`);
+  const link = await linkRef.get();
+  if (!link.exists || link.data()?.status !== 'active' || link.data()?.organizationId !== SINGLE_ORGANIZATION_ID) throw new HttpsError('permission-denied', 'Profilo cliente non autorizzato');
+  const clientRef = db.doc(`organizations/${SINGLE_ORGANIZATION_ID}/clients/${link.data().clientId}`);
+  const eventId = checksum(`client.profile-updated:${uid}:${idem}`).slice(0, 32);
+  const actor = { uid, role: 'client' };
+  await db.runTransaction(async tx => {
+    const [client, audit] = await Promise.all([tx.get(clientRef), tx.get(auditRef(SINGLE_ORGANIZATION_ID, eventId))]);
+    if (audit.exists) return;
+    if (!client.exists || client.data()?.authUid !== uid) throw new HttpsError('permission-denied', 'Profilo cliente non autorizzato');
+    tx.update(clientRef, { displayName, updatedAt: FieldValue.serverTimestamp(), updatedBy: uid });
+    tx.create(auditRef(SINGLE_ORGANIZATION_ID, eventId), auditEvent({ orgId: SINGLE_ORGANIZATION_ID, eventId, type: 'client.profile-updated', actor, subject: { type: 'client', id: clientRef.id }, idempotencyKey: idem }));
+  });
+  return { displayName };
+});
+
+// Aggiorna il nome del professionista per i propri clienti.
+exports.updateMyMemberProfile = callable(async (data, uid) => {
+  exactObject(data, ['organizationId', 'displayName', 'idempotencyKey']);
+  const actor = await actorContext(data.organizationId, uid);
+  if (actor.role !== 'nutritionist') throw new HttpsError('failed-precondition', 'Il creatore non ha un profilo professionista modificabile');
+  const displayName = optionalText(data.displayName, 'displayName', 120);
+  const idem = id(data.idempotencyKey, 'idempotencyKey');
+  const memberRef = db.doc(`organizations/${actor.organizationId}/members/${uid}`);
+  const eventId = checksum(`member.profile-updated:${uid}:${idem}`).slice(0, 32);
+  await db.runTransaction(async tx => {
+    const audit = await tx.get(auditRef(actor.organizationId, eventId));
+    if (audit.exists) return;
+    const member = await tx.get(memberRef);
+    if (!member.exists || member.data()?.role !== 'nutritionist') throw new HttpsError('failed-precondition', 'Profilo professionista non trovato');
+    tx.update(memberRef, { displayName, updatedAt: FieldValue.serverTimestamp(), updatedBy: uid });
+    tx.create(auditRef(actor.organizationId, eventId), auditEvent({ orgId: actor.organizationId, eventId, type: 'member.profile-updated', actor, subject: { type: 'member', id: uid }, idempotencyKey: idem }));
+  });
+  return { displayName };
 });
 
 // Accettazione/rifiuto dal cliente (app). IDEMPOTENTE: decisioni già prese
