@@ -246,7 +246,8 @@ service cloud.firestore {
       allow read, write: if false;
     }
 
-    match /globalIngredientCatalog/versions/{document=**} {
+    // Snapshot di versione: documenti in versions/snapshots/{n} (server-only).
+    match /globalIngredientCatalog/versions/snapshots/{document=**} {
       allow read, write: if false;
     }
 

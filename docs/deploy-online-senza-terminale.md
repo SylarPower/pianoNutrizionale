@@ -251,6 +251,15 @@ Note:
 - **Primo deploy delle Functions in assoluto**: richiede il piano **Blaze** e le
   API Cloud Build / Artifact Registry / Cloud Scheduler attive. Sul progetto
   `piano-nutrizionale` è già stato fatto, quindi i deploy successivi funzionano.
+- **Se "Conferma import" risponde "Operazione non disponibile" (500) mentre il
+  dry-run funziona** (console → Catalogo): sono pubblicate Functions vecchie
+  che scrivono lo snapshot di versione su `globalIngredientCatalog/versions/<n>`
+  (3 segmenti: per Firestore è una collezione, non un documento) e il client
+  Admin le rifiuta con un errore interno. Nessuna scrittura parziale avviene:
+  il catalogo resta alla versione precedente. Rimedio: ripubblica **solo le
+  Cloud Functions** (target `functions`) con il codice aggiornato, poi ripeti
+  dry-run e Conferma import. Regole di sicurezza e indici non c'entrano: non
+  serve ripubblicarli.
 
 ---
 

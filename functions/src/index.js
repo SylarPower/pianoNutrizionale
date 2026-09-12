@@ -1239,7 +1239,7 @@ exports.importGlobalIngredientCatalog = callable(async (data, uid) => {
       throw new HttpsError('invalid-argument', 'restoreVersion non valida');
     }
     const [snapshot, catalog] = await Promise.all([
-      db.doc(`globalIngredientCatalog/versions/${restoreVersion}`).get(),
+      db.doc(`globalIngredientCatalog/versions/snapshots/${restoreVersion}`).get(),
       loadGlobalCatalog()
     ]);
     if (!snapshot.exists) throw new HttpsError('not-found', 'Snapshot non trovato');
@@ -1278,7 +1278,7 @@ exports.importGlobalIngredientCatalog = callable(async (data, uid) => {
       });
       deleteIds.forEach(idValue => tx.delete(db.doc(`globalIngredientCatalog/current/ingredients/${idValue}`)));
       deleteCatIds.forEach(idValue => tx.delete(db.doc(`globalIngredientCatalog/current/categories/${idValue}`)));
-      tx.set(db.doc(`globalIngredientCatalog/versions/${catalog.catalogVersion}`), {
+      tx.set(db.doc(`globalIngredientCatalog/versions/snapshots/${catalog.catalogVersion}`), {
         schemaVersion: 2, catalogVersion: catalog.catalogVersion, checksum: catalog.checksum,
         ingredients: catalog.ingredients, categories: catalog.categories,
         supersededBy: nextVersion, createdAt: FieldValue.serverTimestamp(), createdBy: uid
@@ -1363,7 +1363,7 @@ exports.importGlobalIngredientCatalog = callable(async (data, uid) => {
         schemaVersion: 2, ...entry, catalogVersion: nextVersion, updatedAt: FieldValue.serverTimestamp()
       });
     });
-    tx.set(db.doc(`globalIngredientCatalog/versions/${catalog.catalogVersion}`), {
+    tx.set(db.doc(`globalIngredientCatalog/versions/snapshots/${catalog.catalogVersion}`), {
       schemaVersion: 2, catalogVersion: catalog.catalogVersion, checksum: catalog.checksum,
       ingredients: catalog.ingredients, categories: catalog.categories,
       supersededBy: nextVersion, createdAt: FieldValue.serverTimestamp(), createdBy: uid

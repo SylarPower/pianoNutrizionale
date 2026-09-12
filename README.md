@@ -93,7 +93,8 @@ organizations/pianoNutrizionale/dietStructures/{id}/revisions/{n}
 organizations/pianoNutrizionale/invitations|clientLinkRequests|mappingReports|mappingProposals|notifications|auditLog
 accountClientLinks/{uid}                          collegamento account ↔ cliente
 platformMembers/{uid}                             platform admin (creatore)
-globalIngredientCatalog/current|versions|config   catalogo alimenti condiviso
+globalIngredientCatalog/current|config            catalogo alimenti condiviso
+globalIngredientCatalog/versions/snapshots/{n}    snapshot versioni (rollback)
 globalRuleSets|organizations/{org}/ruleSets       percorso legacy, solo retrocompatibilità
 ```
 
