@@ -88,7 +88,7 @@ Creare `globalRuleSets/base/versions/3` con il contratto documentato, `status:"p
 - `CATALOG_IMPORT_ENABLED` (env Functions, default: ON in emulatore, OFF in
   produzione): abilita commit/restore dell'import catalogo. Il dry-run resta
   sempre disponibile al platform admin (nessuna scrittura). Override
-  Firestore: `globalIngredientCatalog/config/import = { enabled: bool }`
+  Firestore: `globalIngredientCatalog/config/docs/import = { enabled: bool }`
   (l'env prevale se impostata).
 - `SHOPPING_REWARD_ENABLED` (env Functions, default OFF): con assignment attivo
   `requestShoppingReward` risponde `allowed` senza reward; senza assignment e

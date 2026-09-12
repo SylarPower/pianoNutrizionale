@@ -13,7 +13,7 @@ const rules = fs.readFileSync(path.join(__dirname, '..', 'firestore.rules'), 'ut
 
 test('organizzazioni e clienti: letture staff, scritture solo via callable', () => {
   const orgSection = rules.slice(rules.indexOf('match /organizations/{organizationId} {'));
-  // Org singola 'piano': lettura creatore o membro attivo nutritionist
+  // Org singola 'pianoNutrizionale': lettura creatore o membro attivo nutritionist
   assert.match(orgSection, /match \/organizations\/\{organizationId\} \{\s+allow read: if isCreator\(\) \|\| activeTenantMember\(organizationId\);\s+allow write: if false;/);
   // Clienti: creatore bypassa, altrimenti nutritionist autorizzato
   assert.match(orgSection, /match \/organizations\/\{organizationId\}\/clients\/\{clientId\} \{\s+allow read: if isCreator\(\) \|\| authorizedNutritionist\(organizationId, clientId\);\s+allow write: if false;/);
@@ -34,6 +34,6 @@ test('strutture, revisioni e code: nessun accesso diretto', () => {
 });
 
 test('singola organizzazione piano e ruolo solo nutritionist', () => {
-  assert.match(rules, /'piano'/);
+  assert.match(rules, /'pianoNutrizionale'/);
   assert.doesNotMatch(rules, /role in \['admin', 'nutritionist'\]/, 'admin org rimosso dalle rules');
 });

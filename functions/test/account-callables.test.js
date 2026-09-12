@@ -6,7 +6,7 @@ const vm = require('node:vm');
 const domain = require('../src/domain');
 
 // Carica le callable reali, inclusi wrapper autenticazione e gestione errori.
-// Singola org 'piano', creatore = platformMembers admin.
+// Singola org 'pianoNutrizionale', creatore = platformMembers admin.
 function harness(entries = {}) {
   const store = new Map(Object.entries(entries));
   const reads = [];
@@ -54,14 +54,14 @@ const invoke = (api, name, uid = 'me', data = {}) => api[name]({ auth: uid ? { u
 
 test('membership legge doc UID senza campo uid; solo nutritionist nella singola org', async () => {
   const { api, reads } = harness({
-    'organizations/piano': { name: 'Piano' },
-    'organizations/piano/members/me': { role: 'nutritionist', status: 'active', username: 'doctor' },
+    'organizations/pianoNutrizionale': { name: 'Piano' },
+    'organizations/pianoNutrizionale/members/me': { role: 'nutritionist', status: 'active', username: 'doctor' },
     'platformMembers/me': { role: 'admin', status: 'active' }
   });
   const result = await invoke(api, 'getMyMemberships');
-  assert.deepEqual(JSON.parse(JSON.stringify(result)).memberships, [{ organizationId: 'piano', role: 'nutritionist', username: 'doctor' }]);
+  assert.deepEqual(JSON.parse(JSON.stringify(result)).memberships, [{ organizationId: 'pianoNutrizionale', role: 'nutritionist', username: 'doctor' }]);
   assert.equal(result.platformAdmin, true);
-  assert.equal(result.singleOrganizationId, 'piano');
+  assert.equal(result.singleOrganizationId, 'pianoNutrizionale');
   assert.ok(!reads.some(path => path.includes('/other')));
 });
 
@@ -69,7 +69,7 @@ test('membership vecchia org diversa da piano è ignorata', async () => {
   const { api } = harness({
     'organizations/org-a': { name: 'Vecchia' },
     'organizations/org-a/members/me': { role: 'nutritionist', status: 'active', username: 'doctor' },
-    'organizations/piano/members/me': { role: 'nutritionist', status: 'suspended' },
+    'organizations/pianoNutrizionale/members/me': { role: 'nutritionist', status: 'suspended' },
     'platformMembers/me': { role: 'admin', status: 'active' }
   });
   const result = await invoke(api, 'getMyMemberships');
@@ -87,12 +87,12 @@ test('membership vuote e admin piattaforma inattivo restano fail-closed', async 
 
 test('lista inviti isola UID, risolve nomi e non nasconde pendenti dopo 20 storici', async () => {
   const entries = {
-    'organizations/piano': { name: 'Studio Piano' },
-    'accountClientLinks/me': { organizationId: 'piano', clientId: 'client-me', status: 'active' },
-    'organizations/piano/clientLinkRequests/foreign': { targetUid: 'other', status: 'pending', organizationId: 'piano' }
+    'organizations/pianoNutrizionale': { name: 'Studio Piano' },
+    'accountClientLinks/me': { organizationId: 'pianoNutrizionale', clientId: 'client-me', status: 'active' },
+    'organizations/pianoNutrizionale/clientLinkRequests/foreign': { targetUid: 'other', status: 'pending', organizationId: 'pianoNutrizionale' }
   };
-  for (let i = 0; i < 25; i++) entries[`organizations/piano/clientLinkRequests/old${i}`] = { targetUid: 'me', status: 'rejected', organizationId: 'piano' };
-  entries['organizations/piano/clientLinkRequests/pending'] = { targetUid: 'me', status: 'pending', organizationId: 'piano' };
+  for (let i = 0; i < 25; i++) entries[`organizations/pianoNutrizionale/clientLinkRequests/old${i}`] = { targetUid: 'me', status: 'rejected', organizationId: 'pianoNutrizionale' };
+  entries['organizations/pianoNutrizionale/clientLinkRequests/pending'] = { targetUid: 'me', status: 'pending', organizationId: 'pianoNutrizionale' };
   const { api } = harness(entries);
   const result = await invoke(api, 'listMyClientLinkRequests');
   assert.equal(result.requests.length, 1);
@@ -103,7 +103,7 @@ test('lista inviti isola UID, risolve nomi e non nasconde pendenti dopo 20 stori
 });
 
 test('assenza di inviti e link revocato non diventano errore o link attivo', async () => {
-  const { api } = harness({ 'accountClientLinks/me': { organizationId: 'piano', status: 'revoked' } });
+  const { api } = harness({ 'accountClientLinks/me': { organizationId: 'pianoNutrizionale', status: 'revoked' } });
   const result = await invoke(api, 'listMyClientLinkRequests');
   assert.equal(result.requests.length, 0);
   assert.equal(result.link, null);
@@ -111,8 +111,8 @@ test('assenza di inviti e link revocato non diventano errore o link attivo', asy
 
 test('risposta a invito altrui non può accedere al documento e usa query senza group', async () => {
   const { api } = harness({
-    'organizations/piano': {},
-    'organizations/piano/clientLinkRequests/foreign': { targetUid: 'other', status: 'pending', organizationId: 'piano' }
+    'organizations/pianoNutrizionale': {},
+    'organizations/pianoNutrizionale/clientLinkRequests/foreign': { targetUid: 'other', status: 'pending', organizationId: 'pianoNutrizionale' }
   });
   await assert.rejects(invoke(api, 'respondClientLink', 'me', { requestId: 'foreign', decision: 'accept' }), { code: 'not-found' });
 });
@@ -127,19 +127,19 @@ test('callable richiedono autenticazione e rifiutano payload inattesi', async ()
 
 test('orgId diversa da piano rifiutata nelle callable che richiedono membership', async () => {
   const { api } = harness({
-    'organizations/piano/members/me': { role: 'nutritionist', status: 'active' }
+    'organizations/pianoNutrizionale/members/me': { role: 'nutritionist', status: 'active' }
   });
   await assert.rejects(invoke(api, 'listAuthorizedClients', 'me', { organizationId: 'org-a' }), { code: 'permission-denied' });
 });
 
 test('un nutritionist NON può invitare altri professionisti: operazione riservata al creatore', async () => {
   const { api } = harness({
-    'organizations/piano': { name: 'Piano' },
-    'organizations/piano/members/me': { role: 'nutritionist', status: 'active', username: 'doctor' }
+    'organizations/pianoNutrizionale': { name: 'Piano' },
+    'organizations/pianoNutrizionale/members/me': { role: 'nutritionist', status: 'active', username: 'doctor' }
   });
   await assert.rejects(
     invoke(api, 'inviteOrganizationUser', 'me', {
-      organizationId: 'piano', username: 'nuovo-doc', role: 'nutritionist', idempotencyKey: 'k-noncreator-1'
+      organizationId: 'pianoNutrizionale', username: 'nuovo-doc', role: 'nutritionist', idempotencyKey: 'k-noncreator-1'
     }),
     error => error.code === 'permission-denied' && /riservata al creatore/.test(error.message)
   );
@@ -147,23 +147,23 @@ test('un nutritionist NON può invitare altri professionisti: operazione riserva
 
 test('un admin piattaforma sospeso non può invitare professionisti anche se membro attivo', async () => {
   const { api } = harness({
-    'organizations/piano': { name: 'Piano' },
+    'organizations/pianoNutrizionale': { name: 'Piano' },
     'platformMembers/me': { role: 'admin', status: 'suspended' },
-    'organizations/piano/members/me': { role: 'nutritionist', status: 'active', username: 'doctor' }
+    'organizations/pianoNutrizionale/members/me': { role: 'nutritionist', status: 'active', username: 'doctor' }
   });
   await assert.rejects(
     invoke(api, 'inviteOrganizationUser', 'me', {
-      organizationId: 'piano', username: 'nuovo-doc', role: 'nutritionist', idempotencyKey: 'k-noncreator-2'
+      organizationId: 'pianoNutrizionale', username: 'nuovo-doc', role: 'nutritionist', idempotencyKey: 'k-noncreator-2'
     }),
     error => error.code === 'permission-denied' && /riservata al creatore/.test(error.message)
   );
 });
 
 test('un anonimo o un account cliente non può invitare professionisti', async () => {
-  const { api } = harness({ 'organizations/piano': { name: 'Piano' } });
+  const { api } = harness({ 'organizations/pianoNutrizionale': { name: 'Piano' } });
   await assert.rejects(
     invoke(api, 'inviteOrganizationUser', 'me', {
-      organizationId: 'piano', username: 'nuovo-doc', role: 'nutritionist', idempotencyKey: 'k-noncreator-3'
+      organizationId: 'pianoNutrizionale', username: 'nuovo-doc', role: 'nutritionist', idempotencyKey: 'k-noncreator-3'
     }),
     { code: 'permission-denied' }
   );

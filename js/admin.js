@@ -1,12 +1,16 @@
 'use strict';
 
-const adminState = { user: null, reports: [], clients: [], ruleSets: [], structures: [], compareSelection: new Set(), users: null, editingStructure: null, cursor: null, selectedReport: null, pickerSelection: new Set(), isCreator: false };
+const adminState = { user: null, reports: [], clients: [], ruleSets: [], structures: [], compareSelection: new Set(), users: null, editingStructure: null, cursor: null, selectedReport: null, pickerSelection: new Set(), catalogPreview: null, isCreator: false };
 let catalogIndexCache = null;
 let catalogCategoriesCache = [];
+let catalogTruncated = false;
 const $ = id => document.getElementById(id);
-const SINGLE_ORG_ID = (typeof window !== 'undefined' && (window.PIANO_SINGLE_ORG_ID || window.PIANO_SAAS_CONFIG?.singleOrganizationId)) || 'piano';
+const SINGLE_ORG_ID = (typeof window !== 'undefined' && (window.PIANO_SINGLE_ORG_ID || window.PIANO_SAAS_CONFIG?.singleOrganizationId)) || 'pianoNutrizionale';
 const escapeAdmin = value => String(value ?? '').replace(/[&<>'"]/g, char => ({ '&':'&amp;','<':'&lt;','>':'&gt;',"'":'&#39;','"':'&quot;' }[char]));
 const orgId = () => SINGLE_ORG_ID;
+// Organizzazione singola: l'ID arriva da js/saas-config.js. Se manca, la
+// pagina non è stata caricata correttamente e nessuna callable può rispondere.
+const ORG_MISSING_MESSAGE = 'Organizzazione non configurata: ricarica la pagina.';
 const isoFromLocal = value => value ? new Date(value).toISOString() : null;
 const idem = prefix => `${prefix}-${Date.now()}-${Math.random().toString(36).slice(2, 9)}`;
 
@@ -20,7 +24,7 @@ function adminError(error) {
 }
 
 async function loadReports({ append = false } = {}) {
-  if (!orgId()) { $('report-feedback').textContent = 'Inserisci l’organizzazione per vedere la coda.'; return; }
+  if (!orgId()) { $('report-feedback').textContent = ORG_MISSING_MESSAGE; return; }
   $('report-feedback').textContent = 'Aggiornamento sicuro della coda…';
   try {
     const result = await callAdminSaasFunction('listMappingReports', {
@@ -109,7 +113,7 @@ async function submitMapping(event) {
 }
 
 async function loadClients() {
-  if (!orgId()) { $('clients-feedback').textContent = 'Inserisci l’organizzazione.'; return; }
+  if (!orgId()) { $('clients-feedback').textContent = ORG_MISSING_MESSAGE; return; }
   $('clients-feedback').textContent = 'Caricamento profili autorizzati…';
   try {
     const result = await callAdminSaasFunction('listAuthorizedClients', { organizationId: orgId() });
@@ -200,7 +204,7 @@ async function submitAssignment(event) {
 // Ogni salvataggio crea una revisione; il cliente conferma dall'app.
 
 async function loadDoseClients() {
-  if (!orgId()) { $('doses-feedback').textContent = 'Inserisci l’organizzazione.'; return; }
+  if (!orgId()) { $('doses-feedback').textContent = ORG_MISSING_MESSAGE; return; }
   $('doses-feedback').textContent = 'Caricamento clienti…';
   try {
     const result = await callAdminSaasFunction('listAuthorizedClients', { organizationId: orgId() });
@@ -390,10 +394,14 @@ async function loadCatalogIndex() {
   if (catalogIndexCache) return catalogIndexCache;
   // Letture fatte con il Firestore della console (Auth nominata): l'identità
   // valutata dalle Security Rules è quella dell'account professionale.
+  // Stesso tetto del server (functions/src/index.js, loadGlobalCatalog):
+  // con un catalogo più grande l'elenco sarebbe incompleto, quindi lo diciamo.
+  const ingredientLimit = 2000;
   const [ings, cats] = await Promise.all([
-    adminGetDocsQuery(adminQueryLimit(adminCollectionAt('globalIngredientCatalog/current/ingredients'), 500)),
-    adminGetDocsQuery(adminQueryLimit(adminCollectionAt('globalIngredientCatalog/current/categories'), 100))
+    adminGetDocsQuery(adminQueryLimit(adminCollectionAt('globalIngredientCatalog/current/ingredients'), ingredientLimit)),
+    adminGetDocsQuery(adminQueryLimit(adminCollectionAt('globalIngredientCatalog/current/categories'), 500))
   ]);
+  catalogTruncated = (ings?.size ?? ings?.docs?.length ?? 0) >= ingredientLimit;
   const ingredients = [];
   const categories = [];
   snapForEach(ings, doc => ingredients.push({ ingredientId: doc.id, ...doc.data() }));
@@ -454,6 +462,9 @@ function renderCatalogPicker(filter = '') {
   byCategory.forEach(entries => entries.sort((a, b) => String(a.ingredient?.displayName || '').localeCompare(String(b.ingredient?.displayName || ''), 'it')));
   const categoryLabel = categoryId => {
     if (!categoryId) return 'Senza categoria';
+    // 'free' è la categoria riservata (verdura, spezie, alimenti senza dosi):
+    // non esiste come documento e va etichettata come nel resto della console.
+    if (categoryId === 'free') return 'Alimenti liberi';
     const found = catalogCategoriesCache.find(item => item.categoryId === categoryId);
     return found?.displayName || categoryId;
   };
@@ -465,6 +476,9 @@ function renderCatalogPicker(filter = '') {
   [...byCategory.keys()].forEach(id => { if (!order.includes(id) && id !== 'free' && id !== '') order.push(id); });
   if (byCategory.has('')) order.push('');
   if (byCategory.has('free')) order.push('free');
+  const truncatedNote = catalogTruncated
+    ? '<p class="picker-empty">Catalogo molto grande: l’elenco mostra i primi 2000 alimenti. Usa il filtro per cercare gli altri.</p>'
+    : '';
   list.innerHTML = order.map(categoryId => `
     <div class="picker-category" role="group" aria-label="${escapeAdmin(categoryLabel(categoryId))}">
       <strong>${escapeAdmin(categoryLabel(categoryId))}</strong>
@@ -474,6 +488,7 @@ function renderCatalogPicker(filter = '') {
         return `<label class="picker-item"><input type="checkbox" data-picker-ing="${escapeAdmin(ingredientId)}" ${adminState.pickerSelection.has(ingredientId) ? 'checked' : ''} aria-label="Seleziona ${escapeAdmin(name)}">${escapeAdmin(name)}</label>`;
       }).join('')}</div>
     </div>`).join('') || '<p class="picker-empty">Nessun alimento corrisponde al filtro.</p>';
+  if (truncatedNote) list.innerHTML = truncatedNote + list.innerHTML;
 }
 
 function updatePickerCount() {
@@ -494,7 +509,7 @@ function resetCatalogPicker() {
 }
 
 async function loadStructures() {
-  if (!orgId()) { $('structures-feedback').textContent = 'Inserisci l’organizzazione.'; return; }
+  if (!orgId()) { $('structures-feedback').textContent = ORG_MISSING_MESSAGE; return; }
   $('structures-feedback').textContent = 'Caricamento strutture…';
   try {
     const result = await callAdminSaasFunction('listDietStructures', { organizationId: orgId() });
@@ -937,8 +952,109 @@ async function openCompare() {
 
 function closeCompare() { $('compare-dialog').classList.add('hidden'); }
 
+// ---- Sezione Catalogo globale ----
+// Il catalogo alimenta l'autocomplete delle Strutture dieta e la validazione
+// server-side: senza catalogo il salvataggio di una struttura viene rifiutato
+// ("ingrediente inesistente in catalogo"). L'import è riservato al platform
+// admin e passa da `importGlobalIngredientCatalog` con due passaggi: dry-run
+// (nessuna scrittura) e commit con lo stesso previewId.
+
+function renderCatalogStatus(summary) {
+  const version = Number(summary?.catalogVersion || 0);
+  if (!version) {
+    $('catalog-status').innerHTML = '<article class="client-card"><p class="eyebrow">CATALOGO</p><h3>Non ancora importato</h3><p>Finché il catalogo è vuoto la console non può salvare Strutture dieta: importa <span class="mono">docs/catalogo-import-meller.json</span>.</p></article>';
+    return;
+  }
+  $('catalog-status').innerHTML = `
+    <article class="client-card"><p class="eyebrow">VERSIONE</p><h3>v${version}</h3><p>${Number(summary.ingredientCount || 0)} ingredienti · ${Number(summary.categoryCount || 0)} categorie</p></article>
+    <article class="client-card"><p class="eyebrow">CHECKSUM</p><h3 class="mono">${escapeAdmin(String(summary.checksum || '—').slice(0, 16))}</h3><p>Aggiornato da Firestore, sola lettura.</p></article>`;
+}
+
+async function loadCatalogStatus() {
+  if (!adminState.isCreator) { $('catalog-feedback').textContent = 'Solo il platform admin può importare il catalogo.'; return; }
+  $('catalog-feedback').textContent = 'Lettura del catalogo…';
+  try {
+    const snapshot = await adminGetDoc('globalIngredientCatalog/current/meta/summary');
+    const summary = snapshot && typeof snapshot.exists === 'function' && snapshot.exists() ? snapshot.data() : null;
+    renderCatalogStatus(summary);
+    $('catalog-feedback').textContent = '';
+  } catch (error) {
+    $('catalog-feedback').textContent = adminError(error);
+  }
+}
+
+function catalogReportHtml(result) {
+  const counts = result.counts || {};
+  const errors = result.errors || [];
+  const rows = (result.diff || []).map(row => `<tr><td class="mono">${escapeAdmin(row.ingredientId || row.categoryId || '')}</td><td>${escapeAdmin(row.change)}</td><td>${escapeAdmin(row.detail || '')}</td></tr>`).join('');
+  return `
+    <p class="callout"><strong>${counts.create || 0} nuovi</strong> · ${counts.update || 0} aggiornati · ${counts.identical || 0} già identici · ${counts.conflicts || 0} conflitti · <strong>${errors.length} errori</strong>${result.diffTruncated ? ' · diff troncato' : ''}</p>
+    ${errors.length ? `<div class="feedback" role="alert">${errors.slice(0, 20).map(item => escapeAdmin(item)).join('<br>')}${errors.length > 20 ? '<br>…' : ''}</div>` : ''}
+    ${rows ? `<div class="dose-table-wrap"><table class="dose-table"><caption>Differenze proposte</caption><thead><tr><th scope="col">Voce</th><th scope="col">Esito</th><th scope="col">Dettaglio</th></tr></thead><tbody>${rows}</tbody></table></div>` : ''}`;
+}
+
+async function analyzeCatalogFile() {
+  const file = $('catalog-file').files && $('catalog-file').files[0];
+  $('catalog-report').innerHTML = '';
+  $('catalog-commit').disabled = true;
+  adminState.catalogPreview = null;
+  if (!file) { $('catalog-feedback').textContent = 'Scegli prima un file JSON.'; return; }
+  let payload = '';
+  try {
+    payload = await file.text();
+    const parsed = JSON.parse(payload);
+    if (!parsed || typeof parsed !== 'object' || !Array.isArray(parsed.ingredients) || !Array.isArray(parsed.categories)) {
+      $('catalog-feedback').textContent = 'Il file deve contenere "ingredients" e "categories".';
+      return;
+    }
+  } catch (_) {
+    $('catalog-feedback').textContent = 'File non leggibile: serve un JSON valido.';
+    return;
+  }
+  $('catalog-feedback').textContent = 'Analisi in corso (nessuna scrittura)…';
+  try {
+    const result = await callAdminSaasFunction('importGlobalIngredientCatalog', {
+      format: 'json', mode: 'dry-run', payload
+    });
+    $('catalog-report').innerHTML = catalogReportHtml(result);
+    const clean = !(result.errors || []).length && Number((result.counts || {}).create || 0) + Number((result.counts || {}).update || 0) > 0;
+    adminState.catalogPreview = clean ? { payload, previewId: result.previewId, counts: result.counts } : null;
+    $('catalog-commit').disabled = !clean;
+    $('catalog-feedback').textContent = clean
+      ? 'Analisi completata: nessun errore. Puoi confermare l’import.'
+      : 'Analisi completata: correggi gli errori segnalati e ripeti il dry-run.';
+  } catch (error) {
+    $('catalog-feedback').textContent = adminError(error);
+  }
+}
+
+async function commitCatalogImport() {
+  const preview = adminState.catalogPreview;
+  if (!preview) return;
+  const counts = preview.counts || {};
+  if (!window.confirm(`Importare il catalogo?\n\n${Number(counts.create || 0)} nuovi · ${Number(counts.update || 0)} aggiornati · ${Number(counts.identical || 0)} già identici.\n\nLe strutture già pubblicate non cambiano: l'import crea una nuova versione.`)) return;
+  $('catalog-commit').disabled = true;
+  $('catalog-feedback').textContent = 'Import in corso…';
+  try {
+    const result = await callAdminSaasFunction('importGlobalIngredientCatalog', {
+      format: 'json', mode: 'commit', payload: preview.payload, previewId: preview.previewId, confirm: true
+    });
+    adminState.catalogPreview = null;
+    // Il picker delle Strutture dieta tiene in cache l'indice del catalogo:
+    // senza invalidarlo mostrerebbe gli alimenti vecchi fino al ricaricamento.
+    catalogIndexCache = null;
+    catalogCategoriesCache = [];
+    catalogTruncated = false;
+    $('catalog-report').innerHTML = `<p class="callout"><strong>Catalogo importato</strong>: versione v${Number(result.catalogVersion || 0)}, checksum <span class="mono">${escapeAdmin(String(result.checksum || '').slice(0, 16))}</span>.</p>`;
+    $('catalog-feedback').textContent = 'Import completato: le Strutture dieta possono usare il catalogo.';
+    await loadCatalogStatus();
+  } catch (error) {
+    $('catalog-feedback').textContent = adminError(error);
+  }
+}
+
 async function loadUsers() {
-  if (!orgId()) { $('users-feedback').textContent = 'Inserisci l’organizzazione.'; return; }
+  if (!orgId()) { $('users-feedback').textContent = ORG_MISSING_MESSAGE; return; }
   $('users-feedback').textContent = 'Caricamento utenti autorizzati…';
   try {
     const result = await callAdminSaasFunction('listOrganizationUsers', { organizationId: orgId() });
@@ -1130,6 +1246,7 @@ function showView(view) {
   else if (view === 'doses') loadDoseClients();
   else if (view === 'structures') loadStructures();
   else if (view === 'users') loadUsers();
+  else if (view === 'catalog') loadCatalogStatus();
   else loadReports();
 }
 
@@ -1208,6 +1325,10 @@ function bindAdmin() {
   $('group-form').addEventListener('submit', submitGrouping);
   document.querySelectorAll('[data-close-group]').forEach(node => node.addEventListener('click', closeGroupDialog));
   $('refresh-users').addEventListener('click', loadUsers);
+  $('refresh-catalog').addEventListener('click', loadCatalogStatus);
+  $('catalog-dry-run').addEventListener('click', analyzeCatalogFile);
+  $('catalog-commit').addEventListener('click', commitCatalogImport);
+  $('catalog-file').addEventListener('change', () => { $('catalog-report').innerHTML = ''; $('catalog-commit').disabled = true; adminState.catalogPreview = null; });
   document.querySelectorAll('[data-verify-username]').forEach(node => node.addEventListener('click', () => verifyUsername(node.dataset.verifyUsername, node.dataset.verifyOut)));
   $('invite-nutritionist-form').addEventListener('submit', submitNutritionistInvite);
   $('invite-client-form').addEventListener('submit', submitClientInvite);
@@ -1253,6 +1374,7 @@ observeAdminAuthState(async user => {
   if (!user) {
     adminState.isCreator = false;
     $('invite-nutritionist-form').classList.add('hidden');
+    $('nav-catalog').classList.add('hidden');
     $('admin-login').classList.remove('hidden');
     $('admin-app').classList.add('hidden');
     return;
@@ -1285,6 +1407,7 @@ observeAdminAuthState(async user => {
   $('admin-login').classList.add('hidden');
   $('admin-app').classList.remove('hidden');
   $('invite-nutritionist-form').classList.toggle('hidden', !adminState.isCreator);
+  $('nav-catalog').classList.toggle('hidden', !adminState.isCreator);
   const name = usernameFromUser(user) || 'Professionista';
   $('admin-name').textContent = name; $('admin-avatar').textContent = name.slice(0, 1).toUpperCase();
   // Landing: la vista Clienti è la porta d'ingresso della console.

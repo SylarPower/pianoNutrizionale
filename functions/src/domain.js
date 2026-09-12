@@ -2,7 +2,7 @@
 
 const crypto = require('node:crypto');
 
-const SINGLE_ORGANIZATION_ID = 'piano';
+const SINGLE_ORGANIZATION_ID = 'pianoNutrizionale';
 const ROLES = new Set(['nutritionist']);
 const REPORT_STATUSES = new Set(['open', 'triaged', 'needs-review', 'resolved', 'rejected', 'duplicate']);
 const ASSIGNMENT_STATUSES = new Set(['scheduled', 'active', 'suspended', 'revoked', 'expired']);

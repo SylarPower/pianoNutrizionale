@@ -230,9 +230,13 @@ assert.match(weekMarkup, />Allenamento<\/button>/, 'tipo giornata Allenamento sc
 assert.match(weekMarkup, />Riposo<\/button>/, 'tipo giornata Riposo scritto per esteso');
 assert.doesNotMatch(weekMarkup, />[AR]<\/button>/, 'nessuna abbreviazione ambigua A/R nei selettori giornata');
 appState.deviceSettings.portionProfile = 'couple';
+renderGlobalHeader();
 renderWeek();
-assert.match(document.getElementById('view-week').innerHTML, /Profilo coppia/, 'profilo coppia visibile e contestualizzato');
+const headerCouple = document.getElementById('global-header-container').innerHTML;
+assert.match(headerCouple, /👥 Profilo coppia/, 'profilo coppia selezionabile dall’header');
+assert.match(headerCouple, /value="couple" selected/, 'profilo coppia mostrato come attivo nell’header');
 appState.deviceSettings.portionProfile = 'man';
+renderGlobalHeader();
 renderWeek();
 
 // Batch cooking: la chip della settimana è cliccabile e apre la modale dosi.

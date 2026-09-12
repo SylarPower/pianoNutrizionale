@@ -17,7 +17,7 @@ before(async () => {
   });
   await env.withSecurityRulesDisabled(async context => {
     const db = context.firestore();
-    const orgId = 'piano';
+    const orgId = 'pianoNutrizionale';
     await db.doc(`organizations/${orgId}`).set({ schemaVersion: 1, name: 'Piano' });
     // Creatore = platformMembers admin
     await db.doc('platformMembers/creator-a').set({ schemaVersion: 1, role: 'admin', status: 'active' });
@@ -48,34 +48,34 @@ after(async () => { await env?.cleanup(); });
 function db(uid) { return env.authenticatedContext(uid, { email: `${uid}@example.test` }).firestore(); }
 
 test('creatore legge i clienti ma non può scrivere direttamente', async () => {
-  await assertSucceeds(db('creator-a').doc('organizations/piano/clients/client-a').get());
-  await assertFails(db('creator-a').doc('organizations/piano/clients/client-a').update({ status: 'deleted' }));
+  await assertSucceeds(db('creator-a').doc('organizations/pianoNutrizionale/clients/client-a').get());
+  await assertFails(db('creator-a').doc('organizations/pianoNutrizionale/clients/client-a').update({ status: 'deleted' }));
 });
 
 test('nutritionist legge soltanto il cliente autorizzato (cross-client negato)', async () => {
-  await assertSucceeds(db('nutri-a').doc('organizations/piano/clients/client-a').get());
-  await assertFails(db('nutri-a').doc('organizations/piano/clients/client-b').get());
-  await assertFails(db('nutri-a').doc('organizations/piano/clients/client-b/assignments/asg-b').get());
+  await assertSucceeds(db('nutri-a').doc('organizations/pianoNutrizionale/clients/client-a').get());
+  await assertFails(db('nutri-a').doc('organizations/pianoNutrizionale/clients/client-b').get());
+  await assertFails(db('nutri-a').doc('organizations/pianoNutrizionale/clients/client-b/assignments/asg-b').get());
 });
 
 test('cliente non legge né seleziona profili o assignment di altri clienti', async () => {
-  await assertFails(db('patient-a').doc('organizations/piano/clients/client-b').get());
-  await assertFails(db('patient-a').doc('organizations/piano/clients/client-a/assignments/asg-a').get());
-  await assertFails(db('patient-a').doc('organizations/piano/clients/client-a/state/activeAssignment').set({ assignmentId: 'asg-b' }));
+  await assertFails(db('patient-a').doc('organizations/pianoNutrizionale/clients/client-b').get());
+  await assertFails(db('patient-a').doc('organizations/pianoNutrizionale/clients/client-a/assignments/asg-a').get());
+  await assertFails(db('patient-a').doc('organizations/pianoNutrizionale/clients/client-a/state/activeAssignment').set({ assignmentId: 'asg-b' }));
 });
 
 test('link cliente, cataloghi globali e coda mapping passano soltanto da callable', async () => {
   await assertFails(db('patient-a').doc('accountClientLinks/patient-a').get());
   await assertFails(db('patient-a').doc('globalRuleSets/base/versions/3').get());
-  await assertFails(db('creator-a').doc('organizations/piano/mappingReports/report-a').get());
+  await assertFails(db('creator-a').doc('organizations/pianoNutrizionale/mappingReports/report-a').get());
 });
 
 test('strutture dieta: nessun accesso diretto, privacy ownerUid solo via callable', async () => {
   // Nemmeno il proprietario né il creatore leggono direttamente: passa da callable.
-  await assertFails(db('nutri-a').doc('organizations/piano/dietStructures/struttura-a').get());
-  await assertFails(db('nutri-a').doc('organizations/piano/dietStructures/struttura-a/revisions/1').get());
-  await assertFails(db('creator-a').doc('organizations/piano/dietStructures/struttura-a').get());
-  await assertFails(db('nutri-a').doc('organizations/piano/dietStructures/struttura-a').update({ name: 'X' }));
+  await assertFails(db('nutri-a').doc('organizations/pianoNutrizionale/dietStructures/struttura-a').get());
+  await assertFails(db('nutri-a').doc('organizations/pianoNutrizionale/dietStructures/struttura-a/revisions/1').get());
+  await assertFails(db('creator-a').doc('organizations/pianoNutrizionale/dietStructures/struttura-a').get());
+  await assertFails(db('nutri-a').doc('organizations/pianoNutrizionale/dietStructures/struttura-a').update({ name: 'X' }));
 });
 
 test('catalogo: current leggibile, config e snapshot server-only, scritture negate', async () => {
@@ -88,17 +88,17 @@ test('catalogo: current leggibile, config e snapshot server-only, scritture nega
 });
 
 test('inviti e collegamenti: lettura solo ai contraenti, scritture negate', async () => {
-  await assertSucceeds(db('creator-a').doc('organizations/piano/invitations/invite-a').get());
-  await assertSucceeds(db('nutri-a').doc('organizations/piano/invitations/invite-a').get());
-  await assertFails(db('nutri-b').doc('organizations/piano/invitations/invite-a').get());
-  await assertFails(db('patient-a').doc('organizations/piano/invitations/invite-a').get());
-  await assertSucceeds(db('creator-a').doc('organizations/piano/clientLinkRequests/req-a').get());
-  await assertSucceeds(db('nutri-a').doc('organizations/piano/clientLinkRequests/req-a').get());
-  await assertSucceeds(db('patient-a').doc('organizations/piano/clientLinkRequests/req-a').get());
-  await assertFails(db('nutri-b').doc('organizations/piano/clientLinkRequests/req-a').get());
-  await assertFails(db('patient-b').doc('organizations/piano/clientLinkRequests/req-a').get());
-  await assertFails(db('nutri-a').doc('organizations/piano/clientLinkRequests/req-a').update({ status: 'accepted' }));
-  await assertFails(db('patient-a').doc('organizations/piano/clientLinkRequests/req-a').update({ status: 'accepted' }));
+  await assertSucceeds(db('creator-a').doc('organizations/pianoNutrizionale/invitations/invite-a').get());
+  await assertSucceeds(db('nutri-a').doc('organizations/pianoNutrizionale/invitations/invite-a').get());
+  await assertFails(db('nutri-b').doc('organizations/pianoNutrizionale/invitations/invite-a').get());
+  await assertFails(db('patient-a').doc('organizations/pianoNutrizionale/invitations/invite-a').get());
+  await assertSucceeds(db('creator-a').doc('organizations/pianoNutrizionale/clientLinkRequests/req-a').get());
+  await assertSucceeds(db('nutri-a').doc('organizations/pianoNutrizionale/clientLinkRequests/req-a').get());
+  await assertSucceeds(db('patient-a').doc('organizations/pianoNutrizionale/clientLinkRequests/req-a').get());
+  await assertFails(db('nutri-b').doc('organizations/pianoNutrizionale/clientLinkRequests/req-a').get());
+  await assertFails(db('patient-b').doc('organizations/pianoNutrizionale/clientLinkRequests/req-a').get());
+  await assertFails(db('nutri-a').doc('organizations/pianoNutrizionale/clientLinkRequests/req-a').update({ status: 'accepted' }));
+  await assertFails(db('patient-a').doc('organizations/pianoNutrizionale/clientLinkRequests/req-a').update({ status: 'accepted' }));
 });
 
 test('organizzazione singola piano: vecchia org non leggibile da nutritionist', async () => {
@@ -108,5 +108,5 @@ test('organizzazione singola piano: vecchia org non leggibile da nutritionist', 
 
 test('household non conferisce privilegi SaaS', async () => {
   await env.withSecurityRulesDisabled(context => context.firestore().doc('households/hh/members/placeholder').set({ ok: true }));
-  await assertFails(db('patient-a').doc('organizations/piano/clients/client-a').get());
+  await assertFails(db('patient-a').doc('organizations/pianoNutrizionale/clients/client-a').get());
 });
