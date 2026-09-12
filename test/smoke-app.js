@@ -141,7 +141,7 @@ const R = (id, name, slot, cat) => ({
     { name: 'Riso venere', ingredientId: 'riso-venere', portions: { ipoTraining: '60g', ipoRest: '50g', manTraining: '90g', manRest: '70g' } },
     { name: 'Uova intere', ingredientId: 'whole-eggs', portions: { ipoTraining: '2', ipoRest: '2', manTraining: '2', manRest: '2' } }
   ],
-  steps: ['Passo uno'], notes: ['Nota uno'], specialNote: ''
+  steps: ['Passo uno'], notes: ['Nota uno']
 });
 const recipes = [
   R('L1', 'Riso e uova', 'lunch', 'Legumi'),
@@ -193,15 +193,18 @@ const readModeRecipe = {
     { name: 'Pepe nero', portions: samePortion('q.b.') }
   ],
   steps: ['Cuoci la pasta', 'Condisci con cura'],
+  // Documento legacy: la vecchia "Nota speciale" deve confluire in notes.
   specialNote: 'Non scuocere', notes: ['Usare pepe fresco']
 };
 setRecipes([...recipes, readModeRecipe]);
 openRecipeModal('READ-ADAPT');
 assert.equal(editMode, false, 'ricetta aperta in lettura');
+assert.deepEqual(currentModal.recipe.notes, ['Non scuocere', 'Usare pepe fresco'], 'nota speciale unificata in notes senza prefisso');
+assert.equal(currentModal.recipe.specialNote, undefined, 'campo specialNote rimosso dalla ricetta normalizzata');
 const beforeReadAdapt = clone(currentModal.recipe);
 adaptCurrentRecipeToMeller();
 assert.equal(editMode, true, 'dopo il click passa in modifica');
-for (const field of ['name', 'emoji', 'slot', 'proteinCategory', 'steps', 'specialNote', 'notes']) {
+for (const field of ['name', 'emoji', 'slot', 'proteinCategory', 'steps', 'notes']) {
   assert.deepEqual(currentModal.recipe[field], beforeReadAdapt[field], `${field} preservato`);
 }
 assert.equal(currentModal.recipe.ingredients[0].name, beforeReadAdapt.ingredients[0].name);
@@ -923,7 +926,8 @@ renderModalContent();
   assert.match(editHtml, /role="combobox"/, 'campo nome come combobox accessibile');
   assert.match(editHtml, /ing-suggest-0/, 'listbox suggerimenti catalogo presente');
   assert.equal(document.getElementById('modal-batch-text')._textContent, '', 'tab Batch svuotata in modalità modifica (solo consultazione)');
-  assert.match(document.getElementById('modal-edit-notes').innerHTML, /edit-recipe-special/, 'nota speciale nella tab Preparazione');
+  assert.match(document.getElementById('modal-edit-notes').innerHTML, /id="edit-recipe-notes"/, 'campo note unico nella tab Preparazione');
+  assert.doesNotMatch(document.getElementById('modal-edit-notes').innerHTML, /edit-recipe-special/, 'campo nota speciale rimosso dall\'editor');
 }
 // Libreria ricette: niente chip frequenza, etichetta leggibile per categoria
 {

@@ -157,7 +157,7 @@ test('campanella senza bordo né fondo circolare in ogni stato', () => {
 
 test('campanella: badge rosso, shake periodico e reduced-motion preservati', () => {
   const badgeBlock = css.match(/^\.notification-badge \{[^}]*\}/m)[0];
-  assert.match(badgeBlock, /background: #e2492f;/, 'badge numerico rosso preservato');
+  assert.match(badgeBlock, /background: #c4704b;/, 'badge numerico terracotta (palette nuova, mai rosso)');
   assert.match(css, /@keyframes bell-shake/, 'animazione scuotimento preservata');
   assert.match(css, /\.notification-bell\.has-pending \{[^}]*animation: bell-shake/, 'shake attivo con pendenti');
   const reduced = css.match(/@media \(prefers-reduced-motion: reduce\) \{[^}]*\.notification-bell\.has-pending \{[^}]*\}[^}]*\}/);
@@ -280,7 +280,7 @@ test('editor senza controllo categoria proteica, valore preservato al salvataggi
     recipe: {
       id: 'L1', slot: 'lunch', name: 'Test', emoji: '🍲', proteinCategory: 'poultry',
       ingredients: [{ name: 'Pasta', portions: { ipo: '70 g', man: '90 g' } }],
-      steps: [], notes: [], specialNote: ''
+      steps: [], notes: []
     },
     original: null, dayKey: null, dayType: 'training', slot: null, planSlot: null, isNew: false
   };

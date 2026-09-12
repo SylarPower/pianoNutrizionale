@@ -136,7 +136,7 @@ appState.saasPolicy = { mode: 'assigned', migrationRequired: false };
 const PASTA = {
   id: 'L1', slot: 'lunch', name: 'Pasta', emoji: '🍝',
   ingredients: [{ name: 'Pasta di semola', portions: { man: '90 g', ipo: '70 g' } }],
-  steps: [], notes: [], specialNote: ''
+  steps: [], notes: []
 };
 
 function setupPlan() {

@@ -134,10 +134,10 @@ test('sezione Utenti: membri, inviti monouso, rimozione con conferma forte', () 
 });
 
 test('console Fase 2: font self-hosted e drawer mobile accessibile', () => {
-  assert.match(html, /rel="preload" href="assets\/fonts\/inter-latin-400-normal\.woff2"/);
+  assert.match(html, /rel="preload" href="assets\/fonts\/Author-Variable\.woff2"/);
   assert.match(html, /aria-expanded="false" aria-controls="console-sidebar"/);
   assert.match(html, /id="sidebar-backdrop"/);
-  assert.match(css, /@font-face\{font-family:"Inter"/);
+  assert.match(css, /@font-face\{font-family:"Author"/);
   assert.match(css, /\.sidebar-backdrop/);
   assert.match(js, /sidebar-backdrop/);
   assert.match(js, /aria-expanded/);
