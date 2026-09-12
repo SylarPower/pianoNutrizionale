@@ -517,7 +517,7 @@ function applyTheme(isDark) {
   if (themeMeta) {
     themeMeta.setAttribute(
       "content",
-      dark ? "#000000" : "#245A43"
+      dark ? "#000000" : "#3D9970"
     );
   }
 }
@@ -1018,7 +1018,7 @@ function renderGlobalHeader() {
   const profile = getPortionProfile();
   const pending = pendingNotificationCount();
   header.innerHTML = `
-    <div class="header-brand"><span class="header-brand-icon" aria-hidden="true">🥗</span><strong>Piano</strong></div>
+    <div class="header-brand"><span class="header-brand-icon" aria-hidden="true"><img src="assets/loghi/logo-app.svg" alt=""></span><strong>Piano</strong></div>
     <select aria-label="Profilo porzioni" onchange="changePortionProfile(this.value)">
       <option value="man" ${profile === "man" ? "selected" : ""}>👨 Profilo uomo</option>
       <option value="ipo" ${profile === "ipo" ? "selected" : ""}>👩 Profilo donna</option>
@@ -2506,7 +2506,7 @@ function renderClientLinkSection() {
   const requests = Array.isArray(state.requests) ? state.requests : [];
   const link = state.link || null;
   const requestsHtml = requests.length ? `<div class="linked-member-list">${requests.map(item => `
-    <div class="linked-member"><span class="account-avatar small">🥗</span><div><strong>${escapeHtml(item.organizationName || "Studio professionale")}</strong><small>Ti ha invitato a collegare il tuo piano</small></div>
+    <div class="linked-member"><span class="account-avatar small"><img src="assets/loghi/logo-app.svg" alt=""></span><div><strong>${escapeHtml(item.organizationName || "Studio professionale")}</strong><small>Ti ha invitato a collegare il tuo piano</small></div>
     <div class="link-request-actions"><button class="btn btn-primary" onclick="respondClientLinkRequest('${escapeHtml(item.requestId)}','accept')">Accetta</button><button class="btn btn-outline" onclick="respondClientLinkRequest('${escapeHtml(item.requestId)}','reject')">Rifiuta</button></div></div>`).join("")}</div>` : "";
   const linkHtml = link
     ? `<div class="linked-member"><span class="account-avatar small">●</span><div><strong>${escapeHtml(link.organizationName || "Studio professionale")}</strong><small>Collegamento attivo</small></div></div>

@@ -3,18 +3,20 @@
   "short_name": "Nutrizione",
   "start_url": "./",
   "display": "standalone",
-  "background_color": "#F8F9FA",
-  "theme_color": "#245A43",
+  "background_color": "#FBF6F0",
+  "theme_color": "#3D9970",
   "icons": [
     {
-      "src": "icons/icon-192.svg",
-      "sizes": "192x192",
-      "type": "image/svg+xml"
+      "src": "assets/loghi/logo-app.svg",
+      "sizes": "any",
+      "type": "image/svg+xml",
+      "purpose": "any"
     },
     {
-      "src": "icons/icon-512.svg",
+      "src": "assets/loghi/logo-app@2x.png",
       "sizes": "512x512",
-      "type": "image/svg+xml"
+      "type": "image/png",
+      "purpose": "any"
     }
   ]
 }

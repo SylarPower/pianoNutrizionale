@@ -5,7 +5,7 @@
  * (sottocartella /pianoNutrizionale/).
  */
 // IMPORTANTE: incrementare CACHE_VERSION a OGNI modifica di CSS, JS o index.html.
-const CACHE_VERSION = 69;
+const CACHE_VERSION = 70;
 const CACHE = `piano-nutrizionale-shell-v${CACHE_VERSION}`;
 const SHELL = [
   './',
@@ -20,8 +20,8 @@ const SHELL = [
   './js/firebase.js',
   './js/app.js',
   './manifest.json',
-  './icons/icon-192.svg',
-  './icons/icon-512.svg'
+  './assets/loghi/logo-app.svg',
+  './assets/fonts/Author-Variable.woff2'
 ];
 
 // SDK Firebase modulare servito da CDN: file statici immutabili (l'URL
