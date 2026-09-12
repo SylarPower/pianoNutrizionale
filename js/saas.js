@@ -97,7 +97,7 @@
     }
   }
 
-  // Applica gli override dose del cliente (sparsi, per famiglia Meller) sopra
+  // Applica gli override dose del cliente (sparsi, per famiglia) sopra
   // le regole dello studio. Non muta l'input: restituisce un motore nuovo.
   function applyDoseOverrides(engine, overrides) {
     if (!engine || !overrides?.doses || !Object.keys(overrides.doses).length) return engine;

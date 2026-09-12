@@ -8,7 +8,8 @@ const path = require('node:path');
 
 const domain = require('../functions/src/domain');
 const adminHtml = fs.readFileSync(path.join(__dirname, '..', 'admin.html'), 'utf8');
-const adminJs = fs.readFileSync(path.join(__dirname, '..', 'js/admin.js'), 'utf8');
+const adminCss = fs.readFileSync(path.join(__dirname, '..', 'css', 'admin.css'), 'utf8');
+const adminJs = fs.readFileSync(path.join(__dirname, '..', 'js', 'admin.js'), 'utf8');
 const saasConfig = fs.readFileSync(path.join(__dirname, '..', 'js/saas-config.js'), 'utf8');
 const rules = fs.readFileSync(path.join(__dirname, '..', 'firestore.rules'), 'utf8');
 
@@ -24,17 +25,19 @@ test('saas-config espone single org id', () => {
   assert.match(saasConfig, /singleOrganizationId.*piano/);
 });
 
-test('admin console non ha input organizzazione digitabile', () => {
-  assert.match(adminHtml, /id="organization-id" type="hidden"/, 'input org nascosto');
-  assert.match(adminHtml, /id="org-badge"/, 'badge org visibile');
-  assert.match(adminHtml, /unica/, 'etichetta unica');
-  assert.doesNotMatch(adminHtml, /<label class="tenant-field"><span>Organizzazione<\/span><input id="organization-id" placeholder=/, 'vecchio campo digitabile rimosso');
+test('admin console non ha alcun riferimento all’organizzazione in header', () => {
+  assert.doesNotMatch(adminHtml, /id="organization-id"/, 'input org nascosto rimosso');
+  assert.doesNotMatch(adminHtml, /id="org-badge"/, 'badge org rimosso');
+  assert.doesNotMatch(adminHtml, /tenant-field/, 'campo tenant rimosso dalla topbar');
+  assert.doesNotMatch(adminHtml, /<span>Organizzazione<\/span>/, 'etichetta Organizzazione rimossa');
+  assert.doesNotMatch(adminCss, /\.org-badge|\.tenant-field/, 'stili badge org rimossi');
+  assert.match(adminCss, /margin-left:auto/, 'topbar utente allineata a destra senza campo org');
 });
 
-test('admin.js usa costante SINGLE_ORG_ID', () => {
+test('admin.js usa costante SINGLE_ORG_ID senza UI org', () => {
   assert.match(adminJs, /SINGLE_ORG_ID/);
-  assert.match(adminJs, /'piano'|\"piano\"|SINGLE_ORG_ID/);
-  assert.match(adminJs, /function saveOrg\(\) \{ \/\* org singola/);
+  assert.doesNotMatch(adminJs, /saveOrg/, 'helper saveOrg rimosso');
+  assert.doesNotMatch(adminJs, /org-badge|organization-id/, 'nessun accesso a badge o input org');
 });
 
 test('rules: solo org piano, creator = platformMembers admin', () => {

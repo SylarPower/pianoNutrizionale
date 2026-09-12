@@ -2715,9 +2715,9 @@ const PROTEIN_CATEGORY_LABELS = {
       ingredients,
       families,
       proteinWeeklyFrequencies: deepClone(extract.proteinWeeklyFrequencies || []),
-      structureSeed: {
-        name: 'Struttura dieta base Meller',
-        description: 'Seed iniziale generato dal manuale del dott. Meller senza modificare le grammature originali.',
+    structureSeed: {
+      name: 'Struttura dieta base',
+      description: 'Seed iniziale dalle linee guida, senza modificare le grammature originali.',
         rules,
         alternativeGroups
       }

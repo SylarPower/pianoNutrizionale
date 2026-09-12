@@ -88,12 +88,7 @@ textarea{min-height:90px;resize:vertical}
 
 .workspace{grid-column:2;min-width:0;background:var(--bg)}
 .topbar{height:72px;padding:0 clamp(22px,3vw,36px);display:flex;align-items:center;gap:20px;border-bottom:1px solid var(--line);background:rgba(255,255,255,.92);backdrop-filter:blur(12px);position:sticky;top:0;z-index:10}
-.tenant-field{display:flex;align-items:center;gap:10px;margin-right:auto;flex:1}
-.tenant-field span{font-size:.75rem;font-weight:800;letter-spacing:.06em;text-transform:uppercase;color:var(--text-muted)}
-.tenant-field input{max-width:280px}
-.org-badge{display:inline-flex;align-items:center;gap:8px;min-height:40px;padding:0 14px;border:1px solid var(--line);border-radius:999px;background:var(--surface-alt);font-weight:750;color:var(--text)}
-.org-badge strong{color:var(--primary)}
-.topbar-user{display:flex;align-items:center;gap:10px}
+.topbar-user{display:flex;align-items:center;gap:10px;margin-left:auto}
 .topbar-user div{display:grid}
 .topbar-user small{color:var(--text-muted);font-size:.74rem}
 .avatar{width:40px;height:40px;border-radius:50%;display:grid;place-items:center;background:var(--primary-soft);color:var(--primary);font-weight:900}
@@ -210,6 +205,27 @@ tr.same .diff-mark{background:var(--primary);color:#fff}
 .rule-catalog input{font-size:.82rem}
 .group-add-item{justify-self:start}
 
+/* Catalogo e raggruppamento */
+.catalog-picker{margin:2px 0 16px;border:1px solid var(--line);border-radius:14px;background:var(--surface-alt)}
+.catalog-picker>summary{cursor:pointer;padding:12px 16px;font-weight:800;color:var(--primary)}
+.picker-hint{font-weight:600;color:var(--text-muted)}
+.picker-toolbar{display:grid;gap:10px;padding:4px 16px 10px}
+.picker-bar{display:flex;align-items:center;gap:12px;flex-wrap:wrap}
+.picker-bar #picker-count{font-size:.85rem;color:var(--text-muted);font-weight:700}
+.picker-bar .secondary{margin-left:auto}
+.picker-list{max-height:280px;overflow:auto;padding:0 16px 14px;display:grid;gap:2px}
+.picker-category>strong{display:block;font-size:.72rem;letter-spacing:.06em;text-transform:uppercase;color:var(--text-muted);padding:8px 0 4px}
+.picker-category-items{display:grid;grid-template-columns:repeat(auto-fill,minmax(190px,1fr));gap:2px 14px}
+.picker-item{display:flex;align-items:center;gap:8px;padding:4px 4px;font-weight:600;font-size:.86rem;cursor:pointer;border-radius:8px;min-height:34px}
+.picker-item:hover{background:rgba(36,90,67,.08)}
+.picker-item input{width:auto}
+.picker-empty{color:var(--text-muted);padding:10px 0}
+#picker-feedback{color:var(--primary);font-weight:700;font-size:.85rem;min-height:1.2em;padding:0 16px 12px;margin:0}
+.invite-link{width:100%;padding:10px 12px;border-radius:10px;border:1px solid var(--line);background:var(--surface-alt);font-size:.8rem;overflow-wrap:anywhere}
+form.invite-card .invite-link{margin:2px 0 10px}
+.group-doses{display:grid;grid-template-columns:repeat(4,1fr);gap:8px}
+.group-doses label{display:grid;gap:3px;font-size:.7rem;font-weight:800;color:#34463f}
+
 /* Dettagli tecnici */
 .tech-details{border:1px solid var(--line);border-radius:13px;padding:12px 14px;background:var(--surface-alt)}
 .tech-details summary{font-weight:800;cursor:pointer}
@@ -264,9 +280,6 @@ button:focus-visible,input:focus-visible,select:focus-visible,textarea:focus-vis
   .icon-button{display:grid;place-items:center}
   .topbar-user .text-muted,.topbar-user div{display:none}
   .topbar{padding:0 16px}
-  .tenant-field{min-width:0;gap:8px}
-  .tenant-field span{display:none}
-  .tenant-field input{width:100%;max-width:none}
   .console-view{padding:22px 16px}
   .hero-row{flex-direction:column;align-items:flex-start}
   .metric-grid{grid-template-columns:1fr}
@@ -283,6 +296,9 @@ button:focus-visible,input:focus-visible,select:focus-visible,textarea:focus-vis
   .structure-group .rule-head,.structure-rule .rule-head{grid-template-columns:1fr 1fr}
   .group-item{grid-template-columns:1fr auto}
   .group-item .rule-doses{grid-template-columns:1fr 1fr}
+  .group-doses{grid-template-columns:1fr 1fr}
+  .picker-bar .secondary{margin-left:0;width:100%}
+  .picker-category-items{grid-template-columns:1fr 1fr}
   .invite-grid{grid-template-columns:1fr}
   .invite-card:first-child{border-right:0;border-bottom:1px solid var(--line)}
   .copy-grid{grid-template-columns:1fr}
@@ -299,7 +315,8 @@ button:focus-visible,input:focus-visible,select:focus-visible,textarea:focus-vis
 @media(max-width:480px){
   .report-row{grid-template-columns:1fr}
   .report-main{grid-column:auto}
-  .form-grid,.dose-grid{grid-template-columns:1fr}
+  .form-grid,.dose-grid,.group-doses{grid-template-columns:1fr}
+  .picker-category-items{grid-template-columns:1fr}
   .dialog-card{padding:24px 18px}
   .hero-row h1{font-size:2.2rem}
   .dialog-actions{flex-direction:column-reverse}
@@ -309,9 +326,8 @@ button:focus-visible,input:focus-visible,select:focus-visible,textarea:focus-vis
   .full{width:calc(100% - 36px);margin-inline:18px}
 }
 /* Guardrail responsive: testi e identificativi tecnici non devono mai forzare la griglia */
-.form-grid>label,.report-main,.report-main>div,.report-meta,.tenant-field{min-width:0}
+.form-grid>label,.report-main,.report-main>div,.report-meta{min-width:0}
 .report-main strong,.report-main small,.report-meta strong{overflow-wrap:anywhere}
-.tenant-field{flex:1}
 
 @media(max-width:760px){
   .compare-table{min-width:0}

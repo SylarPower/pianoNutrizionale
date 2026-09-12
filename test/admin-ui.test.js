@@ -9,9 +9,12 @@ const css = fs.readFileSync(path.join(root, 'css/admin.css'), 'utf8');
 const js = fs.readFileSync(path.join(root, 'js/admin.js'), 'utf8');
 
 test('console admin contiene una slice reale mapping e assegnazioni', () => {
-  for (const id of ['reports-list','mapping-form','clients-list','assignment-form','organization-id']) {
+  for (const id of ['reports-list','mapping-form','clients-list','assignment-form']) {
     assert.match(html, new RegExp(`id="${id}"`));
   }
+  // L'header non espone più alcun riferimento all'organizzazione (singola 'piano').
+  assert.doesNotMatch(html, /organization-id|org-badge|tenant-field/);
+  assert.doesNotMatch(js, /saveOrg/);
   for (const callable of ['listMappingReports','proposeMapping','publishMapping','listAuthorizedClients']) {
     assert.match(js, new RegExp(`['"]${callable}['"]`));
   }
@@ -173,4 +176,40 @@ test('sezione Dosi clienti: vista, editor override e copia con anteprima', () =>
   assert.match(js, /aria-label="\$\{escapeAdmin\(item\.label\)\}/);
   assert.match(css, /\.dose-table/);
   assert.match(css, /\.copy-grid/);
+});
+
+test('strutture dieta: picker catalogo multi-selezione e raggruppamento con dosi comuni', () => {
+  // Picker catalogo nel dialog struttura, con filtro, conteggio accessibile e CTA.
+  for (const id of ['catalog-picker', 'catalog-picker-search', 'catalog-picker-list', 'picker-count', 'picker-clear', 'picker-group', 'picker-feedback']) {
+    assert.match(html, new RegExp(`id="${id}"`));
+  }
+  assert.match(html, /Raggruppa selezionati/);
+  assert.match(html, /aria-label="Filtra alimenti del catalogo"/);
+  assert.match(html, /role="status">Nessun alimento selezionato/);
+  // Dialog di raggruppamento: due destinazioni (regola multi-famiglia o gruppo alternativo) e dosi comuni.
+  for (const id of ['group-dialog', 'group-form', 'group-dest-rule', 'group-dest-alt', 'group-family', 'group-target', 'group-new-id', 'group-new-name', 'group-la', 'group-lr', 'group-ca', 'group-cr', 'group-error']) {
+    assert.match(html, new RegExp(`id="${id}"`));
+  }
+  assert.match(html, /aria-labelledby="group-title"/);
+  assert.match(html, /data-close-group/);
+  // Logica JS: render raggruppato per categoria, selezione minima 2, validazione dosi come le regole.
+  for (const fn of ['renderCatalogPicker', 'updatePickerCount', 'resetCatalogPicker', 'openGroupDialog', 'collectGroupDoses', 'submitGrouping', 'toggleGroupDestination', 'toggleNewGroupFields']) {
+    assert.match(js, new RegExp(`function ${fn}\\b`));
+  }
+  assert.match(js, /pickerSelection/);
+  assert.match(js, /count < 2/);
+  assert.match(js, /numeri interi tra 1 e 2000/);
+  assert.match(js, /almeno una dose per pranzo o cena/);
+  // Il raggruppamento crea righe normali riusando i builder esistenti (server-validati al salvataggio).
+  assert.match(js, /addStructureRuleRow\(\{ mellerFamilyId, ingredientIds, quantityGrams, enabled: true \}\)/);
+  assert.match(js, /groupItemRow\(\{ ingredientId, quantityGrams \}\)/);
+  assert.match(js, /resetCatalogPicker\(\)/);
+  // Reset del picker a ogni apertura del dialog struttura.
+  assert.match(js, /addEventListener\('click', openGroupDialog\)/);
+  assert.match(js, /role="group" aria-label=/);
+  // Stili e responsive (44px touch, stacking a colonna singola su mobile).
+  assert.match(css, /\.catalog-picker/);
+  assert.match(css, /\.picker-category-items/);
+  assert.match(css, /\.picker-item/);
+  assert.match(css, /\.group-doses/);
 });

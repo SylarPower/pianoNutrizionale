@@ -312,12 +312,12 @@ function validateDietStructureRules(rules) {
   return rules.map((rule, index) => {
     exactObject(rule, ['mellerFamilyId', 'ingredientIds', 'quantityGrams', 'enabled', 'categoryId'], `rules[${index}]`);
     const mellerFamilyId = id(rule.mellerFamilyId, `rules[${index}].mellerFamilyId`);
-    if (seen.has(mellerFamilyId)) fail('invalid-argument', `Famiglia Meller duplicata: ${mellerFamilyId}`);
+    if (seen.has(mellerFamilyId)) fail('invalid-argument', `Famiglia duplicata: ${mellerFamilyId}`);
     seen.add(mellerFamilyId);
     // La famiglia deve esistere nel motore: niente regole orfane che il
     // client convertirebbe in silenzio in "nessuna dose".
     if (!MELLER_FAMILY_IDS.has(mellerFamilyId)) {
-      fail('invalid-argument', `rules[${index}].mellerFamilyId non esiste nel motore Meller`);
+      fail('invalid-argument', `rules[${index}].mellerFamilyId non esiste nel motore delle famiglie`);
     }
     const quantityGrams = validateContextQuantity(rule.quantityGrams, `rules[${index}].quantityGrams`);
     const ingredientIds = Array.isArray(rule.ingredientIds)

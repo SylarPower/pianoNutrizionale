@@ -23,6 +23,6 @@ function createEmptyWeeklyPlan() {
   };
 }
 
-// Manuale e alternative alimentari consegnate da Meller. Fonte unica:
+// Linee guida e alternative alimentari del nutrizionista. Fonte unica:
 // js/domain.js (MELLER_GRAMMATURE e derivati). Qui c'è solo il riferimento.
 const MELLER_GUIDE = PianoDomain.MELLER_GUIDE;

@@ -167,3 +167,68 @@ test('override proteine e carboidrati indipendenti', () => {
   assert.equal(engine.rules[0].slots.lunch.training, 90, 'carboidrati invariati');
   assert.equal(engine.rules[1].slots.lunch.training, 180, 'proteine personalizzate');
 });
+
+// ---- Switch quantità adattate (struttura v2 assegnata) ----
+
+test('switch ON: engineRulesFor v2 + attivazione motore adattano le porzioni del pasto', () => {
+  // Motore completo: struttura v2 (90/70 pranzo) + override 120 A pranzo.
+  const engine = saas.engineRulesFor(v2Profile(OVERRIDES));
+  assert.equal(engine.rules[0].slots.lunch.training, 120);
+  assert.equal(engine.rules[0].slots.lunch.rest, 70);
+  const previousActivate = Domain.activateMellerRuleSet;
+  try {
+    assert.equal(Domain.activateMellerRuleSet(engine.rules, engine.freeAliases), true, 'motore installato');
+    const recipe = {
+      name: 'Pranzo tipo', slot: 'lunch',
+      ingredients: [{ name: 'Pasta', portions: { ipo: '500 g', man: '500 g' } }]
+    };
+    const onTraining = Domain.resolveRecipeForPlan(recipe, 'lunch', Domain.MELLER_MODE_MELLER, 'training');
+    assert.equal(onTraining.mode, 'meller');
+    assert.equal(onTraining.applied, true, 'dosi personalizzate applicate');
+    assert.equal(onTraining.recipe.ingredients[0].portions.ipo, '120 g', 'override allenamento');
+    assert.equal(onTraining.recipe.ingredients[0].portions.man, '120 g');
+    const onRest = Domain.resolveRecipeForPlan(recipe, 'lunch', Domain.MELLER_MODE_MELLER, 'rest');
+    assert.equal(onRest.applied, true);
+    assert.equal(onRest.recipe.ingredients[0].portions.ipo, '70 g', 'dose riposo della struttura (non coperta dall’override)');
+    assert.equal(recipe.ingredients[0].portions.ipo, '500 g', 'ricetta originale mai mutata');
+  } finally {
+    Domain.activateMellerRuleSet = previousActivate;
+  }
+});
+
+test('switch OFF: stessa struttura assegnata ma le quantità restano originali', () => {
+  const engine = saas.engineRulesFor(v2Profile(OVERRIDES));
+  const previousActivate = Domain.activateMellerRuleSet;
+  try {
+    Domain.activateMellerRuleSet(engine.rules, engine.freeAliases);
+    const recipe = {
+      name: 'Pranzo tipo', slot: 'lunch',
+      ingredients: [{ name: 'Pasta', portions: { ipo: '500 g', man: '500 g' } }]
+    };
+    const off = Domain.resolveRecipeForPlan(recipe, 'lunch', Domain.MELLER_MODE_ORIGINAL, 'training');
+    assert.equal(off.mode, 'original');
+    assert.equal(off.applied, false, 'nessuna adattazione in modalità originale');
+    assert.equal(off.recipe.ingredients[0].portions.ipo, '500 g', 'porzioni intatte');
+    assert.equal(recipe.ingredients[0].portions.ipo, '500 g', 'sorgente immutata');
+  } finally {
+    Domain.activateMellerRuleSet = previousActivate;
+  }
+});
+
+test('switch ON senza override: valgono le dosi dello studio dalla revisione v2', () => {
+  const engine = saas.engineRulesFor(v2Profile());
+  assert.equal(engine.rules[0].slots.lunch.training, 90, 'nessun override: dosi studio');
+  const previousActivate = Domain.activateMellerRuleSet;
+  try {
+    Domain.activateMellerRuleSet(engine.rules, engine.freeAliases);
+    const recipe = {
+      name: 'Pranzo tipo', slot: 'lunch',
+      ingredients: [{ name: 'Pasta', portions: { ipo: '500 g', man: '500 g' } }]
+    };
+    const on = Domain.resolveRecipeForPlan(recipe, 'lunch', Domain.MELLER_MODE_MELLER, 'training');
+    assert.equal(on.applied, true);
+    assert.equal(on.recipe.ingredients[0].portions.ipo, '90 g', 'dose studio applicata');
+  } finally {
+    Domain.activateMellerRuleSet = previousActivate;
+  }
+});

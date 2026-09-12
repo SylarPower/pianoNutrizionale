@@ -112,7 +112,7 @@ function renderEditorSuggestions(index) {
   meta.mappingMissing = !exactKnown;
   editorSuggestActiveIndex = -1;
   const missingHtml = meta.mappingMissing
-    ? `<div class="ing-suggest-missing" role="note">ⓘ «${escapeHtml(raw)}» non è nel catalogo: sarà salvato senza mapping Meller.</div>`
+    ? `<div class="ing-suggest-missing" role="note">ⓘ «${escapeHtml(raw)}» non è nel catalogo: sarà salvato senza mapping nel catalogo.</div>`
     : "";
   box.innerHTML = `${matches.map((item, i) => `
     <button type="button" class="ing-suggest-item" role="option" aria-selected="false" data-idx="${i}" data-id="${escapeAttr(item.ingredientId)}" data-name="${escapeAttr(item.displayName)}" onmousedown="event.preventDefault()" onclick="selectEditorSuggestion(${index}, ${i})"><span>${escapeHtml(item.displayName)}</span><small>${escapeHtml(item.categoryLabel || item.categoryId || "")}${item.matchedAlias ? ` · alias: ${escapeHtml(item.matchedAlias)}` : ""}</small></button>`).join("")}${missingHtml}`;
@@ -526,8 +526,110 @@ function applyTheme(isDark) {
 // molto prima dell'auth): evita il lampo di tema chiaro al riavvio della PWA.
 applyTheme(readBootTheme());
 
+// --- Invito cliente: registrazione pubblica da link `#/invite/<token>` ---
+// Il token monouso (64 hex, scadenza 7 giorni) viene consegnato fuori
+// piattaforma dalla console professionisti. Qui si crea l'account con lo
+// username concordato e si riscatta l'invito via callable dedicata: nessun
+// dato del cliente viene toccato direttamente da Firestore.
+const PENDING_INVITE_STORAGE = "pn_pending_invite_token";
+const INVITE_NICKNAME_RE = /^[a-z0-9._-]{3,20}$/;
+let pendingInviteToken = null;
+let inviteFlowActive = false;
+
+function readInviteTokenFromHash() {
+  const match = window.location.hash.match(/^#\/invite\/([a-f0-9]{64})$/i);
+  return match ? match[1].toLowerCase() : null;
+}
+
+function loadPendingInviteToken() {
+  const fromHash = readInviteTokenFromHash();
+  if (fromHash) {
+    try { sessionStorage.setItem(PENDING_INVITE_STORAGE, fromHash); } catch (_) {}
+    return fromHash;
+  }
+  try { return sessionStorage.getItem(PENDING_INVITE_STORAGE) || null; } catch (_) { return null; }
+}
+
+function clearPendingInviteToken() {
+  pendingInviteToken = null;
+  try { sessionStorage.removeItem(PENDING_INVITE_STORAGE); } catch (_) {}
+  try { history.replaceState(history.state, document.title, window.location.pathname + window.location.search); } catch (_) {}
+}
+
+function showInviteScreen() {
+  document.body.classList.add("auth-locked");
+  document.getElementById("login-screen")?.classList.add("hidden");
+  document.getElementById("invite-screen")?.classList.remove("hidden");
+  document.getElementById("app-container")?.classList.add("hidden");
+  document.querySelector(".bottom-nav")?.classList.add("hidden");
+  document.getElementById("global-header-container")?.remove();
+  clearLoading();
+  setTimeout(() => document.getElementById("invite-username")?.focus(), 50);
+}
+
+function mapInviteError(error) {
+  const code = String(error?.code || "");
+  if (code === "auth/invalid-username" || code === "auth/weak-password") return error.message;
+  if (code === "auth/email-already-in-use") return "Esiste già un account con questo username: chiedi al tuo nutrizionista un nuovo invito per un altro username.";
+  if (code === "auth/network-request-failed" || code.endsWith("unavailable")) return "Connessione assente: la registrazione richiede internet.";
+  if (code.endsWith("not-found")) return "Invito non valido o già utilizzato: chiedi un nuovo link al tuo nutrizionista.";
+  // failed-precondition: username non concordato o invito scaduto. Il messaggio
+  // del server è già in italiano e pronto per l'utente.
+  if (code.endsWith("failed-precondition") && error?.message) return `${error.message}. Se il problema continua, chiedi un nuovo link al tuo nutrizionista.`;
+  return "Registrazione non riuscita. Riprova tra poco o chiedi un nuovo link al tuo nutrizionista.";
+}
+
+function setupInviteForm() {
+  const form = document.getElementById("invite-form");
+  if (!form || form.dataset.ready) return;
+  form.dataset.ready = "true";
+  form.addEventListener("submit", async event => {
+    event.preventDefault();
+    const username = document.getElementById("invite-username").value;
+    const password = document.getElementById("invite-password").value;
+    const button = document.getElementById("invite-submit");
+    const errorEl = document.getElementById("invite-error");
+    errorEl.textContent = "";
+    if (!INVITE_NICKNAME_RE.test(String(username).trim().toLowerCase())) {
+      errorEl.textContent = "Username non valido: 3-20 caratteri tra lettere minuscole, numeri, punto, trattino o underscore. Niente spazi.";
+      return;
+    }
+    if (String(password).length < 8) {
+      errorEl.textContent = "La password deve avere almeno 8 caratteri.";
+      return;
+    }
+    if (!pendingInviteToken) {
+      errorEl.textContent = "Link invito non valido: chiedi un nuovo link al tuo nutrizionista.";
+      return;
+    }
+    button.disabled = true;
+    button.textContent = "Creazione account…";
+    // Finché il riscatto non è concluso l'observer dell'auth non deve trattare
+    // il token come un invito dimenticato.
+    inviteFlowActive = true;
+    try {
+      await signUpWithUsername(username, password);
+      await ensureUsernameDirectory();
+      await callSaasFunction("acceptOrganizationInvite", { token: pendingInviteToken });
+      clearPendingInviteToken();
+      document.getElementById("invite-screen")?.classList.add("hidden");
+      showToast("Account collegato al tuo nutrizionista ✅");
+    } catch (error) {
+      errorEl.textContent = mapInviteError(error);
+      // L'account potrebbe essere stato creato senza riscatto riuscito: si
+      // resta disconnessi così il link può essere riprovato con un nuovo invito.
+      try { await signOutUser(); } catch (_) {}
+    } finally {
+      inviteFlowActive = false;
+      button.disabled = false;
+      button.textContent = "Crea account e collega";
+    }
+  });
+}
+
 function showLogin() {
   document.body.classList.add("auth-locked");
+  document.getElementById("invite-screen")?.classList.add("hidden");
   document.getElementById("login-screen")?.classList.remove("hidden");
   document.getElementById("app-container")?.classList.add("hidden");
   document.querySelector(".bottom-nav")?.classList.add("hidden");
@@ -539,6 +641,7 @@ function showLogin() {
 function showApp() {
   document.body.classList.remove("auth-locked");
   document.getElementById("login-screen")?.classList.add("hidden");
+  document.getElementById("invite-screen")?.classList.add("hidden");
   document.getElementById("app-container")?.classList.remove("hidden");
   document.querySelector(".bottom-nav")?.classList.remove("hidden");
   // Anche l'avvio rapido da cache deve chiudere l'overlay: in quel percorso
@@ -667,7 +770,7 @@ function applyState(recipes, plan, shopping) {
     saveRecipeCatalog(appState.recipes).catch(error => console.warn("Migrazione schema 5: salvataggio catalogo non riuscito", error));
   }
   if (needsMellerPlanMigration) {
-    saveWeeklyPlan(appState.plan).catch(error => console.warn("Migrazione contesto Meller del piano non riuscita", error));
+    saveWeeklyPlan(appState.plan).catch(error => console.warn("Migrazione contesto linee guida del piano non riuscita", error));
   }
 
   applyTheme(!!appState.deviceSettings.darkMode);
@@ -736,7 +839,9 @@ function startAccountRealtimeSync() {
 }
 
 async function initApp() {
+  pendingInviteToken = loadPendingInviteToken();
   setupLoginForm();
+  setupInviteForm();
   if (!initFirebase()) {
     document.getElementById("login-error").textContent = "Il servizio non è configurato correttamente.";
     showLogin();
@@ -775,8 +880,16 @@ async function initApp() {
       setLocalDataOwner(null);
       appState.user = null;
       appState.household = null;
-      showLogin();
+      // Link invito in sospeso: la registrazione pubblica ha la precedenza
+      // sulla schermata di accesso standard.
+      if (pendingInviteToken) showInviteScreen();
+      else showLogin();
       return;
+    }
+    if (pendingInviteToken && !inviteFlowActive) {
+      // Account già autenticato che apre un link invito: il token resta
+      // parcheggiato finché non esce e riapre il link.
+      showToast("Per usare un invito cliente esci dall'account attuale e riapri il link");
     }
     writeSessionCache({
       uid: user.uid,
@@ -1216,12 +1329,12 @@ function renderWeek() {
               const mainSlot = window.PianoDomain?.MELLER_MAIN_SLOTS?.includes(slot.id);
               const mode = mainSlot ? getPlanMellerMode(day, slot.id) : null;
               const modeBadge = mainSlot && mode === "meller"
-                ? `<span class="meller-plan-badge" title="Dosi Meller applicate al piano">M</span>`
+                ? `<span class="meller-plan-badge" title="Dosi delle linee guida applicate al piano">L</span>`
                 : mainSlot && mode === "original"
-                  ? `<span class="meller-plan-badge original" title="Quantità originali: Meller non applicato">O</span>`
+                  ? `<span class="meller-plan-badge original" title="Quantità originali: adattamento alle linee guida non applicato">O</span>`
                   : "";
               const blockedBadge = planned?.blocked
-                ? `<span class="meller-blocked-badge" title="Adattamento Meller bloccato: mapping ingrediente mancante">⚠</span>`
+                ? `<span class="meller-blocked-badge" title="Adattamento alle linee guida bloccato: mapping ingrediente mancante">⚠</span>`
                 : "";
               return `<div class="week-meal">
                 <small>${escapeHtml(slot.shortLabel)}</small>
@@ -1343,7 +1456,7 @@ window.toggleCurrentPlanMellerMode = async function() {
   if (next === PianoDomain.MELLER_MODE_MELLER) {
     const check = PianoDomain.checkMellerContext(recipe, slot);
     if (check.status === "blocked") {
-      showToast(`Meller non applicabile: ${check.unknown.map(item => item.ingredient).join(", ") || "la ricetta"} non ha un mapping nel catalogo attuale. Usa le quantità originali.`, true);
+      showToast(`Adattamento alle linee guida non applicabile: ${check.unknown.map(item => item.ingredient).join(", ") || "la ricetta"} non ha un mapping nel catalogo attuale. Usa le quantità originali.`, true);
       return;
     }
   }
@@ -1353,7 +1466,7 @@ window.toggleCurrentPlanMellerMode = async function() {
     handleRoute();
     openRecipeModal(recipe.id, dayKey, slot);
   } catch (error) {
-    showToast("Impossibile aggiornare la modalità Meller", true);
+    showToast("Impossibile aggiornare la modalità dosi", true);
   }
 };
 
@@ -1377,7 +1490,7 @@ window.confirmSwap = async function(dayKey, slot, recipeId) {
       const missing = mellerCheck.unknown.map(item => item.ingredient).join(", ");
       const ambiguous = mellerCheck.ambiguous.map(item => item.group).join(", ");
       const details = [missing && `ingredienti non mappati: ${missing}`, ambiguous && `combinazioni da verificare: ${ambiguous}`].filter(Boolean).join("; ");
-      if (!confirm(`Meller non può essere applicato a questa ricetta (${details}).\n\nInserirla comunque con le quantità originali?`)) return;
+      if (!confirm(`Le linee guida non possono essere applicate a questa ricetta (${details}).\n\nInserirla comunque con le quantità originali?`)) return;
       selectedMode = PianoDomain.MELLER_MODE_ORIGINAL;
     }
   }
@@ -1561,7 +1674,7 @@ function recipeSectionHtml(title, recipes, slot) {
           ${recipes.map(recipe => {
             const mellerCheck = window.PianoDomain?.checkMellerContext?.(recipe, recipe.slot);
             const mellerFlag = mellerCheck && mellerCheck.status !== "not-applicable" && !mellerCheck.aligned
-              ? `<span class="meller-card-flag" title="${mellerCheck.status === "blocked" ? "Mapping Meller incompleto" : "Dosi fuori dalle linee guida"}">⚠</span>`
+              ? `<span class="meller-card-flag" title="${mellerCheck.status === "blocked" ? "Mapping delle linee guida incompleto" : "Dosi fuori dalle linee guida"}">⚠</span>`
               : "";
             return `<button class="recipe-library-card" data-search="${escapeAttr(`${recipe.id} ${recipe.name} ${recipe.namesByDayType?.training || ""} ${recipe.namesByDayType?.rest || ""} ${recipeProteinLabel(recipe)} ${(recipe.ingredients || []).map(i => i.name).join(" ")}`.toLowerCase())}" onclick="openRecipeModal('${escapeAttr(recipe.id)}')"><span class="recipe-code">${escapeHtml(recipe.id)}</span>${mellerFlag}<span class="recipe-card-emoji">${escapeHtml(recipe.emoji || "🍲")}</span><strong>${escapeHtml(recipe.name)}</strong><small>${escapeHtml(recipeProteinLabel(recipe))}</small></button>`;
           }).join("")}
@@ -2746,8 +2859,8 @@ window.prepareRecipeImport = async function(file) {
     const importNote = document.getElementById("import-meller-note");
     if (importNote) {
       importNote.innerHTML = importMeller.length
-        ? `<strong>⚠ Verifica Meller:</strong> ${importMeller.length} ricett${importMeller.length === 1 ? "a" : "e"} richiedono attenzione${importBlocked.length ? `, ${importBlocked.length} con mapping mancante` : ""}.<br><small>${escapeHtml(importNames)}${importMeller.length > 4 ? "…" : ""}</small><br><small>Le ricette verranno importate fedelmente; l'adattamento sarà applicato quando entreranno nel piano.</small>`
-        : `<strong class="meller-import-ok">✓ Dosi Meller verificabili</strong><br><small>Il file sarà importato senza modificare le ricette originali.</small>`;
+        ? `<strong>⚠ Verifica dosi:</strong> ${importMeller.length} ricett${importMeller.length === 1 ? "a" : "e"} richiedono attenzione${importBlocked.length ? `, ${importBlocked.length} con mapping mancante` : ""}.<br><small>${escapeHtml(importNames)}${importMeller.length > 4 ? "…" : ""}</small><br><small>Le ricette verranno importate fedelmente; l'adattamento sarà applicato quando entreranno nel piano.</small>`
+        : `<strong class="meller-import-ok">✓ Dosi delle linee guida verificabili</strong><br><small>Il file sarà importato senza modificare le ricette originali.</small>`;
     }
     document.getElementById("recipe-import-modal").classList.remove("hidden");
   } catch (error) {
@@ -3998,14 +4111,14 @@ function renderModalContent() {
       <button class="type-option rest ${dayType === "rest" ? "active" : ""}" onclick="setModalDayType('rest')" aria-pressed="${dayType === "rest"}">Riposo</button>
     </span>` : "";
   const mellerPlanControl = (!editMode && currentModal.dayKey && currentModal.planSlot && window.PianoDomain?.MELLER_MAIN_SLOTS?.includes(currentModal.planSlot))
-    ? `<span class="meller-plan-control"><button type="button" class="meller-mode-toggle ${planMode === "meller" ? "active" : "original"}" onclick="toggleCurrentPlanMellerMode()">${planMode === "meller" ? "✓ Dosi Meller" : "↺ Quantità originali"}</button></span>`
+    ? `<span class="meller-plan-control"><button type="button" class="meller-mode-toggle ${planMode === "meller" ? "active" : "original"}" onclick="toggleCurrentPlanMellerMode()">${planMode === "meller" ? "✓ Dosi linee guida" : "↺ Quantità originali"}</button></span>`
     : "";
   document.getElementById("modal-time").innerHTML = editMode
     // Il campo "Categoria proteica" non è più mostrato né modificabile:
     // la categoria deriva automaticamente dagli ingredienti tramite
     // PianoDomain.classifyProtein, con il valore salvato come fallback.
     ? `<div class="edit-meta-grid"><label>Emoji<input id="edit-recipe-emoji" value="${escapeAttr(recipe.emoji || "🍲")}" oninput="updateMellerEditorNotice()"></label><label>Tipo<select id="edit-recipe-slot" onchange="updateMellerEditorNotice()">${MEAL_SLOTS.map(slot => `<option value="${slot.id}" ${recipe.slot === slot.id ? "selected" : ""}>${escapeHtml(slot.label)}</option>`).join("")}</select></label></div>`
-    : `<div class="modal-context-row"><span>${escapeHtml(getSlotMeta(currentModal.slot || recipe.slot).label)} · ${escapeHtml(dayTypeLabel)} · ${escapeHtml(getProfileLabel())}</span>${toggleHtml}${mellerPlanControl}</div>${plannedResolution?.applied ? `<div class="modal-adapted-note">↻ Dosi Meller applicate a tutti gli ingredienti regolati per ${escapeHtml(getSlotMeta(currentModal.slot || recipe.slot).label.toLowerCase())}</div>` : plannedResolution?.blocked ? `<div class="modal-adapted-note warning">⚠ Meller non applicabile: uno o più ingredienti non hanno un mapping nel catalogo attuale. Vengono usate le quantità originali.</div>` : planMode === "original" && currentModal.dayKey && currentModal.planSlot && window.PianoDomain?.MELLER_MAIN_SLOTS?.includes(currentModal.planSlot) ? `<div class="modal-adapted-note warning">↺ Quantità originali: le dosi Meller non sono applicate a questo pasto.</div>` : ""}`;
+    : `<div class="modal-context-row"><span>${escapeHtml(getSlotMeta(currentModal.slot || recipe.slot).label)} · ${escapeHtml(dayTypeLabel)} · ${escapeHtml(getProfileLabel())}</span>${toggleHtml}${mellerPlanControl}</div>${plannedResolution?.applied ? `<div class="modal-adapted-note">↻ Dosi delle linee guida applicate a tutti gli ingredienti regolati per ${escapeHtml(getSlotMeta(currentModal.slot || recipe.slot).label.toLowerCase())}</div>` : plannedResolution?.blocked ? `<div class="modal-adapted-note warning">⚠ Adattamento alle linee guida non applicabile: uno o più ingredienti non hanno un mapping nel catalogo attuale. Vengono usate le quantità originali.</div>` : planMode === "original" && currentModal.dayKey && currentModal.planSlot && window.PianoDomain?.MELLER_MAIN_SLOTS?.includes(currentModal.planSlot) ? `<div class="modal-adapted-note warning">↺ Quantità originali: le dosi delle linee guida non sono applicate a questo pasto.</div>` : ""}`;
 
   const ingredientList = document.getElementById("modal-ingredients-list");
   if (editMode) {
@@ -4018,7 +4131,7 @@ function renderModalContent() {
           <input id="edit-ing-name-${index}" aria-label="Ingrediente" value="${escapeAttr(ingredient.name)}" role="combobox" aria-autocomplete="list" aria-expanded="false" aria-controls="ing-suggest-${index}" autocomplete="off" spellcheck="false"
             oninput="editorIngredientInput(${index}, this)" onkeydown="editorIngredientKeydown(${index}, event)" onfocus="editorIngredientInput(${index}, this)" onblur="editorIngredientBlur(${index})">
           <div id="ing-suggest-${index}" class="ing-suggest hidden" role="listbox" aria-label="Suggerimenti dal catalogo ingredienti"></div>
-          ${meta.mappingMissing ? `<small class="ing-mapping-flag" title="Non presente nel catalogo Meller: nessuna quantità verrà adattata per questo ingrediente">⚠ mapping mancante</small>` : ""}
+          ${meta.mappingMissing ? `<small class="ing-mapping-flag" title="Non presente nel catalogo attuale: nessuna quantità verrà adattata per questo ingrediente">⚠ mapping mancante</small>` : ""}
         </div>
         <div class="portion-edit-grid portion-edit-grid-single">${quantityEditorField(`edit-ing-man-${index}`, "Quantità · Uomo", getPortionValue(ingredient, "man", "training"))}${quantityEditorField(`edit-ing-ipo-${index}`, "Quantità · Donna", getPortionValue(ingredient, "ipo", "training"))}<button class="btn-icon remove-edit-item" aria-label="Rimuovi ingrediente" onclick="removeIngredient(${index})">×</button><small class="portion-shared-hint">Scegli numero e unità di misura (es. 60 g, 2 pz, 1 cucchiaio, q.b.). I valori particolari già salvati restano com'erano finché non li modifichi.</small></div>
       </li>`;
@@ -4108,13 +4221,13 @@ function mellerNoticeHtml() {
     : null;
   if (planned?.applied && planned.mode === "meller") {
     return `<div class="meller-notice meller-notice-success" role="status">
-      <div class="meller-notice-head"><span aria-hidden="true">✓</span><div><strong>Dosi Meller applicate</strong><small>La ricetta originale resta invariata; questo pasto usa le dosi precise del contesto.</small></div></div>
+      <div class="meller-notice-head"><span aria-hidden="true">✓</span><div><strong>Dosi delle linee guida applicate</strong><small>La ricetta originale resta invariata; questo pasto usa le dosi precise del contesto.</small></div></div>
     </div>`;
   }
   if (check.aligned && !currentModal.mellerPreviewActive) return "";
   if (check.aligned && currentModal.mellerPreviewActive) {
     return `<div class="meller-notice meller-notice-success" role="status">
-      <div class="meller-notice-head"><span aria-hidden="true">✓</span><div><strong>Preview Meller pronto</strong><small>Le quantità mostrate sono adattate. Salva l'adattamento contestuale oppure conserva l'originale.</small></div></div>
+      <div class="meller-notice-head"><span aria-hidden="true">✓</span><div><strong>Anteprima linee guida pronta</strong><small>Le quantità mostrate sono adattate. Salva l'adattamento contestuale oppure conserva l'originale.</small></div></div>
       <div class="meller-save-actions">
         <button class="btn btn-outline" type="button" onclick="saveRecipeEdit(true)">Salva comunque</button>
         <button class="btn btn-primary" type="button" onclick="saveRecipeWithMeller()">Adatta e salva</button>
@@ -4143,12 +4256,12 @@ function mellerNoticeHtml() {
   const actions = editMode
     ? `<div class="meller-save-actions">
         <button class="btn btn-outline" type="button" onclick="saveRecipeEdit(true)">Salva comunque</button>
-        ${blocked ? `<button class="btn btn-outline" type="button" disabled title="Mapping non disponibile nel catalogo Meller attuale">Adatta e salva</button>` : `<button class="btn btn-primary" type="button" onclick="saveRecipeWithMeller()">Adatta e salva</button>`}
-      </div>`
-    : `<button class="btn btn-outline meller-adapt-btn" type="button" onclick="adaptCurrentRecipeToMeller()">Prepara adattamento Meller</button>`;
+        ${blocked ? `<button class="btn btn-outline" type="button" disabled title="Mapping non disponibile nel catalogo attuale">Adatta e salva</button>` : `<button class="btn btn-primary" type="button" onclick="saveRecipeWithMeller()">Adatta e salva</button>`}
+    </div>`
+    : `<button class="btn btn-outline meller-adapt-btn" type="button" onclick="adaptCurrentRecipeToMeller()">Prepara adattamento alle linee guida</button>`;
   return `
     <div class="meller-notice ${blocked ? "meller-notice-blocked" : ""}" role="note">
-      <div class="meller-notice-head"><span aria-hidden="true">${blocked ? "⚠" : "⚠️"}</span><div><strong>${blocked ? "Mapping Meller incompleto" : "Dosi non allineate alle linee guida"}</strong><small>Riferimento per ${escapeHtml(getSlotMeta(contextSlot || "lunch").label.toLowerCase())} · pesi a crudo</small></div></div>
+      <div class="meller-notice-head"><span aria-hidden="true">${blocked ? "⚠" : "⚠️"}</span><div><strong>${blocked ? "Mapping delle linee guida incompleto" : "Dosi non allineate alle linee guida"}</strong><small>Riferimento per ${escapeHtml(getSlotMeta(contextSlot || "lunch").label.toLowerCase())} · pesi a crudo</small></div></div>
       ${blocked ? `<p class="meller-notice-explanation">L'adattamento non è disponibile perché uno o più ingredienti non hanno un mapping nel catalogo attuale. Non puoi creare il mapping da questa app; la ricetta originale può comunque essere conservata e usata.</p>` : ""}
       <ul class="meller-notice-list">${list}</ul>
       ${actions}
@@ -4291,7 +4404,7 @@ window.adaptCurrentRecipeToMeller = function() {
   const contextSlot = currentModal.slot || currentModal.recipe.slot;
   const built = PianoDomain.buildMellerContextAdaptation(currentModal.recipe, contextSlot);
   if (built.report.status === "blocked") {
-    showToast("Meller non applicabile: il mapping degli ingredienti non riconosciuti non è disponibile nel catalogo attuale. Usa le quantità originali.", true);
+    showToast("Adattamento alle linee guida non applicabile: il mapping degli ingredienti non riconosciuti non è disponibile nel catalogo attuale. Usa le quantità originali.", true);
     renderModalContent();
     return;
   }
@@ -4522,7 +4635,7 @@ async function saveRecipeEdit(forceMellerDecision = false) {
     // Il ricettario resta libero: prima del salvataggio chiediamo soltanto se
     // conservare l'originale o preparare l'adattamento Meller contestuale.
     renderModalContent();
-    showToast("Controlla il riquadro Meller e scegli come salvare la ricetta", true);
+    showToast("Controlla il riquadro delle linee guida e scegli come salvare la ricetta", true);
     return;
   }
   if (!currentModal.isNew && !recipe._original && currentModal.original) {
@@ -4560,7 +4673,7 @@ async function saveRecipeEdit(forceMellerDecision = false) {
     editMode = false;
     renderModalContent();
     showToast(planAssignmentWarning
-      ? "Ricetta salvata e assegnata con le quantità originali: il mapping Meller non è disponibile nel catalogo attuale"
+      ? "Ricetta salvata e assegnata con le quantità originali: il mapping non è disponibile nel catalogo attuale"
       : "Ricetta salvata nel cloud ✅", planAssignmentWarning);
     // Auto-report dei mapping sconosciuti NUOVI (una tantum, silenzioso se
     // non c'è nulla di nuovo; non lancia mai eccezioni verso il salvataggio).
