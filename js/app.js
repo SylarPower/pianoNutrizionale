@@ -1104,7 +1104,6 @@ function batchRecipeBoxHtml(heading, recipe, dayKey, slot, batch) {
         <li><span>${escapeHtml(ingredient.name)}</span>${ingredient.quantityHtml || `<strong>${escapeHtml(ingredient.quantity)}</strong>`}</li>`).join("")}</ul>
       <h5>Preparazione</h5>
       <ol class="batch-recipe-steps">${(recipe.steps || []).map((step, index) => `<li><strong>${index + 1}.</strong> ${escapeHtml(step)}</li>`).join("")}</ol>
-      ${recipe.specialNote ? `<p class="special-note"><strong>Importante:</strong> ${escapeHtml(recipe.specialNote)}</p>` : ""}
       ${recipe.notes?.length ? `<div class="recipe-notes"><strong>Note</strong><ul>${recipe.notes.map(note => `<li>${escapeHtml(note)}</li>`).join("")}</ul></div>` : ""}
     </article>`;
 }
@@ -1751,7 +1750,7 @@ window.createNewRecipe = function(slot = "lunch", assignDay = null) {
   const id = `U${Date.now()}`;
   const recipe = {
     id, slot: selectedSlot, name: "Nuova ricetta", emoji: getSlotMeta(selectedSlot).emoji, proteinCategory: "",
-    ingredients: [], steps: [], notes: [], specialNote: ""
+    ingredients: [], steps: [], notes: []
   };
   currentModal = { recipe, original: null, dayKey: DAY_ORDER.includes(assignDay) ? assignDay : null, dayType: DAY_ORDER.includes(assignDay) ? getDayType(assignDay) : getRecipePreviewDayType(), assignAfterSave: DAY_ORDER.includes(assignDay) ? { day: assignDay, slot: selectedSlot } : null, isNew: true };
   editMode = true;
@@ -1779,7 +1778,6 @@ function duplicatedRecipeFrom(sourceRecipe) {
     ingredients: clone(normalized.ingredients || []),
     steps: clone(normalized.steps || []),
     notes: clone(normalized.notes || []),
-    specialNote: normalized.specialNote || "",
     ...(normalized.namesByDayType ? { namesByDayType: clone(normalized.namesByDayType) } : {})
   };
 }
@@ -4153,17 +4151,16 @@ function renderModalContent() {
     prepList.innerHTML = recipe.steps.map((step, index) => `<li class="edit-step"><textarea id="edit-step-${index}">${escapeHtml(step)}</textarea><div><button class="btn-icon" onclick="moveStep(${index}, -1)">↑</button><button class="btn-icon" onclick="moveStep(${index}, 1)">↓</button><button class="btn-icon remove-edit-item" onclick="removeStep(${index})">×</button></div></li>`).join("") + `<li><button class="btn btn-outline full-width" onclick="addStep()">+ Aggiungi passaggio</button></li>`;
   } else {
     prepList.innerHTML = recipe.steps.map((step, index) => `<li class="step-item" onclick="this.classList.toggle('done')"><strong>${index + 1}.</strong> ${escapeHtml(step)}</li>`).join("");
-    if (recipe.specialNote) prepList.innerHTML += `<li class="special-note"><strong>Importante:</strong> ${escapeHtml(recipe.specialNote)}</li>`;
     if (recipe.notes?.length) prepList.innerHTML += `<li class="recipe-notes"><strong>Note</strong><ul>${recipe.notes.map(note => `<li>${escapeHtml(note)}</li>`).join("")}</ul></li>`;
   }
 
-  // In modifica nota speciale e note vivono nella tab Preparazione
+  // In modifica le note vivono nella tab Preparazione
   // (la tab Batch cooking non è più presente nell'editor).
   const editNotesContent = document.getElementById("modal-edit-notes");
   const batchContent = document.getElementById("modal-batch-text");
   if (editMode) {
     document.getElementById("tab-prep")?.classList.toggle("hidden", !document.querySelector('.tab-btn[data-target="tab-prep"]')?.classList.contains("active"));
-    if (editNotesContent) editNotesContent.innerHTML = `<label class="full-field">Nota speciale<textarea id="edit-recipe-special">${escapeHtml(recipe.specialNote || "")}</textarea></label><label class="full-field">Note (una per riga)<textarea id="edit-recipe-notes">${escapeHtml((recipe.notes || []).join("\n"))}</textarea></label>`;
+    if (editNotesContent) editNotesContent.innerHTML = `<label class="full-field">Note (una per riga)<textarea id="edit-recipe-notes" placeholder="Una nota per riga">${escapeHtml((recipe.notes || []).join("\n"))}</textarea></label>`;
     batchContent.textContent = "";
   } else if (batches && batches.length) {
     if (editNotesContent) editNotesContent.innerHTML = "";
@@ -4427,7 +4424,7 @@ function restoreMellerPreviewSource() {
   if (!currentModal?.mellerPreviewActive || !currentModal.mellerPreviewOriginal) return false;
   const edited = currentModal.recipe;
   const source = clone(currentModal.mellerPreviewOriginal);
-  ["name", "emoji", "slot", "proteinCategory", "steps", "notes", "specialNote", "namesByDayType"].forEach(key => {
+  ["name", "emoji", "slot", "proteinCategory", "steps", "notes", "namesByDayType"].forEach(key => {
     if (edited[key] !== undefined) source[key] = clone(edited[key]);
   });
   // Le etichette possono essere state corrette durante la revisione del
@@ -4452,7 +4449,7 @@ window.saveRecipeWithMeller = async function() {
     : edited;
   // Il comando salva l'originale dell'utente e persiste soltanto la matrice
   // contestuale delle dosi Meller. Non sostituisce le quantità del ricettario.
-  ["name", "emoji", "slot", "proteinCategory", "steps", "notes", "specialNote", "namesByDayType"].forEach(key => {
+  ["name", "emoji", "slot", "proteinCategory", "steps", "notes", "namesByDayType"].forEach(key => {
     if (edited[key] !== undefined) source[key] = clone(edited[key]);
   });
   if (currentModal.mellerPreviewActive && Array.isArray(edited.ingredients) && Array.isArray(source.ingredients)) {
@@ -4564,7 +4561,6 @@ function captureEditState() {
     else delete ingredient.ingredientId;
   });
   recipe.steps = recipe.steps.map((_, index) => document.getElementById(`edit-step-${index}`)?.value.trim() || "");
-  recipe.specialNote = document.getElementById("edit-recipe-special")?.value.trim() || "";
   recipe.notes = (document.getElementById("edit-recipe-notes")?.value || "").split("\n").map(note => note.trim()).filter(Boolean);
   // Qualunque modifica manuale invalida le dosi contestuali precedenti; il
   // comando “Adatta e salva” le rigenera esplicitamente.
