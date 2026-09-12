@@ -48,7 +48,7 @@ Gli `aliases` sono separati da `|` (CSV) o array di stringhe (JSON). `mellerFami
 ## Ciclo di vita
 
 1. **Dry-run** (default): nessuna scrittura. Output: conteggi per esito (creazioni, aggiornamenti identici, conflitti, errori) + diff dettagliato (max 200 righe) + `previewId`.
-2. **Commit**: invio della stessa payload con `previewId` e conferma esplicita → transazione atomica: bump `catalogVersion`, scrittura ingredienti/categorie, snapshot della versione precedente in `globalIngredientCatalog/versions/<n-1>` per rollback operativo, evento `catalog.imported` in audit con checksum.
+2. **Commit**: invio della stessa payload con `previewId` e conferma esplicita → transazione atomica: bump `catalogVersion`, scrittura ingredienti/categorie, snapshot della versione precedente in `globalIngredientCatalog/versions/snapshots/<n-1>` per rollback operativo, evento `catalog.imported` in audit con checksum.
 3. **Rollback**: feature-flag `CATALOG_IMPORT_ENABLED` può essere disattivato in qualsiasi momento; lo snapshot precedente permette il ripristino con lo stesso callable in modalità `restore`.
 
 Le versioni del catalogo **non collassano** con le revisioni delle strutture: ogni revisione pubblicata conserva il riferimento `ingredientCatalogVersion` al momento della pubblicazione (non-retroattività, ADR 0001/0002).

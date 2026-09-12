@@ -35,8 +35,8 @@ before(async () => {
     await db.doc(`organizations/${orgId}/invitations/invite-a`).set({ schemaVersion: 1, type: 'client', targetUsername: 'cliente-x', tokenHash: 'h', status: 'pending', createdBy: 'nutri-a' });
     await db.doc(`organizations/${orgId}/clientLinkRequests/req-a`).set({ schemaVersion: 1, clientId: 'client-a', targetUid: 'patient-a', nutritionistUid: 'nutri-a', status: 'pending' });
     await db.doc('globalIngredientCatalog/current/ingredients/riso').set({ schemaVersion: 2, displayName: 'Riso', status: 'active' });
-    await db.doc('globalIngredientCatalog/config/denylist').set({ ingredientIds: [] });
-    await db.doc('globalIngredientCatalog/versions/0').set({ schemaVersion: 2, catalogVersion: 0 });
+    await db.doc('globalIngredientCatalog/config/docs/denylist').set({ ingredientIds: [] });
+    await db.doc('globalIngredientCatalog/versions/snapshots/0').set({ schemaVersion: 2, catalogVersion: 0 });
     // Org vecchia non valida più: per testare che non sia leggibile
     await db.doc('organizations/org-a').set({ schemaVersion: 1, name: 'Vecchia' });
     await db.doc('organizations/org-a/members/nutri-a').set({ schemaVersion: 1, role: 'nutritionist', status: 'active' });
@@ -80,9 +80,9 @@ test('strutture dieta: nessun accesso diretto, privacy ownerUid solo via callabl
 
 test('catalogo: current leggibile, config e snapshot server-only, scritture negate', async () => {
   await assertSucceeds(db('patient-a').doc('globalIngredientCatalog/current/ingredients/riso').get());
-  await assertFails(db('patient-a').doc('globalIngredientCatalog/config/denylist').get());
-  await assertFails(db('creator-a').doc('globalIngredientCatalog/config/denylist').get());
-  await assertFails(db('patient-a').doc('globalIngredientCatalog/versions/0').get());
+  await assertFails(db('patient-a').doc('globalIngredientCatalog/config/docs/denylist').get());
+  await assertFails(db('creator-a').doc('globalIngredientCatalog/config/docs/denylist').get());
+  await assertFails(db('patient-a').doc('globalIngredientCatalog/versions/snapshots/0').get());
   await assertFails(db('patient-a').doc('globalIngredientCatalog/current/ingredients/riso').update({ displayName: 'X' }));
   await assertFails(db('creator-a').doc('globalIngredientCatalog/current/ingredients/nuovo').set({ displayName: 'Y' }));
 });

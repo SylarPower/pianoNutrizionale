@@ -251,7 +251,7 @@ cancellare Auth/household/ricette/backup.
 
 `globalIngredientCatalog/current/{ingredients,categories}/…` + `meta/summary`
 `{catalogVersion, checksum, counts}`. Snapshot in
-`globalIngredientCatalog/versions/<n>`; config server-only in
+`globalIngredientCatalog/versions/snapshots/<n>`; config server-only in
 `globalIngredientCatalog/config/{import,denylist}`. Ogni commit/restore crea una
 nuova versione mai sovrascritta; le revisioni strutture conservano
 `ingredientCatalogVersion`. Formato e validazioni: `docs/catalog-import-format.md`.

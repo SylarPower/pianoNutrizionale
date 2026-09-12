@@ -49,5 +49,5 @@ il cliente non riceveva mai le regole delle strutture.
 - Nessun nuovo indice composito: le query Utenti/inviti/link usano singoli
   filtri + selezione in codice.
 - Rules: accesso diretto a strutture/revisioni negato; inviti/link leggibili
-  solo dai contraenti; catalogo `current/` leggibile, `config/` e `versions/`
-  server-only.
+  solo dai contraenti; catalogo `current/` leggibile, `config/` e
+  `versions/snapshots/` server-only.

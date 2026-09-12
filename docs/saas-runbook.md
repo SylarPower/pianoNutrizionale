@@ -102,7 +102,7 @@ Creare `globalRuleSets/base/versions/3` con il contratto documentato, `status:"p
 2. Correggere il file finché `errors` è vuoto; il commit richiede `confirm: true`
    e lo stesso `previewId` (concorrenza ottimistica sulla `catalogVersion`).
 3. Commit atomico in transazione: bump `catalogVersion`, upsert voci, snapshot
-   della versione precedente in `globalIngredientCatalog/versions/<n-1>`, audit
+   della versione precedente in `globalIngredientCatalog/versions/snapshots/<n-1>`, audit
    `catalog.imported` in `platformAuditLog` con checksum. Limite: 400 voci per
    commit (suddividere i file grandi).
 4. Rollback: disattivare il flag (blocca nuovi commit) e ripristinare con

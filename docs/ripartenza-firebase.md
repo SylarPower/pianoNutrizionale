@@ -206,12 +206,21 @@ Cosa lascia dietro di sé (per controllo, non serve toccarlo):
 globalIngredientCatalog/current/ingredients/{id}     catalogo attivo
 globalIngredientCatalog/current/categories/{id}
 globalIngredientCatalog/current/meta/summary         versione + conteggi + checksum
-globalIngredientCatalog/versions/{n}                 copia della versione precedente
+globalIngredientCatalog/versions/snapshots/{n}       copia della versione precedente
 ```
 
 L'import è atomico e **crea sempre una nuova versione**: le Strutture già
 pubblicate non cambiano da sole. Per tornare indietro si importa di nuovo il file
 giusto, oppure si usa la modalità `restore` del callable (server-side).
+
+> **Se "Conferma import" risponde "Operazione non disponibile" (500) mentre il
+> dry-run funziona**: le Functions pubblicate sono una versione che scrive lo
+> snapshot su `globalIngredientCatalog/versions/<n>` (3 segmenti: per Firestore
+> è una collezione, non un documento) e il client Admin lo rifiuta prima di
+> qualunque scrittura. Nessuna scrittura parziale avviene: il catalogo resta
+> integro alla versione precedente. Rimedio: ripubblica **solo le Cloud
+> Functions** aggiornate (regole e indici non c'entrano), poi ripeti dry-run e
+> Conferma import.
 
 ---
 
