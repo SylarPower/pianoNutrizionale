@@ -2521,6 +2521,9 @@ async function refreshClientLinkState() {
   } catch (_) {
     appState.clientLink = { requests: [], link: null, error: true };
   }
+  updateNotificationBadge();
+  const modal = document.getElementById("incoming-shares-modal");
+  if (modal && !modal.classList.contains("hidden")) renderIncomingShares();
   if (window.location.hash === "#settings") renderSettings();
 }
 
@@ -2536,14 +2539,25 @@ function renderClientLinkSection() {
   const requests = Array.isArray(state.requests) ? state.requests : [];
   const link = state.link || null;
   const requestsHtml = requests.length ? `<div class="linked-member-list">${requests.map(item => `
-    <div class="linked-member"><span class="account-avatar small"><img src="assets/loghi/logo-app.svg" alt=""></span><div><strong>${escapeHtml(item.organizationName || "Studio professionale")}</strong><small>Ti ha invitato a collegare il tuo piano</small></div>
+    <div class="linked-member"><span class="account-avatar small"><img src="assets/loghi/logo-app.svg" alt=""></span><div><strong>${escapeHtml(item.nutritionistDisplayName || item.nutritionistUsername || item.organizationName || "Studio professionale")}</strong><small>Ti ha invitato a collegare il tuo piano · ${escapeHtml(item.organizationName || "Studio professionale")}</small></div>
     <div class="link-request-actions"><button class="btn btn-primary" onclick="respondClientLinkRequest('${escapeHtml(item.requestId)}','accept')">Accetta</button><button class="btn btn-outline" onclick="respondClientLinkRequest('${escapeHtml(item.requestId)}','reject')">Rifiuta</button></div></div>`).join("")}</div>` : "";
   const linkHtml = link
-    ? `<div class="linked-member"><span class="account-avatar small">●</span><div><strong>${escapeHtml(link.organizationName || "Studio professionale")}</strong><small>Collegamento attivo</small></div></div>
-       <div class="linked-account-actions"><button class="btn btn-outline" onclick="openUnlinkModal()">Scollegati</button></div>`
+    ? `<div class="linked-member"><span class="account-avatar small">●</span><div><strong>${escapeHtml(link.nutritionistDisplayName || link.nutritionistUsername || link.organizationName || "Studio professionale")}</strong><small>Collegamento attivo · ${escapeHtml(link.organizationName || "Studio professionale")}</small></div></div>
+       <div class="linked-account-actions"><button class="btn btn-outline" onclick="openUnlinkModal()">Scollegati</button></div>
+       <form class="profile-name-form" onsubmit="saveClientDisplayName(event)"><label>Nome mostrato al tuo professionista<input id="client-display-name" maxlength="120" value="${escapeHtml(link.displayName || "")}" placeholder="Nome e cognome (facoltativo)"></label><button class="btn btn-outline" type="submit">Salva</button></form>`
     : (requests.length ? "" : `<p class="linked-empty">Nessun professionista collegato. Se il tuo nutrizionista ti invita con il tuo username, la richiesta apparirà qui.</p>`);
   return `<section class="settings-section linked-accounts-section"><div class="flex-between"><div><p class="eyebrow">PROFESSIONISTA</p><h2>Collegamento professionista</h2></div><span class="link-status ${link ? "active" : ""}">${link ? "● Collegato" : "Non collegato"}</span></div>${requestsHtml}${linkHtml}</section>`;
 }
+
+window.saveClientDisplayName = async function(event) {
+  event.preventDefault();
+  try {
+    const displayName = document.getElementById("client-display-name")?.value || "";
+    await callSaasFunction("updateMyClientProfile", { displayName, idempotencyKey: `client-profile-${Date.now()}` });
+    appState.clientLink.link.displayName = displayName.trim() || null;
+    showToast("Nome aggiornato ✅"); renderSettings();
+  } catch (error) { showToast(error?.message || "Impossibile aggiornare il nome", true); }
+};
 
 window.respondClientLinkRequest = async function(requestId, decision) {
   try {
@@ -2702,7 +2716,9 @@ function readCachedNotificationCount() {
 // (offline) e non ho dati live, si usa l'ultimo conteggio noto: le notifiche
 // pendenti non devono sparire visivamente per un errore di rete.
 function pendingNotificationCount() {
-  const live = incomingAccountLinks.length + incomingRecipeShares.length;
+  const saas = window.PianoSaas?.config().enabled && !appState.clientLink?.error
+    ? (appState.clientLink?.requests?.length || 0) : 0;
+  const live = incomingAccountLinks.length + incomingRecipeShares.length + saas;
   if (live || !notificationsLoadError) return live;
   return readCachedNotificationCount();
 }
@@ -2734,7 +2750,9 @@ function applyIncomingRequests(recipeShares, accountLinks) {
   notificationsLoadError = false;
   incomingRecipeShares = Array.isArray(recipeShares) ? recipeShares : [];
   incomingAccountLinks = Array.isArray(accountLinks) ? accountLinks : [];
-  writeLocalJson(NOTIF_COUNT_CACHE, incomingRecipeShares.length + incomingAccountLinks.length);
+  const saas = window.PianoSaas?.config().enabled && !appState.clientLink?.error
+    ? (appState.clientLink?.requests?.length || 0) : 0;
+  writeLocalJson(NOTIF_COUNT_CACHE, incomingRecipeShares.length + incomingAccountLinks.length + saas);
   updateNotificationBadge();
   const modal = document.getElementById("incoming-shares-modal");
   if (modal && !modal.classList.contains("hidden")) renderIncomingShares();
@@ -3245,7 +3263,8 @@ window.openIncomingShares = async function() {
     console.error(error);
     // Il caricamento fallito non deve azzerare notifiche già pendenti.
     markNotificationsLoadFailed();
-    if (!incomingRecipeShares.length && !incomingAccountLinks.length) {
+    const saasRequests = window.PianoSaas?.config().enabled && !appState.clientLink?.error ? (appState.clientLink?.requests || []) : [];
+  if (!incomingRecipeShares.length && !incomingAccountLinks.length && !saasRequests.length) {
       list.innerHTML = `<div class="empty-state"><span>⚠️</span><p>${escapeHtml(error.message || "Impossibile caricare le richieste")}</p></div>`;
     } else {
       renderIncomingShares();
@@ -3255,8 +3274,9 @@ window.openIncomingShares = async function() {
 };
 
 function renderIncomingShares() {
+  const saasRequests = window.PianoSaas?.config().enabled && !appState.clientLink?.error ? (appState.clientLink?.requests || []) : [];
   const list = document.getElementById("incoming-shares-list");
-  if (!incomingRecipeShares.length && !incomingAccountLinks.length) {
+  if (!incomingRecipeShares.length && !incomingAccountLinks.length && !saasRequests.length) {
     // Offline dopo un caricamento fallito con pendenti noti: il messaggio non
     // deve dichiarare "nessuna richiesta" finché il server non è consultabile.
     list.innerHTML = notificationsLoadError && readCachedNotificationCount() > 0
@@ -3264,6 +3284,7 @@ function renderIncomingShares() {
       : `<div class="empty-state"><span>📭</span><h3>Nessuna richiesta</h3><p>Le ricette condivise e gli inviti a collegare un account compariranno qui.</p></div>`;
     return;
   }
+  const saasCards = saasRequests.map(request => `<article class="incoming-share-card saas-link-request"><div><span class="account-avatar small">${escapeHtml((request.nutritionistDisplayName || request.nutritionistUsername || "?").slice(0, 1).toUpperCase())}</span><div><strong>${escapeHtml(request.nutritionistDisplayName || request.nutritionistUsername || request.organizationName || "Studio professionale")}</strong><small>Richiesta del professionista · ${escapeHtml(request.organizationName || "Studio professionale")}</small></div></div><p>Ti ha invitato a collegare il tuo piano nutrizionale.</p><div class="incoming-share-actions"><button class="btn btn-primary" onclick="respondClientLinkRequest('${escapeHtml(request.requestId)}','accept')">Accetta</button><button class="btn btn-outline" onclick="respondClientLinkRequest('${escapeHtml(request.requestId)}','reject')">Rifiuta</button></div></article>`).join("");
   const linkCards = incomingAccountLinks.map(request => `
     <article class="incoming-share-card account-link-request">
       <div><span class="account-avatar small">${escapeHtml((request.senderUsername || "?").slice(0, 1).toUpperCase())}</span><div><strong>${escapeHtml(request.senderUsername || "Utente")}</strong><small>🔗 Invito a collegare gli account</small></div></div>
@@ -3291,7 +3312,7 @@ function renderIncomingShares() {
       <div class="incoming-share-actions">${actions}<button class="btn btn-outline" onclick="rejectSharedRecipes('${share.id}')">Rifiuta</button></div>
     </article>`;
   }).join("");
-  list.innerHTML = linkCards + recipeCards;
+  list.innerHTML = saasCards + linkCards + recipeCards;
 }
 
 window.closeIncomingShares = function() {

@@ -122,6 +122,8 @@ async function loadClients() {
   } catch (error) { $('clients-feedback').textContent = adminError(error); adminState.clients = []; renderClients(); }
 }
 
+function clientLabel(client) { return client.displayName || client.username || client.displayCode; }
+
 function assignmentSummary(client) {
   const active = client.activeAssignment;
   if (!active) return 'Nessun profilo attivo · dosi originali';
@@ -130,7 +132,7 @@ function assignmentSummary(client) {
 }
 
 function renderClients() {
-  $('clients-list').innerHTML = adminState.clients.map(client => `<article class="client-card"><p class="eyebrow">CLIENTE</p><h3>${escapeAdmin(client.displayCode)}</h3><p>${escapeAdmin(assignmentSummary(client))}</p><div class="card-actions"><button class="secondary" data-assign-client="${escapeAdmin(client.id)}">${client.activeAssignment ? 'Cambia profilo' : 'Assegna profilo'} →</button>${client.status && client.status !== 'active' ? '' : `<button class="text-button archive-toggle" data-unlink-client="${escapeAdmin(client.id)}" data-display="${escapeAdmin(client.displayCode)}">Rimuovi collegamento</button>`}</div></article>`).join('');
+  $('clients-list').innerHTML = adminState.clients.map(client => `<article class="client-card"><p class="eyebrow">CLIENTE</p><h3>${escapeAdmin(clientLabel(client))}</h3><p><small>${escapeAdmin(client.displayCode)}</small></p><p>${escapeAdmin(assignmentSummary(client))}</p><div class="card-actions"><button class="secondary" data-assign-client="${escapeAdmin(client.id)}">${client.activeAssignment ? 'Cambia profilo' : 'Assegna profilo'} →</button>${client.status && client.status !== 'active' ? '' : `<button class="text-button archive-toggle" data-unlink-client="${escapeAdmin(client.id)}" data-display="${escapeAdmin(clientLabel(client))}">Rimuovi collegamento</button>`}</div></article>`).join('');
 }
 
 async function loadStructuresList() {
@@ -157,7 +159,7 @@ function renderStructureOptions() {
 
 async function openAssignment(clientId) {
   const client = adminState.clients.find(item => item.id === clientId); if (!client) return;
-  $('assignment-client-id').value = client.id; $('assignment-client').textContent = client.displayCode;
+  $('assignment-client-id').value = client.id; $('assignment-client').textContent = clientLabel(client);
   const inOneHour = new Date(Date.now() + 3600000); inOneHour.setMinutes(0, 0, 0);
   $('assignment-effective').value = inOneHour.toISOString().slice(0, 16);
   $('assignment-structure').value = ''; $('assignment-expires').value = '';
@@ -209,7 +211,7 @@ async function loadDoseClients() {
   try {
     const result = await callAdminSaasFunction('listAuthorizedClients', { organizationId: orgId() });
     adminState.clients = result.clients || [];
-    const options = '<option value="">— Seleziona —</option>' + adminState.clients.map(client => `<option value="${escapeAdmin(client.id)}">${escapeAdmin(client.displayCode)}</option>`).join('');
+    const options = '<option value="">— Seleziona —</option>' + adminState.clients.map(client => `<option value="${escapeAdmin(client.id)}">${escapeAdmin(clientLabel(client))}</option>`).join('');
     ['dose-client', 'copy-from', 'copy-to'].forEach(id => { $(id).innerHTML = options; });
     $('doses-feedback').textContent = adminState.clients.length ? '' : 'Nessun cliente autorizzato.';
   } catch (error) { $('doses-feedback').textContent = adminError(error); }
@@ -1072,6 +1074,12 @@ function memberStatusLabel(status) {
   return ({ active: 'Attivo', suspended: 'Sospeso', removed: 'Rimosso' })[status] || status;
 }
 
+window.saveMemberDisplayName = async function(event) {
+  event.preventDefault();
+  try { await callAdminSaasFunction('updateMyMemberProfile', { organizationId: orgId(), displayName: $('member-display-name').value, idempotencyKey: idem('member-profile') }); $('users-feedback').textContent = 'Nome aggiornato.'; await loadUsers(); }
+  catch (error) { $('users-feedback').textContent = adminError(error); }
+};
+
 function renderUsers() {
   const data = adminState.users || { members: [], clients: [], invitations: [], requests: [] };
   // Il server omette membri e inviti al nutritionist: la presenza dei membri distingue l'admin.
@@ -1079,9 +1087,11 @@ function renderUsers() {
   $('users-scope').textContent = isAdmin
     ? 'Solo l’admin vede e gestisce i membri.'
     : 'Come professionista vedi solo i tuoi clienti e i tuoi inviti.';
+  const profileBox = document.getElementById('nutritionist-profile-form');
+  if (profileBox) profileBox.innerHTML = !isAdmin ? `<form onsubmit="saveMemberDisplayName(event)"><label>Il tuo nome per i clienti<input id="member-display-name" maxlength="120" placeholder="Nome e cognome (facoltativo)"></label><button class="secondary" type="submit">Salva</button></form>` : '';
   $('members-list').innerHTML = (data.members || []).map(member => `
     <article class="report-row">
-      <div class="report-main"><span class="ingredient-mark">⛉</span><div><strong>${escapeAdmin(member.username || member.userId.slice(0, 8))}</strong><small>${escapeAdmin(member.role === 'admin' ? 'Admin' : 'Professionista')}</small></div></div>
+      <div class="report-main"><span class="ingredient-mark">⛉</span><div><strong>${escapeAdmin(member.displayName || member.username || member.userId.slice(0, 8))}</strong><small>${escapeAdmin(member.role === 'admin' ? 'Admin' : 'Professionista')}</small></div></div>
       <div class="report-meta"><small>Stato</small><strong>${escapeAdmin(memberStatusLabel(member.status))}</strong></div>
       <div class="report-meta"><small>Azioni</small><strong class="member-actions">
         ${member.status === 'active'
@@ -1093,9 +1103,9 @@ function renderUsers() {
   // Professionisti destinatari per l'invito cliente (solo admin).
   const nutris = (data.members || []).filter(member => member.role === 'nutritionist' && member.status === 'active');
   $('invite-client-nutritionist').innerHTML = '<option value="">Senza professionista (solo admin)</option>' +
-    nutris.map(member => `<option value="${escapeAdmin(member.userId)}">${escapeAdmin(member.username || member.userId.slice(0, 8))}</option>`).join('');
+    nutris.map(member => `<option value="${escapeAdmin(member.userId)}">${escapeAdmin(member.displayName || member.username || member.userId.slice(0, 8))}</option>`).join('');
   $('invite-client-nutri-field').style.display = isAdmin ? '' : 'none';
-  const pendingLinks = [...(data.requests || []).map(item => ({ ...item, kind: 'request' })),
+  const pendingLinks = [...(data.requests || []).filter(item => !item.status || item.status === 'pending').map(item => ({ ...item, kind: 'request' })),
     ...(data.invitations || []).filter(item => item.type === 'client').map(item => ({ ...item, kind: 'invite' }))];
   $('links-list').innerHTML = pendingLinks.map(item => `
     <article class="report-row">

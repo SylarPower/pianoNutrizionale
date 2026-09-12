@@ -177,3 +177,8 @@ Alert: spike permission-denied, checksum mismatch, errori scheduler, backlog olt
 - test Functions con Firestore emulator (i validatori puri e le Rules sono coperti separatamente).
 
 Queste parti non devono essere simulate nel client. La slice consegnata copre coda mapping, pubblicazione tenant/globale autorizzata, assegnazione cliente, snapshot/fallback e UI professionale.
+
+
+### Nome visualizzato e inviti esistenti
+
+Un invito a un account già esistente compare nella campanella dell’app, con il nome del professionista e i pulsanti per accettare o rifiutare. Nome e cognome sono facoltativi: si possono salvare dalla sezione di collegamento professionista (cliente) o dalla console (professionista).

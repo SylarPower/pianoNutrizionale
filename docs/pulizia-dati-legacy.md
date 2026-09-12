@@ -267,9 +267,11 @@ dell'app**, perché le Cloud Functions non leggono quelle collezioni (unica
 eccezione: il caso `ruleSet.scope: "global"` già verificato al Passo 4).
 
 Se hai anche un modo di lanciare i test automatici (per esempio il workflow
-`Test` su GitHub, che parte da solo a ogni modifica): `npm test` = 320 test,
+`Test` su GitHub, che parte da solo a ogni modifica): `npm test` = 324 test,
 `npm --prefix functions test` = 61 test, `npm run smoke` = SMOKE OK,
 `npm run syntax` = OK. Tutti verdi sul ramo aggiornato.
+
+> Conteggi verificati dopo l’introduzione dei profili facoltativi e delle notifiche SaaS: 324 test client e 61 test Functions.
 
 > Nota storica: fino a settembre 2026 lo smoke test falliva
 > (`test/smoke-app.js`, "profilo coppia") perché controllava l'etichetta del
