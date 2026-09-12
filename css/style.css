@@ -978,7 +978,6 @@ input[type="checkbox"], input[type="radio"] { accent-color: var(--primary); widt
 .modal-ingredient-list > li .portion-detail { color: var(--text-muted); font-size: .74rem; font-weight: 600; white-space: nowrap; }
 .modal-prep-list > li:not(.edit-step) { padding: 11px 2px; border-bottom: 1px solid var(--line); }
 .modal-prep-list > li > strong { color: var(--primary); }
-.special-note { margin-top: 12px; padding: 13px !important; border: 0 !important; border-radius: 11px; background: var(--accent-soft); color: #80502a; }
 .recipe-notes { margin-top: 12px; padding: 14px !important; border: 0 !important; border-radius: 11px; background: var(--surface-alt); }
 .recipe-notes ul { margin: 7px 0 0 18px; }
 .recipe-notes li { margin: 5px 0; font-size: .85rem; }

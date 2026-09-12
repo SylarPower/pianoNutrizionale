@@ -546,11 +546,28 @@
     };
   }
 
+  // Schema 6: il campo storico `specialNote` (stringa singola, "Nota
+  // speciale") viene unificato in `notes` (array, una nota per riga). La nota
+  // speciale diventa la prima riga, senza prefisso: il rendering resta unico
+  // e non esistono più due blocchi concorrenti nella scheda ricetta.
+  // Idempotente: dopo la prima passata `specialNote` non c'è più, quindi le
+  // chiamate successive restituiscono lo stesso array; la deduplica protegge
+  // anche dal caso in cui la stessa frase fosse già presente in `notes`.
+  function mergeRecipeNotes(specialNote, notes) {
+    const list = (Array.isArray(notes) ? notes : [])
+      .map(note => String(note ?? '').trim())
+      .filter(Boolean);
+    const special = String(specialNote ?? '').trim();
+    if (!special) return list;
+    return list.includes(special) ? list : [special, ...list];
+  }
+
   // Migrazione idempotente di una singola ricetta allo schema corrente (6).
   // Schema 4 → 5: rimuove il campo legacy `frequency` (sostituito dalle
   // frequenze proteiche calcolate dal generatore sui pasti principali).
   // Schema 5 → 6: porzioni ridotte a una quantità originale per profilo
   // persona (vedi normalizePortions).
+  // Note unificate: `specialNote` confluisce in `notes` (vedi mergeRecipeNotes).
   function migrateRecipe(recipe) {
     if (!recipe || typeof recipe !== 'object') return recipe;
     const ingredients = (recipe.ingredients || []).map(ingredient => ({
@@ -558,8 +575,8 @@
       ingredientId: ingredientIdFor(ingredient.name, ingredient.ingredientId),
       portions: normalizePortions(ingredient.portions)
     }));
-    const { frequency, ...rest } = recipe;
-    return { ...rest, ingredients };
+    const { frequency, specialNote, notes, ...rest } = recipe;
+    return { ...rest, ingredients, notes: mergeRecipeNotes(specialNote, notes) };
   }
 
   // Migrazione idempotente del documento catalogo (schema 3/4 → 5).

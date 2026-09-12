@@ -280,7 +280,7 @@ test('editor senza controllo categoria proteica, valore preservato al salvataggi
     recipe: {
       id: 'L1', slot: 'lunch', name: 'Test', emoji: '🍲', proteinCategory: 'poultry',
       ingredients: [{ name: 'Pasta', portions: { ipo: '70 g', man: '90 g' } }],
-      steps: [], notes: [], specialNote: ''
+      steps: [], notes: []
     },
     original: null, dayKey: null, dayType: 'training', slot: null, planSlot: null, isNew: false
   };

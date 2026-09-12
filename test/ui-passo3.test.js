@@ -138,12 +138,12 @@ const ASSIGNED = {
 const alignedRecipe = () => ({
   id: 'L1', slot: 'lunch', name: 'Pasta', emoji: '🍝',
   ingredients: [{ name: 'Pasta di semola', portions: { man: '90 g', ipo: '90 g' } }],
-  steps: [], notes: [], specialNote: ''
+  steps: [], notes: []
 });
 const unknownRecipe = (name = 'Proteina misteriosa') => ({
   id: 'L9', slot: 'lunch', name: 'Test', emoji: '🍲',
   ingredients: [{ name, portions: { man: '100 g', ipo: '100 g' } }],
-  steps: [], notes: [], specialNote: ''
+  steps: [], notes: []
 });
 function openModal(recipe, dayKey = null, planSlot = null) {
   currentModal = {
