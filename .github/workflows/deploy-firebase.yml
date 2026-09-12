@@ -63,7 +63,14 @@ jobs:
         uses: actions/setup-node@v4
         with:
           node-version: 22
-
+      # Obbligatorio: questa è una macchina nuova che scarica solo il codice da
+      # GitHub. functions/node_modules non è nel repository (è in .gitignore),
+      # quindi senza questo passaggio firebase-tools non trova
+      # firebase-functions in functions/node_modules e il deploy fallisce con
+      # "Couldn't find firebase-functions package in your source code".
+      - name: Installa le dipendenze delle Functions
+        run: npm --prefix functions install --no-audit --no-fund
+        
       - name: Installa la Firebase CLI
         run: npm install -g firebase-tools@15
 
