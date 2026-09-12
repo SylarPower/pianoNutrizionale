@@ -1,0 +1,85 @@
+# Deploy Firebase dal browser, senza terminale sul PC.
+# Richiede il segreto di repository FIREBASE_TOKEN (vedi docs/deploy-online-senza-terminale.md).
+
+name: Deploy Firebase (manuale)
+
+on:
+  workflow_dispatch:
+    inputs:
+      target:
+        description: "Cosa pubblicare su Firebase"
+        required: true
+        type: choice
+        default: "functions"
+        options:
+          - "functions"
+          - "firestore:rules"
+          - "firestore:indexes"
+          - "functions,firestore:indexes,firestore:rules"
+
+permissions:
+  contents: read
+
+# Un deploy alla volta: due run in parallelo sullo stesso progetto si pestano.
+concurrency:
+  group: firebase-deploy
+  cancel-in-progress: false
+
+jobs:
+  test:
+    name: Test prima del deploy
+    runs-on: ubuntu-latest
+    steps:
+      - name: Scarica il codice
+        uses: actions/checkout@v4
+
+      - name: Prepara Node 22
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - name: Test app (npm test)
+        run: npm test
+
+      - name: Installa le dipendenze delle Functions
+        run: npm --prefix functions install --no-audit --no-fund
+
+      - name: Test Functions
+        run: npm --prefix functions test
+
+      - name: Controllo sintassi
+        run: npm run syntax
+
+  deploy:
+    name: "Pubblica: ${{ inputs.target }}"
+    needs: test
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - name: Scarica il codice
+        uses: actions/checkout@v4
+
+      - name: Prepara Node 22
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - name: Installa la Firebase CLI
+        run: npm install -g firebase-tools@15
+
+      - name: Verifica che esista il segreto FIREBASE_TOKEN
+        env:
+          FIREBASE_TOKEN: ${{ secrets.FIREBASE_TOKEN }}
+        run: |
+          if [ -z "${FIREBASE_TOKEN}" ]; then
+            echo "::error title=Manca il segreto FIREBASE_TOKEN::Vai in Settings -> Secrets and variables -> Actions -> New repository secret e aggiungi FIREBASE_TOKEN."
+            exit 1
+          fi
+
+      - name: "firebase deploy --only ${{ inputs.target }}"
+        env:
+          DEPLOY_TARGET: ${{ inputs.target }}
+          FIREBASE_TOKEN: ${{ secrets.FIREBASE_TOKEN }}
+        run: |
+          echo "Pubblicazione in corso: ${DEPLOY_TARGET}"
+          firebase deploy --only "${DEPLOY_TARGET}" --project piano-nutrizionale --non-interactive
