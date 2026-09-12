@@ -632,6 +632,8 @@ body.dark-mode .notification-badge { border-color: #000; }
 .week-meal:hover { background: var(--surface-alt); transform: translateX(2px); }
 .week-meal small { color: var(--text-muted); font-size: .62rem; font-weight: 800; letter-spacing: .07em; }
 .week-meal-name { border: 0; background: none; text-align: left; font-size: .83rem; font-weight: 650; cursor: pointer; }
+.week-meal-main { display: flex; flex-direction: column; gap: 3px; min-width: 0; }
+.week-meal-doses { color: var(--text-muted); font-size: .68rem; font-weight: 650; letter-spacing: 0; text-transform: none; line-height: 1.35; }
 .week-meal-name:hover { color: var(--primary); text-decoration: underline; text-underline-offset: 3px; }
 .btn-swap { min-width: 44px; min-height: 44px; font-size: 1rem; }
 .batch-active-chip {

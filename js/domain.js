@@ -21,7 +21,7 @@
   // controllo piano «quantità adattate alle linee guida», catalogo globale e
   // Strutture dieta v2.
   const VERSION = 6;
-  const SINGLE_ORGANIZATION_ID = 'piano';
+  const SINGLE_ORGANIZATION_ID = 'pianoNutrizionale';
   const DAYS = ['monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday', 'sunday'];
   const SLOTS = ['breakfast', 'snack1', 'lunch', 'snack2', 'dinner'];
   const MELLER_MAIN_SLOTS = ['lunch', 'dinner'];
@@ -654,6 +654,16 @@
     return (plan && typeof plan === 'object') ? plan.adaptedQuantitiesEnabled !== false : true;
   }
 
+  // Il flag del piano ("Quantità adattate alle linee guida") decide se anche i
+  // dati derivati (spesa, batch cooking) usano le dosi delle linee guida.
+  // L'app passa `override` con il valore EFFETTIVO, che tiene conto anche del
+  // profilo SaaS non ancora confermato: se manca, vale il flag del piano.
+  function planUsesMellerDoses(plan, override) {
+    if (!Object.prototype.hasOwnProperty.call(plan || {}, 'mellerModes')) return false;
+    if (typeof override === 'boolean') return override;
+    return normalizeAdaptedQuantitiesEnabled(plan);
+  }
+
   function setAdaptedQuantitiesEnabled(plan, enabled) {
     const next = deepClone(plan || emptyPlan());
     next.adaptedQuantitiesEnabled = Boolean(enabled);
@@ -792,12 +802,12 @@ function portionFor(ingredient, profile, dayType, slot, recipeSlot) {
     return value === '' ? EMPTY_PORTION : value;
   }
 
-  function quantityForTask(task, plan, recipesById, profile, targetDay, targetSlot = 'lunch') {
+  function quantityForTask(task, plan, recipesById, profile, targetDay, targetSlot = 'lunch', options = {}) {
     const src = task?.quantitySource;
     if (!src?.ingredientId) return '';
     const recipe = recipesById?.[src.recipeId];
     if (!recipe) return '';
-    const contextualPlan = Object.prototype.hasOwnProperty.call(plan || {}, 'mellerModes');
+    const contextualPlan = planUsesMellerDoses(plan, options.applyMeller);
     const mode = contextualPlan
       ? (mellerModeForPlan(plan, targetDay, targetSlot) || (MELLER_MAIN_SLOTS.includes(targetSlot) ? MELLER_MODE_MELLER : MELLER_MODE_ORIGINAL))
       : null;
@@ -813,7 +823,7 @@ function portionFor(ingredient, profile, dayType, slot, recipeSlot) {
   // Batch attivi per il giorno: almeno una preparazione deve essere valida
   // (fresca o preparabile oggi). Il tipo A/R del giorno corrente non conta:
   // conta solo il tipo A/R del giorno target per le quantità.
-  function activeBatch(anchorDay, plan, templates, recipesById = {}, profile = 'man', maxLookAhead = 7) {
+  function activeBatch(anchorDay, plan, templates, recipesById = {}, profile = 'man', options = {}) {
     if (!plan?.days?.[anchorDay]) return [];
     const dinner = plan.days[anchorDay].dinner;
     const result = [];
@@ -823,7 +833,7 @@ function portionFor(ingredient, profile, dayType, slot, recipeSlot) {
         anchorDay, plan,
         template.target?.slot || 'lunch',
         template.target?.recipeId,
-        template.target?.lookAheadDays || maxLookAhead
+        template.target?.lookAheadDays || options.maxLookAhead || 7
       );
       if (!target) return;
       const tasks = [];
@@ -840,7 +850,8 @@ function portionFor(ingredient, profile, dayType, slot, recipeSlot) {
             recipesById,
             profile,
             target.day,
-            template.target?.slot || 'lunch'
+            template.target?.slot || 'lunch',
+            options
           )
         });
       });
@@ -902,7 +913,7 @@ function portionFor(ingredient, profile, dayType, slot, recipeSlot) {
     const dinnerDayType = plan?.days?.[anchorDay]?.type || 'rest';
     const lunchDayType = plan?.days?.[target.day]?.type || 'rest';
     const storageMaxDays = 1;
-    const contextualPlan = Object.prototype.hasOwnProperty.call(plan || {}, 'mellerModes');
+    const contextualPlan = planUsesMellerDoses(plan, options.applyMeller);
     const dinnerMode = contextualPlan
       ? (mellerModeForPlan(plan, anchorDay, 'dinner') || MELLER_MODE_MELLER)
       : null;
@@ -1203,7 +1214,7 @@ function portionFor(ingredient, profile, dayType, slot, recipeSlot) {
   // dose cena; cena -> pranzo: pranzo A/R).
   function aggregateShopping(plan, recipesById, selectedMeals, profile = 'man', canonicalLabels = {}, options = {}) {
     const out = {};
-    const contextualPlan = Object.prototype.hasOwnProperty.call(plan || {}, 'mellerModes') || options.applyMeller === true;
+    const contextualPlan = planUsesMellerDoses(plan, options.applyMeller);
     DAYS.forEach(day => {
       const dayType = plan?.days?.[day]?.type || 'rest';
       (selectedMeals?.[day] || []).forEach(slot => {

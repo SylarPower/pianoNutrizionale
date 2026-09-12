@@ -1,8 +1,14 @@
 # ADR 0001 — Piano SaaS multi-tenant, profili e cataloghi versionati
 
-- Stato: accettato
+- Stato: superato (storico)
 - Data: 2026-09-09
 - Decisione di prodotto: owner
+
+> **Nota (2026-09).** Questo ADR descriveva il disegno multi-tenant: il codice
+> attuale usa **una sola organizzazione** (`pianoNutrizionale`, `SINGLE_ORGANIZATION_ID` in
+> `functions/src/domain.js`) e le Functions rifiutano qualsiasi altro id. Il
+> documento resta come storia delle scelte; per la struttura reale di oggi vedi
+> `docs/saas-data-contracts.md` e `docs/ripartenza-firebase.md`.
 
 ## Contesto
 

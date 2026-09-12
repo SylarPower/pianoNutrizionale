@@ -38,18 +38,19 @@ WebApp PWA privata per gestire colazioni, spuntini, pranzi, cene, batch cooking 
 - **pagina negozio** (Prezzi → Negozi): per ogni negozio l'ultimo prezzo registrato di ogni prodotto, con indicazione di dove quel prodotto costa meno (🏆 miglior prezzo, scostamento % rispetto al migliore, "solo qui");
 - nessuna funzionalità di notifica (né push né locali).
 
-## Console SaaS multi-tenant
+## Console SaaS (organizzazione singola)
 
 La prima slice SaaS è disponibile in [`admin.html`](admin.html): coda ingredienti, proposta/pubblicazione mapping e assegnazione versionata cliente → rule set. Le operazioni privilegiate passano dalle Cloud Functions in `functions/`; Firestore rifiuta le scritture SaaS dirette dal browser.
 
-Il client usa una feature flag pubblica in `js/saas-config.js`, disattivata per default. Con SaaS attivo, un cliente senza assegnazione valida usa soltanto le dosi originali; un cambio di versione richiede conferma e salva `clientProfileId`, assignment, versione e checksum nel piano. La Lista della spesa è predisposta per uno sblocco pubblicitario di 24 ore, ma provider e verifica server-side restano disattivati finché non saranno scelti e approvati.
+Il client usa una feature flag pubblica in `js/saas-config.js`, attiva (`enabled: true`) e limitata all'organizzazione `pianoNutrizionale`. Con SaaS attivo, un cliente senza assegnazione valida usa soltanto le dosi originali; un cambio di versione richiede conferma e salva `clientProfileId`, assignment, versione e checksum nel piano. La Lista della spesa è predisposta per uno sblocco pubblicitario di 24 ore, ma provider e verifica server-side restano disattivati finché non saranno scelti e approvati.
 
 Architettura e operatività:
 
-- [ADR multi-tenant](docs/adr/0001-saas-multi-tenant.md)
+- [ADR originale multi-tenant](docs/adr/0001-saas-multi-tenant.md) — storico: il codice attuale usa la sola organizzazione `pianoNutrizionale`
 - [contratti dati e matrice permessi](docs/saas-data-contracts.md)
 - [runbook deploy, migrazione, GDPR e rollback](docs/saas-runbook.md)
 - [pubblicare su Firebase senza terminale](docs/deploy-online-senza-terminale.md)
+- [ripartenza pulita su Firebase: la struttura nuova](docs/ripartenza-firebase.md)
 - [pulizia dei dati legacy su Firestore](docs/pulizia-dati-legacy.md)
 - [prompt originario](docs/prompt-saas-meller.md)
 
@@ -81,6 +82,23 @@ users/{uid}/backups/previous
 usernames/{username}
 recipeShares/{requestId}
 ```
+
+La piattaforma professionale (console `admin.html` e Cloud Functions) vive nelle
+collezioni dell'organizzazione singola `pianoNutrizionale`:
+
+```text
+organizations/pianoNutrizionale/members/{uid}                 membership (solo nutritionist)
+organizations/pianoNutrizionale/clients/{clientId}            clienti + assignments/ e state/
+organizations/pianoNutrizionale/dietStructures/{id}/revisions/{n}
+organizations/pianoNutrizionale/invitations|clientLinkRequests|mappingReports|mappingProposals|notifications|auditLog
+accountClientLinks/{uid}                          collegamento account ↔ cliente
+platformMembers/{uid}                             platform admin (creatore)
+globalIngredientCatalog/current|versions|config   catalogo alimenti condiviso
+globalRuleSets|organizations/{org}/ruleSets       percorso legacy, solo retrocompatibilità
+```
+
+L'avvio da zero (catalogo, membri, clienti) è descritto in
+[ripartenza-firebase.md](docs/ripartenza-firebase.md).
 
 Il registro prezzi è invece un database **unico e condiviso tra tutti gli utenti** (non è legato né all'account né alla household):
 

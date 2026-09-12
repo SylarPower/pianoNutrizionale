@@ -124,7 +124,6 @@ textarea{min-height:90px;resize:vertical}
 .report-main{display:flex;align-items:center;gap:12px;min-width:0}
 .ingredient-mark{width:42px;height:42px;border-radius:12px;background:var(--surface-alt);display:grid;place-items:center;font-size:1.15rem;flex:0 0 auto}
 .report-main div{display:grid;min-width:0}
-.report-main strong,.report-main small,.report-meta strong{overflow-wrap:anywhere}
 .report-main small,.report-meta small{color:var(--text-muted);font-size:.78rem}
 .report-meta{display:grid;min-width:0}
 .status{display:inline-flex;width:max-content;padding:5px 10px;border-radius:999px;font-size:.68rem;font-weight:850;text-transform:uppercase;letter-spacing:.04em}
@@ -243,6 +242,7 @@ form.invite-card .invite-link{margin:2px 0 10px}
 .member-actions{display:flex;gap:6px;flex-wrap:wrap}
 .danger-text{color:var(--danger)!important}
 .primary.danger{background:var(--danger)}
+.field-hint{display:block;color:var(--text-muted);font-size:.78rem;margin-top:4px}
 .unlink-points{display:grid;gap:8px;padding-left:18px;margin:0 0 16px;color:#2d3436;font-size:.9rem}
 
 /* Dosi */
@@ -303,13 +303,6 @@ button:focus-visible,input:focus-visible,select:focus-visible,textarea:focus-vis
   .copy-grid{grid-template-columns:1fr}
   .dose-actions{flex-direction:column}
   .dose-actions .primary,.dose-actions .secondary{width:100%}
-  .compare-table{min-width:0}
-  .compare-table thead{display:none}
-  .compare-table,.compare-table tbody,.compare-table tr,.compare-table td{display:block;width:100%}
-  .compare-table tr{border-top:2px solid var(--line);padding:6px 0}
-  .compare-table th[scope=row]{display:block;border-top:0;background:none}
-  .compare-table td{border-top:1px dashed var(--line)}
-  .compare-table td::before{content:attr(data-label);display:block;font-size:.7rem;font-weight:800;color:var(--text-muted);text-transform:uppercase;letter-spacing:.05em}
 }
 @media(max-width:480px){
   .report-row{grid-template-columns:1fr}

@@ -178,17 +178,17 @@ service cloud.firestore {
       allow read, write, delete: if signedIn() && request.auth.uid == userId;
     }
 
-    // ----- Piano SaaS multi-tenant (singola org 'piano') -----
+    // ----- Piano SaaS multi-tenant (singola org 'pianoNutrizionale') -----
     // Le membership sono la fonte autorevole; i custom claims non bastano.
     // Tutte le mutazioni SaaS passano da Cloud Functions/Admin SDK. Il client
     // può leggere direttamente soltanto la propria membership e i clienti che
     // il tenant gli ha assegnato. Profilo attivo, regole e coda mapping vengono
     // restituiti da callable per impedire IDOR e selezione autonoma del ruleSet.
-    // Unica organizzazione: 'piano'. Ruolo org: solo nutritionist. Creatore:
+    // Unica organizzazione: 'pianoNutrizionale'. Ruolo org: solo nutritionist. Creatore:
     // platformMembers/{uid} role admin.
 
     function isSingleOrg(organizationId) {
-      return organizationId == 'piano';
+      return organizationId == 'pianoNutrizionale';
     }
 
     function isCreator() {

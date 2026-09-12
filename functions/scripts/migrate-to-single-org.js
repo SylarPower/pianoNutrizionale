@@ -1,9 +1,9 @@
 'use strict';
 /**
- * Migrazione non distruttiva verso singola organizzazione 'piano'.
- * - Crea organizations/piano se manca.
+ * Migrazione non distruttiva verso singola organizzazione 'pianoNutrizionale'.
+ * - Crea organizations/pianoNutrizionale se manca.
  * - Per ogni member active in vecchie org (admin/nutritionist), copia in
- *   organizations/piano/members/{uid} come nutritionist (downgrade se admin
+ *   organizations/pianoNutrizionale/members/{uid} come nutritionist (downgrade se admin
  *   non creator). Zero cancellazioni di org/clienti/strutture.
  * - Per gli admin org che non sono creator (platformMembers admin), archivia
  *   la membership vecchia impostando status removed (conserva documento).
@@ -19,7 +19,7 @@ const { getFirestore, FieldValue } = require('firebase-admin/firestore');
 
 initializeApp();
 const db = getFirestore();
-const SINGLE_ORG_ID = 'piano';
+const SINGLE_ORG_ID = 'pianoNutrizionale';
 
 async function isCreator(uid) {
   const snap = await db.doc(`platformMembers/${uid}`).get();
@@ -34,7 +34,7 @@ async function isCreator(uid) {
   if (!singleSnap.exists) {
     await singleRef.set({
       schemaVersion: 1,
-      name: 'Piano',
+      name: 'Piano Nutrizionale',
       status: 'active',
       createdAt: FieldValue.serverTimestamp(),
       updatedAt: FieldValue.serverTimestamp(),

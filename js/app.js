@@ -422,12 +422,13 @@ function getActiveBatch(dayKey) {
     appState.plan,
     templates,
     appState.recipesById,
-    getPortionProfile()
+    getPortionProfile(),
+    { applyMeller: planAdaptedQuantitiesEffective() }
   );
   // Batch automatico "doppia porzione": stessa ricetta a cena e al pranzo
   // successivo (anche via cross-slot). Le dosi sono la somma cena + pranzo.
   const dinnerId = appState.plan.days[dayKey]?.dinner;
-  const common = PianoDomain.commonRecipeBatch(dayKey, appState.plan, appState.recipesById, getPortionProfile());
+  const common = PianoDomain.commonRecipeBatch(dayKey, appState.plan, appState.recipesById, getPortionProfile(), { applyMeller: planAdaptedQuantitiesEffective() });
   if (common && dinnerId) {
     const alreadyCovered = batches.some(batch => batch.targetDay === common.targetDay && batch.template?.target?.recipeId === dinnerId);
     if (!alreadyCovered) batches.push(common);
@@ -1283,6 +1284,28 @@ window.toggleWeekAdaptedQuantities = async function(enabled) {
   }
 };
 
+// Dosi effettivamente applicate al pasto, in riga compatta: compaiono nella
+// Settimana solo quando l'interruttore "Quantità adattate alle linee guida" è
+// attivo e l'adattamento è applicato, e cambiano con la giornata Allenamento o
+// Riposo (le grammature delle linee guida sono distinte A/R).
+function weekMealDosesHtml(planned, dayType) {
+  const portions = planned?.context?.portions;
+  if (!planned?.applied || !portions || !window.PianoDomain) return "";
+  const profile = getPortionProfile() === "ipo" ? "ipo" : "man";
+  const rows = (planned.recipe?.ingredients || []).map(ingredient => {
+    const id = ingredient.ingredientId || PianoDomain.ingredientIdFor(ingredient.name);
+    if (!portions[id]) return null;
+    const amount = getPortionValue(ingredient, profile, dayType);
+    if (isEmptyPortion(amount)) return null;
+    return `${ingredient.name} ${amount}`;
+  }).filter(Boolean);
+  if (!rows.length) return "";
+  const shown = rows.slice(0, 4);
+  const extra = rows.length - shown.length;
+  const label = dayType === "rest" ? "Riposo" : "Allenamento";
+  return `<small class="week-meal-doses" title="Dosi delle linee guida per una giornata di ${label}">${escapeHtml(shown.join(" · "))}${extra > 0 ? escapeHtml(` · +${extra}`) : ""}</small>`;
+}
+
 function renderWeek() {
   const container = document.getElementById("view-week");
   const today = getTodayKey();
@@ -1335,9 +1358,13 @@ function renderWeek() {
               const blockedBadge = planned?.blocked
                 ? `<span class="meller-blocked-badge" title="Adattamento alle linee guida bloccato: mapping ingrediente mancante">⚠</span>`
                 : "";
+              const dosesLine = weekMealDosesHtml(planned, planDay.type);
               return `<div class="week-meal">
                 <small>${escapeHtml(slot.shortLabel)}</small>
-                <button class="week-meal-name" onclick="openRecipeModal('${escapeAttr(recipe?.id || "")}', '${day}', '${slot.id}')">${escapeHtml(recipe?.emoji || "")} ${escapeHtml(recipe ? getRecipeDisplayName(recipe, planDay.type) : "Non disponibile")}${recipe && recipeIsCrossSlot(recipe, slot.id) && mode === "meller" ? ` <span class="cross-slot-badge" title="Ingredienti adattati alla dose prevista per questo pasto">↻</span>` : ""} ${modeBadge}${blockedBadge}</button>
+                <div class="week-meal-main">
+                  <button class="week-meal-name" onclick="openRecipeModal('${escapeAttr(recipe?.id || "")}', '${day}', '${slot.id}')">${escapeHtml(recipe?.emoji || "")} ${escapeHtml(recipe ? getRecipeDisplayName(recipe, planDay.type) : "Non disponibile")}${recipe && recipeIsCrossSlot(recipe, slot.id) && mode === "meller" ? ` <span class="cross-slot-badge" title="Ingredienti adattati alla dose prevista per questo pasto">↻</span>` : ""} ${modeBadge}${blockedBadge}</button>
+                  ${dosesLine}
+                </div>
                 <button class="btn-icon btn-swap" onclick="openMealActions('${day}', '${slot.id}')" title="Operazioni sul pasto" aria-label="Operazioni sul pasto">⋯</button>
               </div>`;
             }).join("")}
@@ -1841,7 +1868,10 @@ function aggregateShoppingList() {
     appState.recipesById,
     appState.shopping.selectedMeals,
     getPortionProfile(),
-    getCanonicalIngredientLabels()
+    getCanonicalIngredientLabels(),
+    // Stesso interruttore della Settimana: con lo switch spento la spesa elenca
+    // le quantità originali delle ricette, non quelle delle linee guida.
+    { applyMeller: planAdaptedQuantitiesEffective() }
   );
   return entries.map(entry => ({
     ...entry,
@@ -2471,7 +2501,7 @@ function renderSaasProfileSection() {
   return `<section class="settings-section saas-profile-card">
     <div><p class="eyebrow">PROFILO NUTRIZIONALE</p><h2>${pending ? "Nuovo profilo da confermare" : "Profilo verificato"}</h2><p class="text-muted">${escapeHtml(profileLabel)}</p></div>
     <span class="link-status ${pending ? "" : "active"}">${pending ? "In attesa" : "● Attivo"}</span>
-    <p>${pending ? "Per proteggere il piano esistente stai ancora usando le quantità originali. Controlla il cambiamento prima di applicarlo." : "Il piano conserva versione e checksum usati per ogni risoluzione."}</p>
+    <p>${pending ? "Per proteggere il piano esistente stai ancora usando le quantità originali. Controlla il cambiamento prima di applicarlo." : "Il piano applica la revisione indicata: puoi sempre chiedere al tuo nutrizionista di aggiornarla."}</p>
     ${pending ? `<button class="btn btn-primary" onclick="openProfileUpdateModal()">Rivedi e applica il profilo</button>` : ""}
   </section>`;
 }

@@ -23,7 +23,7 @@ async function user(username) {
     user('admin-demo'), user('nutri-demo'), user('cliente-a'), user('cliente-b')
   ]);
   const now = Timestamp.now();
-  const orgId = 'piano';
+  const orgId = 'pianoNutrizionale';
   const rules = Domain.MELLER_GRAMMATURE.map(rule => ({
     family: rule.family, group: rule.group, label: rule.label,
     aliases: [rule.label], slots: JSON.parse(JSON.stringify(rule.slots))
@@ -31,7 +31,7 @@ async function user(username) {
   const body = { schemaVersion: 1, ruleSetId: 'base', version: '3', rules, overrides: [] };
   const ruleChecksum = checksum(body);
   const batch = db.batch();
-  batch.set(db.doc(`organizations/${orgId}`), { schemaVersion: 1, name: 'Piano', status: 'active', createdAt: now, updatedAt: now, createdBy: creator.uid, updatedBy: creator.uid });
+  batch.set(db.doc(`organizations/${orgId}`), { schemaVersion: 1, name: 'Piano Nutrizionale', status: 'active', createdAt: now, updatedAt: now, createdBy: creator.uid, updatedBy: creator.uid });
   // Creatore = platformMembers admin (può tutto, non serve membership org admin)
   batch.set(db.doc(`platformMembers/${creator.uid}`), { schemaVersion: 1, role: 'admin', status: 'active', username: 'admin-demo', createdAt: now, updatedAt: now });
   // Nutritionist nella singola org

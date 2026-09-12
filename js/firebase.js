@@ -335,7 +335,7 @@ function ensureAdminServices() {
       const compat = window.firebase;
       let app = (compat.apps || []).find(item => item?.name === ADMIN_APP_NAME) || null;
       if (!app) app = compat.initializeApp(firebaseConfig, ADMIN_APP_NAME) || null;
-      if (compatsAppCheckAvailable(compat) && APP_CHECK_SITE_KEY && !APP_CHECK_SITE_KEY.startsWith("REPLACE_")) {
+      if (compatAppCheckAvailable(compat) && APP_CHECK_SITE_KEY && !APP_CHECK_SITE_KEY.startsWith("REPLACE_")) {
         try { (typeof app?.appCheck === "function" ? app.appCheck() : compat.appCheck())?.activate?.(APP_CHECK_SITE_KEY, true); }
         catch (error) { console.warn("Firebase App Check (console) non disponibile", error); }
       }
@@ -394,7 +394,7 @@ function ensureAdminServices() {
   return adminServicesPromise;
 }
 
-function compatsAppCheckAvailable(compat) {
+function compatAppCheckAvailable(compat) {
   return typeof compat.appCheck === "function";
 }
 
@@ -474,6 +474,13 @@ async function adminGetDocsQuery(query) {
   if (hasCompatFirebase()) return query.get();
   await ensureAdminServices();
   return fb.getDocs(query);
+}
+
+// Lettura singola della console (es. riepilogo del catalogo globale).
+async function adminGetDoc(path) {
+  if (hasCompatFirebase()) return adminDb.doc(path).get();
+  await ensureAdminServices();
+  return fb.getDoc(fb.doc(adminDb, path));
 }
 
 // ----- Riferimenti Firestore (API modulare a documenti/collezioni) -----

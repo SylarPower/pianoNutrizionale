@@ -12,7 +12,7 @@ test('console admin contiene una slice reale mapping e assegnazioni', () => {
   for (const id of ['reports-list','mapping-form','clients-list','assignment-form']) {
     assert.match(html, new RegExp(`id="${id}"`));
   }
-  // L'header non espone più alcun riferimento all'organizzazione (singola 'piano').
+  // L'header non espone più alcun riferimento all'organizzazione (singola 'pianoNutrizionale').
   assert.doesNotMatch(html, /organization-id|org-badge|tenant-field/);
   assert.doesNotMatch(js, /saveOrg/);
   for (const callable of ['listMappingReports','proposeMapping','publishMapping','listAuthorizedClients']) {
@@ -196,6 +196,8 @@ test('strutture dieta: picker catalogo multi-selezione e raggruppamento con dosi
   for (const fn of ['renderCatalogPicker', 'updatePickerCount', 'resetCatalogPicker', 'openGroupDialog', 'collectGroupDoses', 'submitGrouping', 'toggleGroupDestination', 'toggleNewGroupFields']) {
     assert.match(js, new RegExp(`function ${fn}\\b`));
   }
+  // La categoria riservata 'free' è etichettata come nel resto della console.
+  assert.match(js, /categoryId === 'free'\) return 'Alimenti liberi'/);
   assert.match(js, /pickerSelection/);
   assert.match(js, /count < 2/);
   assert.match(js, /numeri interi tra 1 e 2000/);
@@ -212,4 +214,26 @@ test('strutture dieta: picker catalogo multi-selezione e raggruppamento con dosi
   assert.match(css, /\.picker-category-items/);
   assert.match(css, /\.picker-item/);
   assert.match(css, /\.group-doses/);
+});
+
+test('sezione Catalogo: import versionato solo per il platform admin', () => {
+  // La voce di menu esiste ma resta nascosta finché il server non conferma
+  // il ruolo di creatore (platformMembers admin).
+  assert.match(html, /id="nav-catalog"[^>]*class="nav-link hidden"[^>]*data-view="catalog"/);
+  assert.match(html, /id="view-catalog"/);
+  for (const id of ['catalog-status', 'catalog-feedback', 'catalog-file', 'catalog-dry-run', 'catalog-commit', 'catalog-report', 'refresh-catalog']) {
+    assert.match(html, new RegExp(`id="${id}"`));
+  }
+  // Due passaggi: dry-run (nessuna scrittura) e commit con lo stesso previewId.
+  assert.match(js, /'importGlobalIngredientCatalog'/);
+  assert.match(js, /mode: 'dry-run'/);
+  assert.match(js, /mode: 'commit'/);
+  assert.match(js, /confirm: true/);
+  assert.match(js, /previewId: preview\.previewId/);
+  // Il commit resta disabilitato finché l'analisi non è pulita.
+  assert.match(js, /catalog-commit'\)\.disabled = !clean/);
+  // Il ruolo è verificato dal server: la voce si mostra solo al creator.
+  assert.match(js, /\$\('nav-catalog'\)\.classList\.toggle\('hidden', !adminState\.isCreator\)/);
+  // Nessun token o secret nel flusso: solo il file scelto dall'operatore.
+  assert.doesNotMatch(html, /catalog-.*(token|secret|password)/i);
 });

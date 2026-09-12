@@ -46,7 +46,7 @@ function callable(handler) {
 }
 
 // ---- Organizzazione singola ----
-// Tutta la piattaforma usa una sola organizzazione: 'piano'. Qualunque orgId
+// Tutta la piattaforma usa una sola organizzazione: 'pianoNutrizionale'. Qualunque orgId
 // diverso è rifiutato (restringimento, mai allentamento). Il campo org non è
 // più digitabile in console: è assegnato di default.
 function enforceSingleOrg(organizationId) {
@@ -1418,7 +1418,7 @@ exports.updateAssignmentStatus = callable(async (data, uid) => {
 // restano concetti separati: nessuno conferisce privilegi negli altri.
 // "Rimuovere" revoca sempre e solo l'associazione: mai Auth, household,
 // ricette o backup (conservati) e mai strutture altrui (ownerUid mantenuto).
-// Unica org: 'piano'. Creatore = platformMembers admin, può fare tutto.
+// Unica org: 'pianoNutrizionale'. Creatore = platformMembers admin, può fare tutto.
 
 function requireCreator(actor) {
   if (!actor.isCreator) throw new HttpsError('permission-denied', 'Operazione riservata al creatore');
@@ -1734,7 +1734,7 @@ exports.inviteClientLink = callable(async (data, uid) => {
 // vere in Firestore (organizations/{org}/members/{uid}) sono la fonte
 // autorevole, senza fidarsi di ruoli scritti nel browser né di custom claims.
 // Read-only, niente audit: nessuna PII oltre a orgId/ruolo del chiamante.
-// Unica org: 'piano'. Creatore = platformMembers admin.
+// Unica org: 'pianoNutrizionale'. Creatore = platformMembers admin.
 exports.getMyMemberships = callable(async (data, uid) => {
   exactObject(data, []);
   const orgId = SINGLE_ORGANIZATION_ID;

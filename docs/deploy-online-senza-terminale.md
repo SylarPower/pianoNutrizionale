@@ -301,7 +301,12 @@ jobs:
         run: npm run syntax
 ```
 
-`npm run smoke` non è incluso perché al momento fallisce già su `main`
-(`test/smoke-app.js:231`, "profilo coppia visibile e contestualizzato"): è un
-problema preesistente. Quando torna verde, aggiungi lo step
-`- name: Smoke test` / `run: npm run smoke`.
+Lo smoke test (rendering dell'app senza errori) è incluso:
+
+```yaml
+      - name: Smoke test
+        run: npm run smoke
+```
+
+Se in futuro fallisse, segui l'errore indicato dal test: è un controllo
+statico sul rendering, non tocca Firebase.

@@ -31,12 +31,13 @@
   <div id="admin-app" class="app-shell hidden">
     <div id="sidebar-backdrop" class="sidebar-backdrop" hidden></div>
     <aside class="sidebar" id="console-sidebar">
-      <a class="brand-lockup compact" href="#mapping"><span><img src="assets/loghi/logo-console.svg" alt=""></span><div><strong>Piano</strong><small>Console professionale</small></div></a>
+      <div class="brand-lockup" aria-hidden="true"><span><img src="assets/loghi/logo-console.svg" alt=""></span><div><strong>Piano</strong><small>Console professionale</small></div></div>
       <nav aria-label="Console">
         <button class="nav-link active" data-view="clients"><span>♙</span>Clienti</button>
         <button class="nav-link" data-view="doses"><span>⚖</span>Dosi clienti</button>
         <button class="nav-link" data-view="structures"><span>▦</span>Strutture dieta</button>
         <button class="nav-link" data-view="users"><span>⛉</span>Utenti</button>
+        <button id="nav-catalog" class="nav-link hidden" data-view="catalog"><span>⛁</span>Catalogo</button>
         <button class="nav-link" data-view="mapping"><span>◫</span>Coda ingredienti <b id="nav-open-count" class="badge-zero" aria-label="Coda ingredienti: nessun caso in sospeso">0</b></button>
       </nav>
       <div class="sidebar-bottom"><div class="security-note"><span>✓</span><div><strong>Ambiente protetto</strong><small>Ogni azione è tracciata</small></div></div><button id="admin-logout" class="text-button">Esci</button></div>
@@ -63,7 +64,7 @@
         </section>
       </main>
 
-      <main id="view-clients" class="console-view hidden">>
+      <main id="view-clients" class="console-view hidden">
         <section class="hero-row"><div><p class="eyebrow">PROFILI INDIVIDUALI</p><h1>Il protocollo giusto,<br>assegnato alla persona giusta.</h1><p>Household e account restano separati: ogni assegnazione è personale e storicizzata.</p></div><button id="refresh-clients" class="secondary">↻ Aggiorna clienti</button></section>
         <section class="panel"><div class="panel-head"><div><h2>Clienti autorizzati</h2><p>Vedi solo i profili consentiti dal tuo ruolo.</p></div></div><div id="clients-feedback" class="feedback" role="status"></div><div id="clients-list" class="client-grid"></div></section>
       </main>
@@ -90,6 +91,18 @@
         </section>
         <section class="panel"><div class="panel-head"><div><h2>Collegamenti e inviti in attesa</h2><p>Richieste da accettare in app e inviti monouso non ancora riscattati.</p></div></div><div id="links-feedback" class="feedback" role="status"></div><div id="links-list" class="report-list"></div></section>
       </main>
+
+      <main id="view-catalog" class="console-view hidden">
+        <section class="hero-row"><div><p class="eyebrow">CATALOGO GLOBALE</p><h1>Gli alimenti riconosciuti<br>da tutte le strutture.</h1><p>Un’unica base condivisa, versionata a ogni import: le strutture pubblicate non cambiano retroattivamente.</p></div><button id="refresh-catalog" class="secondary">↻ Aggiorna stato</button></section>
+        <section class="panel"><div class="panel-head"><div><h2>Stato del catalogo</h2><p>Anteprima del catalogo attivo per tutti i professionisti.</p></div></div><div id="catalog-feedback" class="feedback" role="status"></div><div id="catalog-status" class="client-grid"></div></section>
+        <section class="panel"><div class="panel-head"><div><h2>Importa catalogo</h2><p>Prima l’analisi (nessuna scrittura), poi la conferma: il commit è atomico e crea una nuova versione.</p></div></div>
+          <label>File catalogo (JSON)<input id="catalog-file" type="file" accept="application/json,.json"></label>
+          <p class="field-hint">Il file pronto è <span class="mono">docs/catalogo-import-meller.json</span> nel repository (apri il file su GitHub e usa <strong>Raw</strong> per scaricarlo). Formato e regole: <span class="mono">docs/catalog-import-format.md</span>.</p>
+          <div class="dialog-actions"><button id="catalog-dry-run" class="secondary" type="button">Analizza file (dry-run)</button><button id="catalog-commit" class="primary" type="button" disabled>Conferma import →</button></div>
+          <div id="catalog-report"></div>
+        </section>
+      </main>
+
     </div>
   </div>
 
@@ -103,7 +116,7 @@
         <div id="guided-fields"><div class="form-grid"><label>Famiglia<input id="mapping-family" placeholder="es. riso"></label><label>Gruppo<select id="mapping-group"><option value="carb">Carboidrati</option><option value="protein">Proteine</option><option value="dairy">Latticini</option><option value="fat">Grassi</option><option value="sweet">Dolci</option><option value="fruit">Frutta</option></select></label></div>
           <fieldset><legend>Dosi a crudo</legend><div class="dose-grid"><label>Pranzo A<input id="dose-la" type="number" min="1"></label><label>Pranzo R<input id="dose-lr" type="number" min="1"></label><label>Cena A<input id="dose-da" type="number" min="1"></label><label>Cena R<input id="dose-dr" type="number" min="1"></label></div></fieldset></div>
         <label>Motivazione clinica/operativa<textarea id="mapping-rationale" required maxlength="500" placeholder="Perché questo mapping è affidabile?"></textarea></label>
-        <label class="check-row"><input id="mapping-global" type="checkbox"><span><strong>Pubblica nel catalogo globale</strong><small>Disponibile solo ai platform admin. Altrimenti resta nel tenant.</small></span></label>
+        <label class="check-row"><input id="mapping-global" type="checkbox"><span><strong>Pubblica nel catalogo globale</strong><small>Disponibile solo ai platform admin. Altrimenti resta nell’organizzazione.</small></span></label>
         <p id="mapping-error" class="error" role="alert"></p><div class="dialog-actions"><button type="button" class="secondary" data-close-dialog>Annulla</button><button id="mapping-submit" type="submit" class="primary">Pubblica mapping <span>→</span></button></div>
       </form>
     </section>
@@ -145,17 +158,17 @@
 
   <div id="assignment-dialog" class="dialog hidden" role="dialog" aria-modal="true" aria-labelledby="assignment-title"><div class="dialog-backdrop" data-close-assignment></div><section class="dialog-card"><button class="dialog-close" data-close-assignment aria-label="Chiudi assegnazione">×</button><p class="eyebrow">NUOVA ASSEGNAZIONE</p><h2 id="assignment-title">Assegna struttura dieta</h2><p id="assignment-client" class="dialog-lead"></p>
     <form id="assignment-form"><input id="assignment-client-id" type="hidden">
-      <label>Struttura dieta<input id="assignment-structure" list="assignment-structure-list" required autocomplete="off" placeholder="Cerca per nome…"><datalist id="assignment-structure-list"></datalist><small class="field-hint">Scegli una delle tue strutture: l'ultima modifica aiuta a distinguerle. La revisione applicata è risolta dal sistema.</small></label>
+      <label>Struttura dieta<input id="assignment-structure" list="assignment-structure-list" required autocomplete="off" placeholder="Cerca per nome…"><datalist id="assignment-structure-list"></datalist><small class="field-hint">Scegli una delle tue strutture: l’ultima modifica aiuta a distinguerle. La revisione applicata è risolta dal sistema.</small></label>
       <div class="form-grid"><label>Decorrenza<input id="assignment-effective" type="datetime-local" required></label><label>Scadenza<input id="assignment-expires" type="datetime-local" aria-describedby="assignment-no-expiry-label"></label></div>
       <label class="check-row" id="assignment-no-expiry-label"><input id="assignment-no-expiry" type="checkbox"><span><strong>Senza scadenza</strong><small>Se il flag è disattivo, il sistema richiede una data di scadenza.</small></span></label>
       <label>Note<textarea id="assignment-notes" maxlength="500" placeholder="Note interne per il personale autorizzato"></textarea><small class="field-hint">Le note non vengono mai mostrate al cliente.</small></label>
-      <p class="callout">Nulla viene applicato in silenzio: il cliente conferma l'aggiornamento dall'app e le sue ricette restano invariate.</p>
+      <p class="callout">Nulla viene applicato in silenzio: il cliente conferma l’aggiornamento dall’app e le sue ricette restano invariate.</p>
       <p id="assignment-error" class="error" role="alert"></p><div class="dialog-actions"><button type="button" class="secondary" data-close-assignment>Annulla</button><button class="primary" type="submit">Conferma assegnazione →</button></div>
     </form>
   </section></div>
 
   <div id="unlink-dialog" class="dialog hidden" role="dialog" aria-modal="true" aria-labelledby="unlink-title"><div class="dialog-backdrop" data-close-unlink></div><section class="dialog-card"><button class="dialog-close" data-close-unlink aria-label="Chiudi">×</button><p class="eyebrow">RIMOZIONE ASSOCIAZIONE</p><h2 id="unlink-title">Rimuovere il collegamento?</h2><p id="unlink-client" class="dialog-lead"></p>
-    <ul class="profile-update-points unlink-points">
+    <ul class="unlink-points">
       <li><strong>Non cancelliamo l’account:</strong> Auth, household, ricette e backup restano intatti.</li>
       <li><strong>Revochiamo solo il legame professionale:</strong> tu non vedi più il cliente e viceversa.</li>
       <li><strong>Sospendiamo i profili assegnati:</strong> al prossimo aggiornamento il cliente torna alle dosi originali e perde la Spesa inclusa.</li>
@@ -163,10 +176,6 @@
     <form id="unlink-form"><input id="unlink-client-id" type="hidden"><label>Motivo (audit)<input id="unlink-reason" required minlength="3" maxlength="500" placeholder="es. Percorso concluso su richiesta"></label><p id="unlink-error" class="error" role="alert"></p><div class="dialog-actions"><button type="button" class="secondary" data-close-unlink>Annulla</button><button class="primary danger" type="submit">Rimuovi collegamento</button></div></form>
   </section></div>
 
-  <script>if (["localhost", "127.0.0.1"].includes(location.hostname)) self.FIREBASE_APPCHECK_DEBUG_TOKEN = true;</script>
-  <script src="js/domain.js"></script>
-  <script src="js/firebase.js"></script>
-  <script src="js/admin.js"></script>
   <div id="group-dialog" class="dialog hidden" role="dialog" aria-modal="true" aria-labelledby="group-title"><div class="dialog-backdrop" data-close-group></div><section class="dialog-card"><button class="dialog-close" data-close-group aria-label="Chiudi">×</button><p class="eyebrow">RAGGRUPPAMENTO</p><h2 id="group-title">Raggruppa gli alimenti selezionati</h2><p id="group-subtitle" class="dialog-lead"></p>
     <form id="group-form">
       <fieldset><legend>Destinazione del raggruppamento</legend>
@@ -195,6 +204,11 @@
       <div class="dialog-actions"><button type="button" class="secondary" data-close-group>Annulla</button><button class="primary" type="submit">Raggruppa →</button></div>
     </form>
   </section></div>
+
+  <script>if (["localhost", "127.0.0.1"].includes(location.hostname)) self.FIREBASE_APPCHECK_DEBUG_TOKEN = true;</script>
+  <script src="js/domain.js"></script>
+  <script src="js/firebase.js"></script>
+  <script src="js/admin.js"></script>
 
 </body>
 </html>

@@ -1,5 +1,5 @@
 'use strict';
-/* Obiettivo A — invarianti singola organizzazione 'piano' e ruoli */
+/* Obiettivo A — invarianti singola organizzazione 'pianoNutrizionale' e ruoli */
 
 const test = require('node:test');
 const assert = require('node:assert/strict');
@@ -14,7 +14,7 @@ const saasConfig = fs.readFileSync(path.join(__dirname, '..', 'js/saas-config.js
 const rules = fs.readFileSync(path.join(__dirname, '..', 'firestore.rules'), 'utf8');
 
 test('domain: SINGLE_ORGANIZATION_ID = piano e ROLES solo nutritionist', () => {
-  assert.equal(domain.SINGLE_ORGANIZATION_ID, 'piano');
+  assert.equal(domain.SINGLE_ORGANIZATION_ID, 'pianoNutrizionale');
   assert.equal(domain.ROLES.has('nutritionist'), true);
   assert.equal(domain.ROLES.has('admin'), false, 'admin org rimosso');
   assert.equal(domain.ROLES.size, 1);
@@ -42,7 +42,7 @@ test('admin.js usa costante SINGLE_ORG_ID senza UI org', () => {
 
 test('rules: solo org piano, creator = platformMembers admin', () => {
   assert.match(rules, /isSingleOrg/);
-  assert.match(rules, /'piano'/);
+  assert.match(rules, /'pianoNutrizionale'/);
   assert.match(rules, /function isCreator\(\)/);
   assert.match(rules, /platformMembers/);
   assert.match(rules, /role == 'nutritionist'/);

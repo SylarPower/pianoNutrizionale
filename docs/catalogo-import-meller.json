@@ -1,0 +1,896 @@
+{
+  "categories": [
+    {
+      "categoryId": "carb",
+      "displayName": "Carboidrati",
+      "description": null,
+      "sortOrder": 0
+    },
+    {
+      "categoryId": "protein",
+      "displayName": "Proteine",
+      "description": null,
+      "sortOrder": 1
+    },
+    {
+      "categoryId": "dairy",
+      "displayName": "Latticini",
+      "description": null,
+      "sortOrder": 2
+    },
+    {
+      "categoryId": "fat",
+      "displayName": "Grassi",
+      "description": null,
+      "sortOrder": 3
+    },
+    {
+      "categoryId": "sweet",
+      "displayName": "Dolci",
+      "description": null,
+      "sortOrder": 4
+    },
+    {
+      "categoryId": "fruit",
+      "displayName": "Frutta",
+      "description": null,
+      "sortOrder": 5
+    }
+  ],
+  "ingredients": [
+    {
+      "ingredientId": "couscous",
+      "displayName": "Cous cous",
+      "aliases": [
+        "cous cous",
+        "Cous cous"
+      ],
+      "categoryId": "carb",
+      "mappingKind": "guided",
+      "mellerFamilyId": "couscous"
+    },
+    {
+      "ingredientId": "crackers",
+      "displayName": "Crackers/Grissini/Crostini",
+      "aliases": [
+        "cracker",
+        "Crackers/Grissini/Crostini",
+        "crostin",
+        "grissin"
+      ],
+      "categoryId": "carb",
+      "mappingKind": "guided",
+      "mellerFamilyId": "crackers"
+    },
+    {
+      "ingredientId": "farroorzo",
+      "displayName": "Farro/Orzo",
+      "aliases": [
+        "farro",
+        "Farro/Orzo",
+        "orzo"
+      ],
+      "categoryId": "carb",
+      "mappingKind": "guided",
+      "mellerFamilyId": "farroorzo"
+    },
+    {
+      "ingredientId": "fiocchi-latte",
+      "displayName": "Fiocchi di latte",
+      "aliases": [
+        "fiocchi di latte",
+        "Fiocchi di latte"
+      ],
+      "categoryId": "protein",
+      "mappingKind": "guided",
+      "mellerFamilyId": "fiocchiLatte"
+    },
+    {
+      "ingredientId": "formaggi",
+      "displayName": "Formaggi",
+      "aliases": [
+        "caprino",
+        "crescenza",
+        "emmental",
+        "feta",
+        "formaggi",
+        "Formaggi",
+        "grana",
+        "montasio",
+        "mozzarella",
+        "parmigiano",
+        "pecorino",
+        "ricotta",
+        "robiola",
+        "scamorza",
+        "stracchino"
+      ],
+      "categoryId": "protein",
+      "mappingKind": "guided",
+      "mellerFamilyId": "formaggi"
+    },
+    {
+      "ingredientId": "free-aceto",
+      "displayName": "Aceto",
+      "aliases": [
+        "aceto"
+      ],
+      "categoryId": "free",
+      "mappingKind": "free",
+      "mellerFamilyId": null
+    },
+    {
+      "ingredientId": "free-acqua",
+      "displayName": "Acqua",
+      "aliases": [
+        "acqua"
+      ],
+      "categoryId": "free",
+      "mappingKind": "free",
+      "mellerFamilyId": null
+    },
+    {
+      "ingredientId": "free-aglio",
+      "displayName": "Aglio",
+      "aliases": [
+        "aglio"
+      ],
+      "categoryId": "free",
+      "mappingKind": "free",
+      "mellerFamilyId": null
+    },
+    {
+      "ingredientId": "free-asparag",
+      "displayName": "Asparagi",
+      "aliases": [
+        "asparag"
+      ],
+      "categoryId": "free",
+      "mappingKind": "free",
+      "mellerFamilyId": null
+    },
+    {
+      "ingredientId": "free-basilic",
+      "displayName": "Basilico",
+      "aliases": [
+        "basilic"
+      ],
+      "categoryId": "free",
+      "mappingKind": "free",
+      "mellerFamilyId": null
+    },
+    {
+      "ingredientId": "free-bietol",
+      "displayName": "Bietole",
+      "aliases": [
+        "bietol"
+      ],
+      "categoryId": "free",
+      "mappingKind": "free",
+      "mellerFamilyId": null
+    },
+    {
+      "ingredientId": "free-broccol",
+      "displayName": "Broccoli",
+      "aliases": [
+        "broccol"
+      ],
+      "categoryId": "free",
+      "mappingKind": "free",
+      "mellerFamilyId": null
+    },
+    {
+      "ingredientId": "free-brodo",
+      "displayName": "Brodo",
+      "aliases": [
+        "brodo"
+      ],
+      "categoryId": "free",
+      "mappingKind": "free",
+      "mellerFamilyId": null
+    },
+    {
+      "ingredientId": "free-carot",
+      "displayName": "Carote",
+      "aliases": [
+        "carot"
+      ],
+      "categoryId": "free",
+      "mappingKind": "free",
+      "mellerFamilyId": null
+    },
+    {
+      "ingredientId": "free-cavol",
+      "displayName": "Cavolo",
+      "aliases": [
+        "cavol"
+      ],
+      "categoryId": "free",
+      "mappingKind": "free",
+      "mellerFamilyId": null
+    },
+    {
+      "ingredientId": "free-cavolfior",
+      "displayName": "Cavolfiore",
+      "aliases": [
+        "cavolfior"
+      ],
+      "categoryId": "free",
+      "mappingKind": "free",
+      "mellerFamilyId": null
+    },
+    {
+      "ingredientId": "free-cetriol",
+      "displayName": "Cetriolo",
+      "aliases": [
+        "cetriol"
+      ],
+      "categoryId": "free",
+      "mappingKind": "free",
+      "mellerFamilyId": null
+    },
+    {
+      "ingredientId": "free-cipoll",
+      "displayName": "Cipolla",
+      "aliases": [
+        "cipoll"
+      ],
+      "categoryId": "free",
+      "mappingKind": "free",
+      "mellerFamilyId": null
+    },
+    {
+      "ingredientId": "free-curcuma",
+      "displayName": "Curcuma",
+      "aliases": [
+        "curcuma"
+      ],
+      "categoryId": "free",
+      "mappingKind": "free",
+      "mellerFamilyId": null
+    },
+    {
+      "ingredientId": "free-curry",
+      "displayName": "Curry",
+      "aliases": [
+        "curry"
+      ],
+      "categoryId": "free",
+      "mappingKind": "free",
+      "mellerFamilyId": null
+    },
+    {
+      "ingredientId": "free-erbe-aromatiche",
+      "displayName": "Erbe aromatiche",
+      "aliases": [
+        "erbe aromatiche"
+      ],
+      "categoryId": "free",
+      "mappingKind": "free",
+      "mellerFamilyId": null
+    },
+    {
+      "ingredientId": "free-fagiolin",
+      "displayName": "Fagiolini",
+      "aliases": [
+        "fagiolin"
+      ],
+      "categoryId": "free",
+      "mappingKind": "free",
+      "mellerFamilyId": null
+    },
+    {
+      "ingredientId": "free-finocch",
+      "displayName": "Finocchi",
+      "aliases": [
+        "finocch"
+      ],
+      "categoryId": "free",
+      "mappingKind": "free",
+      "mellerFamilyId": null
+    },
+    {
+      "ingredientId": "free-fungh",
+      "displayName": "Funghi",
+      "aliases": [
+        "fungh"
+      ],
+      "categoryId": "free",
+      "mappingKind": "free",
+      "mellerFamilyId": null
+    },
+    {
+      "ingredientId": "free-insalat",
+      "displayName": "Insalata",
+      "aliases": [
+        "insalat"
+      ],
+      "categoryId": "free",
+      "mappingKind": "free",
+      "mellerFamilyId": null
+    },
+    {
+      "ingredientId": "free-lattug",
+      "displayName": "Lattuga",
+      "aliases": [
+        "lattug"
+      ],
+      "categoryId": "free",
+      "mappingKind": "free",
+      "mellerFamilyId": null
+    },
+    {
+      "ingredientId": "free-lime",
+      "displayName": "Lime",
+      "aliases": [
+        "lime"
+      ],
+      "categoryId": "free",
+      "mappingKind": "free",
+      "mellerFamilyId": null
+    },
+    {
+      "ingredientId": "free-limon",
+      "displayName": "Limone",
+      "aliases": [
+        "limon"
+      ],
+      "categoryId": "free",
+      "mappingKind": "free",
+      "mellerFamilyId": null
+    },
+    {
+      "ingredientId": "free-melanzan",
+      "displayName": "Melanzane",
+      "aliases": [
+        "melanzan"
+      ],
+      "categoryId": "free",
+      "mappingKind": "free",
+      "mellerFamilyId": null
+    },
+    {
+      "ingredientId": "free-menta",
+      "displayName": "Menta",
+      "aliases": [
+        "menta"
+      ],
+      "categoryId": "free",
+      "mappingKind": "free",
+      "mellerFamilyId": null
+    },
+    {
+      "ingredientId": "free-noce-moscata",
+      "displayName": "Noce moscata",
+      "aliases": [
+        "noce moscata"
+      ],
+      "categoryId": "free",
+      "mappingKind": "free",
+      "mellerFamilyId": null
+    },
+    {
+      "ingredientId": "free-origano",
+      "displayName": "Origano",
+      "aliases": [
+        "origano"
+      ],
+      "categoryId": "free",
+      "mappingKind": "free",
+      "mellerFamilyId": null
+    },
+    {
+      "ingredientId": "free-ortaggi",
+      "displayName": "Ortaggi",
+      "aliases": [
+        "ortaggi"
+      ],
+      "categoryId": "free",
+      "mappingKind": "free",
+      "mellerFamilyId": null
+    },
+    {
+      "ingredientId": "free-paprika",
+      "displayName": "Paprika",
+      "aliases": [
+        "paprika"
+      ],
+      "categoryId": "free",
+      "mappingKind": "free",
+      "mellerFamilyId": null
+    },
+    {
+      "ingredientId": "free-passata",
+      "displayName": "Passata",
+      "aliases": [
+        "passata"
+      ],
+      "categoryId": "free",
+      "mappingKind": "free",
+      "mellerFamilyId": null
+    },
+    {
+      "ingredientId": "free-passata-di-pomodoro",
+      "displayName": "Passata di pomodoro",
+      "aliases": [
+        "passata di pomodoro"
+      ],
+      "categoryId": "free",
+      "mappingKind": "free",
+      "mellerFamilyId": null
+    },
+    {
+      "ingredientId": "free-pepe",
+      "displayName": "Pepe",
+      "aliases": [
+        "pepe"
+      ],
+      "categoryId": "free",
+      "mappingKind": "free",
+      "mellerFamilyId": null
+    },
+    {
+      "ingredientId": "free-peperon",
+      "displayName": "Peperoni",
+      "aliases": [
+        "peperon"
+      ],
+      "categoryId": "free",
+      "mappingKind": "free",
+      "mellerFamilyId": null
+    },
+    {
+      "ingredientId": "free-pomodor",
+      "displayName": "Pomodori",
+      "aliases": [
+        "pomodor"
+      ],
+      "categoryId": "free",
+      "mappingKind": "free",
+      "mellerFamilyId": null
+    },
+    {
+      "ingredientId": "free-prezzemol",
+      "displayName": "Prezzemolo",
+      "aliases": [
+        "prezzemol"
+      ],
+      "categoryId": "free",
+      "mappingKind": "free",
+      "mellerFamilyId": null
+    },
+    {
+      "ingredientId": "free-radicch",
+      "displayName": "Radicchio",
+      "aliases": [
+        "radicch"
+      ],
+      "categoryId": "free",
+      "mappingKind": "free",
+      "mellerFamilyId": null
+    },
+    {
+      "ingredientId": "free-ravanell",
+      "displayName": "Ravanelli",
+      "aliases": [
+        "ravanell"
+      ],
+      "categoryId": "free",
+      "mappingKind": "free",
+      "mellerFamilyId": null
+    },
+    {
+      "ingredientId": "free-rosmarin",
+      "displayName": "Rosmarino",
+      "aliases": [
+        "rosmarin"
+      ],
+      "categoryId": "free",
+      "mappingKind": "free",
+      "mellerFamilyId": null
+    },
+    {
+      "ingredientId": "free-rucola",
+      "displayName": "Rucola",
+      "aliases": [
+        "rucola"
+      ],
+      "categoryId": "free",
+      "mappingKind": "free",
+      "mellerFamilyId": null
+    },
+    {
+      "ingredientId": "free-sale",
+      "displayName": "Sale",
+      "aliases": [
+        "sale"
+      ],
+      "categoryId": "free",
+      "mappingKind": "free",
+      "mellerFamilyId": null
+    },
+    {
+      "ingredientId": "free-salvia",
+      "displayName": "Salvia",
+      "aliases": [
+        "salvia"
+      ],
+      "categoryId": "free",
+      "mappingKind": "free",
+      "mellerFamilyId": null
+    },
+    {
+      "ingredientId": "free-sedan",
+      "displayName": "Sedano",
+      "aliases": [
+        "sedan"
+      ],
+      "categoryId": "free",
+      "mappingKind": "free",
+      "mellerFamilyId": null
+    },
+    {
+      "ingredientId": "free-spezi",
+      "displayName": "Spezie",
+      "aliases": [
+        "spezi"
+      ],
+      "categoryId": "free",
+      "mappingKind": "free",
+      "mellerFamilyId": null
+    },
+    {
+      "ingredientId": "free-spinac",
+      "displayName": "Spinaci",
+      "aliases": [
+        "spinac"
+      ],
+      "categoryId": "free",
+      "mappingKind": "free",
+      "mellerFamilyId": null
+    },
+    {
+      "ingredientId": "free-timo",
+      "displayName": "Timo",
+      "aliases": [
+        "timo"
+      ],
+      "categoryId": "free",
+      "mappingKind": "free",
+      "mellerFamilyId": null
+    },
+    {
+      "ingredientId": "free-verdura",
+      "displayName": "Verdure",
+      "aliases": [
+        "verdura"
+      ],
+      "categoryId": "free",
+      "mappingKind": "free",
+      "mellerFamilyId": null
+    },
+    {
+      "ingredientId": "free-verza",
+      "displayName": "Verza",
+      "aliases": [
+        "verza"
+      ],
+      "categoryId": "free",
+      "mappingKind": "free",
+      "mellerFamilyId": null
+    },
+    {
+      "ingredientId": "free-zenzero",
+      "displayName": "Zenzero",
+      "aliases": [
+        "zenzero"
+      ],
+      "categoryId": "free",
+      "mappingKind": "free",
+      "mellerFamilyId": null
+    },
+    {
+      "ingredientId": "free-zucca",
+      "displayName": "Zucca",
+      "aliases": [
+        "zucca"
+      ],
+      "categoryId": "free",
+      "mappingKind": "free",
+      "mellerFamilyId": null
+    },
+    {
+      "ingredientId": "free-zucchin",
+      "displayName": "Zucchine",
+      "aliases": [
+        "zucchin"
+      ],
+      "categoryId": "free",
+      "mappingKind": "free",
+      "mellerFamilyId": null
+    },
+    {
+      "ingredientId": "gnocchi",
+      "displayName": "Gnocchi",
+      "aliases": [
+        "gnocch",
+        "Gnocchi"
+      ],
+      "categoryId": "carb",
+      "mappingKind": "guided",
+      "mellerFamilyId": "gnocchi"
+    },
+    {
+      "ingredientId": "legumi",
+      "displayName": "Legumi",
+      "aliases": [
+        "ceci",
+        "edamame",
+        "fagiol",
+        "legumi",
+        "Legumi",
+        "lenticch",
+        "pisell",
+        "soia",
+        "tempeh",
+        "tofu"
+      ],
+      "categoryId": "protein",
+      "mappingKind": "guided",
+      "mellerFamilyId": "legumi"
+    },
+    {
+      "ingredientId": "legumotti",
+      "displayName": "Legumotti",
+      "aliases": [
+        "legumott",
+        "Legumotti"
+      ],
+      "categoryId": "protein",
+      "mappingKind": "guided",
+      "mellerFamilyId": "legumotti"
+    },
+    {
+      "ingredientId": "maiale",
+      "displayName": "Maiale",
+      "aliases": [
+        "lonza",
+        "maiale",
+        "Maiale",
+        "pork"
+      ],
+      "categoryId": "protein",
+      "mappingKind": "guided",
+      "mellerFamilyId": "maiale"
+    },
+    {
+      "ingredientId": "manzo",
+      "displayName": "Manzo/Vitello",
+      "aliases": [
+        "hamburger",
+        "manzo",
+        "Manzo/Vitello",
+        "roastbeef",
+        "vitello"
+      ],
+      "categoryId": "protein",
+      "mappingKind": "guided",
+      "mellerFamilyId": "manzo"
+    },
+    {
+      "ingredientId": "molluschi",
+      "displayName": "Crostacei/Molluschi",
+      "aliases": [
+        "calamar",
+        "cozze",
+        "crostace",
+        "Crostacei/Molluschi",
+        "gamber",
+        "mollusch",
+        "polpo",
+        "seppi",
+        "vongole"
+      ],
+      "categoryId": "protein",
+      "mappingKind": "guided",
+      "mellerFamilyId": "molluschi"
+    },
+    {
+      "ingredientId": "olio",
+      "displayName": "Olio EVO",
+      "aliases": [
+        "evo",
+        "extravergine",
+        "olio",
+        "Olio EVO"
+      ],
+      "categoryId": "fat",
+      "mappingKind": "guided",
+      "mellerFamilyId": "olio"
+    },
+    {
+      "ingredientId": "pane",
+      "displayName": "Pane",
+      "aliases": [
+        "fette biscottate",
+        "pane",
+        "Pane",
+        "wasa"
+      ],
+      "categoryId": "carb",
+      "mappingKind": "guided",
+      "mellerFamilyId": "pane"
+    },
+    {
+      "ingredientId": "pasta",
+      "displayName": "Pasta",
+      "aliases": [
+        "fusilli",
+        "lasagne",
+        "linguine",
+        "pasta",
+        "Pasta",
+        "penne",
+        "rigatoni",
+        "spaghetti",
+        "tagliatelle",
+        "trofie"
+      ],
+      "categoryId": "carb",
+      "mappingKind": "guided",
+      "mellerFamilyId": "pasta"
+    },
+    {
+      "ingredientId": "patate",
+      "displayName": "Patate",
+      "aliases": [
+        "patat",
+        "Patate"
+      ],
+      "categoryId": "carb",
+      "mappingKind": "guided",
+      "mellerFamilyId": "patate"
+    },
+    {
+      "ingredientId": "pesce-bianco",
+      "displayName": "Pesce bianco",
+      "aliases": [
+        "branzino",
+        "merluzzo",
+        "nasello",
+        "orata",
+        "pesce",
+        "Pesce bianco",
+        "platessa",
+        "sogliola",
+        "spigola",
+        "trota"
+      ],
+      "categoryId": "protein",
+      "mappingKind": "guided",
+      "mellerFamilyId": "pesceBianco"
+    },
+    {
+      "ingredientId": "pesce-omega",
+      "displayName": "Pesce azzurro/omega-3",
+      "aliases": [
+        "acciug",
+        "alice",
+        "aringa",
+        "Pesce azzurro/omega-3",
+        "salmone",
+        "sardine",
+        "sgombro"
+      ],
+      "categoryId": "protein",
+      "mappingKind": "guided",
+      "mellerFamilyId": "pesceOmega"
+    },
+    {
+      "ingredientId": "piadina",
+      "displayName": "Piadina",
+      "aliases": [
+        "piadina",
+        "Piadina",
+        "tortilla"
+      ],
+      "categoryId": "carb",
+      "mappingKind": "guided",
+      "mellerFamilyId": "piadina"
+    },
+    {
+      "ingredientId": "polenta",
+      "displayName": "Polenta",
+      "aliases": [
+        "polenta",
+        "Polenta"
+      ],
+      "categoryId": "carb",
+      "mappingKind": "guided",
+      "mellerFamilyId": "polenta"
+    },
+    {
+      "ingredientId": "pollame",
+      "displayName": "Pollame",
+      "aliases": [
+        "faraona",
+        "pollame",
+        "Pollame",
+        "pollo",
+        "tacchino"
+      ],
+      "categoryId": "protein",
+      "mappingKind": "guided",
+      "mellerFamilyId": "pollame"
+    },
+    {
+      "ingredientId": "pseudo",
+      "displayName": "Quinoa/Grano saraceno/Amaranto",
+      "aliases": [
+        "amaranto",
+        "grano saraceno",
+        "quinoa",
+        "Quinoa/Grano saraceno/Amaranto"
+      ],
+      "categoryId": "carb",
+      "mappingKind": "guided",
+      "mellerFamilyId": "pseudo"
+    },
+    {
+      "ingredientId": "riso",
+      "displayName": "Riso",
+      "aliases": [
+        "riso",
+        "Riso",
+        "risotto"
+      ],
+      "categoryId": "carb",
+      "mappingKind": "guided",
+      "mellerFamilyId": "riso"
+    },
+    {
+      "ingredientId": "salumi",
+      "displayName": "Affettati/Salumi",
+      "aliases": [
+        "affettat",
+        "Affettati/Salumi",
+        "bresaola",
+        "mortadella",
+        "prosciutto",
+        "salame",
+        "salsiccia",
+        "salume",
+        "salumi",
+        "speck",
+        "wurstel"
+      ],
+      "categoryId": "protein",
+      "mappingKind": "guided",
+      "mellerFamilyId": "salumi"
+    },
+    {
+      "ingredientId": "tonno",
+      "displayName": "Tonno",
+      "aliases": [
+        "tonno",
+        "Tonno"
+      ],
+      "categoryId": "protein",
+      "mappingKind": "guided",
+      "mellerFamilyId": "tonno"
+    },
+    {
+      "ingredientId": "uova",
+      "displayName": "Uova",
+      "aliases": [
+        "albume",
+        "tuorlo",
+        "uov",
+        "Uova"
+      ],
+      "categoryId": "protein",
+      "mappingKind": "guided",
+      "mellerFamilyId": "uova"
+    }
+  ]
+}

@@ -12,6 +12,12 @@ morte **senza rompere gli account attivi** (`gabriele`, `martina`, `admin`,
 > ⚠️ Leggi prima il **Passo 0**: contiene l'elenco delle cose che **non**
 > vanno cancellate. È la parte più importante della guida.
 
+> 🧭 **Da dove partire?** Se devi ancora **costruire** la struttura nuova
+> (organizzazione `pianoNutrizionale`, creatore, nutrizionista, catalogo, collegamento di
+> `gabriele` e `martina`), fai prima
+> [ripartenza-firebase.md](ripartenza-firebase.md): qui si cancella, là si
+> costruisce. Cancellare per primo lascerebbe gli account senza appartenenza.
+
 ---
 
 ## Passo 0 — Cosa NON cancellare (leggilo prima di tutto)
@@ -29,14 +35,14 @@ produzione. Questo documento corregge quel piano.
 | `globalIngredientCatalog/current/**` | Catalogo ingredienti globale attivo (`functions/src/index.js:118-120`). |
 | `usernames/**` | Rubrica nickname → UID: serve a inviti, condivisioni e ricerca utenti (`functions/src/index.js:1432-1438`). |
 | `recipeShares/**`, `priceEntries/**`, `priceMeta/**`, `accountClientLinks/**`, `platformMembers/**` | Funzionalità attive: condivisioni, prezzi, collegamenti account. |
-| `organizations/piano/**` | È l'organizzazione SaaS **in uso**. Le Functions accettano solo questa (`SINGLE_ORGANIZATION_ID = 'piano'`, `functions/src/domain.js:5`). |
+| `organizations/pianoNutrizionale/**` | È l'organizzazione SaaS **in uso**. Le Functions accettano solo questa (`SINGLE_ORGANIZATION_ID = 'pianoNutrizionale'`, `functions/src/domain.js:5`). |
 
 Queste collezioni diventeranno cancellabili solo dopo aver riscritto il
 magazzino dati del client: lavoro fuori scope. Quando succederà, aggiorna
 questa guida insieme al codice.
 
 **In pratica si cancellano solo due cose**: le organizzazioni diverse da
-`piano` (Passo 3) e, solo dopo un controllo, `globalRuleSets` (Passo 4).
+`pianoNutrizionale` (Passo 3) e, solo dopo un controllo, `globalRuleSets` (Passo 4).
 
 ---
 
@@ -108,16 +114,16 @@ toccati.
 
 ---
 
-## Passo 3 — Cancella le organizzazioni diverse da `piano`
+## Passo 3 — Cancella le organizzazioni diverse da `pianoNutrizionale`
 
 Perché è sicuro:
 
-- le Cloud Functions accettano soltanto l'organizzazione `piano`: qualunque
+- le Cloud Functions accettano soltanto l'organizzazione `pianoNutrizionale`: qualunque
   altro ID viene respinto (`enforceSingleOrg`, `functions/src/index.js:52-58`);
 - se un vecchio collegamento account punta a un'organizzazione cancellata,
   `getMyAssignedProfile` risponde "nessuna assegnazione, dosi originali" invece
   di rompersi (`functions/src/index.js:302-305`);
-- la console (`admin.html`) parla sempre e solo con `piano`
+- la console (`admin.html`) parla sempre e solo con `pianoNutrizionale`
   (`js/admin.js:9`).
 
 Come fare:
@@ -126,16 +132,16 @@ Come fare:
    **Firestore Database** → scheda **Data**.
 2. Nell'elenco di sinistra apri la collezione **organizations**.
 3. **Prendi nota su un foglio** dei nomi dei documenti che vedi. Alla fine deve
-   restare soltanto `piano`.
-4. Per **ogni documento che non si chiama `piano`**:
+   restare soltanto `pianoNutrizionale`.
+4. Per **ogni documento che non si chiama `pianoNutrizionale`**:
    1. clicca il documento;
    2. clicca i tre puntini (**⋮**) e scegli **Delete document**;
    3. nella finestra di conferma accetta anche la cancellazione delle
       sottocollezioni (`clients`, `members`, `auditLog`, …);
    4. conferma.
-5. Ricarica la pagina (F5): in `organizations` deve comparire solo `piano`.
+5. Ricarica la pagina (F5): in `organizations` deve comparire solo `pianoNutrizionale`.
 
-> Non toccare `piano`. Non cancellare la collezione `organizations` in sé:
+> Non toccare `pianoNutrizionale`. Non cancellare la collezione `organizations` in sé:
 > svuota solo i documenti che non ti servono.
 
 ---
@@ -246,11 +252,13 @@ Nessun account Auth va cancellato. `gabriele`, `martina`, `admin`, `cliente` e
 2. Apri l'app con `martina`: idem.
 3. Apri `admin.html` con `admin` e poi con `nutrizionista`: le sezioni
    **Clienti**, **Dosi clienti**, **Strutture dieta**, **Utenti** e **Coda
-   ingredienti** devono caricarsi senza messaggi rossi.
+   ingredienti** devono caricarsi senza messaggi rossi. Con `admin` (creatore)
+   deve esserci in più la sezione **Catalogo**, che mostra la versione
+   importata; con `nutrizionista` la voce **non** deve comparire.
 4. Firebase console → **Firestore Database** → **Data**: nell'elenco devono
    ancora esserci `users`, `households`, `usernames`, `recipeShares`,
    `priceEntries`, `priceMeta`, `accountClientLinks`, `platformMembers`,
-   `globalIngredientCatalog` e `organizations` (con il solo documento `piano`).
+   `globalIngredientCatalog` e `organizations` (con il solo documento `pianoNutrizionale`).
 5. Firebase console → **Functions**: tutte le funzioni attive, con la data
    dell'ultimo deploy.
 
@@ -259,11 +267,14 @@ dell'app**, perché le Cloud Functions non leggono quelle collezioni (unica
 eccezione: il caso `ruleSet.scope: "global"` già verificato al Passo 4).
 
 Se hai anche un modo di lanciare i test automatici (per esempio il workflow
-`Test` su GitHub, che parte da solo a ogni modifica): `npm test` = 286 test,
-`npm --prefix functions test` = 46 test, tutti verdi.
-`npm run smoke` **oggi fallisce già su `main`** (`test/smoke-app.js:231`,
-"profilo coppia visibile e contestualizzato"): è un problema preesistente, non
-dipende dalla pulizia.
+`Test` su GitHub, che parte da solo a ogni modifica): `npm test` = 318 test,
+`npm --prefix functions test` = 54 test, `npm run smoke` = SMOKE OK,
+`npm run syntax` = OK. Tutti verdi sul ramo aggiornato.
+
+> Nota storica: fino a settembre 2026 lo smoke test falliva
+> (`test/smoke-app.js`, "profilo coppia") perché controllava l'etichetta del
+> profilo nella Settimana invece che nell'header: era un test disallineato al
+> codice attuale ed è stato corretto.
 
 ---
 
@@ -271,7 +282,8 @@ dipende dalla pulizia.
 
 1. Attiva il ripristino a 7 giorni (Disaster Recovery).
 2. `gabriele` e `martina`: **Esporta** e poi **Importa** dal Ricettario.
-3. In `organizations` cancella tutto tranne `piano`.
+3. In `organizations` cancella tutto tranne `pianoNutrizionale` (che deve esistere: vedi
+   [ripartenza-firebase.md](ripartenza-firebase.md)).
 4. Controlla le assegnazioni: nessuna attiva/programmata con
    `ruleSet.scope: "global"`.
 5. Solo allora svuota `globalRuleSets`.
