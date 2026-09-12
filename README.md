@@ -47,6 +47,8 @@ Architettura e operatività:
 - [ADR multi-tenant](docs/adr/0001-saas-multi-tenant.md)
 - [contratti dati e matrice permessi](docs/saas-data-contracts.md)
 - [runbook deploy, migrazione, GDPR e rollback](docs/saas-runbook.md)
+- [pubblicare su Firebase senza terminale](docs/deploy-online-senza-terminale.md)
+- [pulizia dei dati legacy su Firestore](docs/pulizia-dati-legacy.md)
 - [prompt originario](docs/prompt-saas-meller.md)
 
 ## Dove si trovano i dati
