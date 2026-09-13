@@ -297,6 +297,27 @@ h3 { font-size: 1rem; }
 .notification-bell:hover { transform: translateY(-1px); background: transparent; }
 .notification-bell:active { transform: scale(.94); background: transparent; }
 .notification-bell:focus-visible { outline: 2px solid #fff; outline-offset: 2px; }
+
+/* Interruttore del tema nell'header (unico controllo, sole/luna): stessa
+   impronta della campanella, senza animazioni (sicuro con
+   prefers-reduced-motion). Lo stato si legge da aria-pressed + etichetta. */
+.theme-toggle {
+  display: grid;
+  place-items: center;
+  width: 42px;
+  height: 42px;
+  padding: 0;
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+  color: #fff;
+  font-size: 1.15rem;
+  line-height: 1;
+  cursor: pointer;
+}
+.theme-toggle:hover { transform: translateY(-1px); background: transparent; }
+.theme-toggle:active { transform: scale(.94); background: transparent; }
+.theme-toggle:focus-visible { outline: 2px solid #fff; outline-offset: 2px; }
 .notification-bell.has-pending {
   background: transparent;
   border: 0;

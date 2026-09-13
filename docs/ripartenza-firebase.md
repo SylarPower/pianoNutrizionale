@@ -247,8 +247,8 @@ Per ogni persona da seguire ripeti:
    ricreare **tutti** gli account, quindi si lascia così.
 
    > **Clienti reali (modello attuale)**: questo modulo con username è riservato
-   > agli account di test. Per un cliente vero usa **Utenti → Invita → Cliente
-   > con email reale**: riceve un link monouso, trova email/nome/cognome
+   > agli account di test. Per un cliente vero usa **Clienti → ＋ Invita nuovo
+   > cliente**: riceve un link monouso, trova email/nome/cognome
    > precompilati dal nutrizionista, sceglie la password e verifica l'email; il
    > collegamento si attiva dopo la verifica. Guida:
    > [`inviti-email.md`](inviti-email.md). In produzione la creazione di nuovi

@@ -245,7 +245,7 @@ test('Impostazioni: niente sezione backup, annullamento o badge "Backup pronto"'
   assert.doesNotMatch(html, /Backup e annullamento/);
   assert.doesNotMatch(html, /Annulla ultima modifica/);
   assert.doesNotMatch(html, /Backup pronto|backup-status/);
-  assert.match(html, /Tema scuro/, 'le altre impostazioni restano intatte');
+  assert.match(html, /Accesso personale/, 'le altre impostazioni restano intatte');
 });
 
 test('Impostazioni: niente sezione "Dati e sincronizzazione", import dal Ricettario', () => {
@@ -253,7 +253,7 @@ test('Impostazioni: niente sezione "Dati e sincronizzazione", import dal Ricetta
   const html = document.getElementById('view-settings').innerHTML;
   assert.doesNotMatch(html, /Dati e sincronizzazione/, 'sezione rimossa come "Backup e annullamento"');
   assert.doesNotMatch(html, /cloud-section|Importa o ripristina ricette/, 'niente input file/import dedicato nelle Impostazioni');
-  assert.match(html, /Tema scuro/, 'il resto delle Impostazioni è intatto');
+  assert.match(html, /Accesso personale/, 'il resto delle Impostazioni è intatto');
   renderRecipes();
   const recipesHtml = document.getElementById('view-recipes').innerHTML;
   assert.match(recipesHtml, /file-import-button/, 'l\u2019importazione resta disponibile dal Ricettario');

@@ -219,7 +219,7 @@ Gli account creati a mano in Authentication con l'email tecnica
 prove e test automatici e restano validi.
 
 I **clienti reali** si invitano invece dalla console con la loro email vera:
-**Utenti → Invita → Cliente con email reale**. Il cliente riceve un link
+**Clienti → ＋ Invita nuovo cliente**. Il cliente riceve un link
 monouso, trova email/nome/cognome già compilati (inseriti dal nutrizionista),
 sceglie **solo la password** e verifica l'indirizzo email; il collegamento con
 il professionista si attiva dopo la verifica. Se l'account esiste già, riceve

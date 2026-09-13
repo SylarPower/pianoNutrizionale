@@ -2752,6 +2752,330 @@ const PROTEIN_CATEGORY_LABELS = {
     };
   }
 
+  // =====================================================================
+  // Console professionisti — stati operativi dei clienti (vista unificata)
+  //
+  // La vista «Clienti» mostra tre stati operativi (Attivo, Inattivo,
+  // In attesa) calcolati dallo stato del profilo e dal collegamento. Gli
+  // stati di storico (rifiutato, revocato, scaduto, sostituito) restano
+  // visibili solo dentro la scheda cliente. Funzioni pure: la console le
+  // usa per filtrare e per i titoli, senza mai mostrare UID o ID tecnici.
+  // =====================================================================
+
+  const CLIENT_OPERATIONAL_STATUSES = ['active', 'inactive', 'pending'];
+  const CLIENT_STATUS_LABELS = { active: 'Attivo', inactive: 'Inattivo', pending: 'In attesa' };
+  const CLIENT_HISTORY_STATUS_LABELS = {
+    rejected: 'Rifiutato', revoked: 'Revocato', expired: 'Scaduto',
+    superseded: 'Sostituito', cancelled: 'Annullato', accepted: 'Accettato',
+    consumed: 'Utilizzato', suspended: 'Sospeso', unlinked: 'Scollegato'
+  };
+
+  // Stato operativo di un cliente: 'active' | 'inactive' | 'pending'.
+  // - pending: profilo in attesa (invito email o richiesta di collegamento
+  //   da confermare) oppure invito/richiesta pendente collegati al profilo;
+  // - active: profilo attivo con collegamento attivo;
+  // - inactive: tutto il resto (scollegato, sospeso, rimosso, sconosciuto).
+  function clientOperationalStatus(client, context) {
+    const status = String(client?.status || '').toLowerCase();
+    if (status === 'pending') return 'pending';
+    const scopes = context || {};
+    const hasPendingInvite = Array.isArray(scopes.invitations)
+      && scopes.invitations.some(item => item && item.clientId === client?.id && item.status === 'pending');
+    const hasPendingRequest = Array.isArray(scopes.requests)
+      && scopes.requests.some(item => item && item.clientId === client?.id && (!item.status || item.status === 'pending'));
+    if (hasPendingInvite || hasPendingRequest) return 'pending';
+    if (status === 'active') return 'active';
+    return 'inactive';
+  }
+
+  function clientStatusLabel(status) {
+    return CLIENT_STATUS_LABELS[status] || CLIENT_HISTORY_STATUS_LABELS[status] || 'Sconosciuto';
+  }
+
+  function maskEmailClient(value) {
+    const clean = String(value || '').trim().toLowerCase();
+    const at = clean.indexOf('@');
+    if (at <= 0 || at === clean.length - 1) return '—';
+    const local = clean.slice(0, at);
+    const domain = clean.slice(at + 1);
+    const head = local.slice(0, 1);
+    return `${head}${'•'.repeat(Math.min(Math.max(local.length - 1, 1), 4))}@${domain}`;
+  }
+
+  // Titolo del cliente: mai UID o ID tecnici. Ordine di fallback:
+  // «Nome Cognome» → displayName → email mascherata → displayCode.
+  // Lo username legacy resta solo un'informazione secondaria in scheda.
+  function clientDisplayTitle(client) {
+    const first = String(client?.firstName || '').trim();
+    const last = String(client?.lastName || '').trim();
+    const full = `${first} ${last}`.trim();
+    if (full) return full;
+    const display = String(client?.displayName || '').trim();
+    if (display) return display;
+    const email = String(client?.email || client?.emailNormalized || '').trim();
+    if (email) return maskEmailClient(email);
+    return String(client?.displayCode || 'Cliente');
+  }
+
+  function clientInitials(client) {
+    const title = clientDisplayTitle(client);
+    const parts = title.split(/[\s.]+/).filter(Boolean);
+    const head = (parts[0] || 'C').slice(0, 1);
+    const tail = parts.length > 1 ? (parts[parts.length - 1] || '').slice(0, 1) : '';
+    return (head + tail).toUpperCase() || 'C';
+  }
+
+  // =====================================================================
+  // Dieta guidata — modello descrittivo versionato (dietPlan v1)
+  //
+  // Il piano guidato descrive la dieta come la deve leggere il cliente
+  // (giornate, pasti, opzioni A/B/C/D, quantità con unità, note): non
+  // esegue alcun calcolo clinico, non deriva macro né dosi. I valori
+  // nutrizionali della giornata sono appunti manuali del professionista.
+  // Viaggia come campo opzionale `dietPlan` della revisione struttura
+  // (schema revisione 3); le revisioni 1/2 restano leggibili come prima.
+  // =====================================================================
+
+  const DIET_PLAN_SCHEMA_VERSION = 1;
+  const DIET_PLAN_DAY_TYPES = ['training', 'rest', 'other'];
+  const DIET_PLAN_DAY_TYPE_LABELS = {
+    training: 'Giornata di allenamento',
+    rest: 'Giornata di riposo',
+    other: 'Altra giornata'
+  };
+  const DIET_PLAN_MEALS = [
+    { id: 'breakfast', label: 'Colazione' },
+    { id: 'morning-snack', label: 'Spuntino di metà mattina' },
+    { id: 'lunch', label: 'Pranzo' },
+    { id: 'afternoon-snack', label: 'Merenda' },
+    { id: 'dinner', label: 'Cena' },
+    { id: 'evening-snack', label: 'Spuntino serale' }
+  ];
+  const DIET_PLAN_FOOD_GROUPS = [
+    { id: 'cereali', label: 'Cereali, pane, pasta e riso' },
+    { id: 'pseudo-cereali', label: 'Pseudo-cereali (quinoa, amaranto, grano saraceno)' },
+    { id: 'legumi', label: 'Legumi' },
+    { id: 'carne', label: 'Carne' },
+    { id: 'pesce', label: 'Pesce' },
+    { id: 'uova', label: 'Uova' },
+    { id: 'latticini', label: 'Latte, yogurt e formaggi' },
+    { id: 'verdura', label: 'Verdura e ortaggi' },
+    { id: 'frutta', label: 'Frutta fresca' },
+    { id: 'frutta-secca', label: 'Frutta secca e semi' },
+    { id: 'grassi', label: 'Oli e grassi da condimento' },
+    { id: 'dolci', label: 'Dolci e prodotti da forno' },
+    { id: 'bevande', label: 'Bevande' },
+    { id: 'integratori', label: 'Integratori' },
+    { id: 'altro', label: 'Altro' }
+  ];
+  const DIET_PLAN_UNITS = [
+    { id: 'g', label: 'g' }, { id: 'kg', label: 'kg' },
+    { id: 'ml', label: 'ml' }, { id: 'l', label: 'l' },
+    { id: 'pz', label: 'pz' }, { id: 'fette', label: 'fette' },
+    { id: 'cucchiai', label: 'cucchiai' }, { id: 'cucchiaini', label: 'cucchiaini' },
+    { id: 'tazze', label: 'tazze' }, { id: 'bicchieri', label: 'bicchieri' },
+    { id: 'porzioni', label: 'porzioni' }, { id: 'scatolette', label: 'scatolette' },
+    { id: 'misurini', label: 'misurini' }, { id: 'qb', label: 'q.b.' }
+  ];
+  const DIET_PLAN_QUANTITY_STATES = [
+    { id: 'crudo', label: 'Peso a crudo' },
+    { id: 'cotto', label: 'Peso a cotto' }
+  ];
+  const DIET_PLAN_OPTION_LABELS = ['A', 'B', 'C', 'D'];
+  const DIET_PLAN_LIMITS = {
+    days: 14, mealsPerDay: 10, optionsPerMeal: 4, itemsPerOption: 20,
+    label: 80, description: 200, note: 1000, quantity: 5000
+  };
+
+  function dietPlanDayLabel(dayType) {
+    return DIET_PLAN_DAY_TYPE_LABELS[dayType] || 'Giornata';
+  }
+
+  function dietPlanMealLabel(mealId) {
+    const found = DIET_PLAN_MEALS.find(item => item.id === mealId);
+    return found ? found.label : 'Pasto';
+  }
+
+  function dietPlanFoodGroupLabel(groupId) {
+    const found = DIET_PLAN_FOOD_GROUPS.find(item => item.id === groupId);
+    return found ? found.label : 'Altro';
+  }
+
+  function dietPlanUnitLabel(unitId) {
+    const found = DIET_PLAN_UNITS.find(item => item.id === unitId);
+    return found ? found.label : String(unitId || '');
+  }
+
+  function createDietPlanItem(detail) {
+    const source = detail || {};
+    return {
+      foodGroup: typeof source.foodGroup === 'string' ? source.foodGroup : 'altro',
+      description: typeof source.description === 'string' ? source.description : '',
+      quantity: source.quantity == null || source.quantity === '' ? null : Number(source.quantity),
+      unit: typeof source.unit === 'string' ? source.unit : 'g',
+      quantityState: source.quantityState === 'cotto' || source.quantityState === 'crudo' ? source.quantityState : null,
+      netOfWaste: source.netOfWaste === true,
+      alternative: typeof source.alternative === 'string' ? source.alternative : ''
+    };
+  }
+
+  function createDietPlanOption(label, detail) {
+    const source = detail || {};
+    return {
+      label: DIET_PLAN_OPTION_LABELS.includes(source.label) ? source.label : (label || 'A'),
+      items: Array.isArray(source.items) && source.items.length
+        ? source.items.map(item => createDietPlanItem(item))
+        : [createDietPlanItem()],
+      note: typeof source.note === 'string' ? source.note : ''
+    };
+  }
+
+  function createDietPlanMeal(mealId, detail) {
+    const source = detail || {};
+    const known = DIET_PLAN_MEALS.some(item => item.id === mealId);
+    return {
+      mealId: known ? mealId : 'lunch',
+      time: typeof source.time === 'string' ? source.time : '',
+      options: Array.isArray(source.options) && source.options.length
+        ? source.options.map((option, index) => createDietPlanOption(DIET_PLAN_OPTION_LABELS[index] || 'A', option))
+        : [createDietPlanOption('A')],
+      note: typeof source.note === 'string' ? source.note : ''
+    };
+  }
+
+  function createDietPlanDay(dayType, detail) {
+    const source = detail || {};
+    const target = source.target || {};
+    const readTarget = key => (target[key] == null || target[key] === '' ? null : Number(target[key]));
+    return {
+      dayId: typeof source.dayId === 'string' && source.dayId ? source.dayId : null,
+      label: typeof source.label === 'string' ? source.label : '',
+      dayType: DIET_PLAN_DAY_TYPES.includes(dayType) ? dayType : 'training',
+      target: {
+        kcal: readTarget('kcal'), proteinG: readTarget('proteinG'),
+        carbsG: readTarget('carbsG'), fatG: readTarget('fatG'), waterMl: readTarget('waterMl')
+      },
+      meals: Array.isArray(source.meals) && source.meals.length
+        ? source.meals.map(meal => createDietPlanMeal(meal?.mealId, meal))
+        : [createDietPlanMeal('breakfast'), createDietPlanMeal('lunch'), createDietPlanMeal('dinner')],
+      supplements: typeof source.supplements === 'string' ? source.supplements : '',
+      hydration: typeof source.hydration === 'string' ? source.hydration : '',
+      note: typeof source.note === 'string' ? source.note : ''
+    };
+  }
+
+  function createEmptyDietPlan(detail) {
+    const source = detail || {};
+    return {
+      schemaVersion: DIET_PLAN_SCHEMA_VERSION,
+      days: Array.isArray(source.days) && source.days.length
+        ? source.days.map(day => createDietPlanDay(day?.dayType, day))
+        : [createDietPlanDay('training'), createDietPlanDay('rest')],
+      generalNotes: typeof source.generalNotes === 'string' ? source.generalNotes : ''
+    };
+  }
+
+  // Pre-validazione lato console: raccoglie gli errori in italiano senza
+  // mai lanciare. Il server rivalida comunque ogni campo.
+  function validateDietPlanSoft(plan) {
+    const errors = [];
+    const limits = DIET_PLAN_LIMITS;
+    if (!plan || typeof plan !== 'object') return { valid: false, errors: ['Piano dieta non valido.'] };
+    if (Number(plan.schemaVersion) !== DIET_PLAN_SCHEMA_VERSION) {
+      errors.push('Versione del piano non supportata da questa console.');
+    }
+    const days = Array.isArray(plan.days) ? plan.days : [];
+    if (!days.length || days.length > limits.days) {
+      errors.push(`Il piano deve contenere da 1 a ${limits.days} giornate.`);
+    }
+    const seenDayIds = new Set();
+    days.forEach((day, dayIndex) => {
+      const where = `Giornata ${dayIndex + 1}`;
+      if (!day || typeof day !== 'object') { errors.push(`${where}: dati mancanti.`); return; }
+      if (day.dayId != null && day.dayId !== '') {
+        if (seenDayIds.has(day.dayId)) errors.push(`${where}: identificativo duplicato.`);
+        seenDayIds.add(day.dayId);
+      }
+      if (!DIET_PLAN_DAY_TYPES.includes(day.dayType)) errors.push(`${where}: tipo giornata non valido.`);
+      if (String(day.label || '').length > limits.label) errors.push(`${where}: titolo troppo lungo.`);
+      ['kcal', 'proteinG', 'carbsG', 'fatG', 'waterMl'].forEach(key => {
+        const value = day.target?.[key];
+        if (value == null || value === '') return;
+        if (!Number.isFinite(Number(value)) || Number(value) < 0 || Number(value) > 50000) {
+          errors.push(`${where}: valore energetico «${key}» non valido.`);
+        }
+      });
+      const meals = Array.isArray(day.meals) ? day.meals : [];
+      if (!meals.length || meals.length > limits.mealsPerDay) {
+        errors.push(`${where}: servono da 1 a ${limits.mealsPerDay} pasti.`);
+      }
+      meals.forEach((meal, mealIndex) => {
+        const mealWhere = `${where}, pasto ${mealIndex + 1}`;
+        if (!meal || typeof meal !== 'object') { errors.push(`${mealWhere}: dati mancanti.`); return; }
+        if (!DIET_PLAN_MEALS.some(item => item.id === meal.mealId)) errors.push(`${mealWhere}: tipo di pasto non valido.`);
+        const options = Array.isArray(meal.options) ? meal.options : [];
+        if (!options.length || options.length > limits.optionsPerMeal) {
+          errors.push(`${mealWhere}: servono da 1 a ${limits.optionsPerMeal} opzioni.`);
+        }
+        const seenOptions = new Set();
+        options.forEach((option, optionIndex) => {
+          const optionWhere = `${mealWhere}, opzione ${DIET_PLAN_OPTION_LABELS[optionIndex] || optionIndex + 1}`;
+          if (!option || typeof option !== 'object') { errors.push(`${optionWhere}: dati mancanti.`); return; }
+          if (option.label && !DIET_PLAN_OPTION_LABELS.includes(option.label)) errors.push(`${optionWhere}: etichetta non valida (A–D).`);
+          if (option.label) {
+            if (seenOptions.has(option.label)) errors.push(`${mealWhere}: opzione ${option.label} duplicata.`);
+            seenOptions.add(option.label);
+          }
+          const items = Array.isArray(option.items) ? option.items : [];
+          if (!items.length || items.length > limits.itemsPerOption) {
+            errors.push(`${optionWhere}: servono da 1 a ${limits.itemsPerOption} alimenti.`);
+          }
+          items.forEach((item, itemIndex) => {
+            const itemWhere = `${optionWhere}, alimento ${itemIndex + 1}`;
+            if (!item || typeof item !== 'object') { errors.push(`${itemWhere}: dati mancanti.`); return; }
+            if (!DIET_PLAN_FOOD_GROUPS.some(group => group.id === item.foodGroup)) errors.push(`${itemWhere}: gruppo alimentare non valido.`);
+            if (!String(item.description || '').trim()) errors.push(`${itemWhere}: descrivi l’alimento.`);
+            if (String(item.description || '').length > limits.description) errors.push(`${itemWhere}: descrizione troppo lunga.`);
+            if (item.quantity != null && item.quantity !== '') {
+              if (!Number.isFinite(Number(item.quantity)) || Number(item.quantity) < 0 || Number(item.quantity) > limits.quantity) {
+                errors.push(`${itemWhere}: quantità non valida.`);
+              }
+              if (!DIET_PLAN_UNITS.some(unit => unit.id === item.unit)) errors.push(`${itemWhere}: unità di misura non valida.`);
+              if (item.quantityState != null && !DIET_PLAN_QUANTITY_STATES.some(state => state.id === item.quantityState)) {
+                errors.push(`${itemWhere}: indica peso a crudo o a cotto.`);
+              }
+            }
+            if (String(item.alternative || '').length > limits.description) errors.push(`${itemWhere}: alternativa troppo lunga.`);
+          });
+          if (String(option.note || '').length > limits.note) errors.push(`${optionWhere}: nota troppo lunga.`);
+        });
+        if (String(meal.note || '').length > limits.note) errors.push(`${mealWhere}: nota troppo lunga.`);
+      });
+      if (String(day.supplements || '').length > limits.note) errors.push(`${where}: integrazione troppo lunga.`);
+      if (String(day.hydration || '').length > limits.note) errors.push(`${where}: idratazione troppo lunga.`);
+      if (String(day.note || '').length > limits.note) errors.push(`${where}: nota troppo lunga.`);
+    });
+    if (String(plan.generalNotes || '').length > limits.note * 2) errors.push('Note generali troppo lunghe.');
+    return { valid: errors.length === 0, errors };
+  }
+
+  function dietPlanSummary(plan) {
+    const days = Array.isArray(plan?.days) ? plan.days : [];
+    let meals = 0;
+    let options = 0;
+    let items = 0;
+    days.forEach(day => {
+      (Array.isArray(day?.meals) ? day.meals : []).forEach(meal => {
+        meals += 1;
+        (Array.isArray(meal?.options) ? meal.options : []).forEach(option => {
+          options += 1;
+          items += Array.isArray(option?.items) ? option.items.length : 0;
+        });
+      });
+    });
+    return { dayCount: days.length, mealCount: meals, optionCount: options, itemCount: items };
+  }
+
   return {
     VERSION,
     DAYS,
@@ -2878,6 +3202,36 @@ const PROTEIN_CATEGORY_LABELS = {
     structureRevisionToMellerRules,
     MELLER_FREE_DISPLAY_LABELS,
     splitMellerSeed,
-    SINGLE_ORGANIZATION_ID
+    SINGLE_ORGANIZATION_ID,
+    // Console professionisti — stati operativi dei clienti
+    CLIENT_OPERATIONAL_STATUSES,
+    CLIENT_STATUS_LABELS,
+    CLIENT_HISTORY_STATUS_LABELS,
+    clientOperationalStatus,
+    clientStatusLabel,
+    maskEmailClient,
+    clientDisplayTitle,
+    clientInitials,
+    // Dieta guidata — modello descrittivo versionato
+    DIET_PLAN_SCHEMA_VERSION,
+    DIET_PLAN_DAY_TYPES,
+    DIET_PLAN_DAY_TYPE_LABELS,
+    DIET_PLAN_MEALS,
+    DIET_PLAN_FOOD_GROUPS,
+    DIET_PLAN_UNITS,
+    DIET_PLAN_QUANTITY_STATES,
+    DIET_PLAN_OPTION_LABELS,
+    DIET_PLAN_LIMITS,
+    dietPlanDayLabel,
+    dietPlanMealLabel,
+    dietPlanFoodGroupLabel,
+    dietPlanUnitLabel,
+    createDietPlanItem,
+    createDietPlanOption,
+    createDietPlanMeal,
+    createDietPlanDay,
+    createEmptyDietPlan,
+    validateDietPlanSoft,
+    dietPlanSummary
   };
 });

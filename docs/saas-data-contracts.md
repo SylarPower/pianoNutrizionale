@@ -303,11 +303,12 @@ nuova versione mai sovrascritta; le revisioni strutture conservano
 - `previewClientRuleSet({ organizationId, clientId, ruleSet })`
 - `assignClientRuleSet({ organizationId, clientId, ruleSet, effectiveAt, expiresAt?, strategy, reason, idempotencyKey })`
 - `updateAssignmentStatus({ organizationId, clientId, assignmentId, status, reason, idempotencyKey })`
-- `listAuthorizedClients({ organizationId })`
+- `listAuthorizedClients({ organizationId })` → `{ clients, invitations, requests, emailChanges }`
+- `getClientHistory({ organizationId, clientId })` → storico non pendente del cliente
 - `listDietStructures({ organizationId })`
-- `getDietStructureRevision({ organizationId, structureId, revisionId? })`
-- `createDietStructure({ organizationId, name, rules, alternativeGroups?, idempotencyKey })`
-- `updateDietStructureRevision({ organizationId, structureId, name?, rules, alternativeGroups?, changelog?, restoredFromRevisionId?, idempotencyKey })`
+- `getDietStructureRevision({ organizationId, structureId, revisionId? })` → include `dietPlan?`
+- `createDietStructure({ organizationId, name, rules, alternativeGroups?, dietPlan?, idempotencyKey })`
+- `updateDietStructureRevision({ organizationId, structureId, name?, rules, alternativeGroups?, dietPlan?, changelog?, restoredFromRevisionId?, idempotencyKey })`
 - `archiveDietStructure({ organizationId, structureId, archived, idempotencyKey })`
 - `compareDietStructures({ organizationId, structureIds[2..8] })`
 - `assignClientStructure({ organizationId, clientId, structureId, effectiveAt, expiresAt?, withoutExpiration, notes?, idempotencyKey })`
@@ -360,3 +361,100 @@ Deprecati lato UI ma mantenuti per i client legacy: `publishRuleSetVersion`,
 Le risposte di `listAuthorizedClients` e `listOrganizationUsers` includono `displayName` (facoltativo), `username` e `status` per i clienti autorizzati. I membri includono `displayName`; il nome visualizzato segue `displayName || username || displayCode`. `listMyClientLinkRequests` include `nutritionistUsername` e `nutritionistDisplayName` sia nelle richieste sia nel collegamento attivo, senza mai esporre token.
 
 Il campo facoltativo `displayName` può comparire in `clients/{id}` e `members/{uid}` soltanto tramite le callable `updateMyClientProfile` e `updateMyMemberProfile`, entrambe idempotenti e con audit.
+
+## Vista Clienti unificata (console, ADR 0005)
+
+La console ha un'unica area «Clienti»: niente vista «Utenti» separata. Team
+dello studio, richieste e invito legacy vivono dentro la vista Clienti;
+l'invito con email reale è un dialog dedicato. Il nutrizionista vede solo i
+propri clienti, in tutti gli stati operativi.
+
+Stati operativi (calcolati in `js/domain.js`, `clientOperationalStatus`):
+
+| Stato | Etichetta | Quando |
+|---|---|---|
+| `active` | Attivo | profilo `active`, nessun invito/richiesta pendente |
+| `pending` | In attesa | profilo `pending`, oppure invito o richiesta pendente |
+| `inactive` | Inattivo | tutto il resto (`unlinked`, `suspended`, …) |
+
+Titolo del cliente (`clientDisplayTitle`, mai UID o ID tecnici): «Nome
+Cognome» → `displayName` → email mascherata (`m•••@dominio.it`) →
+`displayCode`. Lo username resta solo informazione secondaria per gli account
+di test legacy.
+
+`listAuthorizedClients({ organizationId })` restituisce `{ clients,
+invitations, requests, emailChanges }`: clienti in ogni stato (ordinati per
+aggiornamento), inviti email pendenti, richieste di collegamento pendenti e
+proposte di cambio email, sempre limitati ai clienti autorizzati. Un solo
+filtro per query (ADR 0003); la selezione degli stati avviene in codice.
+
+`getClientHistory({ organizationId, clientId })` restituisce lo storico non
+pendente del cliente (`invitations` + `requests`: accettati, rifiutati,
+revocati, scaduti, sostituiti), con singolo filtro per `clientId` e senza mai
+token o hash. La scheda cliente lo mostra in «Storico collegamenti».
+
+La rimozione esiste SOLO dentro la scheda («Rimuovi cliente» → dialog
+esplicativo → `removeClientLink`): revoca logica con audit, senza cancellare
+Auth/household/ricette/backup.
+
+## Dieta guidata (dietPlan v1, revisioni schema 3, ADR 0005)
+
+Il piano guidato è un documento **descrittivo** dentro la revisione struttura:
+giornate, pasti, opzioni A/B/C/D, quantità con unità, note, integrazione e
+idratazione. Non esegue calcoli clinici: i valori energetici della giornata
+sono appunti manuali del professionista. Il motore dosi continua a usare le
+regole classiche; una struttura solo-guidata ha `rules: []` (ammesso solo con
+`dietPlan` valido) e la vista Dosi personalizza solo le frequenze.
+
+```js
+// .../revisions/{revisionId} quando presente il piano (schema 3)
+{
+  schemaVersion: 3,
+  rules: [],                        // ammesso vuoto solo con dietPlan
+  alternativeGroups: [],
+  dietPlan: {
+    schemaVersion: 1,
+    days: [{
+      dayId: null | "id-stabile",
+      label: "Lunedì" | null,
+      dayType: "training|rest|other",
+      target: { kcal, proteinG, carbsG, fatG, waterMl },  // appunti, null se vuoti
+      meals: [{
+        mealId: "breakfast|morning-snack|lunch|afternoon-snack|dinner|evening-snack",
+        time: "12:30" | null,
+        options: [{
+          label: "A|B|C|D",
+          items: [{
+            foodGroup: "cereali|…|altro",  // 15 gruppi chiusi
+            description: "Riso Venere",
+            quantity: 80 | null, unit: "g|…|qb" | null,
+            quantityState: "crudo|cotto" | null,
+            netOfWaste: true|false,        // al netto degli scarti
+            alternative: "Pasta integrale 80 g" | null   // «oppure»
+          }],                             // 1–20 voci
+          note: null
+        }],                               // 1–4 opzioni
+        note: null
+      }],                                 // 1–10 pasti
+      supplements: null, hydration: null, note: null
+    }],                                   // 1–14 giornate
+    generalNotes: null
+  },
+  status: "published",
+  checksum: "sha256 hex",   // di {schemaVersion: 3, rules, alternativeGroups, dietPlan}
+  ingredientCatalogVersion, compatibleClientSchema: 6,
+  changelog, restoredFromRevisionId,
+  createdAt, updatedAt, createdBy, publishedAt, publishedBy
+}
+
+// Testata struttura: nuovo flag (assente = false nelle vecchie)
+{ hasDietPlan: true|false }
+```
+
+Limiti: 14 giornate, 10 pasti/giornata, 4 opzioni/pasto, 20 voci/opzione;
+testi 20–2000 caratteri secondo campo; quantità 0–5000. Validazione bloccante
+server-side (`validateDietPlan`); la console pre-valida in italiano. Le
+revisioni 1/2 restano verificabili e modificabili con l'editor classico, che
+conserva l'eventuale `dietPlan`. `createDietStructure` e
+`updateDietStructureRevision` accettano `dietPlan?` (null per le classiche).
+Guida operativa: `docs/editor-dieta-guidata.md`.

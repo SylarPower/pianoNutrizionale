@@ -73,6 +73,22 @@ Creare `globalRuleSets/base/versions/3` con il contratto documentato, `status:"p
 7. Provisionare un tenant pilota e verificare audit.
 8. Attivare il flag solo per la release concordata. Il flag è pubblico e non è un controllo di sicurezza.
 
+## Console unificata e dieta guidata (ADR 0005, 2026-09-13)
+
+- Deploy come sempre: Rules/indici (invariati: nessun nuovo indice
+  composito), Functions, Hosting con bump di `CACHE_VERSION`.
+- Alcune query combinavano due `where` senza indice composto dichiarato
+  (inviti/richieste per email+stato o clientId+stato, cambi email per
+  uid+stato): in produzione rispondevano `failed-precondition`. Ora usano un
+  solo filtro + selezione in codice (ADR 0003). Se in log vedi ancora errori
+  `failed-precondition` con «requires an index», è una Functions non
+  ripubblicata: ridistribuisci.
+- Dieta guidata: nessun dato da migrare (`hasDietPlan` assente = classica).
+  Le revisioni schema 3 convivono con 1/2; rollback = pubblicare una nuova
+  revisione classica dalla stessa struttura.
+- Smoke post-deploy: apri la vista Clienti (filtri + scheda + storico),
+  crea una dieta guidata di prova, pubblicala, verifica badge e anteprima.
+
 ## Migrazione reversibile
 
 - Non creare assignment per utenti legacy.

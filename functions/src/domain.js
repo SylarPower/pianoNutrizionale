@@ -382,9 +382,14 @@ function validateContextQuantity(value, name) {
   return quantityGrams;
 }
 
-function validateDietStructureRules(rules) {
-  if (!Array.isArray(rules) || rules.length === 0 || rules.length > 40) {
-    fail('invalid-argument', 'rules deve contenere tra 1 e 40 famiglie');
+function validateDietStructureRules(rules, { allowEmpty = false } = {}) {
+  // Le strutture con piano guidato possono nascere senza regole classiche
+  // (il piano descrittivo non alimenta il motore dosi): in quel caso la
+  // callable passa allowEmpty e la revisione diventa schema 3.
+  if (!Array.isArray(rules) || rules.length > 40 || (!allowEmpty && rules.length === 0)) {
+    fail('invalid-argument', allowEmpty
+      ? 'rules deve contenere al massimo 40 famiglie'
+      : 'rules deve contenere tra 1 e 40 famiglie');
   }
   const seen = new Set();
   return rules.map((rule, index) => {
@@ -450,22 +455,173 @@ function validateAlternativeGroups(groups) {
 
 // Checksum della revisione struttura. Schema 2 (Fase 2): copre rules +
 // alternativeGroups. Schema 1 legacy: solo rules (compatibilità di verifica
-// per le revisioni pubblicate prima della Fase 2).
+// per le revisioni pubblicate prima della Fase 2). Schema 3 (dieta guidata):
+// copre anche dietPlan (null quando assente, così le revisioni 2 restano
+// verificabili senza riscritture).
 const STRUCTURE_REVISION_SCHEMA_VERSION = 2;
+const STRUCTURE_REVISION_SCHEMA_VERSION_WITH_PLAN = 3;
 
-function structureRevisionChecksum({ schemaVersion, rules, alternativeGroups }) {
+function structureRevisionChecksum({ schemaVersion, rules, alternativeGroups, dietPlan }) {
   if (Number(schemaVersion) === 1) return checksum({ schemaVersion: 1, rules });
+  if (Number(schemaVersion) === 3) {
+    return checksum({
+      schemaVersion: 3,
+      rules: rules || [],
+      alternativeGroups: alternativeGroups || [],
+      dietPlan: dietPlan === undefined ? null : dietPlan
+    });
+  }
   return checksum({ schemaVersion: 2, rules, alternativeGroups: alternativeGroups || [] });
 }
 
 function verifyStructureRevision(value) {
-  if (!value || value.status !== 'published' || !Array.isArray(value.rules) || !value.rules.length) return false;
+  if (!value || value.status !== 'published' || !Array.isArray(value.rules)) return false;
+  const schemaVersion = Number(value.schemaVersion || 1);
+  // Le revisioni con piano guidato possono non avere regole classiche; senza
+  // piano guidato serve almeno una regola come prima.
+  if (!value.rules.length && !(schemaVersion === 3 && value.dietPlan)) return false;
   const expected = structureRevisionChecksum({
-    schemaVersion: Number(value.schemaVersion || 1),
+    schemaVersion,
     rules: value.rules,
-    alternativeGroups: value.alternativeGroups || []
+    alternativeGroups: value.alternativeGroups || [],
+    dietPlan: value.dietPlan === undefined ? null : value.dietPlan
   });
   return value.checksum === expected;
+}
+
+// ---------------------------------------------------------------------
+// Dieta guidata — modello descrittivo versionato (dietPlan v1)
+// Lo stesso vocabolario vive in js/domain.js per l'editor della console;
+// qui la validazione è bloccante (fail) e ogni campo ha un limite.
+// Nessun calcolo clinico: i target energetici sono appunti manuali.
+// ---------------------------------------------------------------------
+
+const DIET_PLAN_SCHEMA_VERSION = 1;
+const DIET_PLAN_DAY_TYPES = new Set(['training', 'rest', 'other']);
+const DIET_PLAN_MEAL_IDS = new Set(['breakfast', 'morning-snack', 'lunch', 'afternoon-snack', 'dinner', 'evening-snack']);
+const DIET_PLAN_FOOD_GROUPS = new Set(['cereali', 'pseudo-cereali', 'legumi', 'carne', 'pesce', 'uova', 'latticini', 'verdura', 'frutta', 'frutta-secca', 'grassi', 'dolci', 'bevande', 'integratori', 'altro']);
+const DIET_PLAN_UNITS = new Set(['g', 'kg', 'ml', 'l', 'pz', 'fette', 'cucchiai', 'cucchiaini', 'tazze', 'bicchieri', 'porzioni', 'scatolette', 'misurini', 'qb']);
+const DIET_PLAN_QUANTITY_STATES = new Set(['crudo', 'cotto']);
+const DIET_PLAN_OPTION_LABELS = new Set(['A', 'B', 'C', 'D']);
+const DIET_PLAN_LIMITS = { days: 14, mealsPerDay: 10, optionsPerMeal: 4, itemsPerOption: 20 };
+
+function dietPlanNumber(value, name, { max }) {
+  if (value == null || value === '') return null;
+  const number = Number(value);
+  if (!Number.isFinite(number) || number < 0 || number > max) {
+    fail('invalid-argument', `${name} non valido`);
+  }
+  return number;
+}
+
+function validateDietPlanItem(item, name) {
+  exactObject(item, ['foodGroup', 'description', 'quantity', 'unit', 'quantityState', 'netOfWaste', 'alternative'], name);
+  if (!DIET_PLAN_FOOD_GROUPS.has(item.foodGroup)) fail('invalid-argument', `${name}.foodGroup non valido`);
+  const description = text(item.description, `${name}.description`, { max: 200 });
+  const quantity = dietPlanNumber(item.quantity, `${name}.quantity`, { max: 5000 });
+  let unit = null;
+  let quantityState = null;
+  if (quantity != null) {
+    if (!DIET_PLAN_UNITS.has(item.unit)) fail('invalid-argument', `${name}.unit non valida`);
+    unit = item.unit;
+    if (item.quantityState != null && item.quantityState !== '') {
+      if (!DIET_PLAN_QUANTITY_STATES.has(item.quantityState)) fail('invalid-argument', `${name}.quantityState non valido`);
+      quantityState = item.quantityState;
+    }
+  }
+  return {
+    foodGroup: item.foodGroup,
+    description,
+    quantity,
+    unit,
+    quantityState,
+    netOfWaste: item.netOfWaste === true,
+    alternative: optionalText(item.alternative, `${name}.alternative`, 200)
+  };
+}
+
+function validateDietPlanOption(option, name) {
+  exactObject(option, ['label', 'items', 'note'], name);
+  if (!DIET_PLAN_OPTION_LABELS.has(option.label)) fail('invalid-argument', `${name}.label non valido (A–D)`);
+  if (!Array.isArray(option.items) || !option.items.length || option.items.length > DIET_PLAN_LIMITS.itemsPerOption) {
+    fail('invalid-argument', `${name}.items deve contenere da 1 a ${DIET_PLAN_LIMITS.itemsPerOption} alimenti`);
+  }
+  return {
+    label: option.label,
+    items: option.items.map((item, index) => validateDietPlanItem(item, `${name}.items[${index}]`)),
+    note: optionalText(option.note, `${name}.note`, 1000)
+  };
+}
+
+function validateDietPlanMeal(meal, name) {
+  exactObject(meal, ['mealId', 'time', 'options', 'note'], name);
+  if (!DIET_PLAN_MEAL_IDS.has(meal.mealId)) fail('invalid-argument', `${name}.mealId non valido`);
+  if (!Array.isArray(meal.options) || !meal.options.length || meal.options.length > DIET_PLAN_LIMITS.optionsPerMeal) {
+    fail('invalid-argument', `${name}.options deve contenere da 1 a ${DIET_PLAN_LIMITS.optionsPerMeal} opzioni`);
+  }
+  const seen = new Set();
+  const options = meal.options.map((option, index) => {
+    const clean = validateDietPlanOption(option, `${name}.options[${index}]`);
+    if (seen.has(clean.label)) fail('invalid-argument', `${name}: opzione ${clean.label} duplicata`);
+    seen.add(clean.label);
+    return clean;
+  });
+  return {
+    mealId: meal.mealId,
+    time: optionalText(meal.time, `${name}.time`, 20),
+    options,
+    note: optionalText(meal.note, `${name}.note`, 1000)
+  };
+}
+
+function validateDietPlanDay(day, name) {
+  exactObject(day, ['dayId', 'label', 'dayType', 'target', 'meals', 'supplements', 'hydration', 'note'], name);
+  if (!DIET_PLAN_DAY_TYPES.has(day.dayType)) fail('invalid-argument', `${name}.dayType non valido`);
+  const target = day.target == null ? {} : day.target;
+  if (target && typeof target === 'object' && !Array.isArray(target)) exactObject(target, ['kcal', 'proteinG', 'carbsG', 'fatG', 'waterMl'], `${name}.target`);
+  else fail('invalid-argument', `${name}.target non valido`);
+  if (!Array.isArray(day.meals) || !day.meals.length || day.meals.length > DIET_PLAN_LIMITS.mealsPerDay) {
+    fail('invalid-argument', `${name}.meals deve contenere da 1 a ${DIET_PLAN_LIMITS.mealsPerDay} pasti`);
+  }
+  return {
+    dayId: day.dayId == null || day.dayId === '' ? null : text(day.dayId, `${name}.dayId`, { max: 60, pattern: /^[a-zA-Z0-9._:-]+$/ }),
+    label: optionalText(day.label, `${name}.label`, 80),
+    dayType: day.dayType,
+    target: {
+      kcal: dietPlanNumber(target.kcal, `${name}.target.kcal`, { max: 50000 }),
+      proteinG: dietPlanNumber(target.proteinG, `${name}.target.proteinG`, { max: 50000 }),
+      carbsG: dietPlanNumber(target.carbsG, `${name}.target.carbsG`, { max: 50000 }),
+      fatG: dietPlanNumber(target.fatG, `${name}.target.fatG`, { max: 50000 }),
+      waterMl: dietPlanNumber(target.waterMl, `${name}.target.waterMl`, { max: 50000 })
+    },
+    meals: day.meals.map((meal, index) => validateDietPlanMeal(meal, `${name}.meals[${index}]`)),
+    supplements: optionalText(day.supplements, `${name}.supplements`, 1000),
+    hydration: optionalText(day.hydration, `${name}.hydration`, 1000),
+    note: optionalText(day.note, `${name}.note`, 1000)
+  };
+}
+
+// Piano descrittivo opzionale della revisione struttura. Ritorna null quando
+// assente (strutture classiche 1/2); altrimenti il piano normalizzato.
+function validateDietPlan(plan) {
+  if (plan == null) return null;
+  exactObject(plan, ['schemaVersion', 'days', 'generalNotes'], 'dietPlan');
+  if (Number(plan.schemaVersion) !== DIET_PLAN_SCHEMA_VERSION) {
+    fail('invalid-argument', 'dietPlan.schemaVersion non supportata');
+  }
+  if (!Array.isArray(plan.days) || !plan.days.length || plan.days.length > DIET_PLAN_LIMITS.days) {
+    fail('invalid-argument', `dietPlan.days deve contenere da 1 a ${DIET_PLAN_LIMITS.days} giornate`);
+  }
+  const seenDayIds = new Set();
+  const days = plan.days.map((day, index) => {
+    const clean = validateDietPlanDay(day, `dietPlan.days[${index}]`);
+    if (clean.dayId) {
+      if (seenDayIds.has(clean.dayId)) fail('invalid-argument', `dietPlan.days[${index}]: identificativo giornata duplicato`);
+      seenDayIds.add(clean.dayId);
+    }
+    return clean;
+  });
+  return { schemaVersion: DIET_PLAN_SCHEMA_VERSION, days, generalNotes: optionalText(plan.generalNotes, 'dietPlan.generalNotes', 2000) };
 }
 
 // ---------------------------------------------------------------------
@@ -1082,12 +1238,15 @@ function validateCopyClientDoses(input) {
 module.exports = {
   SINGLE_ORGANIZATION_ID,
   ROLES, REPORT_STATUSES, ASSIGNMENT_STATUSES, ASSIGNMENT_STRATEGIES, MEMBER_STATUSES,
-  MELLER_FAMILY_IDS, STRUCTURE_REVISION_SCHEMA_VERSION,
+  MELLER_FAMILY_IDS, STRUCTURE_REVISION_SCHEMA_VERSION, STRUCTURE_REVISION_SCHEMA_VERSION_WITH_PLAN,
   fail, exactObject, text, optionalText, id, isoDate, canonicalJson, checksum,
   normalizeIngredient, aliasKey, searchTokensFor, normalizeUsername, hashToken,
   reportKey, validateReport, validateMapping, validateRuleSetRules, validateAssignment,
   validateStructureAssignment, validateDietStructureRules, validateAlternativeGroups,
   validateContextQuantity, structureRevisionChecksum, verifyStructureRevision, effectiveAssignment,
+  DIET_PLAN_SCHEMA_VERSION, DIET_PLAN_DAY_TYPES, DIET_PLAN_MEAL_IDS, DIET_PLAN_FOOD_GROUPS,
+  DIET_PLAN_UNITS, DIET_PLAN_QUANTITY_STATES, DIET_PLAN_OPTION_LABELS, DIET_PLAN_LIMITS,
+  validateDietPlan,
   CATALOG_IMPORT_FORMATS, CATALOG_IMPORT_MODES, CATALOG_CSV_COLUMNS, CATALOG_RESERVED_CATEGORY,
   parseCatalogPayload, parseCatalogCsv, validateCatalogImport, validateCatalogIngredient,
   validateCatalogCategory, catalogImportPreviewId,

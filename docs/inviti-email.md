@@ -126,7 +126,7 @@ Firebase Auth (o un mittente personalizzato da **Authentication → Templates**)
 
 ## 4. Flusso pratico: invitare un cliente reale
 
-1. Console → **Utenti → Invita → Cliente con email reale**.
+1. Console → **Clienti → ＋ Invita nuovo cliente** (dialog con email reale).
 2. Inserisci **email, nome e cognome** (dati che il cliente vedrà precompilati e
    non modificabili), scegli il professionista destinatario e la consegna
    (`Invia l'email al cliente` oppure `Non inviare: mostra il link`).

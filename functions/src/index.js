@@ -7,10 +7,10 @@ const { logger } = require('firebase-functions');
 const { initializeApp } = require('firebase-admin/app');
 const { getFirestore, FieldValue, Timestamp } = require('firebase-admin/firestore');
 const {
-  SINGLE_ORGANIZATION_ID, ROLES, REPORT_STATUSES, STRUCTURE_REVISION_SCHEMA_VERSION, exactObject, text, optionalText, id, checksum,
+  SINGLE_ORGANIZATION_ID, ROLES, REPORT_STATUSES, STRUCTURE_REVISION_SCHEMA_VERSION, STRUCTURE_REVISION_SCHEMA_VERSION_WITH_PLAN, exactObject, text, optionalText, id, checksum,
   hashToken, normalizeUsername,
   reportKey, validateReport, validateMapping, validateRuleSetRules, validateAssignment, validateStructureAssignment,
-  validateDietStructureRules, validateAlternativeGroups, structureRevisionChecksum, verifyStructureRevision, effectiveAssignment,
+  validateDietStructureRules, validateAlternativeGroups, validateDietPlan, structureRevisionChecksum, verifyStructureRevision, effectiveAssignment,
   CATALOG_IMPORT_MODES, parseCatalogPayload, validateCatalogImport, catalogImportPreviewId,
   validateInviteOrganizationUser, validateInviteClientLink, validateRespondClientLink,
   validateRemoveClientLink, validateMemberStatus, validateRemoveNutritionist,
@@ -520,18 +520,32 @@ exports.publishMapping = callable(async (data, uid) => {
 exports.listAuthorizedClients = callable(async (data, uid) => {
   exactObject(data, ['organizationId']);
   const actor = await actorContext(data.organizationId, uid);
-  let query = db.collection(`organizations/${actor.organizationId}/clients`).where('status', '==', 'active');
+  // Vista Clienti unificata: ogni professionista vede i propri clienti in
+  // tutti gli stati operativi (attivi, in attesa, inattivi); il creatore li
+  // vede tutti. Un solo filtro per query (ADR 0003): la selezione degli
+  // stati e l'ordinamento avvengono in codice, senza nuovi indici composti.
+  let query = db.collection(`organizations/${actor.organizationId}/clients`);
   if (actor.role === 'nutritionist') query = query.where('nutritionistUids', 'array-contains', uid);
   const snapshot = await query.limit(100).get();
-  const rows = snapshot.docs.map(doc => ({ id: doc.id, data: doc.data() }));
+  const rows = snapshot.docs
+    .map(doc => ({ id: doc.id, data: doc.data() }))
+    .filter(row => row.data?.status !== 'deleted')
+    .sort((a, b) => (b.data?.updatedAt?.toMillis?.() || 0) - (a.data?.updatedAt?.toMillis?.() || 0));
   const fallbackUsernames = await Promise.all(rows.map(row => row.data.invitedUsername || !row.data.authUid ? null : usernameOfUid(row.data.authUid)));
   const authorizedIds = new Set(rows.map(row => row.id));
-  // Inviti pendenti (email reale) e proposte di cambio email visibili al
+  // Inviti, richieste di collegamento e proposte di cambio email visibili al
   // professionista autorizzato: servono alle azioni della vista Clienti.
-  let invitesQuery = db.collection(`organizations/${actor.organizationId}/invitations`).where('status', '==', 'pending');
-  if (actor.role === 'nutritionist') invitesQuery = invitesQuery.where('nutritionistUid', '==', uid);
-  const [invitesSnap, emailChangesSnap] = await Promise.all([
+  // Singolo filtro per ruolo (nessun indice composto): il nutrizionista
+  // filtra per nutritionistUid e seleziona lo stato in codice.
+  const invitesQuery = actor.role === 'nutritionist'
+    ? db.collection(`organizations/${actor.organizationId}/invitations`).where('nutritionistUid', '==', uid)
+    : db.collection(`organizations/${actor.organizationId}/invitations`).where('status', '==', 'pending');
+  const requestsQuery = actor.role === 'nutritionist'
+    ? db.collection(`organizations/${actor.organizationId}/clientLinkRequests`).where('nutritionistUid', '==', uid)
+    : db.collection(`organizations/${actor.organizationId}/clientLinkRequests`).where('status', '==', 'pending');
+  const [invitesSnap, requestsSnap, emailChangesSnap] = await Promise.all([
     invitesQuery.limit(50).get(),
+    requestsQuery.limit(50).get(),
     db.collection(`organizations/${actor.organizationId}/emailChangeRequests`).where('status', '==', 'pending').limit(50).get()
   ]);
   return {
@@ -541,14 +555,46 @@ exports.listAuthorizedClients = callable(async (data, uid) => {
       firstName: row.data.firstName || null, lastName: row.data.lastName || null,
       email: row.data.emailNormalized || null, emailVerified: row.data.emailVerified === true,
       username: row.data.invitedUsername || fallbackUsernames[index] || null,
-      status: row.data.status || 'active', activeAssignment: row.data.activeAssignment || null
+      status: row.data.status || 'active', activeAssignment: row.data.activeAssignment || null,
+      nutritionistUids: row.data.nutritionistUids || [],
+      createdAt: iso(row.data.createdAt), updatedAt: iso(row.data.updatedAt)
     })),
     invitations: invitesSnap.docs
       .filter(doc => actor.role !== 'nutritionist' || authorizedIds.has(doc.data()?.clientId))
+      .filter(doc => doc.data()?.status === 'pending')
       .map(publicInvitationRow),
+    requests: requestsSnap.docs
+      .filter(doc => actor.role !== 'nutritionist' || authorizedIds.has(doc.data()?.clientId))
+      .filter(doc => !doc.data()?.status || doc.data()?.status === 'pending')
+      .map(publicRequestRow),
     emailChanges: emailChangesSnap.docs
       .filter(doc => actor.role !== 'nutritionist' || authorizedIds.has(doc.data()?.clientId))
       .map(publicEmailChangeRow)
+  };
+});
+
+// Storico collegamenti di un cliente (scheda cliente): inviti e richieste
+// non più pendenti (accettati, rifiutati, revocati, scaduti, sostituiti).
+// Singolo filtro per clientId (ADR 0003); mai token o hash in risposta.
+exports.getClientHistory = callable(async (data, uid) => {
+  exactObject(data, ['organizationId', 'clientId']);
+  const actor = await actorContext(data.organizationId, uid);
+  const client = await authorizedClient(actor, data.clientId);
+  const [invitesSnap, requestsSnap] = await Promise.all([
+    db.collection(`organizations/${actor.organizationId}/invitations`).where('clientId', '==', client.id).limit(20).get(),
+    db.collection(`organizations/${actor.organizationId}/clientLinkRequests`).where('clientId', '==', client.id).limit(20).get()
+  ]);
+  const byCreatedDesc = (a, b) => String(b.createdAt || '').localeCompare(String(a.createdAt || ''));
+  return {
+    clientId: client.id,
+    invitations: invitesSnap.docs
+      .filter(doc => doc.data()?.status !== 'pending')
+      .map(publicInvitationRow)
+      .sort(byCreatedDesc),
+    requests: requestsSnap.docs
+      .filter(doc => doc.data()?.status && doc.data()?.status !== 'pending')
+      .map(publicRequestRow)
+      .sort(byCreatedDesc)
   };
 });
 
@@ -978,6 +1024,7 @@ function structureDoc(structure, { includeChecksum = false } = {}) {
     currentRevisionId: data.currentRevisionId || null,
     ruleCount: data.ruleCount ?? null,
     alternativeGroupCount: data.alternativeGroupCount ?? 0,
+    hasDietPlan: data.hasDietPlan === true,
     ingredientCatalogVersion: data.ingredientCatalogVersion ?? null
   };
   if (includeChecksum) doc.latestChecksum = data.latestChecksum || null;
@@ -1044,8 +1091,10 @@ exports.getDietStructureRevision = callable(async (data, uid) => {
     structure,
     revision: {
       revisionId: revision.id,
+      schemaVersion: Number(revision.data().schemaVersion || 1),
       rules: revision.data().rules || [],
       alternativeGroups: revision.data().alternativeGroups || [],
+      dietPlan: revision.data().dietPlan || null,
       ingredientCatalogVersion: revision.data().ingredientCatalogVersion ?? null,
       checksum: actor.isCreator ? revision.data().checksum || null : undefined,
       publishedAt: revision.data().publishedAt?.toDate?.()?.toISOString() || null,
@@ -1056,17 +1105,19 @@ exports.getDietStructureRevision = callable(async (data, uid) => {
 });
 
 exports.createDietStructure = callable(async (data, uid) => {
-  exactObject(data, ['organizationId', 'name', 'rules', 'alternativeGroups', 'idempotencyKey']);
+  exactObject(data, ['organizationId', 'name', 'rules', 'alternativeGroups', 'dietPlan', 'idempotencyKey']);
   const actor = await actorContext(data.organizationId, uid);
   const name = text(data.name, 'name', { min: 3, max: 80 });
-  const rules = validateDietStructureRules(data.rules);
+  const dietPlan = validateDietPlan(data.dietPlan);
+  const rules = validateDietStructureRules(data.rules, { allowEmpty: Boolean(dietPlan) });
   const alternativeGroups = validateAlternativeGroups(data.alternativeGroups);
   const idem = id(data.idempotencyKey, 'idempotencyKey');
   const catalog = await loadGlobalCatalog();
   assertCatalogReferences({ rules, alternativeGroups }, catalogLookup(catalog));
   const structureId = checksum(`${actor.organizationId}:${uid}:${name}:${idem}`).slice(0, 24);
   const ref = db.doc(`organizations/${actor.organizationId}/dietStructures/${structureId}`);
-  const revisionChecksum = structureRevisionChecksum({ schemaVersion: STRUCTURE_REVISION_SCHEMA_VERSION, rules, alternativeGroups });
+  const revisionSchema = dietPlan ? STRUCTURE_REVISION_SCHEMA_VERSION_WITH_PLAN : STRUCTURE_REVISION_SCHEMA_VERSION;
+  const revisionChecksum = structureRevisionChecksum({ schemaVersion: revisionSchema, rules, alternativeGroups, dietPlan });
   const eventId = checksum(`structure.created:${structureId}`).slice(0, 32);
   await db.runTransaction(async tx => {
     const [existing, audit] = await Promise.all([tx.get(ref), tx.get(auditRef(actor.organizationId, eventId))]);
@@ -1074,24 +1125,26 @@ exports.createDietStructure = callable(async (data, uid) => {
     tx.create(ref, {
       schemaVersion: 1, name, status: 'active', ownerUid: uid, createdBy: uid,
       currentRevisionId: '1', latestChecksum: revisionChecksum, ruleCount: rules.length,
-      alternativeGroupCount: alternativeGroups.length, ingredientCatalogVersion: catalog.catalogVersion,
+      alternativeGroupCount: alternativeGroups.length, hasDietPlan: Boolean(dietPlan),
+      ingredientCatalogVersion: catalog.catalogVersion,
       createdAt: FieldValue.serverTimestamp(), updatedAt: FieldValue.serverTimestamp()
     });
     tx.create(ref.collection('revisions').doc('1'), {
-      schemaVersion: STRUCTURE_REVISION_SCHEMA_VERSION, revisionId: '1', structureId, rules, alternativeGroups,
-      status: 'published', checksum: revisionChecksum, ingredientCatalogVersion: catalog.catalogVersion,
+      schemaVersion: revisionSchema, revisionId: '1', structureId, rules, alternativeGroups,
+      dietPlan, status: 'published', checksum: revisionChecksum, ingredientCatalogVersion: catalog.catalogVersion,
       compatibleClientSchema: 6, changelog: 'Prima revisione', createdAt: FieldValue.serverTimestamp(),
       updatedAt: FieldValue.serverTimestamp(), createdBy: uid, publishedAt: FieldValue.serverTimestamp(), publishedBy: uid
     });
-    tx.create(auditRef(actor.organizationId, eventId), auditEvent({ orgId: actor.organizationId, eventId, type: 'structure.created', actor, subject: { type: 'dietStructure', id: structureId }, idempotencyKey: idem, metadata: { name, ruleCount: rules.length, alternativeGroupCount: alternativeGroups.length, ingredientCatalogVersion: catalog.catalogVersion } }));
+    tx.create(auditRef(actor.organizationId, eventId), auditEvent({ orgId: actor.organizationId, eventId, type: 'structure.created', actor, subject: { type: 'dietStructure', id: structureId }, idempotencyKey: idem, metadata: { name, ruleCount: rules.length, alternativeGroupCount: alternativeGroups.length, hasDietPlan: Boolean(dietPlan), ingredientCatalogVersion: catalog.catalogVersion } }));
   });
   return { structureId, revisionId: '1' };
 });
 
 exports.updateDietStructureRevision = callable(async (data, uid) => {
-  exactObject(data, ['organizationId', 'structureId', 'name', 'rules', 'alternativeGroups', 'changelog', 'restoredFromRevisionId', 'idempotencyKey']);
+  exactObject(data, ['organizationId', 'structureId', 'name', 'rules', 'alternativeGroups', 'dietPlan', 'changelog', 'restoredFromRevisionId', 'idempotencyKey']);
   const actor = await actorContext(data.organizationId, uid);
-  const rules = validateDietStructureRules(data.rules);
+  const dietPlan = validateDietPlan(data.dietPlan);
+  const rules = validateDietStructureRules(data.rules, { allowEmpty: Boolean(dietPlan) });
   const alternativeGroups = validateAlternativeGroups(data.alternativeGroups);
   const idem = id(data.idempotencyKey, 'idempotencyKey');
   const name = optionalText(data.name, 'name', 80);
@@ -1102,7 +1155,8 @@ exports.updateDietStructureRevision = callable(async (data, uid) => {
   const catalog = await loadGlobalCatalog();
   assertCatalogReferences({ rules, alternativeGroups }, catalogLookup(catalog));
   const nextRevisionId = String(Number(doc.data().currentRevisionId || '0') + 1);
-  const revisionChecksum = structureRevisionChecksum({ schemaVersion: STRUCTURE_REVISION_SCHEMA_VERSION, rules, alternativeGroups });
+  const revisionSchema = dietPlan ? STRUCTURE_REVISION_SCHEMA_VERSION_WITH_PLAN : STRUCTURE_REVISION_SCHEMA_VERSION;
+  const revisionChecksum = structureRevisionChecksum({ schemaVersion: revisionSchema, rules, alternativeGroups, dietPlan });
   const eventId = checksum(`structure.revision:${ref.id}:${nextRevisionId}:${idem}`).slice(0, 32);
   await db.runTransaction(async tx => {
     const audit = await tx.get(auditRef(actor.organizationId, eventId));
@@ -1110,18 +1164,19 @@ exports.updateDietStructureRevision = callable(async (data, uid) => {
     tx.update(ref, {
       ...(name ? { name } : {}),
       currentRevisionId: nextRevisionId, latestChecksum: revisionChecksum, ruleCount: rules.length,
-      alternativeGroupCount: alternativeGroups.length, ingredientCatalogVersion: catalog.catalogVersion,
+      alternativeGroupCount: alternativeGroups.length, hasDietPlan: Boolean(dietPlan),
+      ingredientCatalogVersion: catalog.catalogVersion,
       updatedAt: FieldValue.serverTimestamp(), updatedBy: uid
     });
     tx.create(ref.collection('revisions').doc(nextRevisionId), {
-      schemaVersion: STRUCTURE_REVISION_SCHEMA_VERSION, revisionId: nextRevisionId, structureId: ref.id, rules, alternativeGroups,
-      status: 'published', checksum: revisionChecksum, ingredientCatalogVersion: catalog.catalogVersion,
+      schemaVersion: revisionSchema, revisionId: nextRevisionId, structureId: ref.id, rules, alternativeGroups,
+      dietPlan, status: 'published', checksum: revisionChecksum, ingredientCatalogVersion: catalog.catalogVersion,
       compatibleClientSchema: 6, changelog: changelog || (restoredFrom ? `Ripristino dalla revisione ${restoredFrom}` : 'Nuova revisione'),
       restoredFromRevisionId: restoredFrom || null,
       createdAt: FieldValue.serverTimestamp(), updatedAt: FieldValue.serverTimestamp(),
       createdBy: uid, publishedAt: FieldValue.serverTimestamp(), publishedBy: uid
     });
-    tx.create(auditRef(actor.organizationId, eventId), auditEvent({ orgId: actor.organizationId, eventId, type: 'structure.revision.published', actor, subject: { type: 'dietStructure', id: ref.id }, idempotencyKey: idem, metadata: { revisionId: nextRevisionId, restoredFromRevisionId: restoredFrom || null, alternativeGroupCount: alternativeGroups.length, ingredientCatalogVersion: catalog.catalogVersion } }));
+    tx.create(auditRef(actor.organizationId, eventId), auditEvent({ orgId: actor.organizationId, eventId, type: 'structure.revision.published', actor, subject: { type: 'dietStructure', id: ref.id }, idempotencyKey: idem, metadata: { revisionId: nextRevisionId, restoredFromRevisionId: restoredFrom || null, alternativeGroupCount: alternativeGroups.length, hasDietPlan: Boolean(dietPlan), ingredientCatalogVersion: catalog.catalogVersion } }));
   });
   return { structureId: ref.id, revisionId: nextRevisionId };
 });
@@ -1882,17 +1937,22 @@ async function clientProfilesByEmail(orgId, emailNormalized) {
 }
 
 async function pendingEmailInvites(orgId, emailNormalized) {
+  // Singolo filtro (ADR 0003): lo stato si seleziona in codice, senza
+  // indici composti (la combinazione email+stato non è indicizzata).
   const snap = await db.collection(`organizations/${orgId}/invitations`)
-    .where('targetEmailNormalized', '==', emailNormalized)
-    .where('status', '==', 'pending').limit(10).get();
-  return snap.docs.map(doc => ({ ref: doc.ref, id: doc.id, ...doc.data() }));
+    .where('targetEmailNormalized', '==', emailNormalized).limit(10).get();
+  return snap.docs
+    .filter(doc => doc.data()?.status === 'pending')
+    .map(doc => ({ ref: doc.ref, id: doc.id, ...doc.data() }));
 }
 
 async function pendingLinkRequestsByEmail(orgId, emailNormalized) {
+  // Singolo filtro (ADR 0003): lo stato si seleziona in codice.
   const snap = await db.collection(`organizations/${orgId}/clientLinkRequests`)
-    .where('targetEmailNormalized', '==', emailNormalized)
-    .where('status', '==', 'pending').limit(10).get();
-  return snap.docs.map(doc => ({ ref: doc.ref, id: doc.id, ...doc.data() }));
+    .where('targetEmailNormalized', '==', emailNormalized).limit(10).get();
+  return snap.docs
+    .filter(doc => doc.data()?.status === 'pending')
+    .map(doc => ({ ref: doc.ref, id: doc.id, ...doc.data() }));
 }
 
 function inviteExpiryIso(invite) {
@@ -2124,12 +2184,12 @@ exports.inviteClientByEmail = callable(async (data, uid) => {
     if (existing.exists || audit.exists) { created = false; return; }
     // Un solo invito pendente per indirizzo/cliente: i precedenti vengono
     // invalidati (il vecchio link smette di funzionare) e restano in storico.
+    // Singolo filtro (ADR 0003): lo stato si seleziona in codice.
     const stale = await tx.get(
       db.collection(`organizations/${orgId}/invitations`)
         .where('targetEmailNormalized', '==', input.email)
-        .where('status', '==', 'pending')
     );
-    stale.docs.filter(doc => doc.id !== inviteId).forEach(doc => tx.update(doc.ref, {
+    stale.docs.filter(doc => doc.id !== inviteId && doc.data()?.status === 'pending').forEach(doc => tx.update(doc.ref, {
       status: 'superseded', supersededBy: inviteId,
       supersededAt: FieldValue.serverTimestamp(), updatedAt: FieldValue.serverTimestamp()
     }));
@@ -2470,12 +2530,12 @@ exports.correctClientInvite = callable(async (data, uid) => {
     if (old.data()?.status === 'accepted') {
       throw new HttpsError('failed-precondition', 'Il cliente è già registrato: usa la vista Clienti per aggiornare i dati');
     }
+    // Singolo filtro (ADR 0003): lo stato si seleziona in codice.
     const otherPending = await tx.get(
       db.collection(`organizations/${orgId}/invitations`)
         .where('targetEmailNormalized', '==', input.email)
-        .where('status', '==', 'pending')
     );
-    otherPending.docs.filter(doc => doc.id !== inviteId).forEach(doc => tx.update(doc.ref, {
+    otherPending.docs.filter(doc => doc.id !== inviteId && doc.data()?.status === 'pending').forEach(doc => tx.update(doc.ref, {
       status: 'superseded', supersededBy: inviteId,
       supersededAt: FieldValue.serverTimestamp(), updatedAt: FieldValue.serverTimestamp()
     }));
@@ -2798,8 +2858,9 @@ exports.listMyClientLinkRequests = callable(async (data, uid) => {
     }
   }
   // Proposte di cambio email in attesa di conferma del cliente (solo le proprie).
+  // Singolo filtro (ADR 0003): lo stato si seleziona in codice (già fatto sotto).
   const emailChangeSnap = await db.collection(`organizations/${SINGLE_ORGANIZATION_ID}/emailChangeRequests`)
-    .where('targetUid', '==', uid).where('status', '==', 'pending').limit(5).get();
+    .where('targetUid', '==', uid).limit(5).get();
   const pendingEmailChange = emailChangeSnap.docs
     .find(doc => doc.data()?.status === 'pending') || null;
   const emailChange = pendingEmailChange ? {
@@ -2991,10 +3052,11 @@ exports.removeClientLink = callable(async (data, uid) => {
     }
     tx.update(client.ref, { status: 'unlinked', authUid: null, updatedAt: FieldValue.serverTimestamp(), updatedBy: uid });
     suspended = await suspendClientAssignmentsTx(tx, client.ref, uid, input.reason);
-    const pendingRequests = await tx.get(client.ref.parent.parent.collection('clientLinkRequests').where('clientId', '==', client.id).where('status', '==', 'pending'));
-    pendingRequests.docs.forEach(doc => tx.update(doc.ref, { status: 'revoked', decidedAt: FieldValue.serverTimestamp(), decidedBy: uid, updatedAt: FieldValue.serverTimestamp() }));
-    const pendingInvites = await tx.get(client.ref.parent.parent.collection('invitations').where('clientId', '==', client.id).where('status', '==', 'pending'));
-    pendingInvites.docs.forEach(doc => tx.update(doc.ref, { status: 'revoked', decidedAt: FieldValue.serverTimestamp(), decidedBy: uid, updatedAt: FieldValue.serverTimestamp() }));
+    // Singolo filtro (ADR 0003): lo stato si seleziona in codice.
+    const pendingRequests = await tx.get(client.ref.parent.parent.collection('clientLinkRequests').where('clientId', '==', client.id));
+    pendingRequests.docs.filter(doc => doc.data()?.status === 'pending').forEach(doc => tx.update(doc.ref, { status: 'revoked', decidedAt: FieldValue.serverTimestamp(), decidedBy: uid, updatedAt: FieldValue.serverTimestamp() }));
+    const pendingInvites = await tx.get(client.ref.parent.parent.collection('invitations').where('clientId', '==', client.id));
+    pendingInvites.docs.filter(doc => doc.data()?.status === 'pending').forEach(doc => tx.update(doc.ref, { status: 'revoked', decidedAt: FieldValue.serverTimestamp(), decidedBy: uid, updatedAt: FieldValue.serverTimestamp() }));
     tx.create(auditRef(actor.organizationId, eventId), auditEvent({ orgId: actor.organizationId, eventId, type: 'client.link-removed', actor, subject: { type: 'client', id: client.id }, idempotencyKey: input.idempotencyKey, metadata: { reason: input.reason, suspendedAssignments: suspended } }));
   });
   return { clientId: client.id, status: 'unlinked', suspendedAssignments: suspended };
