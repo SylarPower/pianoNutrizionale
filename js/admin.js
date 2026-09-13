@@ -1,6 +1,6 @@
 'use strict';
 
-const adminState = { user: null, reports: [], clients: [], clientInvitations: [], clientEmailChanges: [], ruleSets: [], structures: [], compareSelection: new Set(), users: null, editingStructure: null, cursor: null, selectedReport: null, pickerSelection: new Set(), catalogPreview: null, isCreator: false };
+const adminState = { user: null, reports: [], clients: [], clientInvitations: [], clientRequests: [], clientEmailChanges: [], clientFilter: 'all', detailClientId: null, detailHistory: null, clientDetailReturnFocus: null, ruleSets: [], structures: [], compareSelection: new Set(), users: null, editingStructure: null, editingDietPlan: null, dietPlan: null, dietPlanRules: [], dietPlanGroups: [], dietPlanEditingId: null, cursor: null, selectedReport: null, pickerSelection: new Set(), catalogPreview: null, isCreator: false };
 let catalogIndexCache = null;
 let catalogCategoriesCache = [];
 let catalogTruncated = false;
@@ -118,16 +118,53 @@ async function loadClients() {
   try {
     const result = await callAdminSaasFunction('listAuthorizedClients', { organizationId: orgId() });
     adminState.clients = result.clients || [];
-    // Inviti email pendenti e proposte di cambio email dei soli clienti
-    // autorizzati: nessun dato di altri professionisti.
+    // Inviti email pendenti, richieste di collegamento e proposte di cambio
+    // email dei soli clienti autorizzati: nessun dato di altri professionisti.
     adminState.clientInvitations = (result.invitations || []).filter(item => item.channel !== 'legacy-test');
+    adminState.clientRequests = result.requests || [];
     adminState.clientEmailChanges = result.emailChanges || [];
     renderClients();
     $('clients-feedback').textContent = adminState.clients.length ? '' : 'Nessun cliente autorizzato.';
-  } catch (error) { $('clients-feedback').textContent = adminError(error); adminState.clients = []; adminState.clientInvitations = []; adminState.clientEmailChanges = []; renderClients(); }
+  } catch (error) { $('clients-feedback').textContent = adminError(error); adminState.clients = []; adminState.clientInvitations = []; adminState.clientRequests = []; adminState.clientEmailChanges = []; renderClients(); }
 }
 
-function clientLabel(client) { return client.displayName || client.username || client.displayCode; }
+// Titolo del cliente: Nome e Cognome, mai UID o ID tecnici. Il fallback
+// (displayName → email mascherata → displayCode) vive nel dominio condiviso.
+function clientLabel(client) {
+  try {
+    if (window.PianoDomain?.clientDisplayTitle) return PianoDomain.clientDisplayTitle(client);
+  } catch (_) { /* dominio non caricato: fallback locale */ }
+  const full = `${client?.firstName || ''} ${client?.lastName || ''}`.trim();
+  return full || client?.displayName || client?.displayCode || 'Cliente';
+}
+
+function clientStatusOf(client) {
+  try {
+    if (window.PianoDomain?.clientOperationalStatus) {
+      return PianoDomain.clientOperationalStatus(client, {
+        invitations: adminState.clientInvitations,
+        requests: adminState.clientRequests
+      });
+    }
+  } catch (_) { /* fallback locale */ }
+  if (client?.status === 'pending') return 'pending';
+  return client?.status === 'active' ? 'active' : 'inactive';
+}
+
+function clientStatusLabelOf(status) {
+  try {
+    if (window.PianoDomain?.clientStatusLabel) return PianoDomain.clientStatusLabel(status);
+  } catch (_) { /* fallback locale */ }
+  return ({ active: 'Attivo', inactive: 'Inattivo', pending: 'In attesa' })[status] || 'Sconosciuto';
+}
+
+function inviteForClient(clientId) {
+  return adminState.clientInvitations.find(item => item.clientId === clientId) || null;
+}
+
+function requestForClient(clientId) {
+  return adminState.clientRequests.find(item => item.clientId === clientId) || null;
+}
 
 function assignmentSummary(client) {
   const active = client.activeAssignment;
@@ -136,15 +173,21 @@ function assignmentSummary(client) {
   return `Profilo ${active.ruleSet?.ruleSetId || 'assegnato'} · v${active.ruleSet?.version || ''}`;
 }
 
+function inviteStatusLabelOf(status) {
+  if (status === 'pending') return 'In attesa';
+  try {
+    if (window.PianoDomain?.clientStatusLabel) return PianoDomain.clientStatusLabel(status);
+  } catch (_) { /* fallback locale */ }
+  return ({ expired: 'Scaduto', revoked: 'Annullato', rejected: 'Rifiutato', superseded: 'Sostituito', accepted: 'Accettato', consumed: 'Utilizzato' })[status] || String(status || '—');
+}
+
 function renderClients() {
-  // Un invito email pendente per cliente: stati distinti in console
-  // (In attesa / Scaduto / Annullato) e azioni di correzione e reinvio.
-  const inviteFor = clientId => adminState.clientInvitations.find(item => item.clientId === clientId) || null;
+  // Un invito email pendente per cliente: stati distinti (In attesa, Scaduto,
+  // Annullato) e azioni di correzione, reinvio e annullamento.
   const inviteChip = invite => {
     if (!invite) return '';
-    const status = invite.status === 'pending' ? 'In attesa' : invite.status === 'expired' ? 'Scaduto' : invite.status === 'revoked' ? 'Annullato' : invite.status;
     const delivery = invite.deliveryStatus === 'failed' ? ' · invio NON riuscito' : invite.deliveryStatus === 'manual' ? ' · link da consegnare' : invite.deliveryStatus === 'sent' ? ' · email inviata' : '';
-    return `<p><small>Invito email · ${escapeAdmin(status)}${escapeAdmin(delivery)}</small></p>
+    return `<p><small>Invito email · ${escapeAdmin(inviteStatusLabelOf(invite.status))}${escapeAdmin(delivery)}</small></p>
       <div class="card-actions">
         <button class="text-button" data-invite-resend="${escapeAdmin(invite.inviteId)}" data-delivery="${escapeAdmin(invite.deliveryChannel || 'email')}">Reinvia link</button>
         <button class="text-button" data-invite-fix="${escapeAdmin(invite.inviteId)}">Correggi dati</button>
@@ -154,11 +197,182 @@ function renderClients() {
   const emailChip = client => client.email
     ? `<p><small>${escapeAdmin(client.email)} · ${client.emailVerified ? 'email verificata' : 'email da verificare'}</small></p>`
     : '';
-  $('clients-list').innerHTML = adminState.clients.map(client => {
-    const invite = inviteFor(client.id);
+  // Filtri di stato con conteggi: Tutti, Attivi, In attesa, Inattivi.
+  const withStatus = adminState.clients.map(client => ({ client, status: clientStatusOf(client) }));
+  const counts = { all: withStatus.length, active: 0, pending: 0, inactive: 0 };
+  withStatus.forEach(({ status }) => { if (counts[status] != null) counts[status] += 1; });
+  ['all', 'active', 'pending', 'inactive'].forEach(key => {
+    const badge = $(`count-${key}`);
+    if (badge) badge.textContent = counts[key];
+  });
+  document.querySelectorAll('[data-client-filter]').forEach(button => {
+    const selected = button.dataset.clientFilter === adminState.clientFilter;
+    button.classList.toggle('active', selected);
+    button.setAttribute('aria-pressed', selected ? 'true' : 'false');
+  });
+  const visible = withStatus.filter(({ status }) => adminState.clientFilter === 'all' || status === adminState.clientFilter);
+  const emptyHints = {
+    all: 'Nessun cliente autorizzato. Usa “Invita nuovo cliente” per iniziare.',
+    active: 'Nessun cliente attivo in questo momento.',
+    pending: 'Nessun cliente in attesa: inviti e richieste sono tutti risolti.',
+    inactive: 'Nessun cliente inattivo.'
+  };
+  $('clients-list').innerHTML = visible.map(({ client, status }) => {
+    const invite = inviteForClient(client.id);
+    const request = requestForClient(client.id);
     const emailChange = adminState.clientEmailChanges.find(item => item.clientId === client.id) || null;
-    return `<article class="client-card"><p class="eyebrow">CLIENTE</p><h3>${escapeAdmin(clientLabel(client))}</h3><p><small>${escapeAdmin(client.displayCode)}</small></p>${emailChip(client)}<p>${escapeAdmin(assignmentSummary(client))}</p>${emailChange ? `<p><small>Cambio email proposto: ${escapeAdmin(emailChange.newEmail || '—')} · in attesa del cliente</small></p>` : ''}${inviteChip(invite)}<div class="card-actions"><button class="secondary" data-assign-client="${escapeAdmin(client.id)}">${client.activeAssignment ? 'Cambia profilo' : 'Assegna profilo'} →</button><button class="secondary" data-client-profile="${escapeAdmin(client.id)}">Anagrafica</button>${client.email ? `<button class="text-button" data-client-email-change="${escapeAdmin(client.id)}">Proponi cambio email</button>` : ''}${client.status && client.status !== 'active' ? '' : `<button class="text-button archive-toggle" data-unlink-client="${escapeAdmin(client.id)}" data-display="${escapeAdmin(clientLabel(client))}">Rimuovi collegamento</button>`}</div></article>`;
-  }).join('') || '<p class="feedback">Nessun cliente attivo. Gli inviti in attesa si gestiscono dalla sezione Utenti.</p>';
+    // La scheda mostra tutto il resto (anagrafica, collegamento, struttura,
+    // storico, rimozione): dalla card si apre la scheda o si assegna il profilo.
+    return `<article class="client-card"><p class="eyebrow">CLIENTE</p><h3>${escapeAdmin(clientLabel(client))}</h3><p><span class="status status-client-${escapeAdmin(status)}">${escapeAdmin(clientStatusLabelOf(status))}</span></p>${emailChip(client)}<p>${escapeAdmin(assignmentSummary(client))}</p><p><small>Aggiornato il ${escapeAdmin(formatDateOnly(client.updatedAt))}</small></p>${request ? '<p><small>Richiesta di collegamento · in attesa del cliente</small></p>' : ''}${emailChange ? `<p><small>Cambio email proposto: ${escapeAdmin(emailChange.newEmail || '—')} · in attesa del cliente</small></p>` : ''}${inviteChip(invite)}<div class="card-actions"><button class="secondary" data-client-detail="${escapeAdmin(client.id)}">Apri scheda →</button><button class="secondary" data-assign-client="${escapeAdmin(client.id)}">${client.activeAssignment ? 'Cambia profilo' : 'Assegna profilo'}</button></div></article>`;
+  }).join('') || `<p class="feedback">${escapeAdmin(emptyHints[adminState.clientFilter] || emptyHints.all)}</p>`;
+  refreshOpenDetail();
+}
+
+// ---- Scheda cliente ----
+// Un solo posto per anagrafica, collegamento, struttura dieta e dati tecnici.
+// La rimozione («Rimuovi cliente», revoca logica con audit) esiste SOLO qui:
+// nessuna azione distruttiva appare negli elenchi.
+function detailClient() {
+  return adminState.clients.find(item => item.id === adminState.detailClientId) || null;
+}
+
+function openClientDetail(clientId) {
+  const client = adminState.clients.find(item => item.id === clientId);
+  if (!client) return;
+  adminState.detailClientId = clientId;
+  adminState.detailHistory = null;
+  adminState.clientDetailReturnFocus = document.activeElement;
+  $('client-detail-feedback').textContent = '';
+  $('client-detail-dialog').classList.remove('hidden');
+  renderClientDetail();
+  loadClientHistory(clientId);
+  $('client-detail-dialog').querySelector('.dialog-close')?.focus();
+}
+
+function closeClientDetail() {
+  $('client-detail-dialog').classList.add('hidden');
+  adminState.detailClientId = null;
+  adminState.detailHistory = null;
+  if (adminState.clientDetailReturnFocus?.focus) adminState.clientDetailReturnFocus.focus();
+  adminState.clientDetailReturnFocus = null;
+}
+
+async function loadClientHistory(clientId) {
+  try {
+    const history = await callAdminSaasFunction('getClientHistory', { organizationId: orgId(), clientId });
+    if (adminState.detailClientId !== clientId) return;
+    adminState.detailHistory = history;
+    renderClientDetail();
+  } catch (error) {
+    if (adminState.detailClientId !== clientId) return;
+    $('client-detail-feedback').textContent = `Storico non disponibile: ${adminError(error)}`;
+  }
+}
+
+function historyRowHtml(kind, item) {
+  const label = kind === 'invite' ? 'Invito email' : 'Richiesta di collegamento';
+  const who = item.targetEmail || item.targetUsername || '—';
+  return `<div class="history-row"><div><strong>${escapeAdmin(label)}</strong><small>${escapeAdmin(who)}${item.createdAt ? ` · ${escapeAdmin(formatDateOnly(item.createdAt))}` : ''}</small></div><span class="status status-history">${escapeAdmin(inviteStatusLabelOf(item.status))}</span></div>`;
+}
+
+function renderClientDetail() {
+  const client = detailClient();
+  if (!client) return;
+  const status = clientStatusOf(client);
+  $('client-detail-title').textContent = clientLabel(client);
+  $('client-detail-subtitle').textContent = `${clientStatusLabelOf(status)} · aggiornato il ${formatDateOnly(client.updatedAt)}`;
+  const invite = inviteForClient(client.id);
+  const request = requestForClient(client.id);
+  const emailChange = adminState.clientEmailChanges.find(item => item.clientId === client.id) || null;
+  const fullName = `${client.firstName || ''} ${client.lastName || ''}`.trim();
+  const history = adminState.detailHistory;
+  const historyHtml = !history
+    ? '<p class="feedback">Caricamento storico…</p>'
+    : ([...(history.invitations || []).map(item => historyRowHtml('invite', item)), ...(history.requests || []).map(item => historyRowHtml('request', item))].join('')
+      || '<p class="feedback">Nessun movimento precedente: solo attività in corso.</p>');
+  $('client-detail-body').innerHTML = `
+    <section class="detail-section"><h3>Dati anagrafici</h3>
+      <dl class="detail-grid">
+        <div><dt>Nome e cognome</dt><dd>${escapeAdmin(fullName || '—')}</dd></div>
+        <div><dt>Nome mostrato</dt><dd>${escapeAdmin(client.displayName || '—')}</dd></div>
+        <div><dt>Email</dt><dd>${escapeAdmin(client.email || '—')}${client.email ? ` · ${client.emailVerified ? 'verificata' : 'da verificare'}` : ''}</dd></div>
+        ${client.username ? `<div><dt>Account di test</dt><dd>${escapeAdmin(client.username)} (legacy)</dd></div>` : ''}
+      </dl>
+      <div class="card-actions">
+        <button class="secondary" data-client-profile="${escapeAdmin(client.id)}">Correggi anagrafica</button>
+        ${client.email ? `<button class="text-button" data-client-email-change="${escapeAdmin(client.id)}">Proponi cambio email</button>` : ''}
+      </div>
+      ${emailChange ? `<p class="callout">Cambio email proposto: ${escapeAdmin(emailChange.newEmail || '—')} · in attesa di conferma del cliente.</p>` : ''}
+    </section>
+    <section class="detail-section"><h3>Collegamento</h3>
+      <dl class="detail-grid">
+        <div><dt>Stato</dt><dd><span class="status status-client-${escapeAdmin(status)}">${escapeAdmin(clientStatusLabelOf(status))}</span></dd></div>
+        ${invite ? `<div><dt>Invito email</dt><dd>${escapeAdmin(inviteStatusLabelOf(invite.status))}${invite.deliveryStatus === 'failed' ? ' · invio NON riuscito' : invite.deliveryStatus === 'manual' ? ' · link da consegnare' : invite.deliveryStatus === 'sent' ? ' · email inviata' : ''}${invite.expiresAt ? ` · scade ${escapeAdmin(formatDateOnly(invite.expiresAt))}` : ''}</dd></div>` : ''}
+        ${request ? '<div><dt>Richiesta</dt><dd>In attesa di accettazione dal cliente, in app.</dd></div>' : ''}
+        ${!invite && !request ? '<div><dt>Inviti e richieste</dt><dd>Nessuna attività in corso.</dd></div>' : ''}
+      </dl>
+      ${invite ? `<div class="card-actions">
+        <button class="text-button" data-invite-resend="${escapeAdmin(invite.inviteId)}" data-delivery="${escapeAdmin(invite.deliveryChannel || 'email')}">Reinvia link</button>
+        <button class="text-button" data-invite-fix="${escapeAdmin(invite.inviteId)}">Correggi dati invito</button>
+        <button class="text-button danger-text" data-invite-cancel="${escapeAdmin(invite.inviteId)}">Annulla invito</button>
+      </div>` : ''}
+    </section>
+    <section class="detail-section"><h3>Struttura dieta</h3>
+      <dl class="detail-grid"><div><dt>Assegnazione</dt><dd>${escapeAdmin(assignmentSummary(client))}</dd></div></dl>
+      <div class="card-actions">
+        <button class="secondary" data-assign-client="${escapeAdmin(client.id)}">${client.activeAssignment ? 'Cambia profilo' : 'Assegna profilo'}</button>
+        ${client.activeAssignment ? `<button class="text-button" data-goto-doses="${escapeAdmin(client.id)}">Vai alle dosi</button>` : ''}
+      </div>
+    </section>
+    <section class="detail-section"><h3>Dati tecnici</h3>
+      <dl class="detail-grid">
+        <div><dt>Codice cliente</dt><dd class="mono">${escapeAdmin(client.displayCode)}</dd></div>
+        <div><dt>Identificativo</dt><dd class="mono">${escapeAdmin(client.id)}</dd></div>
+        <div><dt>Censito il</dt><dd>${escapeAdmin(formatDateOnly(client.createdAt))}</dd></div>
+        <div><dt>Professionisti collegati</dt><dd>${Array.isArray(client.nutritionistUids) ? client.nutritionistUids.length : '—'}</dd></div>
+      </dl>
+    </section>
+    <section class="detail-section"><h3>Storico collegamenti</h3>${historyHtml}</section>`;
+}
+
+// Dopo ogni ricarico dei clienti, la scheda aperta (se c'è) si aggiorna.
+function refreshOpenDetail() {
+  if (!adminState.detailClientId) return;
+  if (!detailClient()) { closeClientDetail(); return; }
+  renderClientDetail();
+  loadClientHistory(adminState.detailClientId);
+}
+
+// Azioni cliente condivise da card, scheda e pannello richieste: dettaglio,
+// assegnazione, anagrafica, cambio email, inviti e salto alle dosi.
+function handleClientActions(event) {
+  const detail = event.target.closest('[data-client-detail]');
+  if (detail) { openClientDetail(detail.dataset.clientDetail); return; }
+  const assign = event.target.closest('[data-assign-client]');
+  if (assign) { openAssignment(assign.dataset.assignClient); return; }
+  const profile = event.target.closest('[data-client-profile]');
+  if (profile) { openClientProfile(profile.dataset.clientProfile); return; }
+  const emailChange = event.target.closest('[data-client-email-change]');
+  if (emailChange) { openEmailChange(emailChange.dataset.clientEmailChange); return; }
+  const doses = event.target.closest('[data-goto-doses]');
+  if (doses) { gotoDosesForClient(doses.dataset.gotoDoses); return; }
+  const resend = event.target.closest('[data-invite-resend]');
+  if (resend) { resendClientInvite(resend.dataset.inviteResend, resend.dataset.delivery); return; }
+  const fix = event.target.closest('[data-invite-fix]');
+  if (fix) { openInviteFix(fix.dataset.inviteFix); return; }
+  const cancel = event.target.closest('[data-invite-cancel]');
+  if (cancel) cancelClientInvite(cancel.dataset.inviteCancel);
+}
+
+// Dalla scheda alle dosi: apre la vista Dosi con il cliente già selezionato.
+async function gotoDosesForClient(clientId) {
+  closeClientDetail();
+  showView('doses');
+  await loadDoseClients();
+  if ($('dose-client').querySelector(`option[value="${clientId}"]`)) {
+    $('dose-client').value = clientId;
+    await loadClientDoseEditor();
+  }
 }
 
 async function loadStructuresList() {
@@ -275,7 +489,11 @@ function renderDoseEditor(data) {
     return;
   }
   const format = iso => iso ? new Date(iso).toLocaleDateString('it-IT', { day: '2-digit', month: 'short', year: 'numeric' }) : '—';
-  $('dose-assignment').innerHTML = `<p class="callout"><strong>${escapeAdmin(data.displayCode)}</strong> · ${escapeAdmin(assignment.structureName || 'Profilo')} · ${escapeAdmin(assignment.status)} · dal ${format(assignment.effectiveAt)}${assignment.expiresAt ? ` al ${format(assignment.expiresAt)}` : ''} · revisione dosi n. ${assignment.overridesRevision}</p>`;
+  // Strutture solo-guidate (descrittive): nessuna famiglia di dosi, solo frequenze.
+  const noFamilies = !(data.families || []).length
+    ? '<p class="callout">La struttura assegnata è una dieta guidata descrittiva, senza famiglie di dosi: si personalizzano solo le frequenze.</p>'
+    : '';
+  $('dose-assignment').innerHTML = `<p class="callout"><strong>${escapeAdmin(data.displayCode)}</strong> · ${escapeAdmin(assignment.structureName || 'Profilo')} · ${escapeAdmin(assignment.status)} · dal ${format(assignment.effectiveAt)}${assignment.expiresAt ? ` al ${format(assignment.expiresAt)}` : ''} · revisione dosi n. ${assignment.overridesRevision}</p>${noFamilies}`;
   const overrides = data.overrides || { doses: {}, frequencies: {} };
   const familyRows = data.families.map(item => {
     const patch = overrides.doses?.[item.family] || {};
@@ -556,6 +774,7 @@ function renderStructures() {
     <article class="client-card ${item.status === 'archived' ? 'structure-archived' : ''}">
       <p class="eyebrow">STRUTTURA DIETA${item.status === 'archived' ? ' · ARCHIVIATA' : ''}</p>
       <h3>${escapeAdmin(item.name)}</h3>
+      ${item.hasDietPlan ? '<p><span class="status status-plan">Dieta guidata</span></p>' : ''}
       <p>${Number(item.ruleCount ?? 0)} famiglie · ${Number(item.alternativeGroupCount ?? 0)} gruppi alternativi</p>
       <p class="structure-dates"><small>Creata il ${formatDateOnly(item.createdAt)} · ultima modifica ${formatDateOnly(item.updatedAt)}</small></p>
       <div class="card-actions">
@@ -833,10 +1052,20 @@ function collectStructureGroups() {
   return parsed;
 }
 
+// Le strutture con piano guidato si modificano con l'editor guidato, quelle
+// classiche con l'editor classico. La scelta segue il flag del server.
+function openStructureEditor(structureId) {
+  const item = adminState.structures.find(entry => entry.id === structureId);
+  if (item?.hasDietPlan) openDietPlanDialog(structureId);
+  else openStructureDialog(structureId);
+}
+
 async function openStructureDialog(structureId = null) {
   adminState.editingStructure = null;
+  adminState.editingDietPlan = null;
   $('structure-id').value = ''; $('structure-name').value = ''; $('structure-rules').innerHTML = '';
   $('structure-groups').innerHTML = '';
+  $('structure-plan-note').classList.add('hidden');
   $('structure-changelog').value = ''; $('structure-error').textContent = '';
   $('structure-tech-details').classList.add('hidden');
   $('structure-restore-field').classList.add('hidden');
@@ -851,8 +1080,14 @@ async function openStructureDialog(structureId = null) {
     try {
       const result = await callAdminSaasFunction('getDietStructureRevision', { organizationId: orgId(), structureId });
       adminState.editingStructure = result;
+      adminState.editingDietPlan = result.revision.dietPlan || null;
       $('structure-id').value = structureId;
       $('structure-name').value = result.structure.name || '';
+      const planNote = $('structure-plan-note');
+      if (adminState.editingDietPlan) {
+        planNote.textContent = 'Questa struttura ha anche un piano guidato: il salvataggio lo conserva così com’è. Per modificarlo, chiudi e riapri la struttura dall’elenco (si aprirà l’editor guidato).';
+        planNote.classList.remove('hidden');
+      } else planNote.classList.add('hidden');
       $('structure-restore-field').classList.remove('hidden');
       $('structure-rules').innerHTML = '';
       (result.revision.rules || []).forEach(addStructureRuleRow);
@@ -889,6 +1124,8 @@ async function loadStructureRevision() {
     fillCategorySelects();
     $('structure-groups').innerHTML = '';
     (result.revision.alternativeGroups || []).forEach(addStructureGroupRow);
+    // Il ripristino riguarda anche il piano guidato della revisione caricata.
+    adminState.editingDietPlan = result.revision.dietPlan || null;
     $('structure-changelog').value = `Ripristino dalla revisione ${rev}`;
     $('structure-error').textContent = '';
   } catch (error) { $('structure-error').textContent = adminError(error); }
@@ -908,13 +1145,14 @@ async function submitStructureForm(event) {
     if (structureId) {
       await callAdminSaasFunction('updateDietStructureRevision', {
         organizationId: orgId(), structureId, name: $('structure-name').value.trim(),
-        rules, alternativeGroups, changelog: $('structure-changelog').value.trim() || null,
+        rules, alternativeGroups, dietPlan: adminState.editingDietPlan || null,
+        changelog: $('structure-changelog').value.trim() || null,
         restoredFromRevisionId: restoredFrom ? String(Number(restoredFrom)) : null,
         idempotencyKey: idem('structure')
       });
     } else {
       await callAdminSaasFunction('createDietStructure', {
-        organizationId: orgId(), name: $('structure-name').value.trim(), rules, alternativeGroups, idempotencyKey: idem('structure')
+        organizationId: orgId(), name: $('structure-name').value.trim(), rules, alternativeGroups, dietPlan: null, idempotencyKey: idem('structure')
       });
     }
     closeStructureDialog(); await loadStructures();
@@ -979,6 +1217,367 @@ async function openCompare() {
 }
 
 function closeCompare() { $('compare-dialog').classList.add('hidden'); }
+
+// ---- Editor dieta guidata ----
+// Piano descrittivo versionato (dietPlan v1): giornate, pasti, opzioni A/B/C/D,
+// quantità con unità. Nessun calcolo clinico: i valori energetici sono appunti
+// manuali. Il salvataggio pubblica una revisione struttura (schema 3) e
+// conserva le eventuali regole classiche per il calcolo delle dosi.
+function dietPlanDomain() { return window.PianoDomain || null; }
+
+async function openDietPlanDialog(structureId = null) {
+  const domain = dietPlanDomain();
+  if (!domain?.createEmptyDietPlan) {
+    $('structures-feedback').textContent = 'Editor non disponibile: ricarica la pagina.';
+    return;
+  }
+  adminState.dietPlanEditingId = structureId || null;
+  adminState.dietPlanRules = [];
+  adminState.dietPlanGroups = [];
+  $('diet-plan-id').value = '';
+  $('diet-plan-name').value = '';
+  $('diet-plan-general-notes').value = '';
+  $('diet-plan-error').textContent = '';
+  $('diet-plan-preview').classList.add('hidden');
+  $('diet-plan-preview').innerHTML = '';
+  $('diet-plan-preview-toggle').textContent = 'Mostra anteprima';
+  $('diet-plan-classic-note').classList.add('hidden');
+  if (structureId) {
+    $('diet-plan-title').textContent = 'Modifica dieta guidata';
+    $('diet-plan-subtitle').textContent = 'Il salvataggio pubblica una nuova revisione: le precedenti restano intatte e ripristinabili.';
+    try {
+      const result = await callAdminSaasFunction('getDietStructureRevision', { organizationId: orgId(), structureId });
+      adminState.dietPlanEditingId = structureId;
+      $('diet-plan-id').value = structureId;
+      $('diet-plan-name').value = result.structure.name || '';
+      adminState.dietPlanRules = result.revision.rules || [];
+      adminState.dietPlanGroups = result.revision.alternativeGroups || [];
+      adminState.dietPlan = domain.createEmptyDietPlan(result.revision.dietPlan || {});
+      if (adminState.dietPlanRules.length) {
+        const note = $('diet-plan-classic-note');
+        note.textContent = `Questa dieta ha anche ${adminState.dietPlanRules.length} famiglie classiche per il calcolo delle dosi: il salvataggio le conserva. Per modificarle usa l’editor classico.`;
+        note.classList.remove('hidden');
+      }
+    } catch (error) {
+      $('structures-feedback').textContent = adminError(error);
+      return;
+    }
+  } else {
+    $('diet-plan-title').textContent = 'Nuova dieta guidata';
+    $('diet-plan-subtitle').textContent = 'Giornate di allenamento e riposo, pasti con opzioni A/B/C/D, quantità con unità di misura. I valori energetici sono appunti manuali: nessun calcolo automatico.';
+    adminState.dietPlan = domain.createEmptyDietPlan();
+  }
+  renderDietPlanDays();
+  renderDietPlanPreview();
+  $('diet-plan-dialog').classList.remove('hidden');
+  $('diet-plan-name').focus();
+}
+
+function closeDietPlanDialog() {
+  $('diet-plan-dialog').classList.add('hidden');
+  adminState.dietPlan = null;
+  adminState.dietPlanEditingId = null;
+}
+
+function dietPlanNumberOrNull(raw) {
+  if (raw == null) return null;
+  const clean = String(raw).trim().replace(',', '.');
+  if (clean === '') return null;
+  const number = Number(clean);
+  return Number.isFinite(number) ? number : clean;
+}
+
+// Legge il modulo così com'è (senza validare): le operazioni strutturali
+// (aggiungi, duplica, sposta, elimina) non devono mai perdere il digitato.
+function collectDietPlan() {
+  const domain = dietPlanDomain();
+  const labels = domain?.DIET_PLAN_OPTION_LABELS || ['A', 'B', 'C', 'D'];
+  const plan = { schemaVersion: domain?.DIET_PLAN_SCHEMA_VERSION || 1, days: [], generalNotes: $('diet-plan-general-notes').value };
+  document.querySelectorAll('#diet-plan-days .diet-day').forEach(dayNode => {
+    const value = selector => dayNode.querySelector(`:scope ${selector}`)?.value ?? '';
+    const day = {
+      dayId: null,
+      label: value('[data-f="day-label"]').trim(),
+      dayType: value('[data-f="day-type"]'),
+      target: {
+        kcal: dietPlanNumberOrNull(value('[data-f="target-kcal"]')),
+        proteinG: dietPlanNumberOrNull(value('[data-f="target-protein"]')),
+        carbsG: dietPlanNumberOrNull(value('[data-f="target-carbs"]')),
+        fatG: dietPlanNumberOrNull(value('[data-f="target-fat"]')),
+        waterMl: dietPlanNumberOrNull(value('[data-f="target-water"]'))
+      },
+      meals: [],
+      supplements: value('[data-f="day-supplements"]').trim(),
+      hydration: value('[data-f="day-hydration"]').trim(),
+      note: value('[data-f="day-note"]').trim()
+    };
+    dayNode.querySelectorAll(':scope > .diet-meals > .diet-meal').forEach(mealNode => {
+      const mealValue = selector => mealNode.querySelector(`:scope ${selector}`)?.value ?? '';
+      const meal = {
+        mealId: mealValue(':scope > .diet-meal-head [data-f="meal-id"]'),
+        time: mealValue(':scope > .diet-meal-head [data-f="meal-time"]').trim(),
+        options: [],
+        note: mealNode.querySelector(':scope > [data-f="meal-note"]')?.value?.trim() || ''
+      };
+      mealNode.querySelectorAll(':scope > .diet-options > .diet-option').forEach((optionNode, optionIndex) => {
+        const option = {
+          label: labels[optionIndex] || 'A',
+          items: [],
+          note: optionNode.querySelector(':scope > [data-f="option-note"]')?.value?.trim() || ''
+        };
+        optionNode.querySelectorAll(':scope > .diet-items > .diet-item').forEach(itemNode => {
+          const itemValue = selector => itemNode.querySelector(selector)?.value ?? '';
+          option.items.push({
+            foodGroup: itemValue('[data-f="item-group"]'),
+            description: itemValue('[data-f="item-desc"]').trim(),
+            quantity: dietPlanNumberOrNull(itemValue('[data-f="item-qty"]')),
+            unit: itemValue('[data-f="item-unit"]'),
+            quantityState: itemValue('[data-f="item-state"]') || null,
+            netOfWaste: itemNode.querySelector('[data-f="item-net"]')?.checked === true,
+            alternative: itemValue('[data-f="item-alt"]').trim()
+          });
+        });
+        meal.options.push(option);
+      });
+      day.meals.push(meal);
+    });
+    plan.days.push(day);
+  });
+  return plan;
+}
+
+async function submitDietPlan(event) {
+  event.preventDefault();
+  const domain = dietPlanDomain();
+  const errorEl = $('diet-plan-error');
+  errorEl.textContent = '';
+  const name = $('diet-plan-name').value.trim();
+  if (name.length < 3) { errorEl.textContent = 'Dai un nome alla dieta (almeno 3 caratteri).'; return; }
+  const plan = collectDietPlan();
+  const check = domain.validateDietPlanSoft(plan);
+  if (!check.valid) {
+    errorEl.textContent = `${check.errors.slice(0, 3).join(' ')}${check.errors.length > 3 ? ` (altri ${check.errors.length - 3} problemi)` : ''}`;
+    renderDietPlanPreview();
+    return;
+  }
+  const structureId = $('diet-plan-id').value;
+  try {
+    if (structureId) {
+      await callAdminSaasFunction('updateDietStructureRevision', {
+        organizationId: orgId(), structureId, name,
+        rules: adminState.dietPlanRules, alternativeGroups: adminState.dietPlanGroups,
+        dietPlan: plan, changelog: '', restoredFromRevisionId: null, idempotencyKey: idem('dietplan')
+      });
+    } else {
+      await callAdminSaasFunction('createDietStructure', {
+        organizationId: orgId(), name, rules: [], alternativeGroups: [], dietPlan: plan, idempotencyKey: idem('dietplan')
+      });
+    }
+    closeDietPlanDialog();
+    await loadStructures();
+    $('structures-feedback').textContent = structureId ? 'Nuova revisione della dieta pubblicata (la precedente resta disponibile).' : 'Dieta guidata creata e pubblicata.';
+  } catch (error) { errorEl.textContent = adminError(error); }
+}
+
+function dietPlanOptions(list, current) {
+  return list.map(item => `<option value="${escapeAdmin(item.id)}" ${item.id === current ? 'selected' : ''}>${escapeAdmin(item.label)}</option>`).join('');
+}
+
+function dietItemHtml(domain, item, path) {
+  return `
+  <div class="diet-item" data-day="${path.day}" data-meal="${path.meal}" data-option="${path.option}" data-item="${path.item}">
+    <select data-f="item-group" aria-label="Gruppo alimentare">${dietPlanOptions(domain.DIET_PLAN_FOOD_GROUPS, item.foodGroup)}</select>
+    <input data-f="item-desc" placeholder="Alimento (es. Riso Venere)" value="${escapeAdmin(item.description || '')}" aria-label="Alimento" maxlength="200">
+    <div class="diet-qty">
+      <input data-f="item-qty" type="number" min="0" max="5000" step="any" placeholder="Qtà" value="${item.quantity ?? ''}" aria-label="Quantità">
+      <select data-f="item-unit" aria-label="Unità di misura">${dietPlanOptions(domain.DIET_PLAN_UNITS, item.unit || 'g')}</select>
+      <select data-f="item-state" aria-label="Peso a crudo o a cotto"><option value="">—</option><option value="crudo" ${item.quantityState === 'crudo' ? 'selected' : ''}>Crudo</option><option value="cotto" ${item.quantityState === 'cotto' ? 'selected' : ''}>Cotto</option></select>
+    </div>
+    <label class="check-inline"><input data-f="item-net" type="checkbox" ${item.netOfWaste ? 'checked' : ''}>Al netto degli scarti</label>
+    <input data-f="item-alt" placeholder="Oppure (alternativa, facoltativa)" value="${escapeAdmin(item.alternative || '')}" aria-label="Alternativa (oppure)" maxlength="200">
+    <button type="button" class="dialog-close diet-del" data-act="item-del" aria-label="Rimuovi alimento">×</button>
+  </div>`;
+}
+
+function dietOptionHtml(domain, option, path, label, canDelete) {
+  return `
+  <div class="diet-option" data-day="${path.day}" data-meal="${path.meal}" data-option="${path.option}">
+    <div class="diet-option-head"><strong>Opzione ${escapeAdmin(label)}</strong><span class="diet-option-actions">
+      <button type="button" class="text-button" data-act="option-dup">Duplica</button>
+      ${canDelete ? '<button type="button" class="text-button danger-text" data-act="option-del">Elimina</button>' : ''}
+    </span></div>
+    <div class="diet-items">${option.items.map((item, itemIndex) => dietItemHtml(domain, item, { ...path, item: itemIndex })).join('')}</div>
+    ${option.items.length < domain.DIET_PLAN_LIMITS.itemsPerOption ? '<button type="button" class="secondary diet-add" data-act="item-add">＋ Aggiungi alimento</button>' : ''}
+    <textarea data-f="option-note" placeholder="Nota dell’opzione (facoltativa)" maxlength="1000">${escapeAdmin(option.note || '')}</textarea>
+  </div>`;
+}
+
+function dietMealHtml(domain, meal, path, canDelete) {
+  const labels = domain.DIET_PLAN_OPTION_LABELS;
+  return `
+  <article class="diet-meal" data-day="${path.day}" data-meal="${path.meal}">
+    <div class="diet-meal-head">
+      <select data-f="meal-id" aria-label="Pasto">${dietPlanOptions(domain.DIET_PLAN_MEALS, meal.mealId)}</select>
+      <input data-f="meal-time" placeholder="Orario (es. 12:30)" value="${escapeAdmin(meal.time || '')}" aria-label="Orario" maxlength="20">
+      ${canDelete ? '<button type="button" class="text-button danger-text" data-act="meal-del">Elimina pasto</button>' : ''}
+    </div>
+    <div class="diet-options">${meal.options.map((option, optionIndex) => dietOptionHtml(domain, option, { ...path, option: optionIndex }, labels[optionIndex] || 'A', meal.options.length > 1)).join('')}</div>
+    ${meal.options.length < domain.DIET_PLAN_LIMITS.optionsPerMeal ? '<button type="button" class="secondary diet-add" data-act="option-add">＋ Aggiungi opzione</button>' : ''}
+    <textarea data-f="meal-note" placeholder="Nota del pasto (facoltativa)" maxlength="1000">${escapeAdmin(meal.note || '')}</textarea>
+  </article>`;
+}
+
+function dietDayHtml(domain, day, dayIndex, dayCount) {
+  return `
+  <article class="diet-day" data-day="${dayIndex}">
+    <div class="diet-day-head">
+      <strong>Giornata ${dayIndex + 1}</strong>
+      <select data-f="day-type" aria-label="Tipo giornata">${domain.DIET_PLAN_DAY_TYPES.map(type => `<option value="${type}" ${day.dayType === type ? 'selected' : ''}>${escapeAdmin(domain.dietPlanDayLabel(type))}</option>`).join('')}</select>
+      <input data-f="day-label" placeholder="Titolo (facoltativo)" value="${escapeAdmin(day.label || '')}" aria-label="Titolo giornata" maxlength="80">
+      <span class="diet-day-actions">
+        <button type="button" class="text-button" data-act="day-up" ${dayIndex === 0 ? 'disabled' : ''} aria-label="Sposta giornata su">↑</button>
+        <button type="button" class="text-button" data-act="day-down" ${dayIndex === dayCount - 1 ? 'disabled' : ''} aria-label="Sposta giornata giù">↓</button>
+        <button type="button" class="text-button" data-act="day-dup">Duplica</button>
+        ${dayCount > 1 ? '<button type="button" class="text-button danger-text" data-act="day-del">Elimina</button>' : ''}
+      </span>
+    </div>
+    <fieldset class="diet-targets"><legend>Valori della giornata (appunti manuali, facoltativi)</legend>
+      <label>Energia (kcal)<input data-f="target-kcal" type="number" min="0" max="50000" step="any" value="${day.target?.kcal ?? ''}"></label>
+      <label>Proteine (g)<input data-f="target-protein" type="number" min="0" max="50000" step="any" value="${day.target?.proteinG ?? ''}"></label>
+      <label>Carboidrati (g)<input data-f="target-carbs" type="number" min="0" max="50000" step="any" value="${day.target?.carbsG ?? ''}"></label>
+      <label>Grassi (g)<input data-f="target-fat" type="number" min="0" max="50000" step="any" value="${day.target?.fatG ?? ''}"></label>
+      <label>Acqua (ml)<input data-f="target-water" type="number" min="0" max="50000" step="any" value="${day.target?.waterMl ?? ''}"></label>
+    </fieldset>
+    <div class="diet-meals">${day.meals.map((meal, mealIndex) => dietMealHtml(domain, meal, { day: dayIndex, meal: mealIndex }, day.meals.length > 1)).join('')}</div>
+    ${day.meals.length < domain.DIET_PLAN_LIMITS.mealsPerDay ? '<button type="button" class="secondary diet-add" data-act="meal-add">＋ Aggiungi pasto</button>' : ''}
+    <div class="form-grid">
+      <label>Integrazione<textarea data-f="day-supplements" placeholder="es. Vitamina D al mattino" maxlength="1000">${escapeAdmin(day.supplements || '')}</textarea></label>
+      <label>Idratazione<textarea data-f="day-hydration" placeholder="es. Almeno 2 litri d’acqua" maxlength="1000">${escapeAdmin(day.hydration || '')}</textarea></label>
+    </div>
+    <label>Nota della giornata<textarea data-f="day-note" placeholder="Facoltativa" maxlength="1000">${escapeAdmin(day.note || '')}</textarea></label>
+  </article>`;
+}
+
+function renderDietPlanDays() {
+  const domain = dietPlanDomain();
+  const plan = adminState.dietPlan;
+  if (!domain || !plan) return;
+  $('diet-plan-general-notes').value = plan.generalNotes || '';
+  $('diet-plan-days').innerHTML = plan.days.map((day, dayIndex) => dietDayHtml(domain, day, dayIndex, plan.days.length)).join('');
+}
+
+function dietPreviewItemHtml(domain, item) {
+  const bits = [];
+  if (item.quantity != null && item.quantity !== '') {
+    bits.push(`${escapeAdmin(String(item.quantity))} ${escapeAdmin(domain.dietPlanUnitLabel(item.unit))}${item.quantityState ? ` (${escapeAdmin(item.quantityState)})` : ''}${item.netOfWaste ? ', al netto degli scarti' : ''}`);
+  }
+  bits.push(`<strong>${escapeAdmin(item.description || '—')}</strong>`);
+  if (item.alternative) bits.push(`<em>oppure: ${escapeAdmin(item.alternative)}</em>`);
+  return `<li>${bits.join(' · ')} <small>(${escapeAdmin(domain.dietPlanFoodGroupLabel(item.foodGroup))})</small></li>`;
+}
+
+function renderDietPlanPreview() {
+  const domain = dietPlanDomain();
+  const box = $('diet-plan-preview');
+  if (!domain) return;
+  const plan = collectDietPlan();
+  const check = domain.validateDietPlanSoft(plan);
+  const summary = domain.dietPlanSummary(plan);
+  const warnings = check.valid
+    ? ''
+    : `<p class="callout">Bozza non ancora valida: ${check.errors.slice(0, 3).map(escapeAdmin).join(' · ')}${check.errors.length > 3 ? ` (altri ${check.errors.length - 3})` : ''}</p>`;
+  box.innerHTML = `
+    <p class="preview-meta">${summary.dayCount} giornate · ${summary.mealCount} pasti · ${summary.optionCount} opzioni · ${summary.itemCount} alimenti</p>
+    ${warnings}
+    ${plan.days.map((day, dayIndex) => {
+      const target = day.target || {};
+      const targetBits = [
+        target.kcal != null && target.kcal !== '' ? `${escapeAdmin(String(target.kcal))} kcal` : null,
+        target.proteinG != null && target.proteinG !== '' ? `P ${escapeAdmin(String(target.proteinG))} g` : null,
+        target.carbsG != null && target.carbsG !== '' ? `C ${escapeAdmin(String(target.carbsG))} g` : null,
+        target.fatG != null && target.fatG !== '' ? `G ${escapeAdmin(String(target.fatG))} g` : null,
+        target.waterMl != null && target.waterMl !== '' ? `Acqua ${escapeAdmin(String(target.waterMl))} ml` : null
+      ].filter(Boolean);
+      return `<section class="preview-day"><h4>Giornata ${dayIndex + 1} — ${escapeAdmin(domain.dietPlanDayLabel(day.dayType))}${day.label ? ` · ${escapeAdmin(day.label)}` : ''}</h4>
+        ${targetBits.length ? `<p class="preview-target">${targetBits.join(' · ')}</p>` : ''}
+        ${(day.meals || []).map(meal => `
+          <div class="preview-meal"><strong>${escapeAdmin(domain.dietPlanMealLabel(meal.mealId))}</strong>${meal.time ? ` <small>(${escapeAdmin(meal.time)})</small>` : ''}
+            ${(meal.options || []).map((option, optionIndex) => `
+              <div class="preview-option"><span>Opzione ${escapeAdmin(domain.DIET_PLAN_OPTION_LABELS[optionIndex] || 'A')}</span>
+                <ul>${(option.items || []).map(item => dietPreviewItemHtml(domain, item)).join('')}</ul>
+                ${option.note ? `<p><small>Nota: ${escapeAdmin(option.note)}</small></p>` : ''}
+              </div>`).join('')}
+            ${meal.note ? `<p><small>Nota pasto: ${escapeAdmin(meal.note)}</small></p>` : ''}
+          </div>`).join('')}
+        ${day.supplements ? `<p><small><strong>Integrazione:</strong> ${escapeAdmin(day.supplements)}</small></p>` : ''}
+        ${day.hydration ? `<p><small><strong>Idratazione:</strong> ${escapeAdmin(day.hydration)}</small></p>` : ''}
+        ${day.note ? `<p><small><strong>Nota:</strong> ${escapeAdmin(day.note)}</small></p>` : ''}
+      </section>`;
+    }).join('')}
+    ${plan.generalNotes ? `<p><small><strong>Note generali:</strong> ${escapeAdmin(plan.generalNotes)}</small></p>` : ''}`;
+}
+
+// Operazioni strutturali: prima si rilegge il modulo (mai perdere il digitato),
+// poi si modifica il piano e si ridisegna.
+function handleDietPlanStructure(event) {
+  const button = event.target.closest('[data-act]');
+  if (!button || button.disabled) return;
+  const domain = dietPlanDomain();
+  if (!domain) return;
+  const plan = collectDietPlan();
+  adminState.dietPlan = plan;
+  const node = button.closest('.diet-day, .diet-meal, .diet-option, .diet-item');
+  const dayIndex = node?.dataset?.day != null ? Number(node.dataset.day) : -1;
+  const mealIndex = node?.dataset?.meal != null ? Number(node.dataset.meal) : -1;
+  const optionIndex = node?.dataset?.option != null ? Number(node.dataset.option) : -1;
+  const itemIndex = node?.dataset?.item != null ? Number(node.dataset.item) : -1;
+  const day = dayIndex >= 0 ? plan.days[dayIndex] : null;
+  const meal = day && mealIndex >= 0 ? day.meals[mealIndex] : null;
+  const option = meal && optionIndex >= 0 ? meal.options[optionIndex] : null;
+  const clone = value => JSON.parse(JSON.stringify(value));
+  switch (button.dataset.act) {
+    case 'day-add':
+      if (plan.days.length < domain.DIET_PLAN_LIMITS.days) plan.days.push(domain.createDietPlanDay('training'));
+      break;
+    case 'day-del':
+      if (day && plan.days.length > 1) plan.days.splice(dayIndex, 1);
+      break;
+    case 'day-dup':
+      if (day && plan.days.length < domain.DIET_PLAN_LIMITS.days) plan.days.splice(dayIndex + 1, 0, clone(day));
+      break;
+    case 'day-up':
+      if (day && dayIndex > 0) [plan.days[dayIndex - 1], plan.days[dayIndex]] = [plan.days[dayIndex], plan.days[dayIndex - 1]];
+      break;
+    case 'day-down':
+      if (day && dayIndex < plan.days.length - 1) [plan.days[dayIndex + 1], plan.days[dayIndex]] = [plan.days[dayIndex], plan.days[dayIndex + 1]];
+      break;
+    case 'meal-add':
+      if (day && day.meals.length < domain.DIET_PLAN_LIMITS.mealsPerDay) day.meals.push(domain.createDietPlanMeal('lunch'));
+      break;
+    case 'meal-del':
+      if (day && meal && day.meals.length > 1) day.meals.splice(mealIndex, 1);
+      break;
+    case 'option-add':
+      if (meal && meal.options.length < domain.DIET_PLAN_LIMITS.optionsPerMeal) meal.options.push(domain.createDietPlanOption());
+      break;
+    case 'option-dup':
+      if (meal && option && meal.options.length < domain.DIET_PLAN_LIMITS.optionsPerMeal) meal.options.splice(optionIndex + 1, 0, clone(option));
+      break;
+    case 'option-del':
+      if (meal && option && meal.options.length > 1) meal.options.splice(optionIndex, 1);
+      break;
+    case 'item-add':
+      if (option && option.items.length < domain.DIET_PLAN_LIMITS.itemsPerOption) option.items.push(domain.createDietPlanItem());
+      break;
+    case 'item-del':
+      if (option && itemIndex >= 0 && option.items.length > 1) option.items.splice(itemIndex, 1);
+      break;
+    default:
+      return;
+  }
+  renderDietPlanDays();
+  renderDietPlanPreview();
+}
 
 // ---- Sezione Catalogo globale ----
 // Il catalogo alimenta l'autocomplete delle Strutture dieta e la validazione
@@ -1083,7 +1682,7 @@ async function commitCatalogImport() {
 
 async function loadUsers() {
   if (!orgId()) { $('users-feedback').textContent = ORG_MISSING_MESSAGE; return; }
-  $('users-feedback').textContent = 'Caricamento utenti autorizzati…';
+  $('users-feedback').textContent = 'Caricamento team e richieste…';
   try {
     const result = await callAdminSaasFunction('listOrganizationUsers', { organizationId: orgId() });
     adminState.users = result;
@@ -1115,6 +1714,8 @@ function renderUsers() {
     : 'Come professionista vedi solo i tuoi clienti e i tuoi inviti.';
   const profileBox = document.getElementById('nutritionist-profile-form');
   if (profileBox) profileBox.innerHTML = !isAdmin ? `<form onsubmit="saveMemberDisplayName(event)"><label>Il tuo nome per i clienti<input id="member-display-name" maxlength="120" placeholder="Nome e cognome (facoltativo)"></label><button class="secondary" type="submit">Salva</button></form>` : '';
+  // Il professionista non vede l'elenco membri: solo il proprio nome pubblico.
+  $('members-list').style.display = isAdmin ? '' : 'none';
   $('members-list').innerHTML = (data.members || []).map(member => `
     <article class="report-row">
       <div class="report-main"><span class="ingredient-mark">⛉</span><div><strong>${escapeAdmin(member.displayName || member.username || member.userId.slice(0, 8))}</strong><small>${escapeAdmin(member.role === 'admin' ? 'Admin' : 'Professionista')}</small></div></div>
@@ -1136,31 +1737,22 @@ function renderUsers() {
       nutris.map(member => `<option value="${escapeAdmin(member.userId)}">${escapeAdmin(member.displayName || member.username || member.userId.slice(0, 8))}</option>`).join('');
   }
   if ($('invite-client-email-nutri-field')) $('invite-client-email-nutri-field').style.display = isAdmin ? '' : 'none';
-  // Inviti email reali: la console mostra i dati inseriti dal nutrizionista e
-  // le azioni di correzione/reinvio/annullamento (mai il token in chiaro).
-  const emailInvites = (data.invitations || []).filter(item => item.type === 'clientEmail');
-  if (emailInvites.length) {
-    $('links-list').innerHTML = emailInvites.map(item => `
-    <article class="report-row">
-      <div class="report-main"><span class="ingredient-mark">✉</span><div><strong>${escapeAdmin([item.firstName, item.lastName].filter(Boolean).join(' ') || item.targetEmail || '—')}</strong><small>${escapeAdmin(item.targetEmail || '—')} · ${item.deliveryStatus === 'failed' ? 'invio email NON riuscito' : item.deliveryStatus === 'sent' ? 'email inviata' : item.deliveryStatus === 'manual' ? 'link da consegnare' : 'consegna in corso'}${item.expiresAt ? ` · scade ${formatDateOnly(item.expiresAt)}` : ''}</small></div></div>
-      <div class="report-meta"><small>Stato</small><strong>In attesa</strong></div>
-      <div class="report-meta"><small>Azioni</small><strong class="member-actions">
-        <button class="text-button" data-invite-resend="${escapeAdmin(item.inviteId)}" data-delivery="${escapeAdmin(item.deliveryChannel || 'email')}">Reinvia</button>
-        <button class="text-button" data-invite-fix="${escapeAdmin(item.inviteId)}">Correggi</button>
-        <button class="text-button danger-text" data-invite-cancel="${escapeAdmin(item.inviteId)}">Annulla</button>
-      </strong></div>
-    </article>`).join('');
-  }
+  // Richieste di collegamento e inviti legacy: gli inviti email reali vivono
+  // sulle card dei clienti (con reinvio, correzione e annullamento), qui resta
+  // solo ciò che non ha una card. I titoli non mostrano mai ID tecnici.
+  const clientNameFor = clientId => {
+    const client = adminState.clients.find(item => item.id === clientId);
+    return client ? clientLabel(client) : 'Cliente';
+  };
   const pendingLinks = [...(data.requests || []).filter(item => !item.status || item.status === 'pending').map(item => ({ ...item, kind: 'request' })),
     ...(data.invitations || []).filter(item => item.type === 'client').map(item => ({ ...item, kind: 'invite' }))];
   const linksHtml = pendingLinks.map(item => `
     <article class="report-row">
-      <div class="report-main"><span class="ingredient-mark">${item.kind === 'request' ? '✉' : '◈'}</span><div><strong>${escapeAdmin(item.targetUsername || '—')}</strong><small>${item.kind === 'request' ? 'Richiesta da accettare in app' : `Invito monouso${item.expiresAt ? ` · scade ${formatDateOnly(item.expiresAt)}` : ''}`}</small></div></div>
+      <div class="report-main"><span class="ingredient-mark">${item.kind === 'request' ? '✉' : '◈'}</span><div><strong>${escapeAdmin(item.targetUsername || item.targetEmail || clientNameFor(item.clientId))}</strong><small>${item.kind === 'request' ? `Richiesta da accettare in app · ${escapeAdmin(clientNameFor(item.clientId))}` : `Invito monouso${item.expiresAt ? ` · scade ${formatDateOnly(item.expiresAt)}` : ''} · ${escapeAdmin(clientNameFor(item.clientId))}`}</small></div></div>
       <div class="report-meta"><small>Stato</small><strong>In attesa</strong></div>
-      <div class="report-meta"><small>Cliente</small><strong>${escapeAdmin(item.clientId ? item.clientId.slice(0, 8) : '—')}</strong></div>
+      <div class="report-meta"><small>Scheda</small><strong>${item.clientId ? `<button class="text-button" data-client-detail="${escapeAdmin(item.clientId)}">Apri scheda</button>` : '—'}</strong></div>
     </article>`).join('');
-  if (emailInvites.length) $('links-list').insertAdjacentHTML('beforeend', linksHtml);
-  else $('links-list').innerHTML = linksHtml || '<p class="feedback">Nessun collegamento in attesa.</p>';
+  $('links-list').innerHTML = linksHtml || '<p class="feedback">Nessun collegamento in attesa.</p>';
   const nutriInvites = (data.invitations || []).filter(item => item.type === 'nutritionist');
   if (nutriInvites.length) {
     $('links-list').insertAdjacentHTML('beforeend', nutriInvites.map(item => `
@@ -1170,9 +1762,9 @@ function renderUsers() {
       <div class="report-meta"><small>Tipo</small><strong>Nutritionist</strong></div>
     </article>`).join(''));
   }
-  // Clienti del professionista: elenco con revoca associazione.
+  // Promemoria per il professionista: tutto si gestisce dalle schede qui sopra.
   if (!isAdmin && (data.clients || []).length) {
-    $('links-list').insertAdjacentHTML('beforeend', `<p class="feedback">I tuoi clienti si gestiscono dalla vista Clienti (assegnazione e rimozione collegamento).</p>`);
+    $('links-list').insertAdjacentHTML('beforeend', '<p class="feedback">Apri la scheda di un cliente per anagrafica, collegamento, struttura dieta e rimozione.</p>');
   }
 }
 
@@ -1280,6 +1872,16 @@ function clientEmailInviteMessage(result) {
   }
 }
 
+function openInviteClientDialog() {
+  $('invite-client-email-result').textContent = '';
+  $('invite-client-email-link').classList.add('hidden');
+  $('invite-client-email-link').value = '';
+  $('invite-client-dialog').classList.remove('hidden');
+  $('invite-client-email').focus();
+}
+
+function closeInviteClientDialog() { $('invite-client-dialog').classList.add('hidden'); }
+
 async function submitClientEmailInvite(event) {
   event.preventDefault();
   const out = $('invite-client-email-result');
@@ -1321,6 +1923,8 @@ async function resendClientInvite(inviteId, delivery) {
     });
     $('clients-feedback').textContent = clientEmailInviteMessage(result);
     if (result.inviteUrl) {
+      // Il campo del link vive nel dialog di invito: lo mostriamo lì.
+      openInviteClientDialog();
       const linkInput = $('invite-client-email-link');
       linkInput.value = result.inviteUrl;
       linkInput.classList.remove('hidden');
@@ -1378,6 +1982,8 @@ async function submitInviteFix(event) {
     closeInviteFix();
     $('clients-feedback').textContent = clientEmailInviteMessage(result);
     if (result.inviteUrl) {
+      // Il campo del link vive nel dialog di invito: lo mostriamo lì.
+      openInviteClientDialog();
       const linkInput = $('invite-client-email-link');
       linkInput.value = result.inviteUrl;
       linkInput.classList.remove('hidden');
@@ -1496,8 +2102,9 @@ async function submitUnlink(event) {
       reason: $('unlink-reason').value.trim(), idempotencyKey: idem('unlink')
     });
     closeUnlink();
-    await loadClients();
-    $('clients-feedback').textContent = 'Collegamento rimosso: il cliente torna alle dosi originali e perde la Spesa inclusa.';
+    closeClientDetail();
+    await Promise.all([loadUsers(), loadClients()]);
+    $('clients-feedback').textContent = 'Cliente rimosso (revoca logica): torna alle dosi originali e perde la Spesa inclusa. Lo storico resta in audit.';
   } catch (error) { $('unlink-error').textContent = adminError(error); }
 }
 
@@ -1508,10 +2115,10 @@ function showView(view) {
   const backdrop = $('sidebar-backdrop');
   if (backdrop) backdrop.hidden = true;
   $('mobile-menu')?.setAttribute('aria-expanded', 'false');
-  if (view === 'clients') loadClients();
+  // La vista Clienti è unica: profili + team + richieste si caricano insieme.
+  if (view === 'clients') { loadClients(); loadUsers(); }
   else if (view === 'doses') loadDoseClients();
   else if (view === 'structures') loadStructures();
-  else if (view === 'users') loadUsers();
   else if (view === 'catalog') loadCatalogStatus();
   else loadReports();
 }
@@ -1530,8 +2137,22 @@ function bindAdmin() {
   $('mapping-kind').addEventListener('change', () => $('guided-fields').classList.toggle('hidden', $('mapping-kind').value === 'free'));
   $('mapping-form').addEventListener('submit', submitMapping);
   document.querySelectorAll('[data-close-dialog]').forEach(node => node.addEventListener('click', closeMapping));
-  $('refresh-clients').addEventListener('click', loadClients);
-  $('clients-list').addEventListener('click', event => { const button = event.target.closest('[data-assign-client]'); if (button) openAssignment(button.dataset.assignClient); });
+  $('refresh-clients').addEventListener('click', () => { loadClients(); loadUsers(); });
+  $('invite-client-open').addEventListener('click', openInviteClientDialog);
+  document.querySelectorAll('[data-close-invite-client]').forEach(node => node.addEventListener('click', closeInviteClientDialog));
+  document.querySelectorAll('[data-close-client-detail]').forEach(node => node.addEventListener('click', closeClientDetail));
+  $('client-filter').addEventListener('click', event => {
+    const tab = event.target.closest('[data-client-filter]');
+    if (!tab) return;
+    adminState.clientFilter = tab.dataset.clientFilter;
+    renderClients();
+  });
+  $('clients-list').addEventListener('click', handleClientActions);
+  $('client-detail-body').addEventListener('click', handleClientActions);
+  $('client-remove-open').addEventListener('click', () => {
+    const client = detailClient();
+    if (client) openUnlink(client.id, clientLabel(client));
+  });
   $('assignment-form').addEventListener('submit', submitAssignment);
   $('assignment-no-expiry').addEventListener('change', () => { $('assignment-expires').disabled = $('assignment-no-expiry').checked; if ($('assignment-no-expiry').checked) $('assignment-expires').value = ''; });
   document.querySelectorAll('[data-close-assignment]').forEach(node => node.addEventListener('click', closeAssignment));
@@ -1543,9 +2164,36 @@ function bindAdmin() {
   document.querySelectorAll('.nav-link').forEach(node => node.addEventListener('click', () => showView(node.dataset.view)));
   $('refresh-structures').addEventListener('click', loadStructures);
   $('new-structure').addEventListener('click', () => openStructureDialog());
+  $('new-diet-plan').addEventListener('click', () => openDietPlanDialog());
+  $('diet-plan-form').addEventListener('submit', submitDietPlan);
+  $('diet-plan-days').addEventListener('click', handleDietPlanStructure);
+  $('diet-plan-add-day').addEventListener('click', () => {
+    const domain = dietPlanDomain();
+    if (!domain || !adminState.dietPlan) return;
+    adminState.dietPlan = collectDietPlan();
+    if (adminState.dietPlan.days.length < domain.DIET_PLAN_LIMITS.days) {
+      adminState.dietPlan.days.push(domain.createDietPlanDay('training'));
+    }
+    renderDietPlanDays();
+    renderDietPlanPreview();
+  });
+  $('diet-plan-preview-toggle').addEventListener('click', () => {
+    const box = $('diet-plan-preview');
+    renderDietPlanPreview();
+    box.classList.toggle('hidden');
+    $('diet-plan-preview-toggle').textContent = box.classList.contains('hidden') ? 'Mostra anteprima' : 'Nascondi anteprima';
+  });
+  // Anteprima viva: mentre si digita, se è visibile si aggiorna.
+  let dietPreviewTimer = null;
+  $('diet-plan-form').addEventListener('input', () => {
+    if ($('diet-plan-preview').classList.contains('hidden')) return;
+    clearTimeout(dietPreviewTimer);
+    dietPreviewTimer = setTimeout(renderDietPlanPreview, 250);
+  });
+  document.querySelectorAll('[data-close-diet-plan]').forEach(node => node.addEventListener('click', closeDietPlanDialog));
   $('structures-list').addEventListener('click', event => {
     const edit = event.target.closest('[data-edit-structure]');
-    if (edit) { openStructureDialog(edit.dataset.editStructure); return; }
+    if (edit) { openStructureEditor(edit.dataset.editStructure); return; }
     const archive = event.target.closest('[data-archive-structure]');
     if (archive) toggleStructureArchive(archive.dataset.archiveStructure, archive.dataset.archived !== '1');
   });
@@ -1590,7 +2238,6 @@ function bindAdmin() {
   $('group-target').addEventListener('change', toggleNewGroupFields);
   $('group-form').addEventListener('submit', submitGrouping);
   document.querySelectorAll('[data-close-group]').forEach(node => node.addEventListener('click', closeGroupDialog));
-  $('refresh-users').addEventListener('click', loadUsers);
   $('refresh-catalog').addEventListener('click', loadCatalogStatus);
   $('catalog-dry-run').addEventListener('click', analyzeCatalogFile);
   $('catalog-commit').addEventListener('click', commitCatalogImport);
@@ -1605,33 +2252,12 @@ function bindAdmin() {
   document.querySelectorAll('[data-close-invite-fix]').forEach(node => node.addEventListener('click', closeInviteFix));
   document.querySelectorAll('[data-close-client-profile]').forEach(node => node.addEventListener('click', closeClientProfile));
   document.querySelectorAll('[data-close-email-change]').forEach(node => node.addEventListener('click', closeEmailChange));
-  $('links-list')?.addEventListener('click', event => {
-    const resend = event.target.closest('[data-invite-resend]');
-    if (resend) { resendClientInvite(resend.dataset.inviteResend, resend.dataset.delivery); return; }
-    const fix = event.target.closest('[data-invite-fix]');
-    if (fix) { openInviteFix(fix.dataset.inviteFix); return; }
-    const cancel = event.target.closest('[data-invite-cancel]');
-    if (cancel) cancelClientInvite(cancel.dataset.inviteCancel);
-  });
+  $('links-list')?.addEventListener('click', handleClientActions);
   $('members-list').addEventListener('click', event => {
     const statusButton = event.target.closest('[data-member-status]');
     if (statusButton) { changeMemberStatus(statusButton.dataset.memberStatus, statusButton.dataset.status); return; }
     const removeButton = event.target.closest('[data-member-remove]');
     if (removeButton) removeNutritionist(removeButton.dataset.memberRemove);
-  });
-  $('clients-list').addEventListener('click', event => {
-    const unlink = event.target.closest('[data-unlink-client]');
-    if (unlink) { openUnlink(unlink.dataset.unlinkClient, unlink.dataset.display); return; }
-    const profile = event.target.closest('[data-client-profile]');
-    if (profile) { openClientProfile(profile.dataset.clientProfile); return; }
-    const emailChange = event.target.closest('[data-client-email-change]');
-    if (emailChange) { openEmailChange(emailChange.dataset.clientEmailChange); return; }
-    const resend = event.target.closest('[data-invite-resend]');
-    if (resend) { resendClientInvite(resend.dataset.inviteResend, resend.dataset.delivery); return; }
-    const fix = event.target.closest('[data-invite-fix]');
-    if (fix) { openInviteFix(fix.dataset.inviteFix); return; }
-    const cancel = event.target.closest('[data-invite-cancel]');
-    if (cancel) cancelClientInvite(cancel.dataset.inviteCancel);
   });
   $('unlink-form').addEventListener('submit', submitUnlink);
   document.querySelectorAll('[data-close-unlink]').forEach(node => node.addEventListener('click', closeUnlink));
@@ -1655,7 +2281,41 @@ function bindAdmin() {
   });
 }
 
+// Tema chiaro/scuro della console: interruttore nell'intestazione, scelta
+// persistita su questo dispositivo, prima paint già nel tema giusto.
+const CONSOLE_THEME_KEY = 'pn_admin_theme';
+
+function readConsoleTheme() {
+  try {
+    const stored = localStorage.getItem(CONSOLE_THEME_KEY);
+    if (stored === 'dark' || stored === 'light') return stored;
+  } catch (_) { /* storage non disponibile */ }
+  try {
+    return window.matchMedia?.('(prefers-color-scheme: dark)').matches ? 'dark' : 'light';
+  } catch (_) { return 'light'; }
+}
+
+function applyConsoleTheme(theme) {
+  const dark = theme === 'dark';
+  document.documentElement?.classList.toggle('dark-mode', dark);
+  document.body?.classList.toggle('dark-mode', dark);
+  try { localStorage.setItem(CONSOLE_THEME_KEY, dark ? 'dark' : 'light'); } catch (_) { /* solo memoria */ }
+  const toggle = $('theme-toggle');
+  const icon = $('theme-toggle-icon');
+  if (toggle) {
+    toggle.setAttribute('aria-pressed', dark ? 'true' : 'false');
+    toggle.setAttribute('aria-label', dark ? 'Attiva il tema chiaro' : 'Attiva il tema scuro');
+  }
+  if (icon) icon.textContent = dark ? '☀' : '☾';
+}
+
+function toggleConsoleTheme() {
+  applyConsoleTheme(document.documentElement.classList.contains('dark-mode') ? 'light' : 'dark');
+}
+
 bindAdmin();
+$('theme-toggle')?.addEventListener('click', toggleConsoleTheme);
+applyConsoleTheme(readConsoleTheme());
 if (!initFirebase()) $('admin-login-error').textContent = 'Firebase non disponibile.';
 // Sessione SEPARATA dall'app cliente (Firebase App "admin-console"): questo
 // observer ascolta l'Auth della console, quindi una sessione cliente attiva

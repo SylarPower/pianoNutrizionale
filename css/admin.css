@@ -331,6 +331,110 @@ button:focus-visible,input:focus-visible,select:focus-visible,textarea:focus-vis
   .compare-table td::before{content:attr(data-label);display:block;font-size:.7rem;font-weight:800;color:var(--text-muted);text-transform:uppercase;letter-spacing:.05em}
 }
 
+/* Clienti unificati: filtri di stato */
+.filter-tabs{display:flex;gap:8px;flex-wrap:wrap;padding:18px 24px 0}
+.filter-tab{border:1px solid var(--line);background:var(--surface);color:var(--text-muted);border-radius:999px;padding:9px 14px;font-weight:800;font-size:.82rem;cursor:pointer;display:inline-flex;align-items:center;gap:8px;transition:border .15s,background .15s}
+.filter-tab b{background:var(--surface-alt);color:var(--text);border-radius:999px;padding:1px 8px;font-size:.75rem;min-width:24px;text-align:center}
+.filter-tab:hover{border-color:var(--primary);color:var(--text)}
+.filter-tab.active{background:var(--primary);border-color:var(--primary);color:#fff}
+.filter-tab.active b{background:rgba(255,255,255,.22);color:#fff}
+
+/* Stati operativi cliente: sempre simbolo + parola, mai solo colore */
+.status-client-active{background:var(--primary-soft);color:var(--primary-strong)}
+.status-client-pending{background:var(--accent-soft);color:#8a4f27}
+.status-client-inactive{background:var(--surface-alt);color:var(--text-muted)}
+.status-history{background:var(--surface-alt);color:var(--text-muted)}
+.status-plan{background:var(--rest-soft);color:#2f5a77}
+
+/* Scheda cliente */
+.detail-section{border-top:1px solid var(--line);padding:18px 0;display:grid;gap:12px}
+.detail-section:first-of-type{border-top:0;padding-top:4px}
+.detail-section h3{margin:0;font-family:var(--font-display);font-size:1.1rem;letter-spacing:-.01em}
+.detail-grid{display:grid;gap:10px;margin:0}
+.detail-grid>div{display:grid;gap:2px}
+.detail-grid dt{font-size:.7rem;font-weight:800;text-transform:uppercase;letter-spacing:.06em;color:var(--text-muted)}
+.detail-grid dd{margin:0;overflow-wrap:anywhere}
+.history-row{display:flex;align-items:center;justify-content:space-between;gap:12px;border:1px solid var(--line);border-radius:12px;padding:10px 12px;margin-bottom:8px}
+.history-row div{display:grid;gap:2px}
+.history-row small{color:var(--text-muted)}
+.danger-zone{justify-content:space-between;border-top:1px solid var(--line);padding-top:16px;margin-top:8px}
+
+/* Invito legacy: richiuso di default, fuori dai piedi */
+.legacy-details summary{cursor:pointer;padding:18px 24px;font-weight:800;color:var(--text-muted)}
+.legacy-details .invite-card{border-top:1px solid var(--line)}
+.check-inline{display:inline-flex;align-items:center;gap:7px;font-size:.8rem;font-weight:700;cursor:pointer;min-height:32px}
+.check-inline input{width:auto}
+
+/* Editor dieta guidata */
+.diet-days{display:grid;gap:16px;margin:6px 0 4px}
+.diet-day{border:1px solid var(--line);border-radius:16px;padding:16px;display:grid;gap:12px;background:var(--surface)}
+.diet-day-head{display:flex;align-items:center;gap:8px;flex-wrap:wrap}
+.diet-day-head strong{font-family:var(--font-display);font-size:1.05rem;margin-right:auto}
+.diet-day-head select,.diet-day-head input{width:auto;flex:1 1 140px}
+.diet-day-actions{display:flex;gap:4px}
+.diet-targets{display:grid;grid-template-columns:repeat(5,1fr);gap:8px}
+.diet-targets label{font-size:.72rem}
+.diet-meals{display:grid;gap:12px}
+.diet-meal{border:1px dashed var(--line);border-radius:13px;padding:12px;display:grid;gap:10px;background:var(--surface-alt)}
+.diet-meal-head{display:flex;gap:8px;flex-wrap:wrap;align-items:center}
+.diet-meal-head select,.diet-meal-head input{width:auto;flex:1 1 140px}
+.diet-meal textarea,.diet-option textarea{min-height:44px;font-size:.84rem}
+.diet-options{display:grid;gap:10px}
+.diet-option{border:1px solid var(--line);border-radius:12px;padding:12px;display:grid;gap:10px;background:var(--surface)}
+.diet-option-head{display:flex;align-items:center;justify-content:space-between;gap:8px}
+.diet-option-actions{display:flex;gap:6px}
+.diet-items{display:grid;gap:10px}
+.diet-item{border:1px solid var(--line);border-radius:11px;padding:10px;display:grid;gap:8px;grid-template-columns:1fr 2fr auto;align-items:center;background:var(--surface)}
+.diet-item .diet-qty{display:flex;gap:6px}
+.diet-item .diet-qty input{width:76px}
+.diet-item .diet-qty select{width:auto}
+.diet-item [data-f="item-alt"]{grid-column:1/-1}
+.diet-item .check-inline{grid-column:1/-1}
+.diet-item .diet-del{position:static;width:32px;height:32px}
+.diet-add{justify-self:start}
+.diet-preview{border:1px solid var(--line);border-radius:14px;padding:16px;background:var(--surface-alt);display:grid;gap:12px;margin-top:4px}
+.preview-meta{color:var(--text-muted);font-size:.82rem;font-weight:700;margin:0}
+.preview-day{border-top:1px dashed var(--line);padding-top:10px}
+.preview-day h4{margin:0 0 6px;font-size:1rem}
+.preview-target{color:var(--primary-strong);font-weight:700;font-size:.86rem;margin:0 0 8px}
+.preview-meal{margin:0 0 8px}
+.preview-option{margin:4px 0 4px 12px}
+.preview-option ul{margin:4px 0 4px 18px;display:grid;gap:3px;font-size:.88rem}
+.preview-option small,.preview-meal small{color:var(--text-muted)}
+
+/* Interruttore tema nell'intestazione */
+.theme-toggle{border:1px solid var(--line);background:var(--surface);color:var(--text);width:42px;height:42px;border-radius:11px;font-size:1.15rem;cursor:pointer;display:grid;place-items:center;transition:border .15s,background .15s}
+.theme-toggle:hover{border-color:var(--primary);background:var(--primary-soft)}
+
+/* Tema scuro della console: stesse variabili, valori notturni */
+html.dark-mode{--primary:#4cb98a;--primary-strong:#7cd3a8;--primary-soft:#16281f;--secondary:#7fae76;--secondary-soft:#1a2419;--accent:#d9987a;--accent-soft:#2e2018;--rest:#8fbeda;--rest-soft:#1b2630;--danger:#e8937c;--danger-soft:#2f1f1a;--success:#4cb98a;--warning:#d29a4f;--bg:#0e100e;--surface:#151815;--surface-alt:#1c201c;--text:#ece7dc;--text-muted:#9aa39b;--line:#2a2e29;--shadow:0 2px 8px rgba(0,0,0,.4),0 12px 32px rgba(0,0,0,.35)}
+html.dark-mode .sidebar{background:linear-gradient(180deg,#14231c,#1a2f24 72%)}
+html.dark-mode .topbar{background:rgba(21,24,21,.92)}
+html.dark-mode .auth-card{background:rgba(21,24,21,.96)}
+html.dark-mode .status-client-active{color:var(--primary-strong)}
+html.dark-mode .structure-group{background:#191d19}
+html.dark-mode .invite-link{background:#101310}
+html.dark-mode .diet-meal{background:#101310}
+html.dark-mode .diet-preview{background:#101310}
+html.dark-mode .compare-table thead th{background:#101310}
+html.dark-mode .compare-table tr.differs td{background:#2e2018}
+html.dark-mode .compare-table tr.same td{background:#16281f}
+html.dark-mode .picker-item:hover{background:rgba(76,185,138,.12)}
+html.dark-mode label{color:var(--text)}
+html.dark-mode .rule-doses label,html.dark-mode .group-doses label,html.dark-mode .diet-targets label,html.dark-mode .structure-rule .rule-head label,html.dark-mode .compare-check{color:var(--text)}
+html.dark-mode .check-row small,html.dark-mode .report-main small,html.dark-mode .history-row small,html.dark-mode .preview-option small{color:var(--text-muted)}
+
+@media(max-width:840px){
+  .diet-targets{grid-template-columns:1fr 1fr}
+  .diet-item{grid-template-columns:1fr auto}
+  .diet-item .diet-qty{grid-column:1/-1}
+  .danger-zone{flex-direction:column-reverse}
+  .danger-zone button{width:100%}
+}
+@media(max-width:480px){
+  .diet-targets{grid-template-columns:1fr}
+}
+
 @media(prefers-reduced-motion:reduce){
   *,*::before,*::after{scroll-behavior:auto!important;animation-duration:.01ms!important;animation-iteration-count:1!important;transition-duration:.01ms!important}
 }

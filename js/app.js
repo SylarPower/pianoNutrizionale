@@ -490,10 +490,10 @@ function bindModalOutsideClose(modalId, onClose) {
   modal.addEventListener("touchcancel", resetClose);
 }
 
-// Chiave locale NON legata all'account: replica il flag "Tema scuro" delle
-// impostazioni dispositivo così la schermata di accesso, l'overlay di
-// caricamento e il primo paint dopo un refresh partono già nel tema giusto,
-// prima che Firebase risolva la sessione e carichi le preferenze dell'utente.
+// Chiave locale NON legata all'account: replica la scelta del tema fatta
+// dall'intestazione così la schermata di accesso, l'overlay di caricamento
+// e il primo paint dopo un refresh partono già nel tema giusto, prima che
+// Firebase risolva la sessione e carichi le preferenze dell'utente.
 const THEME_BOOT_KEY = "pn_theme";
 
 function readBootTheme() {
@@ -1297,6 +1297,10 @@ function renderGlobalHeader() {
   }
   const profile = getPortionProfile();
   const pending = pendingNotificationCount();
+  // Interruttore del tema nell'intestazione (unico punto di controllo): sole
+  // e luna con etichetta localizzata, stato premuto e supporto tastiera
+  // nativo del bottone. Lo stato vero si legge dal DOM, non dalle preferenze.
+  const dark = document.documentElement?.classList.contains("dark-mode") === true;
   header.innerHTML = `
     <div class="header-brand"><span class="header-brand-icon" aria-hidden="true"><img src="assets/loghi/logo-app.svg" alt=""></span><strong>Piano</strong></div>
     <select aria-label="Profilo porzioni" onchange="changePortionProfile(this.value)">
@@ -1305,6 +1309,7 @@ function renderGlobalHeader() {
       <option value="couple" ${profile === "couple" ? "selected" : ""}>👥 Profilo coppia</option>
     </select>
     <div class="header-actions">
+      <button type="button" class="theme-toggle" onclick="toggleDarkModeFromHeader()" aria-pressed="${dark ? "true" : "false"}" aria-label="${dark ? "Attiva il tema chiaro" : "Attiva il tema scuro"}" title="Tema chiaro/scuro"><span aria-hidden="true">${dark ? "☀️" : "🌙"}</span></button>
       <a href="#settings" class="header-account" title="Impostazioni" aria-label="Impostazioni"><span aria-hidden="true">⚙️</span></a>
       <button type="button" id="notification-bell" class="notification-bell ${pending ? "has-pending" : ""}" onclick="openIncomingShares()" aria-label="${notificationBellLabel(pending)}" aria-haspopup="dialog" aria-expanded="false" aria-controls="incoming-shares-modal">
         <span aria-hidden="true">🔔</span>
@@ -2980,11 +2985,6 @@ function renderSettings() {
 
     ${renderLinkedAccountsSection()}
 
-    <section class="settings-section">
-      <h2>Aspetto</h2>
-      <label class="settings-row"><span><strong>Tema scuro</strong><small>Solo su questo dispositivo</small></span><input type="checkbox" ${appState.deviceSettings.darkMode ? "checked" : ""} onchange="toggleDarkMode(this.checked)"></label>
-    </section>
-
     <div class="manual-heading"><p class="eyebrow">LINEE GUIDA</p><h2>Dieta e alternative</h2><p>Le alternative originali restano sempre consultabili nell'app.</p></div>
 
     ${settingsAccordion("Giorno di allenamento", guideDayHtml(MELLER_GUIDE.trainingDay, "training"))}
@@ -2999,6 +2999,14 @@ window.toggleDarkMode = function(checked) {
   appState.deviceSettings.darkMode = checked;
   saveLocalDeviceSettings(appState.deviceSettings);
   applyTheme(checked);
+};
+
+// Unico controllo del tema (intestazione): inverte lo stato, persiste e
+// ridisegna l'header così che icona, etichetta e aria-pressed si aggiornino.
+window.toggleDarkModeFromHeader = function() {
+  const next = document.documentElement?.classList.contains("dark-mode") !== true;
+  window.toggleDarkMode(next);
+  renderGlobalHeader();
 };
 
 window.logoutCurrentUser = async function() {

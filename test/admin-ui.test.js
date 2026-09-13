@@ -109,25 +109,38 @@ test('strutture dieta Fase 2: autocomplete catalogo, categorie, gruppi alternati
   assert.match(css, /\.diff-mark/);
 });
 
-test('sezione Utenti: membri, inviti monouso, rimozione con conferma forte', () => {
-  assert.match(html, /data-view="users"/);
-  assert.ok(html.indexOf('data-view="structures"') < html.indexOf('data-view="users"'), 'Utenti segue Strutture dieta nel menu');
-  assert.match(html, /id="view-users"/);
-  assert.match(html, /id="members-list"/);
-  assert.match(html, /id="invite-nutritionist-form"/);
-  assert.match(html, /id="invite-client-form"/);
-  assert.match(html, /id="links-list"/);
+test('vista Clienti unificata: nessuna sezione Utenti separata, funzioni ricollocate', () => {
+  // Menu unico: Clienti, Dosi clienti, Strutture dieta, Catalogo (creatore),
+  // Coda ingredienti. Nessuna voce o vista "Utenti" duplicata.
+  assert.doesNotMatch(html, /data-view="users"/);
+  assert.doesNotMatch(html, /id="view-users"/);
+  assert.doesNotMatch(html, />Utenti</);
+  for (const view of ['clients', 'doses', 'structures', 'catalog', 'mapping']) {
+    assert.match(html, new RegExp(`data-view="${view}"`), `voce ${view} presente`);
+  }
+  // Le funzioni ex-Utenti vivono dentro la vista Clienti: team, inviti
+  // professionista/test, richieste. L'invito con email reale è un dialog.
+  for (const id of ['members-list', 'invite-nutritionist-form', 'invite-client-form', 'links-list', 'users-feedback', 'users-scope', 'invite-client-dialog', 'client-detail-dialog']) {
+    assert.match(html, new RegExp(`id="${id}"`), `manca #${id}`);
+  }
+  const clientsView = html.match(/<main id="view-clients"[\s\S]*?<\/main>/)[0];
+  for (const id of ['members-list', 'links-list', 'legacy-invite-details', 'invite-nutritionist-form', 'client-filter']) {
+    assert.match(clientsView, new RegExp(`id="${id}"`), `#${id} vive nella vista Clienti`);
+  }
+  assert.doesNotMatch(clientsView, /refresh-users/, 'nessun aggiornamento separato ex-Utenti');
   for (const callable of ['listOrganizationUsers', 'searchUserByUsername', 'inviteOrganizationUser', 'inviteClientLink', 'setMemberStatus', 'removeClientLink', 'removeNutritionist']) {
     assert.match(js, new RegExp(`['"]${callable}['"]`), `callable ${callable} usata`);
   }
   // Verifica per username esatto: solo trovato/non trovato, mai PII o liste.
   assert.match(html, /data-verify-username/);
   assert.match(js, /Nessun account con questo username/);
-  // Rimozione associazione: dialog dedicato che spiega gli effetti.
+  // Rimozione cliente: SOLO dentro la scheda, con dialog che spiega gli effetti.
   assert.match(html, /id="unlink-dialog"/);
   assert.match(html, /Non cancelliamo l’account/);
   assert.match(html, /torna alle dosi originali/);
+  assert.match(html, /Rimuovi cliente/);
   assert.match(js, /removeClientLink/);
+  assert.doesNotMatch(js, /data-unlink-client/, 'nessun pulsante di rimozione negli elenchi');
   // Mai password/token nei form: solo username esatto + token mostrato una volta.
   assert.doesNotMatch(html, /id="invite-.*password"/);
   assert.match(js, /una sola volta/);
