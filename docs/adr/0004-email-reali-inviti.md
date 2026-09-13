@@ -1,6 +1,7 @@
 # ADR 0004 — Inviti e autenticazione con email reali
 
-- **Stato**: accettata (fase di building)
+- **Stato**: accettata (fase di building); **aggiornata il 2026-09-14** — consegna
+  dell'invito solo manuale (Copia link / Condividi link), servizio email eliminato
 - **Data**: 2026-09-13
 - **Contesto**: Piano Nutrizionale, organizzazione singola `pianoNutrizionale`
 - **Documenti collegati**: `docs/inviti-email.md` (guida operativa), `docs/saas-data-contracts.md`, `docs/saas-runbook.md`, `docs/ripartenza-firebase.md`, `docs/pulizia-dati-legacy.md`
@@ -44,9 +45,10 @@ Punti rilevanti trovati prima di modificare:
 
 ### 3.1 Invito di un cliente reale
 
-1. Il nutrizionista apre "Invita cliente con email" in console e inserisce
-   **email reale, nome e cognome** (con opzione di consegna: invio email oppure
-   "mostra link" per consegnarlo a mano).
+1. Il nutrizionista apre "Invita un nuovo cliente" in console e inserisce
+   **email reale, nome e cognome**. Non c'è alcuna scelta di consegna: al
+   termine la console mostra il link con **Copia link** e **Condividi link** e
+   il nutrizionista lo consegna a mano.
 2. `inviteClientByEmail` valida e normalizza (trim, minuscole, formato, nome e
    cognome), verifica l'autorizzazione, quindi distingue:
    - account Auth inesistente + nessun profilo → crea/completa il profilo cliente
@@ -59,11 +61,11 @@ Punti rilevanti trovati prima di modificare:
    - associazione già attiva → risponde `already-linked-same` /
      `already-linked-other` senza duplicare nulla e senza rivelare dati di altri
      professionisti.
-3. Stati restituiti alla console: `invited`, `already-pending`,
-   `link-request-created`, `already-linked-same`, `already-linked-other`,
-   `delivery-failed` (invito creato ma email non inviata), oltre agli errori
-   `invalid-argument` / `failed-precondition` (invito scaduto, account
-   disabilitato).
+3. Stati restituiti alla console: `invited` (con `inviteUrl`),
+   `already-pending`, `link-request-created`, `already-linked-same`,
+   `already-linked-other`, oltre agli errori `invalid-argument` /
+   `failed-precondition` (invito scaduto, account disabilitato). Lo stato
+   `delivery-failed` non esiste più: non c'è alcun invio che possa fallire.
 
 ### 3.2 Riscatto da parte del cliente nuovo
 
@@ -132,12 +134,16 @@ Punti rilevanti trovati prima di modificare:
    con nuova verifica e nessuna possibilità di takeover.
 7. **Anagrafica di competenza del nutrizionista**; il cliente modifica solo il
    nome mostrato.
-8. **Consegna dell'invito**: invio email tramite un servizio isolato
-   (`functions/src/email-service.js`) oppure "mostra link" (`manual-link`).
-   Verifica email e reset restano sui template Firebase. Chiavi e mittente
-   vivono solo nelle variabili d'ambiente delle funzioni (console Google Cloud
-   o file locale `functions/.env.<progetto>`, ignorato da git), mai nel
-   repository.
+8. **Consegna dell'invito: solo manuale** (decisione aggiornata il
+   2026-09-14). Il backend costruisce il link
+   (`https://sylarpower.github.io/pianoNutrizionale/#/invito/<token>`, base
+   fissa nel codice) e lo restituisce alla console, che lo mostra con
+   **Copia link** (appunti) e **Condividi link** (condivisione nativa, fallback
+   WhatsApp Web: gli stessi gesti della Lista della spesa). Il servizio
+   `functions/src/email-service.js`, i provider, le chiavi, le variabili
+   d'ambiente (`INVITE_EMAIL_*`, `APP_PUBLIC_URL`) e lo stato `delivery-failed`
+   sono stati eliminati. Il payload delle callable non ha più il campo
+   `delivery`. Verifica email e reset restano sui template Firebase Auth.
 9. **Modello legacy esplicito e controllato**: la creazione di **nuovi**
    account tecnici è consentita solo con `LEGACY_TEST_INVITES_ENABLED=true` o
    negli emulatori; in produzione senza flag l'invito legacy viene rifiutato
@@ -160,5 +166,6 @@ Punti rilevanti trovati prima di modificare:
 - L'invito dei **professionisti** resta sul flusso attuale (username +
   `inviteOrganizationUser`): è un debito tecnico documentato, non oggetto di
   questa modifica.
-- La guida operativa con passi di configurazione, fornitori e procedure di
-  emergenza è in `docs/inviti-email.md`.
+- La guida operativa (consegna del link, diagnostica) è in
+  `docs/inviti-email.md`; i passi manuali senza terminale (solo il deploy delle
+  Functions da GitHub) in `docs/configurazione-manuale.md`.

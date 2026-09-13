@@ -252,7 +252,7 @@ cambio di catalogo richiede conferma (nudge) senza ricalcoli retroattivi.
   clientId, nutritionistUid,
   tokenHash: "sha256 hex",                  // il chiaro esiste una sola volta (creazione/reinvio/correzione)
   status: "pending|accepted|expired|superseded|revoked",
-  delivery: { channel: "email|manual-link", status: "pending|sent|failed|manual", attempts, errorCode? },
+  delivery: { schemaVersion: 2, channel: "manual-link", status: "pending|manual", handedToConsole? },  // link consegnato a mano dalla console (Copia link / Condividi link); nessun invio email
   expiresAt, tokenRotation?, supersededBy?, redeemedBy?, verifiedAt?,
   createdAt, updatedAt, createdBy
 }
@@ -319,11 +319,11 @@ nuova versione mai sovrascritta; le revisioni strutture conservano
 - `listOrganizationUsers({ organizationId })`
 - `setMemberStatus({ organizationId, userId, status: 'active|suspended', idempotencyKey })`
 - `inviteClientLink({ organizationId, username, nutritionistUid?, idempotencyKey })` — solo account tecnici di test (`LEGACY_TEST_INVITES_ENABLED` o emulatori)
-- `inviteClientByEmail({ organizationId, email, firstName, lastName, nutritionistUid?, delivery: 'email'|'manual-link', idempotencyKey })`
+- `inviteClientByEmail({ organizationId, email, firstName, lastName, nutritionistUid?, idempotencyKey })` → `{ status, inviteUrl?, expiresAt?, … }` — il link si consegna a mano (nessun campo `delivery`)
 - `getClientInvitePreview({ token })` — non autenticata: il token è il segreto
 - `redeemClientInvite({ token|null, idempotencyKey })` — attiva il collegamento solo con email verificata
-- `resendClientInvite({ organizationId, inviteId, delivery, idempotencyKey })`
-- `correctClientInvite({ organizationId, inviteId, email, firstName, lastName, delivery, idempotencyKey })`
+- `resendClientInvite({ organizationId, inviteId, idempotencyKey })` → nuovo `inviteUrl`
+- `correctClientInvite({ organizationId, inviteId, email, firstName, lastName, idempotencyKey })` → nuovo `inviteUrl`
 - `cancelClientInvite({ organizationId, inviteId, reason, idempotencyKey })`
 - `updateClientProfileByStaff({ organizationId, clientId, firstName, lastName, displayName?, idempotencyKey })`
 - `proposeClientEmailChange({ organizationId, clientId, newEmail, reason?, idempotencyKey })`

@@ -54,33 +54,38 @@ test('emailFingerprint e maskEmail non espongono l’indirizzo in chiaro', () =>
   assert.equal(domain.maskEmail('mario@'), '***');
 });
 
-test('invito email: email reale, nome e cognome obbligatori, consegna controllata', () => {
+test('invito email: email reale, nome e cognome obbligatori, nessuna scelta di consegna', () => {
   const valid = domain.validateInviteClientEmail({
     organizationId: 'pianoNutrizionale', email: '  Mario.Rossi@Esempio.it ', firstName: ' Mario ', lastName: "D'Angelo",
-    nutritionistUid: null, delivery: 'email', idempotencyKey: 'k1'
+    nutritionistUid: null, idempotencyKey: 'k1'
   });
   assert.equal(valid.email, 'mario.rossi@esempio.it');
   assert.equal(valid.firstName, 'Mario');
-  assert.equal(valid.delivery, 'email');
+  assert.equal(valid.delivery, undefined, 'la consegna non è più una scelta del chiamante');
+  assert.equal(domain.INVITE_DELIVERY_CHANNEL, 'manual-link', 'unico canale: link consegnato a mano');
 
   assert.throws(() => domain.validateInviteClientEmail({
     organizationId: 'pianoNutrizionale', email: 'cliente-a@utenti.pianonutrizionale.app', firstName: 'Mario', lastName: 'Rossi',
-    nutritionistUid: null, delivery: 'email', idempotencyKey: 'k2'
+    nutritionistUid: null, idempotencyKey: 'k2'
   }), /indirizzo tecnico|flusso legacy/, 'un cliente reale non può usare un indirizzo tecnico');
 
   assert.throws(() => domain.validateInviteClientEmail({
     organizationId: 'pianoNutrizionale', email: 'mario@esempio.it', firstName: '', lastName: 'Rossi',
-    nutritionistUid: null, delivery: 'email', idempotencyKey: 'k3'
+    nutritionistUid: null, idempotencyKey: 'k3'
   }), /firstName/);
 
-  assert.throws(() => domain.validateInviteClientEmail({
-    organizationId: 'pianoNutrizionale', email: 'mario@esempio.it', firstName: 'Mario', lastName: 'Rossi',
-    nutritionistUid: null, delivery: 'sms', idempotencyKey: 'k4'
-  }), /delivery non valida/);
+  // Il vecchio campo `delivery` (email | manual-link) è un campo non ammesso:
+  // nessun invio automatico può essere richiesto, nemmeno per errore.
+  for (const delivery of ['email', 'manual-link', 'sms']) {
+    assert.throws(() => domain.validateInviteClientEmail({
+      organizationId: 'pianoNutrizionale', email: 'mario@esempio.it', firstName: 'Mario', lastName: 'Rossi',
+      nutritionistUid: null, delivery, idempotencyKey: 'k4'
+    }), /campi non ammessi \(delivery\)/);
+  }
 
   assert.throws(() => domain.validateInviteClientEmail({
     organizationId: 'pianoNutrizionale', email: 'mario@esempio.it', firstName: 'Mario', lastName: 'Rossi',
-    nutritionistUid: null, delivery: 'email', idempotencyKey: 'k5', password: 'segreta'
+    nutritionistUid: null, idempotencyKey: 'k5', password: 'segreta'
   }), /campi non ammessi/);
 });
 
@@ -96,15 +101,20 @@ test('riscatto invito: token facoltativo ma 64 hex quando presente', () => {
 test('correzione e annullamento invito: campi obbligatori e motivo per l’audit', () => {
   const corrected = domain.validateCorrectClientInvite({
     organizationId: 'pianoNutrizionale', inviteId: 'invito-1', email: 'nuova@esempio.it',
-    firstName: 'Giulia', lastName: 'Bianchi', delivery: 'manual-link', idempotencyKey: 'k1'
+    firstName: 'Giulia', lastName: 'Bianchi', idempotencyKey: 'k1'
   });
   assert.equal(corrected.inviteId, 'invito-1');
   assert.equal(corrected.email, 'nuova@esempio.it');
+  assert.throws(() => domain.validateCorrectClientInvite({
+    organizationId: 'pianoNutrizionale', inviteId: 'invito-1', email: 'nuova@esempio.it',
+    firstName: 'Giulia', lastName: 'Bianchi', delivery: 'email', idempotencyKey: 'k1'
+  }), /campi non ammessi \(delivery\)/, 'la correzione non sceglie più la consegna');
   assert.throws(() => domain.validateCancelClientInvite({ organizationId: 'pianoNutrizionale', inviteId: 'invito-1', reason: 'x', idempotencyKey: 'k' }), /reason/);
   const cancelled = domain.validateCancelClientInvite({ organizationId: 'pianoNutrizionale', inviteId: 'invito-1', reason: 'Richiesta ritirata', idempotencyKey: 'k' });
   assert.equal(cancelled.reason, 'Richiesta ritirata');
-  const resend = domain.validateResendClientInvite({ organizationId: 'pianoNutrizionale', inviteId: 'invito-1', delivery: '', idempotencyKey: 'k' });
-  assert.equal(resend.delivery, 'email', 'la consegna predefinita è l’email');
+  const resend = domain.validateResendClientInvite({ organizationId: 'pianoNutrizionale', inviteId: 'invito-1', idempotencyKey: 'k' });
+  assert.deepEqual(Object.keys(resend).sort(), ['idempotencyKey', 'inviteId', 'organizationId'], 'il reinvio restituisce solo il link: nessuna consegna da scegliere');
+  assert.throws(() => domain.validateResendClientInvite({ organizationId: 'pianoNutrizionale', inviteId: 'invito-1', delivery: '', idempotencyKey: 'k' }), /campi non ammessi \(delivery\)/);
 });
 
 test('anagrafica e cambio email: nome e cognome validati, cambio email solo con indirizzi reali', () => {

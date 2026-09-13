@@ -262,27 +262,18 @@ Per ogni persona da seguire ripeti:
 
 ---
 
-## Passaggio facoltativo — Invio email degli inviti
+## Consegna degli inviti — nessuna email da configurare
 
-L'invio dell'invito usa un provider esterno solo se configurato; in alternativa
-si consegna il link a mano dalla console ("Non inviare: mostra il link").
+Gli inviti **non vengono inviati via email**: la console mostra il link con
+**Copia link** e **Condividi link** e lo consegni tu (WhatsApp, condivisione
+del telefono, incollandolo dove vuoi). Non esistono provider, chiavi o
+variabili d'ambiente da impostare: le vecchie voci `INVITE_EMAIL_*` e
+`APP_PUBLIC_URL`, se le trovi ancora configurate su Google Cloud, sono ignorate
+e puoi rimuoverle.
 
-Impostale come **variabili d'ambiente delle funzioni** (Console Google Cloud →
-Cloud Functions → `inviteclientbyemail` → *Modifica* → *Variabili di ambiente*,
-oppure file locale `functions/.env.piano-nutrizionale`, già ignorato da git)
-**senza metterle nel repository**:
-
-```text
-INVITE_EMAIL_PROVIDER=resend
-INVITE_EMAIL_API_KEY=<chiave>
-INVITE_EMAIL_FROM=Studio Piano <inviti@tuodominio.it>
-APP_PUBLIC_URL=https://sylarpower.github.io/pianoNutrizionale
-```
-
-Verifica email e recupero password **non** richiedono questi secret: usano i
-template di Firebase Auth. Se il provider non è configurato la callable risponde
-`delivery-failed` (l'invito resta valido) e nessuna email risulta inviata per
-errore. Dettagli e diagnostica: [`inviti-email.md`](inviti-email.md).
+Verifica email e recupero password usano i template di Firebase Auth e non
+richiedono nulla. Dettagli: [`inviti-email.md`](inviti-email.md); passi manuali
+senza terminale: [`configurazione-manuale.md`](configurazione-manuale.md).
 
 ---
 
