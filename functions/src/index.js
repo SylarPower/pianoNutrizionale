@@ -15,6 +15,10 @@ const {
   validateInviteOrganizationUser, validateInviteClientLink, validateRespondClientLink,
   validateRemoveClientLink, validateMemberStatus, validateRemoveNutritionist,
   validateTransferStructureOwnership,
+  normalizeEmail, isLegacyTestEmail, emailFingerprint, maskEmail,
+  validateInviteClientEmail, validateCorrectClientInvite, validateResendClientInvite,
+  validateCancelClientInvite, validateUpdateClientProfileByStaff,
+  validateProposeClientEmailChange, validateRespondClientEmailChange, validateRedeemClientInvite,
   CLIENT_FREQUENCY_KEYS, CLIENT_FREQUENCY_LABELS, CLIENT_FREQUENCY_DEFAULTS,
   DOSE_EDITABLE_ASSIGNMENT_STATUSES,
   validateClientDoseOverrides, validateGetClientDoses,
@@ -519,14 +523,33 @@ exports.listAuthorizedClients = callable(async (data, uid) => {
   let query = db.collection(`organizations/${actor.organizationId}/clients`).where('status', '==', 'active');
   if (actor.role === 'nutritionist') query = query.where('nutritionistUids', 'array-contains', uid);
   const snapshot = await query.limit(100).get();
-  const rows = snapshot.docs.map(doc => ({ doc, data: doc.data() }));
+  const rows = snapshot.docs.map(doc => ({ id: doc.id, data: doc.data() }));
   const fallbackUsernames = await Promise.all(rows.map(row => row.data.invitedUsername || !row.data.authUid ? null : usernameOfUid(row.data.authUid)));
-  return { clients: rows.map((row, index) => ({
-    id: row.doc.id, displayCode: row.data.displayCode || row.doc.id,
-    displayName: row.data.displayName || null,
-    username: row.data.invitedUsername || fallbackUsernames[index] || null,
-    status: row.data.status || 'active', activeAssignment: row.data.activeAssignment || null
-  })) };
+  const authorizedIds = new Set(rows.map(row => row.id));
+  // Inviti pendenti (email reale) e proposte di cambio email visibili al
+  // professionista autorizzato: servono alle azioni della vista Clienti.
+  let invitesQuery = db.collection(`organizations/${actor.organizationId}/invitations`).where('status', '==', 'pending');
+  if (actor.role === 'nutritionist') invitesQuery = invitesQuery.where('nutritionistUid', '==', uid);
+  const [invitesSnap, emailChangesSnap] = await Promise.all([
+    invitesQuery.limit(50).get(),
+    db.collection(`organizations/${actor.organizationId}/emailChangeRequests`).where('status', '==', 'pending').limit(50).get()
+  ]);
+  return {
+    clients: rows.map((row, index) => ({
+      id: row.id, displayCode: row.data.displayCode || row.id,
+      displayName: row.data.displayName || null,
+      firstName: row.data.firstName || null, lastName: row.data.lastName || null,
+      email: row.data.emailNormalized || null, emailVerified: row.data.emailVerified === true,
+      username: row.data.invitedUsername || fallbackUsernames[index] || null,
+      status: row.data.status || 'active', activeAssignment: row.data.activeAssignment || null
+    })),
+    invitations: invitesSnap.docs
+      .filter(doc => actor.role !== 'nutritionist' || authorizedIds.has(doc.data()?.clientId))
+      .map(publicInvitationRow),
+    emailChanges: emailChangesSnap.docs
+      .filter(doc => actor.role !== 'nutritionist' || authorizedIds.has(doc.data()?.clientId))
+      .map(publicEmailChangeRow)
+  };
 });
 
 exports.publishRuleSetVersion = callable(async (data, uid) => {
@@ -1471,61 +1494,95 @@ exports.searchUserByUsername = callable(async (data, uid) => {
   return { found: Boolean(userId), userId: userId || null };
 });
 
+// Riga cliente per la console: nessun dato di altri professionisti, nessun
+// token. `username` resta popolato solo per gli account tecnici legacy; per i
+// clienti reali la chiave di lettura è l'email (più nome e cognome).
+function publicClientRow(item, username) {
+  const value = item.data;
+  return {
+    id: item.id, displayCode: value.displayCode || item.id, displayName: value.displayName || null,
+    firstName: value.firstName || null, lastName: value.lastName || null,
+    email: value.emailNormalized || null, emailVerified: value.emailVerified === true,
+    username: value.invitedUsername || username || null,
+    status: value.status || 'active', nutritionistUids: value.nutritionistUids || [],
+    activeAssignment: value.activeAssignment || null, updatedAt: iso(value.updatedAt)
+  };
+}
+
+function publicRequestRow(doc) {
+  const value = doc.data();
+  return {
+    requestId: doc.id, clientId: value.clientId || null, channel: value.channel || null,
+    targetUsername: value.targetUsername || null, targetEmail: value.targetEmailNormalized || null,
+    nutritionistUid: value.nutritionistUid || null, status: value.status, createdAt: iso(value.createdAt)
+  };
+}
+
+// Invito lato console: MAI tokenHash né token in chiaro (l'unico momento in cui
+// il link esiste è la risposta in modalità "mostra link").
+function publicInvitationRow(doc) {
+  const value = doc.data();
+  return {
+    inviteId: doc.id, type: value.type, channel: value.channel || null,
+    targetUsername: value.targetUsername || null, targetEmail: value.targetEmailNormalized || null,
+    firstName: value.firstName || null, lastName: value.lastName || null,
+    clientId: value.clientId || null, status: value.status,
+    deliveryStatus: value.delivery?.status || null,
+    deliveryChannel: value.delivery?.channel || value.channel || null,
+    expiresAt: iso(value.expiresAt), createdAt: iso(value.createdAt)
+  };
+}
+
+function publicEmailChangeRow(doc) {
+  const value = doc.data();
+  return {
+    requestId: doc.id, clientId: value.clientId || null,
+    newEmail: value.newEmailNormalized || null, status: value.status,
+    createdAt: iso(value.createdAt)
+  };
+}
+
 exports.listOrganizationUsers = callable(async (data, uid) => {
   exactObject(data, ['organizationId']);
   const actor = await actorContext(data.organizationId, uid);
   const orgId = actor.organizationId;
   if (actor.role === 'nutritionist') {
-    const [clientsSnap, requestsSnap] = await Promise.all([
+    const [clientsSnap, requestsSnap, emailChangesSnap] = await Promise.all([
       db.collection(`organizations/${orgId}/clients`).where('nutritionistUids', 'array-contains', uid).limit(100).get(),
-      db.collection(`organizations/${orgId}/clientLinkRequests`).where('nutritionistUid', '==', uid).limit(50).get()
+      db.collection(`organizations/${orgId}/clientLinkRequests`).where('nutritionistUid', '==', uid).limit(50).get(),
+      db.collection(`organizations/${orgId}/emailChangeRequests`).where('status', '==', 'pending').limit(50).get()
     ]);
     const clients = clientsSnap.docs.map(doc => ({ id: doc.id, data: doc.data() }));
     const usernames = await Promise.all(clients.map(item => item.data.invitedUsername ? null : usernameOfUid(item.data.authUid)));
+    const authorizedIds = new Set(clients.map(item => item.id));
     const pendingRequests = requestsSnap.docs.filter(doc => doc.data()?.status === 'pending');
     return {
-      clients: clients.map((item, index) => ({
-        id: item.id, displayCode: item.data.displayCode || item.id, displayName: item.data.displayName || null,
-        username: item.data.invitedUsername || usernames[index] || null, status: item.data.status || 'active',
-        activeAssignment: item.data.activeAssignment || null, updatedAt: iso(item.data.updatedAt)
-      })),
-      requests: pendingRequests.map(doc => ({
-        requestId: doc.id, clientId: doc.data().clientId || null, targetUsername: doc.data().targetUsername || null,
-        status: doc.data().status, createdAt: iso(doc.data().createdAt)
-      })),
+      clients: clients.map((item, index) => publicClientRow(item, usernames[index])),
+      requests: pendingRequests.map(publicRequestRow),
+      emailChanges: emailChangesSnap.docs
+        .filter(doc => authorizedIds.has(doc.data()?.clientId))
+        .map(publicEmailChangeRow),
       members: [], invitations: []
     };
   }
-  const [membersSnap, clientsSnap, invitesSnap, requestsSnap] = await Promise.all([
+  const [membersSnap, clientsSnap, invitesSnap, requestsSnap, emailChangesSnap] = await Promise.all([
     db.collection(`organizations/${orgId}/members`).limit(100).get(),
     db.collection(`organizations/${orgId}/clients`).limit(100).get(),
     db.collection(`organizations/${orgId}/invitations`).where('status', '==', 'pending').limit(50).get(),
-    db.collection(`organizations/${orgId}/clientLinkRequests`).where('status', '==', 'pending').limit(50).get()
+    db.collection(`organizations/${orgId}/clientLinkRequests`).where('status', '==', 'pending').limit(50).get(),
+    db.collection(`organizations/${orgId}/emailChangeRequests`).where('status', '==', 'pending').limit(50).get()
   ]);
-  const clientRows = clientsSnap.docs.map(doc => ({ doc, data: doc.data() }));
+  const clientRows = clientsSnap.docs.map(doc => ({ id: doc.id, data: doc.data() }));
   const clientFallbackUsernames = await Promise.all(clientRows.map(row => row.data.invitedUsername || !row.data.authUid ? null : usernameOfUid(row.data.authUid)));
   return {
     members: membersSnap.docs.map(doc => ({
       userId: doc.id, username: doc.data().username || null, displayName: doc.data().displayName || null,
       role: doc.data().role, status: doc.data().status, updatedAt: iso(doc.data().updatedAt)
     })),
-    clients: clientRows.map((row, index) => ({
-      id: row.doc.id, displayCode: row.data.displayCode || row.doc.id, displayName: row.data.displayName || null,
-      username: row.data.invitedUsername || clientFallbackUsernames[index] || null, status: row.data.status || 'active',
-      nutritionistUids: row.data.nutritionistUids || [], activeAssignment: row.data.activeAssignment || null,
-      updatedAt: iso(row.data.updatedAt)
-    })),
-    // Mai tokenHash in risposta: il token in chiaro è mostrato una sola volta
-    // al momento della creazione dell'invito.
-    invitations: invitesSnap.docs.map(doc => ({
-      inviteId: doc.id, type: doc.data().type, targetUsername: doc.data().targetUsername || null,
-      clientId: doc.data().clientId || null, status: doc.data().status,
-      expiresAt: iso(doc.data().expiresAt), createdAt: iso(doc.data().createdAt)
-    })),
-    requests: requestsSnap.docs.map(doc => ({
-      requestId: doc.id, clientId: doc.data().clientId || null, targetUsername: doc.data().targetUsername || null,
-      nutritionistUid: doc.data().nutritionistUid || null, status: doc.data().status, createdAt: iso(doc.data().createdAt)
-    }))
+    clients: clientRows.map((row, index) => publicClientRow(row, clientFallbackUsernames[index])),
+    invitations: invitesSnap.docs.map(publicInvitationRow),
+    requests: requestsSnap.docs.map(publicRequestRow),
+    emailChanges: emailChangesSnap.docs.map(publicEmailChangeRow)
   };
 });
 
@@ -1707,7 +1764,10 @@ exports.inviteClientLink = callable(async (data, uid) => {
         });
       }
       tx.create(requestRef, {
+        // `channel: legacy-test` distingue esplicitamente le richieste del
+        // flusso tecnico (username) da quelle con email reale (`channel: email`).
         schemaVersion: 1, requestId, organizationId: actor.organizationId, clientId,
+        channel: 'legacy-test',
         targetUid, targetUsername: input.username, nutritionistUid: nutritionistUid || null,
         status: 'pending', createdAt: FieldValue.serverTimestamp(), updatedAt: FieldValue.serverTimestamp(), createdBy: uid
       });
@@ -1718,6 +1778,22 @@ exports.inviteClientLink = callable(async (data, uid) => {
   }
   const token = crypto.randomBytes(32).toString('hex');
   const inviteId = checksum(`${actor.organizationId}:clientinvite:${input.username}:${input.idempotencyKey}`).slice(0, 32);
+  // Compatibilità controllata (ADR 0004): l'account tecnico è un account di
+  // test. La sua CREAZIONE è consentita solo con un flag esplicito o negli
+  // emulatori; gli account tecnici esistenti continuano invece a funzionare
+  // senza limiti (login, collegamento, riscatto degli inviti già emessi).
+  if (!legacyTestInvitesAllowed()) {
+    const blockedEventId = checksum(`client.invite-blocked-legacy:${actor.organizationId}:${input.username}:${input.idempotencyKey}`).slice(0, 32);
+    await recordInviteAudit({
+      orgId: actor.organizationId, actor, eventId: blockedEventId,
+      type: 'client.invite-blocked-legacy', subject: { type: 'client', id: clientId },
+      idempotencyKey: input.idempotencyKey, metadata: { channel: 'legacy-test' }
+    });
+    throw new HttpsError(
+      'failed-precondition',
+      'La creazione di nuovi account tecnici di test è disattivata: invita il cliente con la sua email reale (modulo “Invita cliente con email”)'
+    );
+  }
   const inviteRef = db.doc(`organizations/${actor.organizationId}/invitations/${inviteId}`);
   const eventId = checksum(`client.link-invited:${inviteId}`).slice(0, 32);
   const expiresAt = new Date(Date.now() + 7 * 24 * 3600 * 1000);
@@ -1733,7 +1809,10 @@ exports.inviteClientLink = callable(async (data, uid) => {
       });
     }
     tx.create(inviteRef, {
-      schemaVersion: 1, inviteId, type: 'client', targetUsername: input.username, clientId,
+      // Invito legacy: tipo 'client' + channel 'legacy-test'. Solo per i test;
+      // non viene mai creato per un invito reale (vedi inviteClientByEmail).
+      schemaVersion: 1, inviteId, type: 'client', channel: 'legacy-test',
+      targetUsername: input.username, clientId,
       nutritionistUid: nutritionistUid || null, tokenHash: hashToken(token),
       status: 'pending', expiresAt: Timestamp.fromDate(expiresAt),
       createdAt: FieldValue.serverTimestamp(), updatedAt: FieldValue.serverTimestamp(), createdBy: uid
@@ -1742,6 +1821,908 @@ exports.inviteClientLink = callable(async (data, uid) => {
   });
   if (!created) return { status: 'already-invited', clientId, inviteId };
   return { status: 'invited', clientId, inviteId, expiresAt: expiresAt.toISOString(), token };
+});
+
+// =====================================================================
+// Inviti con EMAIL REALE (nuovo flusso — ADR 0004) e convivenza legacy
+// =====================================================================
+// Regole di base di questo blocco:
+//  - i nuovi clienti reali usano l'email reale come credenziale: nessun
+//    username e nessuna email tecnica;
+//  - gli account tecnici legacy (email fittizie) restano utilizzabili nei
+//    test, non vengono migrati, cancellati né forzati al nuovo onboarding;
+//  - la creazione di NUOVI account tecnici è possibile solo con un flag
+//    esplicito (`LEGACY_TEST_INVITES_ENABLED=true`) o negli emulatori: il
+//    fallback legacy non si attiva mai da solo per un invito reale;
+//  - un invito reale non viene mai trasformato in un invito legacy.
+
+const INVITE_TTL_DAYS = 7;
+const CLIENT_EMAIL_INVITE_TYPE = 'clientEmail';
+const LEGACY_CLIENT_INVITE_TYPE = 'client';
+
+// Flag esplicito e documentato per la creazione di account tecnici di test.
+// In produzione è spento per default: si accende solo con la variabile
+// d'ambiente `LEGACY_TEST_INVITES_ENABLED=true`.
+function legacyTestInvitesAllowed() {
+  if (typeof process === 'undefined' || !process.env) return true; // harness dei test senza `process`
+  const flag = String(process.env.LEGACY_TEST_INVITES_ENABLED || '').trim().toLowerCase();
+  if (flag === 'true') return true;
+  if (flag === 'false') return false;
+  return Boolean(process.env.FIRESTORE_EMULATOR_HOST || process.env.FUNCTIONS_EMULATOR);
+}
+
+// Require pigra: gli harness dei test esistenti caricano questo file senza
+// stubbare `firebase-admin/auth` né il servizio email.
+let adminAuthInstance = null;
+function adminAuth() {
+  if (!adminAuthInstance) adminAuthInstance = require('firebase-admin/auth').getAuth();
+  return adminAuthInstance;
+}
+
+let emailModule = null;
+function emailService() {
+  if (!emailModule) emailModule = require('./email-service');
+  return emailModule;
+}
+
+async function authUserByEmail(emailNormalized) {
+  try {
+    return await adminAuth().getUserByEmail(emailNormalized);
+  } catch (error) {
+    if (error?.code === 'auth/user-not-found') return null;
+    logger.error('Verifica account Auth non riuscita', { code: error?.code, email: maskEmail(emailNormalized) });
+    throw new HttpsError('internal', 'Verifica dell’account non disponibile: riprova tra poco');
+  }
+}
+
+async function clientProfilesByEmail(orgId, emailNormalized) {
+  const snap = await db.collection(`organizations/${orgId}/clients`)
+    .where('emailNormalized', '==', emailNormalized).limit(5).get();
+  return snap.docs.map(doc => ({ ref: doc.ref, id: doc.id, ...doc.data() }));
+}
+
+async function pendingEmailInvites(orgId, emailNormalized) {
+  const snap = await db.collection(`organizations/${orgId}/invitations`)
+    .where('targetEmailNormalized', '==', emailNormalized)
+    .where('status', '==', 'pending').limit(10).get();
+  return snap.docs.map(doc => ({ ref: doc.ref, id: doc.id, ...doc.data() }));
+}
+
+async function pendingLinkRequestsByEmail(orgId, emailNormalized) {
+  const snap = await db.collection(`organizations/${orgId}/clientLinkRequests`)
+    .where('targetEmailNormalized', '==', emailNormalized)
+    .where('status', '==', 'pending').limit(10).get();
+  return snap.docs.map(doc => ({ ref: doc.ref, id: doc.id, ...doc.data() }));
+}
+
+function inviteExpiryIso(invite) {
+  return invite?.expiresAt?.toDate?.()?.toISOString?.() || null;
+}
+
+// Un invito è modificabile/visibile solo al creatore piattaforma o al
+// professionista che lo ha emesso (stesso principio delle Rules).
+function authorizeInviteActor(actor, invite) {
+  if (actor.isCreator) return true;
+  return Boolean(invite?.createdBy) && invite.createdBy === actor.uid;
+}
+
+// Nome del professionista per l'email dell'invito: mai dati di altri ruoli.
+async function professionalDisplayName(orgId, nutritionistUid) {
+  if (!nutritionistUid) return null;
+  const member = await db.doc(`organizations/${orgId}/members/${nutritionistUid}`).get();
+  if (!member.exists) return null;
+  return member.data()?.displayName || member.data()?.username || null;
+}
+
+async function organizationDisplayName(orgId) {
+  const org = await db.doc(`organizations/${orgId}`).get();
+  return org.exists ? (org.data()?.name || orgId) : orgId;
+}
+
+// Audit idempotente anche per le operazioni bloccate (nessuna PII nei metadati).
+async function recordInviteAudit({ orgId, actor, eventId, type, subject, idempotencyKey, metadata = {} }) {
+  const ref = auditRef(orgId, eventId);
+  await db.runTransaction(async tx => {
+    if ((await tx.get(ref)).exists) return;
+    tx.create(ref, auditEvent({ orgId, eventId, type, actor, subject, idempotencyKey, metadata }));
+  });
+}
+
+// Consegna dell'invito: adapter email isolato oppure link mostrato alla
+// console ("mostra link"). Registra sempre lo stato di consegna: un invio
+// fallito NON viene mai dichiarato riuscito.
+async function deliverClientInvite({ inviteRef, invite, token, delivery, nutritionistName, organizationName, updatedBy }) {
+  const link = emailService().buildInviteLink(emailService().publicAppUrl(), token);
+  if (delivery === 'manual-link') {
+    await inviteRef.update({
+      delivery: {
+        schemaVersion: 1, channel: 'manual-link', status: 'manual',
+        attempts: 0, handedToConsole: true, updatedAt: FieldValue.serverTimestamp()
+      },
+      updatedAt: FieldValue.serverTimestamp(), updatedBy
+    });
+    return { delivery: { channel: 'manual-link', status: 'manual' }, inviteUrl: link };
+  }
+  const result = await emailService().sendInviteEmail({
+    to: invite.targetEmailNormalized,
+    firstName: invite.firstName,
+    lastName: invite.lastName,
+    organizationName,
+    nutritionistName,
+    link,
+    expiresAt: inviteExpiryIso(invite)
+  }, { logger });
+  await inviteRef.update({
+    delivery: {
+      schemaVersion: 1, channel: 'email',
+      status: result.ok ? 'sent' : 'failed',
+      provider: result.provider || null,
+      attempts: 1,
+      messageId: result.messageId || null,
+      errorCode: result.ok ? null : (result.code || 'error'),
+      updatedAt: FieldValue.serverTimestamp()
+    },
+    updatedAt: FieldValue.serverTimestamp(), updatedBy
+  });
+  return result.ok
+    ? { delivery: { channel: 'email', status: 'sent', provider: result.provider } }
+    : {
+        delivery: { channel: 'email', status: 'failed', errorCode: result.code || 'error' },
+        deliveryError: {
+          code: result.code || 'error',
+          message: result.message
+            || 'Invio email non riuscito: l’invito resta pendente, riprova oppure consegna il link a mano'
+        }
+      };
+}
+
+// Invito di un cliente con email reale. Idempotente per `idempotencyKey`,
+// monouso (solo hash del token), con audit e stati distinti verso la console.
+exports.inviteClientByEmail = callable(async (data, uid) => {
+  const input = validateInviteClientEmail(data);
+  const actor = await actorContext(input.organizationId, uid);
+  const orgId = actor.organizationId;
+  let nutritionistUid = input.nutritionistUid;
+  // Come per il flusso legacy: il nutritionist invita solo per sé, il
+  // creatore può indicare un professionista attivo oppure lasciare vuoto.
+  if (actor.role === 'nutritionist') {
+    if (nutritionistUid && nutritionistUid !== uid) {
+      throw new HttpsError('permission-denied', 'Puoi invitare clienti solo per te');
+    }
+    nutritionistUid = uid;
+  } else if (nutritionistUid) {
+    const target = await db.doc(`organizations/${orgId}/members/${nutritionistUid}`).get();
+    if (!target.exists || target.data()?.status !== 'active' || target.data()?.role !== 'nutritionist') {
+      throw new HttpsError('failed-precondition', 'Nutritionist destinatario non valido');
+    }
+  }
+  const [authUser, profiles, invites, requests] = await Promise.all([
+    authUserByEmail(input.email),
+    clientProfilesByEmail(orgId, input.email),
+    pendingEmailInvites(orgId, input.email),
+    pendingLinkRequestsByEmail(orgId, input.email)
+  ]);
+  const profile = profiles[0] || null;
+  const link = authUser ? await db.doc(`accountClientLinks/${authUser.uid}`).get() : null;
+  const activeLink = link?.exists ? link.data() : null;
+
+  // 1) associazione già attiva: nessun duplicato e nessun dato di altri
+  //    professionisti (il nome dell'altro professionista non esce mai).
+  if (activeLink && activeLink.status === 'active') {
+    const linkedClient = await db.doc(`organizations/${activeLink.organizationId}/clients/${activeLink.clientId}`).get();
+    const linkedNutritionists = linkedClient.exists ? (linkedClient.data()?.nutritionistUids || []) : [];
+    const sameProfessional = nutritionistUid ? linkedNutritionists.includes(nutritionistUid) : linkedNutritionists.length === 0;
+    const blockedEventId = checksum(`client.invite-blocked:${orgId}:${input.email}:${input.idempotencyKey}`).slice(0, 32);
+    await recordInviteAudit({
+      orgId, actor, eventId: blockedEventId,
+      type: sameProfessional ? 'client.invite-blocked-same' : 'client.invite-blocked-other',
+      subject: { type: 'client', id: activeLink.clientId }, idempotencyKey: input.idempotencyKey,
+      metadata: { channel: 'email' }
+    });
+    return sameProfessional
+      ? { status: 'already-linked-same', clientId: activeLink.clientId, message: 'Questo cliente è già associato a te.' }
+      : { status: 'already-linked-other', message: 'Questo account è già associato a un altro professionista e non può ricevere un nuovo invito.' };
+  }
+
+  // 2) richiesta di collegamento già pendente
+  if (requests.length) {
+    const mine = requests.find(item => item.nutritionistUid === nutritionistUid) || null;
+    return {
+      status: 'already-pending',
+      requestId: (mine || requests[0]).id,
+      clientId: (mine || requests[0]).clientId,
+      message: mine
+        ? 'Esiste già una richiesta in attesa di risposta del cliente.'
+        : 'Esiste già una richiesta in attesa per questo indirizzo.'
+    };
+  }
+
+  // 3) invito già pendente
+  if (invites.length) {
+    const replay = invites.find(item => item.idempotencyKey === input.idempotencyKey) || null;
+    if (replay) {
+      return {
+        status: 'already-pending', inviteId: replay.id, expiresAt: inviteExpiryIso(replay),
+        idempotentReplay: true,
+        message: 'Invito già creato in precedenza: nessun nuovo token emesso.'
+      };
+    }
+    const mine = invites.find(item => item.nutritionistUid === nutritionistUid) || null;
+    return {
+      status: 'already-pending',
+      ...(mine ? { inviteId: mine.id, expiresAt: inviteExpiryIso(mine) } : {}),
+      message: mine
+        ? 'Esiste già un invito pendente per questo indirizzo: usa "Rinvia" per un nuovo link oppure "Correggi" per cambiare i dati.'
+        : 'Esiste già un invito pendente per questo indirizzo.'
+    };
+  }
+
+  const clientId = profile?.id || checksum(`${orgId}:clientemail:${input.email}:${input.idempotencyKey}`).slice(0, 24);
+  const clientRef = db.doc(`organizations/${orgId}/clients/${clientId}`);
+  const displayCode = profile?.displayCode || `CL-${checksum(clientId).slice(0, 6).toUpperCase()}`;
+  const nutritionistUids = nutritionistUid ? [nutritionistUid] : [];
+
+  // 4) account già esistente senza associazione → richiesta da accettare in app
+  if (authUser) {
+    if (authUser.disabled) {
+      throw new HttpsError('failed-precondition', 'Account disabilitato: va riabilitato dall’amministrazione prima di un nuovo invito');
+    }
+    const requestId = checksum(`${orgId}:linkreq:${input.email}:${input.idempotencyKey}`).slice(0, 32);
+    const requestRef = db.doc(`organizations/${orgId}/clientLinkRequests/${requestId}`);
+    const eventId = checksum(`client.link-requested:${requestId}`).slice(0, 32);
+    await db.runTransaction(async tx => {
+      const [client, existing, audit] = await Promise.all([
+        tx.get(clientRef), tx.get(requestRef), tx.get(auditRef(orgId, eventId))
+      ]);
+      if (existing.exists || audit.exists) return;
+      const commonProfile = {
+        schemaVersion: 2, authUid: authUser.uid, displayCode, status: 'pending',
+        email: input.email, emailNormalized: input.email,
+        firstName: input.firstName, lastName: input.lastName,
+        displayName: `${input.firstName} ${input.lastName}`,
+        nutritionistUids, activeAssignment: null,
+        updatedAt: FieldValue.serverTimestamp(), updatedBy: uid
+      };
+      if (client.exists) tx.update(clientRef, commonProfile);
+      else tx.create(clientRef, { ...commonProfile, invitedUsername: null, createdAt: FieldValue.serverTimestamp(), createdBy: uid });
+      tx.create(requestRef, {
+        schemaVersion: 2, requestId, organizationId: orgId, clientId, channel: 'email',
+        targetUid: authUser.uid, targetEmailNormalized: input.email,
+        targetEmailHash: emailFingerprint(input.email),
+        nutritionistUid: nutritionistUid || null, status: 'pending',
+        createdAt: FieldValue.serverTimestamp(), updatedAt: FieldValue.serverTimestamp(), createdBy: uid
+      });
+      tx.create(auditRef(orgId, eventId), auditEvent({
+        orgId, eventId, type: 'client.link-requested', actor,
+        subject: { type: 'client', id: clientId }, idempotencyKey: input.idempotencyKey,
+        metadata: { channel: 'email', nutritionistUid: nutritionistUid || null }
+      }));
+      tx.create(db.doc(`organizations/${orgId}/notifications/${eventId}`), {
+        schemaVersion: 1, notificationId: eventId, recipientUid: authUser.uid,
+        type: 'client.link-requested', subjectId: clientId, readAt: null, dedupeKey: eventId,
+        createdAt: FieldValue.serverTimestamp(), updatedAt: FieldValue.serverTimestamp(),
+        delivery: { inApp: 'pending', email: 'disabled' }
+      });
+    });
+    return {
+      status: 'link-request-created', clientId, requestId,
+      message: 'Richiesta inviata: il cliente accetta o rifiuta dall’app.'
+    };
+  }
+
+  // 5) cliente nuovo → invito monouso (token salvato solo come hash)
+  const inviteId = checksum(`${orgId}:clientemail-invite:${input.email}:${input.idempotencyKey}`).slice(0, 32);
+  const inviteRef = db.doc(`organizations/${orgId}/invitations/${inviteId}`);
+  const eventId = checksum(`client.email-invited:${inviteId}`).slice(0, 32);
+  const token = crypto.randomBytes(32).toString('hex');
+  const expiresAt = emailService().inviteExpiryDate({ days: INVITE_TTL_DAYS });
+  let created = true;
+  await db.runTransaction(async tx => {
+    const [client, existing, audit] = await Promise.all([
+      tx.get(clientRef), tx.get(inviteRef), tx.get(auditRef(orgId, eventId))
+    ]);
+    if (existing.exists || audit.exists) { created = false; return; }
+    // Un solo invito pendente per indirizzo/cliente: i precedenti vengono
+    // invalidati (il vecchio link smette di funzionare) e restano in storico.
+    const stale = await tx.get(
+      db.collection(`organizations/${orgId}/invitations`)
+        .where('targetEmailNormalized', '==', input.email)
+        .where('status', '==', 'pending')
+    );
+    stale.docs.filter(doc => doc.id !== inviteId).forEach(doc => tx.update(doc.ref, {
+      status: 'superseded', supersededBy: inviteId,
+      supersededAt: FieldValue.serverTimestamp(), updatedAt: FieldValue.serverTimestamp()
+    }));
+    const commonProfile = {
+      schemaVersion: 2, authUid: null, displayCode, status: 'pending',
+      email: input.email, emailNormalized: input.email,
+      firstName: input.firstName, lastName: input.lastName,
+      displayName: `${input.firstName} ${input.lastName}`,
+      nutritionistUids, activeAssignment: null,
+      updatedAt: FieldValue.serverTimestamp(), updatedBy: uid
+    };
+    if (client.exists) tx.update(clientRef, commonProfile);
+    else tx.create(clientRef, { ...commonProfile, invitedUsername: null, createdAt: FieldValue.serverTimestamp(), createdBy: uid });
+    tx.create(inviteRef, {
+      schemaVersion: 2, inviteId, type: CLIENT_EMAIL_INVITE_TYPE, channel: 'email',
+      organizationId: orgId, targetEmailNormalized: input.email,
+      targetEmailHash: emailFingerprint(input.email),
+      firstName: input.firstName, lastName: input.lastName,
+      clientId, nutritionistUid: nutritionistUid || null,
+      tokenHash: hashToken(token), status: 'pending',
+      expiresAt: Timestamp.fromDate(expiresAt),
+      delivery: { schemaVersion: 1, channel: input.delivery, status: 'pending', attempts: 0, updatedAt: FieldValue.serverTimestamp() },
+      idempotencyKey: input.idempotencyKey,
+      createdAt: FieldValue.serverTimestamp(), updatedAt: FieldValue.serverTimestamp(), createdBy: uid
+    });
+    tx.create(auditRef(orgId, eventId), auditEvent({
+      orgId, eventId, type: 'client.email-invited', actor,
+      subject: { type: 'invitation', id: inviteId }, idempotencyKey: input.idempotencyKey,
+      metadata: { clientId, nutritionistUid: nutritionistUid || null, delivery: input.delivery }
+    }));
+  });
+  if (!created) {
+    return {
+      status: 'already-pending', inviteId, expiresAt: expiresAt.toISOString(),
+      idempotentReplay: true, message: 'Invito già creato in precedenza: nessun nuovo token emesso.'
+    };
+  }
+  const [inviteSnapshot, nutritionistName, organizationName] = await Promise.all([
+    inviteRef.get(), professionalDisplayName(orgId, nutritionistUid), organizationDisplayName(orgId)
+  ]);
+  const deliveryResult = await deliverClientInvite({
+    inviteRef, invite: inviteSnapshot.data(), token, delivery: input.delivery,
+    nutritionistName, organizationName, updatedBy: uid
+  });
+  const deliveredEventId = checksum(`client.email-invite-delivered:${inviteId}`).slice(0, 32);
+  await recordInviteAudit({
+    orgId, actor, eventId: deliveredEventId,
+    type: deliveryResult.delivery.status === 'failed' ? 'client.email-invite-delivery-failed' : 'client.email-invite-delivered',
+    subject: { type: 'invitation', id: inviteId }, idempotencyKey: input.idempotencyKey,
+    metadata: { channel: deliveryResult.delivery.channel, status: deliveryResult.delivery.status }
+  });
+  const base = { inviteId, clientId, expiresAt: expiresAt.toISOString(), ...deliveryResult };
+  if (deliveryResult.delivery.status === 'failed') {
+    return {
+      ...base, status: 'delivery-failed',
+      message: 'Invito creato ma email NON inviata: l’invito resta pendente, riprova oppure consegna il link a mano.'
+    };
+  }
+  return {
+    ...base, status: 'invited',
+    message: deliveryResult.delivery.status === 'manual'
+      ? 'Invito creato: consegna questo link una sola volta, fuori piattaforma.'
+      : 'Invito creato e email inviata al cliente.'
+  };
+});
+
+// Anteprima pubblica dell'invito (nessuna autenticazione: il token è il
+// segreto). Non scrive nulla e non rivela dati di altri utenti.
+exports.getClientInvitePreview = onCall(callableOptions, async request => {
+  try {
+    exactObject(request.data || {}, ['token']);
+    const token = text((request.data || {}).token, 'token', { min: 64, max: 64, pattern: /^[a-f0-9]{64}$/ });
+    const snap = await db.collectionGroup('invitations').where('tokenHash', '==', hashToken(token)).limit(2).get();
+    if (snap.empty || snap.size > 1) return { status: 'not-found' };
+    const doc = snap.docs[0];
+    const invite = doc.data();
+    const orgId = doc.ref.path.split('/')[1];
+    // Solo il nuovo flusso email: gli inviti legacy hanno un percorso separato.
+    if (invite.type !== CLIENT_EMAIL_INVITE_TYPE || orgId !== SINGLE_ORGANIZATION_ID) return { status: 'not-found' };
+    const expiresAt = invite.expiresAt?.toDate?.() || null;
+    const expired = !expiresAt || expiresAt.getTime() <= Date.now();
+    let status = 'expired';
+    if (invite.status === 'pending') status = expired ? 'expired' : 'valid';
+    else if (invite.status === 'accepted') status = 'used';
+    else if (invite.status === 'superseded') status = 'superseded';
+    else if (invite.status === 'revoked') status = 'revoked';
+    const organizationName = await organizationDisplayName(orgId);
+    const nutritionistName = status === 'valid' ? await professionalDisplayName(orgId, invite.nutritionistUid) : null;
+    return {
+      status,
+      email: invite.targetEmailNormalized || null,
+      firstName: invite.firstName || null,
+      lastName: invite.lastName || null,
+      expiresAt: inviteExpiryIso(invite),
+      organizationName,
+      nutritionistName
+    };
+  } catch (error) {
+    throw apiError(error);
+  }
+});
+
+// Riscatto dell'invito email da parte del cliente autenticato. Il collegamento
+// diventa attivo SOLO con l'email verificata (decisione ADR 0004): qui il
+// token non viene mai consumato prima. Il token è facoltativo perché l'invito
+// resta recuperabile anche solo dall'email autenticata e verificata.
+exports.redeemClientInvite = callable(async (data, uid, request) => {
+  const input = validateRedeemClientInvite(data);
+  const emailVerified = request?.auth?.token?.email_verified === true;
+  const authEmail = String(request?.auth?.token?.email || '').trim().toLowerCase();
+  let inviteDoc = null;
+  let invite = null;
+  if (input.token) {
+    const snap = await db.collectionGroup('invitations').where('tokenHash', '==', hashToken(input.token)).limit(2).get();
+    if (snap.empty || snap.size > 1) throw new HttpsError('not-found', 'Invito non valido o già utilizzato');
+    inviteDoc = snap.docs[0];
+    invite = inviteDoc.data();
+    if (invite.type !== CLIENT_EMAIL_INVITE_TYPE) throw new HttpsError('not-found', 'Invito non valido o già utilizzato');
+  } else {
+    if (!emailVerified || !authEmail) return { status: 'no-pending-invite' };
+    const snap = await db.collection(`organizations/${SINGLE_ORGANIZATION_ID}/invitations`)
+      .where('targetEmailNormalized', '==', authEmail)
+      .where('status', '==', 'pending').limit(2).get();
+    if (snap.empty) return { status: 'no-pending-invite' };
+    inviteDoc = snap.docs[0];
+    invite = inviteDoc.data();
+    // Solo gli inviti del nuovo modello si riscattano via email: quelli legacy
+    // passano dal percorso con token e username.
+    if (invite.type !== CLIENT_EMAIL_INVITE_TYPE) return { status: 'no-pending-invite' };
+  }
+  const orgId = inviteDoc.ref.path.split('/')[1];
+  if (orgId !== SINGLE_ORGANIZATION_ID) throw new HttpsError('not-found', 'Invito non valido');
+  const expiresAt = invite.expiresAt?.toDate?.() || null;
+  if (invite.status !== 'pending') {
+    if (invite.status === 'accepted' && invite.redeemedBy === uid) {
+      return { status: 'already-linked', organizationId: orgId, clientId: invite.clientId };
+    }
+    throw new HttpsError('failed-precondition', invite.status === 'superseded'
+      ? 'Questo link è stato sostituito: usa il link più recente oppure chiedine uno nuovo al tuo nutrizionista'
+      : 'Invito non più valido: chiedi un nuovo link al tuo nutrizionista');
+  }
+  if (!expiresAt || expiresAt.getTime() <= Date.now()) {
+    // Marcatura di scadenza: nessun consumo del token, riprova impossibile.
+    await inviteDoc.ref.update({ status: 'expired', updatedAt: FieldValue.serverTimestamp() });
+    throw new HttpsError('failed-precondition', 'Invito scaduto: chiedi un nuovo link al tuo nutrizionista');
+  }
+  if (invite.targetEmailNormalized !== authEmail) {
+    throw new HttpsError('permission-denied', 'Questo invito è stato emesso per un altro indirizzo email');
+  }
+  // Il collegamento abilita dati professionali: si attiva dopo la verifica.
+  if (!emailVerified) {
+    return {
+      status: 'email-verification-required', email: authEmail,
+      clientId: invite.clientId,
+      message: 'Verifica il tuo indirizzo email: poi il collegamento si attiva da solo.'
+    };
+  }
+  const linkSnap = await db.doc(`accountClientLinks/${uid}`).get();
+  if (linkSnap.exists && linkSnap.data()?.status === 'active' && linkSnap.data()?.clientId !== invite.clientId) {
+    throw new HttpsError('failed-precondition', 'Questo account è già associato a un altro professionista e non può ricevere un nuovo invito');
+  }
+  const clientRef = db.doc(`organizations/${orgId}/clients/${invite.clientId}`);
+  const eventId = checksum(`client.invite-redeemed:${inviteDoc.id}:${uid}`).slice(0, 32);
+  const actor = { uid, role: 'client' };
+  await db.runTransaction(async tx => {
+    const [fresh, client, audit] = await Promise.all([
+      tx.get(inviteDoc.ref), tx.get(clientRef), tx.get(auditRef(orgId, eventId))
+    ]);
+    if (audit.exists) return;
+    if (fresh.data()?.status !== 'pending') throw new HttpsError('failed-precondition', 'Invito non più valido: chiedi un nuovo link al tuo nutrizionista');
+    const previous = client.exists ? client.data() : {};
+    const displayName = previous.displayName || `${invite.firstName} ${invite.lastName}`;
+    tx.set(clientRef, {
+      schemaVersion: 2, authUid: uid, status: 'active',
+      email: authEmail, emailNormalized: authEmail, emailVerified: true,
+      firstName: invite.firstName, lastName: invite.lastName, displayName,
+      invitedUsername: previous.invitedUsername || null,
+      nutritionistUids: previous.nutritionistUids || (invite.nutritionistUid ? [invite.nutritionistUid] : []),
+      activeAssignment: previous.activeAssignment || null,
+      createdAt: previous.createdAt || FieldValue.serverTimestamp(),
+      updatedAt: FieldValue.serverTimestamp(), createdBy: previous.createdBy || uid, updatedBy: uid
+    }, { merge: true });
+    tx.set(db.doc(`accountClientLinks/${uid}`), {
+      schemaVersion: 2, organizationId: orgId, clientId: invite.clientId, status: 'active',
+      channel: 'email', linkedAt: FieldValue.serverTimestamp(),
+      createdAt: FieldValue.serverTimestamp(), updatedAt: FieldValue.serverTimestamp()
+    });
+    tx.update(inviteDoc.ref, {
+      status: 'accepted', redeemedBy: uid, registeredAt: FieldValue.serverTimestamp(),
+      verifiedAt: FieldValue.serverTimestamp(), decidedAt: FieldValue.serverTimestamp(), decidedBy: uid,
+      updatedAt: FieldValue.serverTimestamp()
+    });
+    tx.create(auditRef(orgId, eventId), auditEvent({
+      orgId, eventId, type: 'client.link-accepted', actor,
+      subject: { type: 'client', id: invite.clientId }, idempotencyKey: input.idempotencyKey,
+      metadata: { via: 'email-invite', channel: 'email' }
+    }));
+    tx.create(db.doc(`organizations/${orgId}/notifications/${eventId}`), {
+      schemaVersion: 1, notificationId: eventId, recipientUid: uid,
+      type: 'client.link-activated', subjectId: invite.clientId, readAt: null, dedupeKey: eventId,
+      createdAt: FieldValue.serverTimestamp(), updatedAt: FieldValue.serverTimestamp(),
+      delivery: { inApp: 'pending', email: 'disabled' }
+    });
+  });
+  return {
+    status: 'link-active', organizationId: orgId, clientId: invite.clientId,
+    email: authEmail,
+    message: 'Collegamento attivo: il tuo nutrizionista può condividere il profilo.'
+  };
+});
+
+// Reinvio di un invito email: ruota il token (il vecchio link smette di
+// funzionare) mantenendo gli stessi dati, con audit e nuovo stato di consegna.
+exports.resendClientInvite = callable(async (data, uid) => {
+  const input = validateResendClientInvite(data);
+  const actor = await actorContext(input.organizationId, uid);
+  const orgId = actor.organizationId;
+  const inviteRef = db.doc(`organizations/${orgId}/invitations/${input.inviteId}`);
+  const snapshot = await inviteRef.get();
+  if (!snapshot.exists) throw new HttpsError('not-found', 'Invito non trovato');
+  const invite = snapshot.data();
+  if (!authorizeInviteActor(actor, invite)) throw new HttpsError('permission-denied', 'Invito non autorizzato');
+  if (invite.type !== CLIENT_EMAIL_INVITE_TYPE) {
+    throw new HttpsError('failed-precondition', 'Questo invito usa il flusso legacy: creane uno nuovo dal modulo legacy oppure annullalo');
+  }
+  if (invite.status === 'accepted') throw new HttpsError('failed-precondition', 'Invito già utilizzato: il cliente è registrato');
+  if (invite.status === 'revoked') throw new HttpsError('failed-precondition', 'Invito annullato: creane uno nuovo');
+  const token = crypto.randomBytes(32).toString('hex');
+  const expiresAt = emailService().inviteExpiryDate({ days: INVITE_TTL_DAYS });
+  const eventId = checksum(`client.email-invite-resent:${input.inviteId}:${input.idempotencyKey}`).slice(0, 32);
+  let rotated = true;
+  await db.runTransaction(async tx => {
+    const [fresh, audit] = await Promise.all([tx.get(inviteRef), tx.get(auditRef(orgId, eventId))]);
+    if (audit.exists) { rotated = false; return; }
+    if (fresh.data()?.status === 'accepted') throw new HttpsError('failed-precondition', 'Invito già utilizzato: il cliente è registrato');
+    if (fresh.data()?.status === 'revoked') throw new HttpsError('failed-precondition', 'Invito annullato: creane uno nuovo');
+    tx.update(inviteRef, {
+      tokenHash: hashToken(token), status: 'pending', expiresAt: Timestamp.fromDate(expiresAt),
+      delivery: { schemaVersion: 1, channel: input.delivery, status: 'pending', attempts: 0, updatedAt: FieldValue.serverTimestamp() },
+      tokenRotation: FieldValue.increment(1),
+      updatedAt: FieldValue.serverTimestamp(), updatedBy: uid
+    });
+    tx.create(auditRef(orgId, eventId), auditEvent({
+      orgId, eventId, type: 'client.email-invite-resent', actor,
+      subject: { type: 'invitation', id: input.inviteId }, idempotencyKey: input.idempotencyKey,
+      metadata: { delivery: input.delivery }
+    }));
+  });
+  if (!rotated) return { status: 'already-pending', inviteId: input.inviteId, message: 'Reinvio già effettuato.' };
+  const [fresh, nutritionistName, organizationName] = await Promise.all([
+    inviteRef.get(), professionalDisplayName(orgId, invite.nutritionistUid), organizationDisplayName(orgId)
+  ]);
+  const deliveryResult = await deliverClientInvite({
+    inviteRef, invite: fresh.data(), token, delivery: input.delivery,
+    nutritionistName, organizationName, updatedBy: uid
+  });
+  const base = { inviteId: input.inviteId, clientId: fresh.data()?.clientId || null, expiresAt: expiresAt.toISOString(), ...deliveryResult };
+  if (deliveryResult.delivery.status === 'failed') {
+    return { ...base, status: 'delivery-failed', message: 'Email NON inviata: l’invito resta pendente, riprova oppure consegna il link a mano.' };
+  }
+  return {
+    ...base, status: 'invite-resent',
+    message: deliveryResult.delivery.status === 'manual'
+      ? 'Nuovo link pronto: il link precedente non funziona più.'
+      : 'Nuovo link inviato: il link precedente non funziona più.'
+  };
+});
+
+// Annullamento di un invito pendente (email o legacy): il token non è più
+// riscattabile, il documento resta in storico come "revoked".
+exports.cancelClientInvite = callable(async (data, uid) => {
+  const input = validateCancelClientInvite(data);
+  const actor = await actorContext(input.organizationId, uid);
+  const orgId = actor.organizationId;
+  const inviteRef = db.doc(`organizations/${orgId}/invitations/${input.inviteId}`);
+  const snapshot = await inviteRef.get();
+  if (!snapshot.exists) throw new HttpsError('not-found', 'Invito non trovato');
+  const invite = snapshot.data();
+  if (!authorizeInviteActor(actor, invite)) throw new HttpsError('permission-denied', 'Invito non autorizzato');
+  const isClientInvite = invite.type === CLIENT_EMAIL_INVITE_TYPE || invite.type === LEGACY_CLIENT_INVITE_TYPE;
+  if (!isClientInvite) throw new HttpsError('failed-precondition', 'Solo gli inviti cliente si annullano da qui');
+  if (invite.status === 'accepted') throw new HttpsError('failed-precondition', 'Invito già utilizzato: usa "Rimuovi collegamento" dalla vista Clienti');
+  const eventId = checksum(`client.email-invite-cancelled:${input.inviteId}:${input.idempotencyKey}`).slice(0, 32);
+  let cancelled = true;
+  await db.runTransaction(async tx => {
+    const [fresh, audit] = await Promise.all([tx.get(inviteRef), tx.get(auditRef(orgId, eventId))]);
+    if (audit.exists) { cancelled = false; return; }
+    if (fresh.data()?.status === 'accepted') throw new HttpsError('failed-precondition', 'Invito già utilizzato: usa "Rimuovi collegamento" dalla vista Clienti');
+    tx.update(inviteRef, {
+      status: 'revoked', revocationReason: input.reason,
+      decidedAt: FieldValue.serverTimestamp(), decidedBy: uid,
+      updatedAt: FieldValue.serverTimestamp(), updatedBy: uid
+    });
+    tx.create(auditRef(orgId, eventId), auditEvent({
+      orgId, eventId, type: 'client.invite-cancelled', actor,
+      subject: { type: 'invitation', id: input.inviteId }, idempotencyKey: input.idempotencyKey,
+      metadata: { reason: input.reason }
+    }));
+  });
+  return { inviteId: input.inviteId, status: cancelled ? 'revoked' : 'already-revoked' };
+});
+
+// Correzione dei dati di un invito pendente/scaduto: nuovo token, vecchio
+// link invalidato, nessun invito concorrente, audit completo.
+exports.correctClientInvite = callable(async (data, uid) => {
+  const input = validateCorrectClientInvite(data);
+  const actor = await actorContext(input.organizationId, uid);
+  const orgId = actor.organizationId;
+  const oldRef = db.doc(`organizations/${orgId}/invitations/${input.inviteId}`);
+  const snapshot = await oldRef.get();
+  if (!snapshot.exists) throw new HttpsError('not-found', 'Invito non trovato');
+  const previous = snapshot.data();
+  if (!authorizeInviteActor(actor, previous)) throw new HttpsError('permission-denied', 'Invito non autorizzato');
+  if (previous.type !== CLIENT_EMAIL_INVITE_TYPE) {
+    throw new HttpsError('failed-precondition', 'Questo invito usa il flusso legacy: annullalo e crea un nuovo invito legacy');
+  }
+  if (previous.status === 'accepted') {
+    throw new HttpsError('failed-precondition', 'Il cliente è già registrato: usa la vista Clienti per aggiornare i dati');
+  }
+  if (!['pending', 'expired', 'superseded'].includes(previous.status)) {
+    throw new HttpsError('failed-precondition', 'Invito non correggibile: creane uno nuovo');
+  }
+  const authUser = await authUserByEmail(input.email);
+  if (authUser) {
+    throw new HttpsError('already-exists', 'Esiste già un account con questo indirizzo: invitalo come cliente esistente (riceverà una richiesta da accettare in app)');
+  }
+  const clientId = previous.clientId;
+  const clientRef = db.doc(`organizations/${orgId}/clients/${clientId}`);
+  const nextExpiry = emailService().inviteExpiryDate({ days: INVITE_TTL_DAYS });
+  const token = crypto.randomBytes(32).toString('hex');
+  const inviteId = checksum(`${orgId}:clientemail-invite:${input.email}:${input.idempotencyKey}`).slice(0, 32);
+  const sameDocument = inviteId === input.inviteId;
+  const newRef = sameDocument ? oldRef : db.doc(`organizations/${orgId}/invitations/${inviteId}`);
+  const eventId = checksum(`client.email-invite-corrected:${input.inviteId}:${input.idempotencyKey}`).slice(0, 32);
+  await db.runTransaction(async tx => {
+    const [old, audit] = await Promise.all([tx.get(oldRef), tx.get(auditRef(orgId, eventId))]);
+    if (audit.exists) return;
+    if (old.data()?.status === 'accepted') {
+      throw new HttpsError('failed-precondition', 'Il cliente è già registrato: usa la vista Clienti per aggiornare i dati');
+    }
+    const otherPending = await tx.get(
+      db.collection(`organizations/${orgId}/invitations`)
+        .where('targetEmailNormalized', '==', input.email)
+        .where('status', '==', 'pending')
+    );
+    otherPending.docs.filter(doc => doc.id !== inviteId).forEach(doc => tx.update(doc.ref, {
+      status: 'superseded', supersededBy: inviteId,
+      supersededAt: FieldValue.serverTimestamp(), updatedAt: FieldValue.serverTimestamp()
+    }));
+    const inviteBody = {
+      schemaVersion: 2, inviteId, type: CLIENT_EMAIL_INVITE_TYPE, channel: 'email',
+      organizationId: orgId, targetEmailNormalized: input.email,
+      targetEmailHash: emailFingerprint(input.email),
+      firstName: input.firstName, lastName: input.lastName,
+      clientId, nutritionistUid: previous.nutritionistUid || null,
+      tokenHash: hashToken(token), status: 'pending',
+      expiresAt: Timestamp.fromDate(nextExpiry),
+      delivery: { schemaVersion: 1, channel: input.delivery, status: 'pending', attempts: 0, updatedAt: FieldValue.serverTimestamp() },
+      idempotencyKey: input.idempotencyKey,
+      correctedFrom: input.inviteId, createdAt: FieldValue.serverTimestamp(),
+      updatedAt: FieldValue.serverTimestamp(), createdBy: previous.createdBy || uid
+    };
+    if (sameDocument) {
+      tx.set(newRef, inviteBody, { merge: true });
+    } else {
+      tx.set(oldRef, {
+        status: 'superseded', supersededBy: inviteId,
+        supersededAt: FieldValue.serverTimestamp(), updatedAt: FieldValue.serverTimestamp(), updatedBy: uid
+      }, { merge: true });
+      tx.create(newRef, inviteBody);
+    }
+    // `authUid` non viene toccato: se il cliente si era già registrato senza
+    // completare la verifica, il suo account resta il suo.
+    tx.set(clientRef, {
+      schemaVersion: 2, status: 'pending',
+      email: input.email, emailNormalized: input.email,
+      firstName: input.firstName, lastName: input.lastName,
+      displayName: `${input.firstName} ${input.lastName}`,
+      updatedAt: FieldValue.serverTimestamp(), updatedBy: uid
+    }, { merge: true });
+    const changed = [];
+    if (previous.targetEmailNormalized !== input.email) changed.push('email');
+    if (previous.firstName !== input.firstName) changed.push('firstName');
+    if (previous.lastName !== input.lastName) changed.push('lastName');
+    tx.create(auditRef(orgId, eventId), auditEvent({
+      orgId, eventId, type: 'client.email-invite-corrected', actor,
+      subject: { type: 'invitation', id: inviteId }, idempotencyKey: input.idempotencyKey,
+      metadata: { previousInviteId: input.inviteId, changed, delivery: input.delivery }
+    }));
+  });
+  const [fresh, nutritionistName, organizationName] = await Promise.all([
+    newRef.get(), professionalDisplayName(orgId, previous.nutritionistUid), organizationDisplayName(orgId)
+  ]);
+  const deliveryResult = await deliverClientInvite({
+    inviteRef: newRef, invite: fresh.data(), token, delivery: input.delivery,
+    nutritionistName, organizationName, updatedBy: uid
+  });
+  const base = { inviteId, clientId, expiresAt: nextExpiry.toISOString(), ...deliveryResult };
+  if (deliveryResult.delivery.status === 'failed') {
+    return { ...base, status: 'delivery-failed', message: 'Dati corretti ma email NON inviata: riprova oppure consegna il nuovo link a mano.' };
+  }
+  return {
+    ...base, status: 'invite-corrected',
+    message: deliveryResult.delivery.status === 'manual'
+      ? 'Dati corretti: il link precedente non funziona più, consegna il nuovo link.'
+      : 'Dati corretti e nuovo link inviato: il link precedente non funziona più.'
+  };
+});
+
+// Anagrafica del cliente (nome e cognome) aggiornata dal nutrizionista.
+// Non tocca credenziali né dati Auth: l'email si cambia solo con la procedura
+// a due passi (proposta + conferma del cliente).
+exports.updateClientProfileByStaff = callable(async (data, uid) => {
+  const input = validateUpdateClientProfileByStaff(data);
+  const actor = await actorContext(input.organizationId, uid);
+  const client = await authorizedClient(actor, input.clientId);
+  const displayName = input.displayName || `${input.firstName} ${input.lastName}`;
+  const eventId = checksum(`client.profile-updated-staff:${client.id}:${input.idempotencyKey}`).slice(0, 32);
+  await db.runTransaction(async tx => {
+    const [fresh, audit] = await Promise.all([tx.get(client.ref), tx.get(auditRef(actor.organizationId, eventId))]);
+    if (audit.exists) return;
+    tx.update(client.ref, {
+      firstName: input.firstName, lastName: input.lastName, displayName,
+      updatedAt: FieldValue.serverTimestamp(), updatedBy: uid
+    });
+    tx.create(auditRef(actor.organizationId, eventId), auditEvent({
+      orgId: actor.organizationId, eventId, type: 'client.profile-updated-staff', actor,
+      subject: { type: 'client', id: client.id }, idempotencyKey: input.idempotencyKey,
+      metadata: { fields: ['firstName', 'lastName', 'displayName'] }
+    }));
+    if (fresh.data()?.authUid) {
+      tx.create(db.doc(`organizations/${actor.organizationId}/notifications/${eventId}`), {
+        schemaVersion: 1, notificationId: eventId, recipientUid: fresh.data().authUid,
+        type: 'client.profile-updated', subjectId: client.id, readAt: null, dedupeKey: eventId,
+        createdAt: FieldValue.serverTimestamp(), updatedAt: FieldValue.serverTimestamp(),
+        delivery: { inApp: 'pending', email: 'disabled' }
+      });
+    }
+  });
+  return { clientId: client.id, firstName: input.firstName, lastName: input.lastName, displayName };
+});
+
+// Proposta di cambio email (nutrizionista → cliente). Nulla cambia finché il
+// cliente non conferma dall'app: nessuna finestra di takeover.
+exports.proposeClientEmailChange = callable(async (data, uid) => {
+  const input = validateProposeClientEmailChange(data);
+  const actor = await actorContext(input.organizationId, uid);
+  const orgId = actor.organizationId;
+  const client = await authorizedClient(actor, input.clientId);
+  if (!client.authUid) {
+    throw new HttpsError('failed-precondition', 'Il cliente non ha ancora completato la registrazione: correggi l’invito pendente');
+  }
+  if (!client.emailNormalized) {
+    throw new HttpsError('failed-precondition', 'Questo cliente usa un account tecnico legacy: il cambio email non è supportato, serve un nuovo account con email reale');
+  }
+  if (client.emailNormalized === input.newEmail) {
+    return { status: 'unchanged', clientId: client.id, message: 'L’indirizzo è già quello del cliente.' };
+  }
+  const otherProfiles = await clientProfilesByEmail(orgId, input.newEmail);
+  if (otherProfiles.some(item => item.id !== client.id)) {
+    throw new HttpsError('already-exists', 'Esiste già un profilo cliente con questo indirizzo email');
+  }
+  const authUser = await authUserByEmail(input.newEmail);
+  if (authUser && authUser.uid !== client.authUid) {
+    throw new HttpsError('already-exists', 'Esiste già un account con questo indirizzo email');
+  }
+  const requestId = checksum(`${orgId}:emailchange:${client.id}:${input.newEmail}:${input.idempotencyKey}`).slice(0, 32);
+  const requestRef = db.doc(`organizations/${orgId}/emailChangeRequests/${requestId}`);
+  const eventId = checksum(`client.email-change-requested:${requestId}`).slice(0, 32);
+  await db.runTransaction(async tx => {
+    const [existing, audit] = await Promise.all([tx.get(requestRef), tx.get(auditRef(orgId, eventId))]);
+    if (existing.exists || audit.exists) return;
+    tx.create(requestRef, {
+      schemaVersion: 1, requestId, organizationId: orgId, clientId: client.id,
+      targetUid: client.authUid, channel: 'email',
+      oldEmailNormalized: client.emailNormalized, newEmailNormalized: input.newEmail,
+      status: 'pending', reason: input.reason || null,
+      createdAt: FieldValue.serverTimestamp(), updatedAt: FieldValue.serverTimestamp(), createdBy: uid
+    });
+    tx.create(auditRef(orgId, eventId), auditEvent({
+      orgId, eventId, type: 'client.email-change-requested', actor,
+      subject: { type: 'client', id: client.id }, idempotencyKey: input.idempotencyKey,
+      metadata: { clientId: client.id }
+    }));
+    tx.create(db.doc(`organizations/${orgId}/notifications/${eventId}`), {
+      schemaVersion: 1, notificationId: eventId, recipientUid: client.authUid,
+      type: 'client.email-change-requested', subjectId: client.id, readAt: null, dedupeKey: eventId,
+      createdAt: FieldValue.serverTimestamp(), updatedAt: FieldValue.serverTimestamp(),
+      delivery: { inApp: 'pending', email: 'disabled' }
+    });
+  });
+  return {
+    status: 'requested', requestId, clientId: client.id,
+    message: 'Proposta inviata: il cliente deve confermare dall’app prima che l’email cambi.'
+  };
+});
+
+// Conferma/rifiuto del cambio email da parte del cliente. Solo la conferma
+// esplicita aggiorna l'email in Firebase Auth (e richiede nuova verifica).
+exports.respondMyEmailChange = callable(async (data, uid) => {
+  const input = validateRespondClientEmailChange(data);
+  const orgId = SINGLE_ORGANIZATION_ID;
+  const requestRef = db.doc(`organizations/${orgId}/emailChangeRequests/${input.requestId}`);
+  const snapshot = await requestRef.get();
+  if (!snapshot.exists) throw new HttpsError('not-found', 'Richiesta non trovata');
+  const request = snapshot.data();
+  if (request.targetUid !== uid) throw new HttpsError('not-found', 'Richiesta non trovata');
+  const linkSnap = await db.doc(`accountClientLinks/${uid}`).get();
+  if (!linkSnap.exists || linkSnap.data()?.status !== 'active' || linkSnap.data()?.clientId !== request.clientId) {
+    throw new HttpsError('permission-denied', 'Collegamento professionista non attivo');
+  }
+  if (request.status !== 'pending') {
+    if (request.status === 'accepted' && input.decision === 'accept') {
+      return { status: 'already-accepted', email: request.newEmailNormalized };
+    }
+    throw new HttpsError('failed-precondition', request.status === 'accepted'
+      ? 'Email già aggiornata'
+      : 'Richiesta non più valida: chiedi al tuo nutrizionista');
+  }
+  const eventId = checksum(`client.email-change-${input.decision}:${input.requestId}`).slice(0, 32);
+  const actor = { uid, role: 'client' };
+  if (input.decision === 'reject') {
+    await db.runTransaction(async tx => {
+      const [fresh, audit] = await Promise.all([tx.get(requestRef), tx.get(auditRef(orgId, eventId))]);
+      if (audit.exists) return;
+      if (fresh.data()?.status !== 'pending') throw new HttpsError('failed-precondition', 'Richiesta non più valida');
+      tx.update(requestRef, {
+        status: 'rejected', decidedAt: FieldValue.serverTimestamp(), decidedBy: uid,
+        updatedAt: FieldValue.serverTimestamp()
+      });
+      tx.create(auditRef(orgId, eventId), auditEvent({
+        orgId, eventId, type: 'client.email-change-rejected', actor,
+        subject: { type: 'client', id: request.clientId }, idempotencyKey: input.idempotencyKey, metadata: {}
+      }));
+    });
+    return { status: 'rejected', message: 'Proposta rifiutata: il tuo indirizzo email resta invariato.' };
+  }
+  const newEmail = request.newEmailNormalized;
+  const existing = await authUserByEmail(newEmail);
+  if (existing && existing.uid !== uid) {
+    throw new HttpsError('already-exists', 'Esiste già un account con il nuovo indirizzo: contatta il tuo nutrizionista');
+  }
+  await db.runTransaction(async tx => {
+    const [fresh, audit] = await Promise.all([tx.get(requestRef), tx.get(auditRef(orgId, eventId))]);
+    if (audit.exists) return;
+    if (fresh.data()?.status !== 'pending') throw new HttpsError('failed-precondition', 'Richiesta non più valida: chiedi al tuo nutrizionista');
+    tx.update(requestRef, {
+      status: 'accepted', decidedAt: FieldValue.serverTimestamp(), decidedBy: uid,
+      updatedAt: FieldValue.serverTimestamp()
+    });
+    tx.create(auditRef(orgId, eventId), auditEvent({
+      orgId, eventId, type: 'client.email-change-accepted', actor,
+      subject: { type: 'client', id: request.clientId }, idempotencyKey: input.idempotencyKey,
+      metadata: { clientId: request.clientId }
+    }));
+  });
+  // Solo ora l'email cambia in Firebase Auth; la verifica torna da fare e le
+  // sessioni attive vengono invalidate da Firebase (il cliente accede con la
+  // nuova email e la password scelta da lui: il nutrizionista non la conosce).
+  try {
+    await adminAuth().updateUser(uid, { email: newEmail, emailVerified: false });
+  } catch (error) {
+    if (error?.code === 'auth/email-already-exists') {
+      throw new HttpsError('already-exists', 'Esiste già un account con il nuovo indirizzo: contatta il tuo nutrizionista');
+    }
+    logger.error('Cambio email non riuscito', { code: error?.code, email: maskEmail(newEmail) });
+    throw new HttpsError('internal', 'Cambio email non riuscito: riprova o contatta l’assistenza');
+  }
+  // Auth è la fonte di verità per l'accesso: se l'allineamento del profilo
+  // Firestore fallisce, l'email è comunque cambiata e il caso resta tracciato
+  // (nessun blocco per il cliente, nessun dato perso).
+  const clientRef = db.doc(`organizations/${orgId}/clients/${request.clientId}`);
+  try {
+    await db.runTransaction(async tx => {
+      const fresh = await tx.get(clientRef);
+      if (!fresh.exists || fresh.data()?.authUid !== uid) {
+        tx.set(requestRef, { profileSyncPending: true, appliedAt: FieldValue.serverTimestamp() }, { merge: true });
+        return;
+      }
+      tx.update(clientRef, {
+        email: newEmail, emailNormalized: newEmail, emailVerified: false,
+        updatedAt: FieldValue.serverTimestamp(), updatedBy: uid
+      });
+      tx.set(requestRef, { appliedAt: FieldValue.serverTimestamp(), profileSyncPending: false }, { merge: true });
+    });
+  } catch (error) {
+    logger.error('Profilo cliente non allineato dopo il cambio email', { code: error?.code, email: maskEmail(newEmail), clientId: request.clientId });
+    await requestRef.set({ profileSyncPending: true }, { merge: true }).catch(() => {});
+  }
+  return {
+    status: 'email-changed', email: newEmail, requiresVerification: true,
+    message: 'Email aggiornata: accedi con il nuovo indirizzo e verificalo per continuare.'
+  };
 });
 
 // Membership professionali dell'utente autenticato (console professionisti).
@@ -1798,17 +2779,34 @@ exports.listMyClientLinkRequests = callable(async (data, uid) => {
   const memberNames = new Map();
   const memberRefs = new Map();
   let activeMemberRef = null;
-  let activeClientDisplayName = null;
+  let activeClientProfile = null;
   pending.forEach(doc => { const value = doc.data(); if (value.nutritionistUid) memberRefs.set(`${value.organizationId}/${value.nutritionistUid}`, value); });
   if (link.exists && link.data()?.status === 'active' && link.data().organizationId === SINGLE_ORGANIZATION_ID) {
     const client = await db.doc(`organizations/${SINGLE_ORGANIZATION_ID}/clients/${link.data().clientId}`).get();
-    activeClientDisplayName = client.data()?.displayName || null;
-    const nutritionistUid = client.data()?.nutritionistUids?.[0];
+    const clientData = client.data() || {};
+    activeClientProfile = {
+      displayName: clientData.displayName || null,
+      firstName: clientData.firstName || null,
+      lastName: clientData.lastName || null,
+      email: clientData.emailNormalized || null,
+      emailVerified: clientData.emailVerified === true
+    };
+    const nutritionistUid = clientData.nutritionistUids?.[0];
     if (nutritionistUid) {
       activeMemberRef = { organizationId: SINGLE_ORGANIZATION_ID, nutritionistUid };
       memberRefs.set(`${SINGLE_ORGANIZATION_ID}/${nutritionistUid}`, activeMemberRef);
     }
   }
+  // Proposte di cambio email in attesa di conferma del cliente (solo le proprie).
+  const emailChangeSnap = await db.collection(`organizations/${SINGLE_ORGANIZATION_ID}/emailChangeRequests`)
+    .where('targetUid', '==', uid).where('status', '==', 'pending').limit(5).get();
+  const pendingEmailChange = emailChangeSnap.docs
+    .find(doc => doc.data()?.status === 'pending') || null;
+  const emailChange = pendingEmailChange ? {
+    requestId: pendingEmailChange.id,
+    newEmail: pendingEmailChange.data()?.newEmailNormalized || null,
+    createdAt: iso(pendingEmailChange.data()?.createdAt)
+  } : null;
   await Promise.all([...orgIds].map(async orgId => {
     const org = await db.doc(`organizations/${orgId}`).get();
     orgNames.set(orgId, org.exists ? (org.data()?.name || orgId) : orgId);
@@ -1828,7 +2826,10 @@ exports.listMyClientLinkRequests = callable(async (data, uid) => {
     })),
     link: link.exists && link.data()?.status === 'active' && link.data().organizationId === SINGLE_ORGANIZATION_ID
       ? { organizationId: link.data().organizationId, organizationName: orgNames.get(link.data().organizationId) || link.data().organizationId,
-          clientId: link.data().clientId, displayName: activeClientDisplayName,
+          clientId: link.data().clientId, displayName: activeClientProfile?.displayName || null,
+          firstName: activeClientProfile?.firstName || null, lastName: activeClientProfile?.lastName || null,
+          email: activeClientProfile?.email || null, emailVerified: activeClientProfile?.emailVerified === true,
+          emailChange,
           nutritionistUsername: activeMemberRef ? person(activeMemberRef).username : null,
           nutritionistDisplayName: activeMemberRef ? person(activeMemberRef).displayName : null }
       : null
@@ -1878,7 +2879,7 @@ exports.updateMyMemberProfile = callable(async (data, uid) => {
 
 // Accettazione/rifiuto dal cliente (app). IDEMPOTENTE: decisioni già prese
 // ritornano no-op; ogni transizione è registrata in audit.
-exports.respondClientLink = callable(async (data, uid) => {
+exports.respondClientLink = callable(async (data, uid, call) => {
   const input = validateRespondClientLink(data);
   const snap = await clientLinkRequestsForUid(uid);
   const found = snap.docs.find(doc => doc.id === input.requestId);
@@ -1886,6 +2887,12 @@ exports.respondClientLink = callable(async (data, uid) => {
   const request = found.data();
   const orgId = SINGLE_ORGANIZATION_ID;
   if (request.organizationId && request.organizationId !== orgId) throw new HttpsError('not-found', 'Richiesta non trovata');
+  // Le richieste nate da un invito con email reale (canale "email") richiedono
+  // l'email verificata: il collegamento abilita dati professionali (ADR 0004).
+  // Le richieste legacy (username, solo test) non sono toccate.
+  if (request.channel === 'email' && call?.auth?.token?.email_verified !== true) {
+    throw new HttpsError('failed-precondition', 'Verifica prima il tuo indirizzo email: poi potrai accettare o rifiutare la richiesta');
+  }
   const clientRef = db.doc(`organizations/${orgId}/clients/${request.clientId}`);
   const actor = { uid, role: 'client' };
   const linkRef = db.doc(`accountClientLinks/${uid}`);

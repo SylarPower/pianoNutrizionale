@@ -237,15 +237,51 @@ cambio di catalogo richiede conferma (nudge) senza ricalcoli retroattivi.
 // organizations/{orgId}/clientLinkRequests/{requestId}
 {
   schemaVersion: 1, requestId, organizationId, clientId,
-  targetUid, targetUsername, nutritionistUid,
-  status: "pending|accepted|rejected|revoked",
+  channel: "legacy-test|email",   // email = richiesta del nuovo modello
+  targetUid, targetUsername, targetEmailNormalized?, targetEmailHash?,
+  nutritionistUid, status: "pending|accepted|rejected|revoked",
   createdAt, updatedAt, createdBy, decidedAt, decidedBy
+}
+
+// Invito con EMAIL REALE (ADR 0004): type clientEmail
+{
+  schemaVersion: 2, inviteId, type: "clientEmail", channel: "email",
+  organizationId,
+  targetEmailNormalized, targetEmailHash,   // mai l'indirizzo in chiaro nelle risposte altrui
+  firstName, lastName,                      // inseriti dal nutrizionista, non modificabili dal cliente
+  clientId, nutritionistUid,
+  tokenHash: "sha256 hex",                  // il chiaro esiste una sola volta (creazione/reinvio/correzione)
+  status: "pending|accepted|expired|superseded|revoked",
+  delivery: { channel: "email|manual-link", status: "pending|sent|failed|manual", attempts, errorCode? },
+  expiresAt, tokenRotation?, supersededBy?, redeemedBy?, verifiedAt?,
+  createdAt, updatedAt, createdBy
+}
+
+// organizations/{orgId}/emailChangeRequests/{requestId} (server-only)
+{
+  schemaVersion: 1, requestId, organizationId, clientId, targetUid,
+  oldEmailNormalized, newEmailNormalized,
+  status: "pending|accepted|rejected", reason?,
+  createdAt, updatedAt, createdBy, decidedAt, decidedBy, appliedAt?
+}
+
+// organizations/{orgId}/clients/{clientId} — campi del nuovo modello
+{
+  authUid, status: "pending|active|unlinked",
+  email, emailNormalized, emailVerified: true|false,
+  firstName, lastName, displayName,
+  invitedUsername,                          // solo account tecnici legacy
+  nutritionistUids, activeAssignment, displayCode,
+  createdAt, updatedAt, createdBy, updatedBy
 }
 ```
 
-Stati cliente: `pending` (invitato), `active`, `unlinked` (legame revocato,
-doc conservato). La rimozione revoca link + sospende assignment, senza
-cancellare Auth/household/ricette/backup.
+Stati cliente: `pending` (invitato, oppure account creato senza email
+verificata), `active`, `unlinked` (legame revocato, doc conservato). Il
+collegamento diventa attivo **dopo la verifica email** per gli inviti con email
+reale; per gli account tecnici legacy vale il comportamento storico (attivo al
+riscatto). La rimozione revoca link + sospende assignment, senza cancellare
+Auth/household/ricette/backup. Dettagli operativi: `docs/inviti-email.md`.
 
 ## Catalogo globale e import (Fase 2)
 
@@ -281,7 +317,16 @@ nuova versione mai sovrascritta; le revisioni strutture conservano
 - `acceptOrganizationInvite({ token })`
 - `listOrganizationUsers({ organizationId })`
 - `setMemberStatus({ organizationId, userId, status: 'active|suspended', idempotencyKey })`
-- `inviteClientLink({ organizationId, username, nutritionistUid?, idempotencyKey })`
+- `inviteClientLink({ organizationId, username, nutritionistUid?, idempotencyKey })` — solo account tecnici di test (`LEGACY_TEST_INVITES_ENABLED` o emulatori)
+- `inviteClientByEmail({ organizationId, email, firstName, lastName, nutritionistUid?, delivery: 'email'|'manual-link', idempotencyKey })`
+- `getClientInvitePreview({ token })` — non autenticata: il token è il segreto
+- `redeemClientInvite({ token|null, idempotencyKey })` — attiva il collegamento solo con email verificata
+- `resendClientInvite({ organizationId, inviteId, delivery, idempotencyKey })`
+- `correctClientInvite({ organizationId, inviteId, email, firstName, lastName, delivery, idempotencyKey })`
+- `cancelClientInvite({ organizationId, inviteId, reason, idempotencyKey })`
+- `updateClientProfileByStaff({ organizationId, clientId, firstName, lastName, displayName?, idempotencyKey })`
+- `proposeClientEmailChange({ organizationId, clientId, newEmail, reason?, idempotencyKey })`
+- `respondMyEmailChange({ requestId, decision: 'accept'|'reject', idempotencyKey })`
 - `listMyClientLinkRequests({})`
 - `respondClientLink({ requestId, decision: 'accept|reject' })`
 - `requestClientUnlink({})`

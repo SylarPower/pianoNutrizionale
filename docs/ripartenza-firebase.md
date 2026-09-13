@@ -245,12 +245,44 @@ Per ogni persona da seguire ripeti:
    automaticamente e non è visibile né modificabile. Il dominio è vincolato
    dalle Security Rules (`firestore.rules`): cambiarlo richiederebbe di
    ricreare **tutti** gli account, quindi si lascia così.
+
+   > **Clienti reali (modello attuale)**: questo modulo con username è riservato
+   > agli account di test. Per un cliente vero usa **Utenti → Invita → Cliente
+   > con email reale**: riceve un link monouso, trova email/nome/cognome
+   > precompilati dal nutrizionista, sceglie la password e verifica l'email; il
+   > collegamento si attiva dopo la verifica. Guida:
+   > [`inviti-email.md`](inviti-email.md). In produzione la creazione di nuovi
+   > account tecnici è disattivata (`LEGACY_TEST_INVITES_ENABLED`).
 5. Quando il cliente è collegato: menu **Clienti** → **Assegna profilo** → scegli
    una Struttura dieta → **Salva**. Il cliente la vede in app e la conferma: la
    conferma è obbligatoria, nessun protocollo parte da solo.
 6. Da quel momento il cliente ha il profilo del professionista e la Lista della
    spesa "inclusa" finché il collegamento è attivo. **Rimuovi collegamento**
    riporta tutto alle dosi originali senza cancellare nulla.
+
+---
+
+## Passaggio facoltativo — Invio email degli inviti
+
+L'invio dell'invito usa un provider esterno solo se configurato; in alternativa
+si consegna il link a mano dalla console ("Non inviare: mostra il link").
+
+Impostale come **variabili d'ambiente delle funzioni** (Console Google Cloud →
+Cloud Functions → `inviteclientbyemail` → *Modifica* → *Variabili di ambiente*,
+oppure file locale `functions/.env.piano-nutrizionale`, già ignorato da git)
+**senza metterle nel repository**:
+
+```text
+INVITE_EMAIL_PROVIDER=resend
+INVITE_EMAIL_API_KEY=<chiave>
+INVITE_EMAIL_FROM=Studio Piano <inviti@tuodominio.it>
+APP_PUBLIC_URL=https://sylarpower.github.io/pianoNutrizionale
+```
+
+Verifica email e recupero password **non** richiedono questi secret: usano i
+template di Firebase Auth. Se il provider non è configurato la callable risponde
+`delivery-failed` (l'invito resta valido) e nessuna email risulta inviata per
+errore. Dettagli e diagnostica: [`inviti-email.md`](inviti-email.md).
 
 ---
 

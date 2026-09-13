@@ -212,6 +212,22 @@ Per creare `anna`, usa:
 anna@utenti.pianonutrizionale.app
 ```
 
+### Passaggio 3-bis: inviti dei clienti reali (modello attuale)
+
+Gli account creati a mano in Authentication con l'email tecnica
+`nome@utenti.pianonutrizionale.app` sono **account di test**: servono a demo,
+prove e test automatici e restano validi.
+
+I **clienti reali** si invitano invece dalla console con la loro email vera:
+**Utenti → Invita → Cliente con email reale**. Il cliente riceve un link
+monouso, trova email/nome/cognome già compilati (inseriti dal nutrizionista),
+sceglie **solo la password** e verifica l'indirizzo email; il collegamento con
+il professionista si attiva dopo la verifica. Se l'account esiste già, riceve
+una richiesta da accettare in app.
+
+Guida completa (convivenza con gli account di test, invio email, DNS, recupero
+password, modifica email, diagnostica): [`docs/inviti-email.md`](docs/inviti-email.md).
+
 ### Passaggio 4: creare Firestore
 
 1. Nel menu Firebase apri **Firestore Database**.

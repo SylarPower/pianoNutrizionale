@@ -168,7 +168,6 @@ Alert: spike permission-denied, checksum mismatch, errori scheduler, backlog olt
 
 - provider pubblicitario reale e verifica ricevuta (`requestShoppingReward` verifica solo l'entitlement da assignment);
 - billing/abbonamenti;
-- email provider, retry queue e dead-letter;
 - UI completa inviti, audit, contenuti editoriali e GDPR self-service;
 - job definitivi export/cancellazione/retention;
 - analytics esterne;
@@ -182,3 +181,17 @@ Queste parti non devono essere simulate nel client. La slice consegnata copre co
 ### Nome visualizzato e inviti esistenti
 
 Un invito a un account già esistente compare nella campanella dell’app, con il nome del professionista e i pulsanti per accettare o rifiutare. Nome e cognome sono facoltativi: si possono salvare dalla sezione di collegamento professionista (cliente) o dalla console (professionista).
+
+### Inviti con email reale (ADR 0004)
+
+La console invita i clienti reali con la loro **email** (`Cliente con email
+reale`): il cliente sceglie la password dal link `#/invito/<token>` e il
+collegamento si attiva **dopo la verifica dell’email**. Gli account tecnici con
+email fittizia restano per i test e si creano dal modulo legacy solo negli
+emulatori o con `LEGACY_TEST_INVITES_ENABLED=true` (mai in produzione se non per
+una prova concordata).
+
+Configurazione dell’invio email (variabili d’ambiente delle funzioni, mai nel
+repository) e procedure di diagnostica: [`docs/inviti-email.md`](inviti-email.md).
+Senza provider configurato l’invito resta pendente e si consegna il link a mano:
+la callable non dichiara mai un invio riuscito se il provider ha dato errore.

@@ -31,6 +31,9 @@ test('strutture, revisioni e code: nessun accesso diretto', () => {
   assert.match(rules, /match \/organizations\/\{organizationId\}\/dietStructures\/\{structureId\} \{\s+allow read, write: if false;/);
   assert.match(rules, /match \/organizations\/\{organizationId\}\/dietStructures\/\{structureId\}\/revisions\/\{revisionId\} \{\s+allow read, write: if false;/);
   assert.match(rules, /match \/organizations\/\{organizationId\}\/\{document=\*\*\} \{\s+allow read, write: if false;/);
+  // Proposte di cambio email: server-only, nessuna lettura diretta (il
+  // destinatario le vede tramite callable, legate al suo UID).
+  assert.match(rules, /match \/organizations\/\{organizationId\}\/emailChangeRequests\/\{requestId\} \{\s+allow read, write: if false;/);
 });
 
 test('singola organizzazione piano e ruolo solo nutritionist', () => {

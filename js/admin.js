@@ -1,6 +1,6 @@
 'use strict';
 
-const adminState = { user: null, reports: [], clients: [], ruleSets: [], structures: [], compareSelection: new Set(), users: null, editingStructure: null, cursor: null, selectedReport: null, pickerSelection: new Set(), catalogPreview: null, isCreator: false };
+const adminState = { user: null, reports: [], clients: [], clientInvitations: [], clientEmailChanges: [], ruleSets: [], structures: [], compareSelection: new Set(), users: null, editingStructure: null, cursor: null, selectedReport: null, pickerSelection: new Set(), catalogPreview: null, isCreator: false };
 let catalogIndexCache = null;
 let catalogCategoriesCache = [];
 let catalogTruncated = false;
@@ -117,9 +117,14 @@ async function loadClients() {
   $('clients-feedback').textContent = 'Caricamento profili autorizzati…';
   try {
     const result = await callAdminSaasFunction('listAuthorizedClients', { organizationId: orgId() });
-    adminState.clients = result.clients || []; renderClients();
+    adminState.clients = result.clients || [];
+    // Inviti email pendenti e proposte di cambio email dei soli clienti
+    // autorizzati: nessun dato di altri professionisti.
+    adminState.clientInvitations = (result.invitations || []).filter(item => item.channel !== 'legacy-test');
+    adminState.clientEmailChanges = result.emailChanges || [];
+    renderClients();
     $('clients-feedback').textContent = adminState.clients.length ? '' : 'Nessun cliente autorizzato.';
-  } catch (error) { $('clients-feedback').textContent = adminError(error); adminState.clients = []; renderClients(); }
+  } catch (error) { $('clients-feedback').textContent = adminError(error); adminState.clients = []; adminState.clientInvitations = []; adminState.clientEmailChanges = []; renderClients(); }
 }
 
 function clientLabel(client) { return client.displayName || client.username || client.displayCode; }
@@ -132,7 +137,28 @@ function assignmentSummary(client) {
 }
 
 function renderClients() {
-  $('clients-list').innerHTML = adminState.clients.map(client => `<article class="client-card"><p class="eyebrow">CLIENTE</p><h3>${escapeAdmin(clientLabel(client))}</h3><p><small>${escapeAdmin(client.displayCode)}</small></p><p>${escapeAdmin(assignmentSummary(client))}</p><div class="card-actions"><button class="secondary" data-assign-client="${escapeAdmin(client.id)}">${client.activeAssignment ? 'Cambia profilo' : 'Assegna profilo'} →</button>${client.status && client.status !== 'active' ? '' : `<button class="text-button archive-toggle" data-unlink-client="${escapeAdmin(client.id)}" data-display="${escapeAdmin(clientLabel(client))}">Rimuovi collegamento</button>`}</div></article>`).join('');
+  // Un invito email pendente per cliente: stati distinti in console
+  // (In attesa / Scaduto / Annullato) e azioni di correzione e reinvio.
+  const inviteFor = clientId => adminState.clientInvitations.find(item => item.clientId === clientId) || null;
+  const inviteChip = invite => {
+    if (!invite) return '';
+    const status = invite.status === 'pending' ? 'In attesa' : invite.status === 'expired' ? 'Scaduto' : invite.status === 'revoked' ? 'Annullato' : invite.status;
+    const delivery = invite.deliveryStatus === 'failed' ? ' · invio NON riuscito' : invite.deliveryStatus === 'manual' ? ' · link da consegnare' : invite.deliveryStatus === 'sent' ? ' · email inviata' : '';
+    return `<p><small>Invito email · ${escapeAdmin(status)}${escapeAdmin(delivery)}</small></p>
+      <div class="card-actions">
+        <button class="text-button" data-invite-resend="${escapeAdmin(invite.inviteId)}" data-delivery="${escapeAdmin(invite.deliveryChannel || 'email')}">Reinvia link</button>
+        <button class="text-button" data-invite-fix="${escapeAdmin(invite.inviteId)}">Correggi dati</button>
+        <button class="text-button danger-text" data-invite-cancel="${escapeAdmin(invite.inviteId)}">Annulla invito</button>
+      </div>`;
+  };
+  const emailChip = client => client.email
+    ? `<p><small>${escapeAdmin(client.email)} · ${client.emailVerified ? 'email verificata' : 'email da verificare'}</small></p>`
+    : '';
+  $('clients-list').innerHTML = adminState.clients.map(client => {
+    const invite = inviteFor(client.id);
+    const emailChange = adminState.clientEmailChanges.find(item => item.clientId === client.id) || null;
+    return `<article class="client-card"><p class="eyebrow">CLIENTE</p><h3>${escapeAdmin(clientLabel(client))}</h3><p><small>${escapeAdmin(client.displayCode)}</small></p>${emailChip(client)}<p>${escapeAdmin(assignmentSummary(client))}</p>${emailChange ? `<p><small>Cambio email proposto: ${escapeAdmin(emailChange.newEmail || '—')} · in attesa del cliente</small></p>` : ''}${inviteChip(invite)}<div class="card-actions"><button class="secondary" data-assign-client="${escapeAdmin(client.id)}">${client.activeAssignment ? 'Cambia profilo' : 'Assegna profilo'} →</button><button class="secondary" data-client-profile="${escapeAdmin(client.id)}">Anagrafica</button>${client.email ? `<button class="text-button" data-client-email-change="${escapeAdmin(client.id)}">Proponi cambio email</button>` : ''}${client.status && client.status !== 'active' ? '' : `<button class="text-button archive-toggle" data-unlink-client="${escapeAdmin(client.id)}" data-display="${escapeAdmin(clientLabel(client))}">Rimuovi collegamento</button>`}</div></article>`;
+  }).join('') || '<p class="feedback">Nessun cliente attivo. Gli inviti in attesa si gestiscono dalla sezione Utenti.</p>';
 }
 
 async function loadStructuresList() {
@@ -1105,14 +1131,36 @@ function renderUsers() {
   $('invite-client-nutritionist').innerHTML = '<option value="">Senza professionista (solo admin)</option>' +
     nutris.map(member => `<option value="${escapeAdmin(member.userId)}">${escapeAdmin(member.displayName || member.username || member.userId.slice(0, 8))}</option>`).join('');
   $('invite-client-nutri-field').style.display = isAdmin ? '' : 'none';
+  if ($('invite-client-email-nutritionist')) {
+    $('invite-client-email-nutritionist').innerHTML = '<option value="">Senza professionista (solo admin)</option>' +
+      nutris.map(member => `<option value="${escapeAdmin(member.userId)}">${escapeAdmin(member.displayName || member.username || member.userId.slice(0, 8))}</option>`).join('');
+  }
+  if ($('invite-client-email-nutri-field')) $('invite-client-email-nutri-field').style.display = isAdmin ? '' : 'none';
+  // Inviti email reali: la console mostra i dati inseriti dal nutrizionista e
+  // le azioni di correzione/reinvio/annullamento (mai il token in chiaro).
+  const emailInvites = (data.invitations || []).filter(item => item.type === 'clientEmail');
+  if (emailInvites.length) {
+    $('links-list').innerHTML = emailInvites.map(item => `
+    <article class="report-row">
+      <div class="report-main"><span class="ingredient-mark">✉</span><div><strong>${escapeAdmin([item.firstName, item.lastName].filter(Boolean).join(' ') || item.targetEmail || '—')}</strong><small>${escapeAdmin(item.targetEmail || '—')} · ${item.deliveryStatus === 'failed' ? 'invio email NON riuscito' : item.deliveryStatus === 'sent' ? 'email inviata' : item.deliveryStatus === 'manual' ? 'link da consegnare' : 'consegna in corso'}${item.expiresAt ? ` · scade ${formatDateOnly(item.expiresAt)}` : ''}</small></div></div>
+      <div class="report-meta"><small>Stato</small><strong>In attesa</strong></div>
+      <div class="report-meta"><small>Azioni</small><strong class="member-actions">
+        <button class="text-button" data-invite-resend="${escapeAdmin(item.inviteId)}" data-delivery="${escapeAdmin(item.deliveryChannel || 'email')}">Reinvia</button>
+        <button class="text-button" data-invite-fix="${escapeAdmin(item.inviteId)}">Correggi</button>
+        <button class="text-button danger-text" data-invite-cancel="${escapeAdmin(item.inviteId)}">Annulla</button>
+      </strong></div>
+    </article>`).join('');
+  }
   const pendingLinks = [...(data.requests || []).filter(item => !item.status || item.status === 'pending').map(item => ({ ...item, kind: 'request' })),
     ...(data.invitations || []).filter(item => item.type === 'client').map(item => ({ ...item, kind: 'invite' }))];
-  $('links-list').innerHTML = pendingLinks.map(item => `
+  const linksHtml = pendingLinks.map(item => `
     <article class="report-row">
       <div class="report-main"><span class="ingredient-mark">${item.kind === 'request' ? '✉' : '◈'}</span><div><strong>${escapeAdmin(item.targetUsername || '—')}</strong><small>${item.kind === 'request' ? 'Richiesta da accettare in app' : `Invito monouso${item.expiresAt ? ` · scade ${formatDateOnly(item.expiresAt)}` : ''}`}</small></div></div>
       <div class="report-meta"><small>Stato</small><strong>In attesa</strong></div>
       <div class="report-meta"><small>Cliente</small><strong>${escapeAdmin(item.clientId ? item.clientId.slice(0, 8) : '—')}</strong></div>
-    </article>`).join('') || '<p class="feedback">Nessun collegamento in attesa.</p>';
+    </article>`).join('');
+  if (emailInvites.length) $('links-list').insertAdjacentHTML('beforeend', linksHtml);
+  else $('links-list').innerHTML = linksHtml || '<p class="feedback">Nessun collegamento in attesa.</p>';
   const nutriInvites = (data.invitations || []).filter(item => item.type === 'nutritionist');
   if (nutriInvites.length) {
     $('links-list').insertAdjacentHTML('beforeend', nutriInvites.map(item => `
@@ -1197,6 +1245,214 @@ async function submitClientInvite(event) {
     $('invite-client-username').value = '';
     await loadUsers();
   } catch (error) { out.textContent = adminError(error); }
+}
+
+// ---- Inviti con email reale (nuovo flusso) ----
+// Il backend distingue le situazioni; la console mostra un messaggio diverso
+// per ciascuna, senza inventare stati e senza rimostrare token già consumati.
+function clientEmailInviteMessage(result) {
+  const scadenza = result?.expiresAt ? `Scade il ${new Date(result.expiresAt).toLocaleDateString('it-IT')}. ` : '';
+  switch (result?.status) {
+    case 'invited':
+      return `${scadenza}${result.delivery?.status === 'manual'
+        ? 'Consegna questo link una sola volta, fuori piattaforma: il cliente sceglie la password e poi verifica l’email.'
+        : 'Email inviata al cliente: il collegamento si attiva dopo la verifica dell’indirizzo.'}`;
+    case 'invite-resent':
+      return `Reinvio completato. ${result.delivery?.status === 'manual' ? 'Nuovo link pronto: il precedente non funziona più.' : 'Il link precedente non funziona più.'}`;
+    case 'invite-corrected':
+      return `Dati corretti. ${result.delivery?.status === 'manual' ? 'Consegna il nuovo link: il precedente non funziona più.' : 'Nuovo link inviato: il precedente non funziona più.'}`;
+    case 'delivery-failed':
+      return `${result.message || 'Invito creato ma email NON inviata.'} Riprova oppure scegli “Non inviare: mostra il link”.`;
+    case 'already-pending':
+      return result.message || 'Esiste già un invito o una richiesta in attesa per questo indirizzo.';
+    case 'link-request-created':
+      return 'Richiesta inviata: il cliente accetta o rifiuta dall’app.';
+    case 'already-linked-same':
+      return 'Questo cliente è già associato a te.';
+    case 'already-linked-other':
+      return 'Questo account è già associato a un altro professionista e non può ricevere un nuovo invito.';
+    case 'revoked':
+      return 'Invito annullato: il link non è più utilizzabile.';
+    case 'already-revoked':
+      return 'Invito già annullato.';
+    default:
+      return result?.message || 'Operazione completata.';
+  }
+}
+
+async function submitClientEmailInvite(event) {
+  event.preventDefault();
+  const out = $('invite-client-email-result');
+  const linkInput = $('invite-client-email-link');
+  linkInput.classList.add('hidden');
+  linkInput.value = '';
+  out.textContent = 'Invito in corso…';
+  try {
+    const result = await callAdminSaasFunction('inviteClientByEmail', {
+      organizationId: orgId(),
+      email: $('invite-client-email').value.trim(),
+      firstName: $('invite-client-first-name').value.trim(),
+      lastName: $('invite-client-last-name').value.trim(),
+      nutritionistUid: $('invite-client-email-nutritionist').value || null,
+      delivery: $('invite-client-email-delivery').value,
+      idempotencyKey: idem('clientemail')
+    });
+    out.textContent = clientEmailInviteMessage(result);
+    if (result.inviteUrl) {
+      linkInput.value = result.inviteUrl;
+      linkInput.classList.remove('hidden');
+      linkInput.focus();
+      linkInput.select();
+    }
+    if (result.status !== 'delivery-failed') {
+      $('invite-client-email').value = '';
+      $('invite-client-first-name').value = '';
+      $('invite-client-last-name').value = '';
+    }
+    await Promise.all([loadUsers(), loadClients()]);
+  } catch (error) { out.textContent = adminError(error); }
+}
+
+async function resendClientInvite(inviteId, delivery) {
+  $('clients-feedback').textContent = 'Reinvio in corso…';
+  try {
+    const result = await callAdminSaasFunction('resendClientInvite', {
+      organizationId: orgId(), inviteId, delivery: delivery === 'manual-link' ? 'manual-link' : 'email', idempotencyKey: idem('invite-resend')
+    });
+    $('clients-feedback').textContent = clientEmailInviteMessage(result);
+    if (result.inviteUrl) {
+      const linkInput = $('invite-client-email-link');
+      linkInput.value = result.inviteUrl;
+      linkInput.classList.remove('hidden');
+      linkInput.focus();
+      linkInput.select();
+    }
+    await Promise.all([loadUsers(), loadClients()]);
+  } catch (error) { $('clients-feedback').textContent = adminError(error); }
+}
+
+async function cancelClientInvite(inviteId) {
+  const reason = prompt('Motivo dell’annullamento (audit):', 'Invito non più necessario');
+  if (reason === null) return;
+  if (String(reason).trim().length < 3) { $('clients-feedback').textContent = 'Indica un motivo di almeno 3 caratteri.'; return; }
+  try {
+    const result = await callAdminSaasFunction('cancelClientInvite', {
+      organizationId: orgId(), inviteId, reason: String(reason).trim(), idempotencyKey: idem('invite-cancel')
+    });
+    $('clients-feedback').textContent = clientEmailInviteMessage(result);
+    await Promise.all([loadUsers(), loadClients()]);
+  } catch (error) { $('clients-feedback').textContent = adminError(error); }
+}
+
+function openInviteFix(inviteId) {
+  const invite = adminState.clientInvitations.find(item => item.inviteId === inviteId)
+    || ((adminState.users?.invitations || []).find(item => item.inviteId === inviteId));
+  if (!invite) { $('clients-feedback').textContent = 'Invito non trovato: aggiorna l’elenco.'; return; }
+  $('invite-fix-invite-id').value = invite.inviteId;
+  $('invite-fix-email').value = invite.targetEmail || '';
+  $('invite-fix-first-name').value = invite.firstName || '';
+  $('invite-fix-last-name').value = invite.lastName || '';
+  $('invite-fix-delivery').value = invite.deliveryChannel === 'manual-link' ? 'manual-link' : 'email';
+  $('invite-fix-lead').textContent = `Invito per ${invite.targetEmail || 'cliente'}: correggendo i dati il link precedente smette di funzionare.`;
+  $('invite-fix-error').textContent = '';
+  $('invite-fix-dialog').classList.remove('hidden');
+  $('invite-fix-email').focus();
+}
+
+function closeInviteFix() { $('invite-fix-dialog').classList.add('hidden'); }
+
+async function submitInviteFix(event) {
+  event.preventDefault();
+  const errorEl = $('invite-fix-error');
+  errorEl.textContent = '';
+  try {
+    const result = await callAdminSaasFunction('correctClientInvite', {
+      organizationId: orgId(),
+      inviteId: $('invite-fix-invite-id').value,
+      email: $('invite-fix-email').value.trim(),
+      firstName: $('invite-fix-first-name').value.trim(),
+      lastName: $('invite-fix-last-name').value.trim(),
+      delivery: $('invite-fix-delivery').value,
+      idempotencyKey: idem('invite-fix')
+    });
+    closeInviteFix();
+    $('clients-feedback').textContent = clientEmailInviteMessage(result);
+    if (result.inviteUrl) {
+      const linkInput = $('invite-client-email-link');
+      linkInput.value = result.inviteUrl;
+      linkInput.classList.remove('hidden');
+    }
+    await Promise.all([loadUsers(), loadClients()]);
+  } catch (error) { errorEl.textContent = adminError(error); }
+}
+
+// ---- Anagrafica cliente e cambio email ----
+function openClientProfile(clientId) {
+  const client = adminState.clients.find(item => item.id === clientId);
+  if (!client) return;
+  $('client-profile-client-id').value = clientId;
+  $('client-profile-first-name').value = client.firstName || '';
+  $('client-profile-last-name').value = client.lastName || '';
+  $('client-profile-display-name').value = client.displayName || '';
+  $('client-profile-lead').textContent = `${client.email || client.displayCode || 'Cliente'}: nome e cognome sono visibili al cliente e usati nel suo profilo.`;
+  $('client-profile-error').textContent = '';
+  $('client-profile-dialog').classList.remove('hidden');
+  $('client-profile-first-name').focus();
+}
+
+function closeClientProfile() { $('client-profile-dialog').classList.add('hidden'); }
+
+async function submitClientProfile(event) {
+  event.preventDefault();
+  const errorEl = $('client-profile-error');
+  errorEl.textContent = '';
+  try {
+    await callAdminSaasFunction('updateClientProfileByStaff', {
+      organizationId: orgId(),
+      clientId: $('client-profile-client-id').value,
+      firstName: $('client-profile-first-name').value.trim(),
+      lastName: $('client-profile-last-name').value.trim(),
+      displayName: $('client-profile-display-name').value.trim() || null,
+      idempotencyKey: idem('client-profile')
+    });
+    closeClientProfile();
+    $('clients-feedback').textContent = 'Anagrafica aggiornata e cliente avvisato in app.';
+    await loadClients();
+  } catch (error) { errorEl.textContent = adminError(error); }
+}
+
+function openEmailChange(clientId) {
+  const client = adminState.clients.find(item => item.id === clientId);
+  if (!client) return;
+  $('email-change-client-id').value = clientId;
+  $('email-change-new-email').value = '';
+  $('email-change-reason').value = '';
+  $('email-change-lead').textContent = `Nuova email per ${clientLabel(client)} (attuale: ${client.email || '—'}). Il cliente deve confermare dall’app; poi dovrà verificare il nuovo indirizzo.`;
+  $('email-change-error').textContent = '';
+  $('email-change-dialog').classList.remove('hidden');
+  $('email-change-new-email').focus();
+}
+
+function closeEmailChange() { $('email-change-dialog').classList.add('hidden'); }
+
+async function submitEmailChange(event) {
+  event.preventDefault();
+  const errorEl = $('email-change-error');
+  errorEl.textContent = '';
+  try {
+    const result = await callAdminSaasFunction('proposeClientEmailChange', {
+      organizationId: orgId(),
+      clientId: $('email-change-client-id').value,
+      newEmail: $('email-change-new-email').value.trim(),
+      reason: $('email-change-reason').value.trim(),
+      idempotencyKey: idem('email-change')
+    });
+    closeEmailChange();
+    $('clients-feedback').textContent = result.status === 'unchanged'
+      ? 'L’indirizzo è già quello del cliente.'
+      : 'Proposta inviata: il cliente deve confermare dall’app.';
+    await loadClients();
+  } catch (error) { errorEl.textContent = adminError(error); }
 }
 
 async function changeMemberStatus(userId, status) {
@@ -1342,6 +1598,21 @@ function bindAdmin() {
   document.querySelectorAll('[data-verify-username]').forEach(node => node.addEventListener('click', () => verifyUsername(node.dataset.verifyUsername, node.dataset.verifyOut)));
   $('invite-nutritionist-form').addEventListener('submit', submitNutritionistInvite);
   $('invite-client-form').addEventListener('submit', submitClientInvite);
+  $('invite-client-email-form')?.addEventListener('submit', submitClientEmailInvite);
+  $('invite-fix-form')?.addEventListener('submit', submitInviteFix);
+  $('client-profile-form')?.addEventListener('submit', submitClientProfile);
+  $('email-change-form')?.addEventListener('submit', submitEmailChange);
+  document.querySelectorAll('[data-close-invite-fix]').forEach(node => node.addEventListener('click', closeInviteFix));
+  document.querySelectorAll('[data-close-client-profile]').forEach(node => node.addEventListener('click', closeClientProfile));
+  document.querySelectorAll('[data-close-email-change]').forEach(node => node.addEventListener('click', closeEmailChange));
+  $('links-list')?.addEventListener('click', event => {
+    const resend = event.target.closest('[data-invite-resend]');
+    if (resend) { resendClientInvite(resend.dataset.inviteResend, resend.dataset.delivery); return; }
+    const fix = event.target.closest('[data-invite-fix]');
+    if (fix) { openInviteFix(fix.dataset.inviteFix); return; }
+    const cancel = event.target.closest('[data-invite-cancel]');
+    if (cancel) cancelClientInvite(cancel.dataset.inviteCancel);
+  });
   $('members-list').addEventListener('click', event => {
     const statusButton = event.target.closest('[data-member-status]');
     if (statusButton) { changeMemberStatus(statusButton.dataset.memberStatus, statusButton.dataset.status); return; }
@@ -1350,7 +1621,17 @@ function bindAdmin() {
   });
   $('clients-list').addEventListener('click', event => {
     const unlink = event.target.closest('[data-unlink-client]');
-    if (unlink) openUnlink(unlink.dataset.unlinkClient, unlink.dataset.display);
+    if (unlink) { openUnlink(unlink.dataset.unlinkClient, unlink.dataset.display); return; }
+    const profile = event.target.closest('[data-client-profile]');
+    if (profile) { openClientProfile(profile.dataset.clientProfile); return; }
+    const emailChange = event.target.closest('[data-client-email-change]');
+    if (emailChange) { openEmailChange(emailChange.dataset.clientEmailChange); return; }
+    const resend = event.target.closest('[data-invite-resend]');
+    if (resend) { resendClientInvite(resend.dataset.inviteResend, resend.dataset.delivery); return; }
+    const fix = event.target.closest('[data-invite-fix]');
+    if (fix) { openInviteFix(fix.dataset.inviteFix); return; }
+    const cancel = event.target.closest('[data-invite-cancel]');
+    if (cancel) cancelClientInvite(cancel.dataset.inviteCancel);
   });
   $('unlink-form').addEventListener('submit', submitUnlink);
   document.querySelectorAll('[data-close-unlink]').forEach(node => node.addEventListener('click', closeUnlink));

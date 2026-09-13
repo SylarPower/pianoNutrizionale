@@ -125,6 +125,84 @@ function hashToken(token) {
   return crypto.createHash('sha256').update(token, 'utf8').digest('hex');
 }
 
+// ---------------------------------------------------------------------
+// Email reali vs account tecnici legacy (ADR 0004)
+//
+// `LEGACY_TEST_EMAIL_DOMAINS` è una LISTA CHIUSA e documentata: solo gli
+// indirizzi su questi domini sono considerati "account tecnici di test".
+// Non si inferisce mai che un'email non valida sia un account di test: le
+// email non valide vengono semplicemente rifiutate.
+// ---------------------------------------------------------------------
+
+const LEGACY_TEST_EMAIL_DOMAINS = Object.freeze([
+  'utenti.pianonutrizionale.app',
+  'pianonutrizionale.app',
+  'pianonutrizionale'
+]);
+const EMAIL_MAX_LENGTH = 254;
+const EMAIL_LOCAL_PATTERN = /^[a-z0-9!#$%&'*+/=?^_`{|}~.-]+$/;
+const EMAIL_DOMAIN_PATTERN = /^[a-z0-9](?:[a-z0-9-]*[a-z0-9])?(?:\.[a-z0-9](?:[a-z0-9-]*[a-z0-9])?)+$/;
+// Nomi e cognomi: lettere (anche accentate), apostrofi, trattini, spazi
+// singoli. Nessun numero, nessun markup, nessuna email.
+const PERSON_NAME_PATTERN = /^[A-Za-zÀ-ÖØ-öø-ÿ]+(?:[ '-][A-Za-zÀ-ÖØ-öø-ÿ]+)*$/;
+
+// Normalizzazione unica degli indirizzi email: trim, minuscole, forma
+// verificata (una sola chiocciola, dominio con almeno un punto, nessun punto
+// iniziale/finale o doppio nella parte locale). Gli indirizzi internazionali
+// vanno inseriti in forma ASCII (punycode).
+function normalizeEmail(value, name = 'email') {
+  const clean = String(value == null ? '' : value).trim().toLowerCase();
+  if (!clean || clean.length > EMAIL_MAX_LENGTH) fail('invalid-argument', `${name} non valida`);
+  const parts = clean.split('@');
+  if (parts.length !== 2) fail('invalid-argument', `${name} non valida`);
+  const [local, domain] = parts;
+  if (!local || local.length > 64 || !EMAIL_LOCAL_PATTERN.test(local)
+    || local.startsWith('.') || local.endsWith('.') || local.includes('..')) {
+    fail('invalid-argument', `${name} non valida`);
+  }
+  if (!domain || domain.length > 253 || !EMAIL_DOMAIN_PATTERN.test(domain)) {
+    fail('invalid-argument', `${name} non valida`);
+  }
+  return `${local}@${domain}`;
+}
+
+function emailDomainOf(value) {
+  const clean = String(value == null ? '' : value).trim().toLowerCase();
+  const at = clean.lastIndexOf('@');
+  return at < 1 ? null : clean.slice(at + 1);
+}
+
+// Condizione ESPLICITA (mai per esclusione): il dominio appartiene alla lista
+// chiusa dei domini tecnici o a un suo sottodominio.
+function isLegacyTestEmail(value) {
+  const domain = emailDomainOf(value);
+  if (!domain) return false;
+  return LEGACY_TEST_EMAIL_DOMAINS.some(item => domain === item || domain.endsWith(`.${item}`));
+}
+
+// Impronta dell'email normalizzata: consente i controlli di unicità e i
+// riferimenti tecnici senza duplicare l'indirizzo in chiaro dove non serve.
+function emailFingerprint(value) {
+  return crypto.createHash('sha256').update(normalizeEmail(value), 'utf8').digest('hex');
+}
+
+// Mascheramento per i log: mai indirizzi completi nei log applicativi.
+// La parte locale sparisce (identifica la persona); il dominio resta leggibile
+// perché serve a riconoscere a colpo d'occhio un indirizzo tecnico legacy.
+function maskEmail(value) {
+  const clean = String(value == null ? '' : value).trim().toLowerCase();
+  const at = clean.lastIndexOf('@');
+  if (at < 1 || at === clean.length - 1) return '***';
+  return `${clean.slice(0, 1)}***@${clean.slice(at + 1)}`;
+}
+
+// Canali di consegna dell'invito: email reale tramite provider configurato,
+// oppure link mostrato alla console per la consegna manuale.
+const INVITE_DELIVERY_MODES = new Set(['email', 'manual-link']);
+const EMAIL_CHANGE_STATUSES = new Set(['pending', 'accepted', 'rejected', 'cancelled']);
+// Stati di un invito email: il documento resta sempre come traccia storica.
+const CLIENT_EMAIL_INVITE_STATUSES = new Set(['pending', 'accepted', 'expired', 'revoked', 'superseded']);
+
 function reportKey({ organizationId, fingerprint, ruleSetId, ruleSetVersion, errorType }) {
   return checksum({
     organizationId: id(organizationId, 'organizationId'),
@@ -721,6 +799,119 @@ function validateInviteClientLink(input) {
   };
 }
 
+// Invito cliente con EMAIL REALE + nome + cognome (nuovo flusso, ADR 0004).
+// Gli indirizzi tecnici legacy sono rifiutati qui: la creazione di account di
+// test passa solo dal flusso legacy esplicito (`inviteClientLink`).
+function validateInviteClientEmail(input) {
+  exactObject(input, ['organizationId', 'email', 'firstName', 'lastName', 'nutritionistUid', 'delivery', 'idempotencyKey']);
+  const rawEmail = text(input.email, 'email', { min: 5, max: EMAIL_MAX_LENGTH });
+  if (isLegacyTestEmail(rawEmail)) {
+    fail('invalid-argument', 'Per i clienti reali serve un indirizzo email reale: gli indirizzi tecnici si gestiscono solo dal flusso legacy di test');
+  }
+  const delivery = text(input.delivery == null || input.delivery === '' ? 'email' : input.delivery, 'delivery');
+  if (!INVITE_DELIVERY_MODES.has(delivery)) fail('invalid-argument', 'delivery non valida (email|manual-link)');
+  return {
+    organizationId: id(input.organizationId, 'organizationId'),
+    email: normalizeEmail(rawEmail),
+    firstName: text(input.firstName, 'firstName', { min: 1, max: 80, pattern: PERSON_NAME_PATTERN }),
+    lastName: text(input.lastName, 'lastName', { min: 1, max: 80, pattern: PERSON_NAME_PATTERN }),
+    nutritionistUid: input.nutritionistUid == null || input.nutritionistUid === ''
+      ? null
+      : text(input.nutritionistUid, 'nutritionistUid', { max: 128 }),
+    delivery,
+    idempotencyKey: id(input.idempotencyKey, 'idempotencyKey')
+  };
+}
+
+// Correzione di un invito email pendente o scaduto (email, nome, cognome).
+function validateCorrectClientInvite(input) {
+  exactObject(input, ['organizationId', 'inviteId', 'email', 'firstName', 'lastName', 'delivery', 'idempotencyKey']);
+  const inviteInput = validateInviteClientEmail({
+    organizationId: input.organizationId,
+    email: input.email,
+    firstName: input.firstName,
+    lastName: input.lastName,
+    nutritionistUid: null,
+    delivery: input.delivery,
+    idempotencyKey: input.idempotencyKey
+  });
+  return { ...inviteInput, inviteId: id(input.inviteId, 'inviteId') };
+}
+
+function validateResendClientInvite(input) {
+  exactObject(input, ['organizationId', 'inviteId', 'delivery', 'idempotencyKey']);
+  const delivery = text(input.delivery == null || input.delivery === '' ? 'email' : input.delivery, 'delivery');
+  if (!INVITE_DELIVERY_MODES.has(delivery)) fail('invalid-argument', 'delivery non valida (email|manual-link)');
+  return {
+    organizationId: id(input.organizationId, 'organizationId'),
+    inviteId: id(input.inviteId, 'inviteId'),
+    delivery,
+    idempotencyKey: id(input.idempotencyKey, 'idempotencyKey')
+  };
+}
+
+function validateCancelClientInvite(input) {
+  exactObject(input, ['organizationId', 'inviteId', 'reason', 'idempotencyKey']);
+  return {
+    organizationId: id(input.organizationId, 'organizationId'),
+    inviteId: id(input.inviteId, 'inviteId'),
+    reason: text(input.reason, 'reason', { min: 3, max: 500 }),
+    idempotencyKey: id(input.idempotencyKey, 'idempotencyKey')
+  };
+}
+
+// Anagrafica del cliente aggiornata dal nutrizionista (nome e cognome).
+// Il nome visualizzato resta facoltativo; l'email NON si tocca qui.
+function validateUpdateClientProfileByStaff(input) {
+  exactObject(input, ['organizationId', 'clientId', 'firstName', 'lastName', 'displayName', 'idempotencyKey']);
+  return {
+    organizationId: id(input.organizationId, 'organizationId'),
+    clientId: id(input.clientId, 'clientId'),
+    firstName: text(input.firstName, 'firstName', { min: 1, max: 80, pattern: PERSON_NAME_PATTERN }),
+    lastName: text(input.lastName, 'lastName', { min: 1, max: 80, pattern: PERSON_NAME_PATTERN }),
+    displayName: optionalText(input.displayName, 'displayName', 120),
+    idempotencyKey: id(input.idempotencyKey, 'idempotencyKey')
+  };
+}
+
+// Proposta di cambio email per un cliente già registrato: non modifica nulla
+// finché il cliente non conferma (nessun takeover possibile).
+function validateProposeClientEmailChange(input) {
+  exactObject(input, ['organizationId', 'clientId', 'newEmail', 'reason', 'idempotencyKey']);
+  const rawEmail = text(input.newEmail, 'newEmail', { min: 5, max: EMAIL_MAX_LENGTH });
+  if (isLegacyTestEmail(rawEmail)) {
+    fail('invalid-argument', 'Per il cambio email serve un indirizzo reale: gli indirizzi tecnici restano solo sugli account di test esistenti');
+  }
+  return {
+    organizationId: id(input.organizationId, 'organizationId'),
+    clientId: id(input.clientId, 'clientId'),
+    newEmail: normalizeEmail(rawEmail, 'newEmail'),
+    reason: optionalText(input.reason, 'reason', 300) || '',
+    idempotencyKey: id(input.idempotencyKey, 'idempotencyKey')
+  };
+}
+
+function validateRespondClientEmailChange(input) {
+  exactObject(input, ['requestId', 'decision', 'idempotencyKey']);
+  const decision = text(input.decision, 'decision');
+  if (decision !== 'accept' && decision !== 'reject') fail('invalid-argument', 'decision non valida (accept|reject)');
+  return {
+    requestId: id(input.requestId, 'requestId'),
+    decision,
+    idempotencyKey: id(input.idempotencyKey, 'idempotencyKey')
+  };
+}
+
+// Riscatto invito email: il token è facoltativo perché il collegamento può
+// essere completato anche solo con l'email autenticata e verificata.
+function validateRedeemClientInvite(input) {
+  exactObject(input, ['token', 'idempotencyKey']);
+  const token = input.token == null || input.token === ''
+    ? null
+    : text(input.token, 'token', { min: 64, max: 64, pattern: /^[a-f0-9]{64}$/ });
+  return { token, idempotencyKey: id(input.idempotencyKey, 'idempotencyKey') };
+}
+
 function validateRespondClientLink(input) {
   exactObject(input, ['requestId', 'decision']);
   const decision = text(input.decision, 'decision');
@@ -903,6 +1094,12 @@ module.exports = {
   validateInviteOrganizationUser, validateInviteClientLink, validateRespondClientLink,
   validateRemoveClientLink, validateMemberStatus, validateRemoveNutritionist,
   validateTransferStructureOwnership,
+  LEGACY_TEST_EMAIL_DOMAINS, EMAIL_MAX_LENGTH, PERSON_NAME_PATTERN,
+  INVITE_DELIVERY_MODES, EMAIL_CHANGE_STATUSES, CLIENT_EMAIL_INVITE_STATUSES,
+  normalizeEmail, emailDomainOf, isLegacyTestEmail, emailFingerprint, maskEmail,
+  validateInviteClientEmail, validateCorrectClientInvite, validateResendClientInvite,
+  validateCancelClientInvite, validateUpdateClientProfileByStaff,
+  validateProposeClientEmailChange, validateRespondClientEmailChange, validateRedeemClientInvite,
   CLIENT_FREQUENCY_KEYS, CLIENT_FREQUENCY_LABELS, CLIENT_FREQUENCY_DEFAULTS,
   CLIENT_FREQUENCY_MAX, DOSE_EDITABLE_ASSIGNMENT_STATUSES,
   frequencyBound, validateClientDoseOverrides, validateGetClientDoses,
