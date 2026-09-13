@@ -267,8 +267,10 @@ Per ogni persona da seguire ripeti:
 L'invio dell'invito usa un provider esterno solo se configurato; in alternativa
 si consegna il link a mano dalla console ("Non inviare: mostra il link").
 
-Imposta i secret sul progetto Firebase (o in GitHub Actions Secrets) **senza
-metterli nel repository**:
+Impostale come **variabili d'ambiente delle funzioni** (Console Google Cloud →
+Cloud Functions → `inviteclientbyemail` → *Modifica* → *Variabili di ambiente*,
+oppure file locale `functions/.env.piano-nutrizionale`, già ignorato da git)
+**senza metterle nel repository**:
 
 ```text
 INVITE_EMAIL_PROVIDER=resend

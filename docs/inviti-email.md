@@ -76,8 +76,8 @@ con tre modalità:
 | `memory` | solo emulatori | nessun invio reale, il messaggio resta in memoria (test automatici) |
 | `resend` | produzione | invio reale via API HTTP |
 
-Variabili d'ambiente per l'invio reale (mai nel repository: Secret Manager o
-GitHub Actions Secrets):
+Variabili d'ambiente per l'invio reale (mai nel repository, mai in chiaro nei
+file pubblicati):
 
 ```text
 INVITE_EMAIL_PROVIDER=resend
@@ -88,10 +88,26 @@ APP_PUBLIC_URL=https://sylarpower.github.io/pianoNutrizionale
 INVITE_EMAIL_ENDPOINT=https://api.resend.com/emails
 ```
 
-Se il provider non è configurato, la callable **non dichiara mai l'invio
-riuscito**: risponde `delivery-failed` con il motivo e l'invito resta pendente,
-recuperabile con "Rinvio" o con "mostra il link". L'adapter `memory` viene
-**rifiutato in produzione** con un messaggio esplicito.
+Queste variabili sono lette **a runtime** dalle funzioni che inviano gli inviti
+(`inviteClientByEmail`, `resendClientInvite`, `correctClientInvite`): non basta
+esportarle nella macchina che pubblica. Dove impostarle, in alternativa tra
+loro:
+
+1. **Console Google Cloud** (consigliato, senza terminale) → *Cloud Functions* →
+   le tre funzioni `inviteclientbyemail`, `resendclientinvite`,
+   `correctclientinvite` → *Modifica* → **Variabili di ambiente** → aggiungi le
+   coppie chiave/valore → *Distribuisci*;
+2. file locale `functions/.env.piano-nutrizionale` (ignorato da `.gitignore`) con
+   le stesse righe, seguito da `firebase deploy --only functions`;
+3. `firebase functions:secrets:set` **non** è sufficiente da solo: il codice legge
+   le variabili d'ambiente, quindi i secret di Secret Manager andrebbero
+   collegati alle funzioni dalla console.
+
+I valori non vanno **mai** nel repository. Se il provider non è configurato, la
+callable **non dichiara mai l'invio riuscito**: risponde `delivery-failed` con il
+motivo e l'invito resta pendente, recuperabile con "Rinvio" o con "mostra il
+link". L'adapter `memory` viene **rifiutato in produzione** con un messaggio
+esplicito.
 
 ### Dominio mittente, SPF, DKIM, DMARC
 
@@ -194,16 +210,13 @@ nuovo invito.
 | il cliente ha verificato ma non vede il profilo | collegamento non ancora attivo | nella card deve risultare "email verificata"; altrimenti reinvia la verifica |
 | errore "account tecnici" nel modulo legacy | flag non attivo | usa il modulo con email reale, oppure imposta `LEGACY_TEST_INVITES_ENABLED=true` solo per i test |
 
-> Nota: il workflow `.github/workflows/deploy-firebase.yml` non elenca i secret
-> nel repository (l'App GitHub usata dall'ambiente di sviluppo non ha il
-> permesso `workflows`). Aggiungili a mano in **GitHub → Settings → Secrets and
-> variables → Actions** con i nomi indicati sopra.
-
 ## 8. Deploy delle modifiche
 
 1. `npm test`, `npm --prefix functions test`, `npm run smoke`, `npm run syntax`.
-2. Deploy delle Functions e (se cambiate) delle regole con il workflow GitHub
-   *Deploy Firebase*.
-3. Se attivi l'invio email, imposta i secret **prima** del deploy e verifica con
-   un invito su un indirizzo tuo.
+2. Deploy di Functions e regole con il workflow GitHub *Deploy Firebase*
+   (pulsante **Run workflow** → scegli *functions* o *functions,firestore:indexes,firestore:rules*).
+3. Imposta le variabili d'ambiente del provider **prima** di provare l'invio
+   (vedi §3) e fai un invito su un indirizzo tuo prima di usarlo con i clienti.
 4. Non attivare il flag legacy in produzione se non per una prova concordata.
+5. Quando modifichi JavaScript, CSS o HTML, incrementa `CACHE_VERSION` in
+   `sw.js` (la versione attuale è **74**).

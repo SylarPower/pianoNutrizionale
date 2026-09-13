@@ -191,7 +191,7 @@ email fittizia restano per i test e si creano dal modulo legacy solo negli
 emulatori o con `LEGACY_TEST_INVITES_ENABLED=true` (mai in produzione se non per
 una prova concordata).
 
-Configurazione dell’invio email (Secret Manager / GitHub Actions Secrets, mai nel
+Configurazione dell’invio email (variabili d’ambiente delle funzioni, mai nel
 repository) e procedure di diagnostica: [`docs/inviti-email.md`](inviti-email.md).
 Senza provider configurato l’invito resta pendente e si consegna il link a mano:
 la callable non dichiara mai un invio riuscito se il provider ha dato errore.

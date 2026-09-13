@@ -134,8 +134,9 @@ Punti rilevanti trovati prima di modificare:
    nome mostrato.
 8. **Consegna dell'invito**: invio email tramite un servizio isolato
    (`functions/src/email-service.js`) oppure "mostra link" (`manual-link`).
-   Verifica email e reset restano sui template Firebase. Segreti solo in
-   variabili d'ambiente (Secret Manager / GitHub Actions Secrets), mai nel
+   Verifica email e reset restano sui template Firebase. Chiavi e mittente
+   vivono solo nelle variabili d'ambiente delle funzioni (console Google Cloud
+   o file locale `functions/.env.<progetto>`, ignorato da git), mai nel
    repository.
 9. **Modello legacy esplicito e controllato**: la creazione di **nuovi**
    account tecnici è consentita solo con `LEGACY_TEST_INVITES_ENABLED=true` o
