@@ -97,9 +97,11 @@ test('rimozione solo dentro la scheda, con revoca logica e audit', () => {
 });
 
 test('invito con email reale: dialog dedicato, professionisti senza enumerazione', () => {
-  for (const id of ['invite-client-open', 'invite-client-dialog', 'invite-client-title', 'invite-client-email-form', 'invite-client-email', 'invite-client-first-name', 'invite-client-last-name', 'invite-client-email-delivery']) {
+  for (const id of ['invite-client-open', 'invite-client-dialog', 'invite-client-title', 'invite-client-email-form', 'invite-client-email', 'invite-client-first-name', 'invite-client-last-name', 'invite-link-dialog']) {
     assert.match(html, new RegExp(`id="${id}"`), `manca #${id}`);
   }
+  // La consegna non si sceglie: il link si consegna sempre a mano.
+  assert.doesNotMatch(html, /id="invite-client-email-delivery"/);
   assert.match(html, /Invita un nuovo cliente/);
   assert.match(js, /function openInviteClientDialog\(\)/);
   assert.match(js, /'inviteClientByEmail'/);

@@ -196,9 +196,10 @@ function maskEmail(value) {
   return `${clean.slice(0, 1)}***@${clean.slice(at + 1)}`;
 }
 
-// Canali di consegna dell'invito: email reale tramite provider configurato,
-// oppure link mostrato alla console per la consegna manuale.
-const INVITE_DELIVERY_MODES = new Set(['email', 'manual-link']);
+// Consegna dell'invito: sempre manuale. Il backend costruisce il link e la
+// console lo mostra con "Copia link" e "Condividi link" (nessun invio
+// automatico di email). Il canale è registrato nel documento per lo storico.
+const INVITE_DELIVERY_CHANNEL = 'manual-link';
 const EMAIL_CHANGE_STATUSES = new Set(['pending', 'accepted', 'rejected', 'cancelled']);
 // Stati di un invito email: il documento resta sempre come traccia storica.
 const CLIENT_EMAIL_INVITE_STATUSES = new Set(['pending', 'accepted', 'expired', 'revoked', 'superseded']);
@@ -958,14 +959,15 @@ function validateInviteClientLink(input) {
 // Invito cliente con EMAIL REALE + nome + cognome (nuovo flusso, ADR 0004).
 // Gli indirizzi tecnici legacy sono rifiutati qui: la creazione di account di
 // test passa solo dal flusso legacy esplicito (`inviteClientLink`).
+// Il link viene sempre consegnato a mano dalla console: il payload non ha più
+// alcuna scelta di consegna (un vecchio campo `delivery` è rifiutato come
+// campo non ammesso, così una console non aggiornata se ne accorge subito).
 function validateInviteClientEmail(input) {
-  exactObject(input, ['organizationId', 'email', 'firstName', 'lastName', 'nutritionistUid', 'delivery', 'idempotencyKey']);
+  exactObject(input, ['organizationId', 'email', 'firstName', 'lastName', 'nutritionistUid', 'idempotencyKey']);
   const rawEmail = text(input.email, 'email', { min: 5, max: EMAIL_MAX_LENGTH });
   if (isLegacyTestEmail(rawEmail)) {
     fail('invalid-argument', 'Per i clienti reali serve un indirizzo email reale: gli indirizzi tecnici si gestiscono solo dal flusso legacy di test');
   }
-  const delivery = text(input.delivery == null || input.delivery === '' ? 'email' : input.delivery, 'delivery');
-  if (!INVITE_DELIVERY_MODES.has(delivery)) fail('invalid-argument', 'delivery non valida (email|manual-link)');
   return {
     organizationId: id(input.organizationId, 'organizationId'),
     email: normalizeEmail(rawEmail),
@@ -974,34 +976,29 @@ function validateInviteClientEmail(input) {
     nutritionistUid: input.nutritionistUid == null || input.nutritionistUid === ''
       ? null
       : text(input.nutritionistUid, 'nutritionistUid', { max: 128 }),
-    delivery,
     idempotencyKey: id(input.idempotencyKey, 'idempotencyKey')
   };
 }
 
 // Correzione di un invito email pendente o scaduto (email, nome, cognome).
 function validateCorrectClientInvite(input) {
-  exactObject(input, ['organizationId', 'inviteId', 'email', 'firstName', 'lastName', 'delivery', 'idempotencyKey']);
+  exactObject(input, ['organizationId', 'inviteId', 'email', 'firstName', 'lastName', 'idempotencyKey']);
   const inviteInput = validateInviteClientEmail({
     organizationId: input.organizationId,
     email: input.email,
     firstName: input.firstName,
     lastName: input.lastName,
     nutritionistUid: null,
-    delivery: input.delivery,
     idempotencyKey: input.idempotencyKey
   });
   return { ...inviteInput, inviteId: id(input.inviteId, 'inviteId') };
 }
 
 function validateResendClientInvite(input) {
-  exactObject(input, ['organizationId', 'inviteId', 'delivery', 'idempotencyKey']);
-  const delivery = text(input.delivery == null || input.delivery === '' ? 'email' : input.delivery, 'delivery');
-  if (!INVITE_DELIVERY_MODES.has(delivery)) fail('invalid-argument', 'delivery non valida (email|manual-link)');
+  exactObject(input, ['organizationId', 'inviteId', 'idempotencyKey']);
   return {
     organizationId: id(input.organizationId, 'organizationId'),
     inviteId: id(input.inviteId, 'inviteId'),
-    delivery,
     idempotencyKey: id(input.idempotencyKey, 'idempotencyKey')
   };
 }
@@ -1254,7 +1251,7 @@ module.exports = {
   validateRemoveClientLink, validateMemberStatus, validateRemoveNutritionist,
   validateTransferStructureOwnership,
   LEGACY_TEST_EMAIL_DOMAINS, EMAIL_MAX_LENGTH, PERSON_NAME_PATTERN,
-  INVITE_DELIVERY_MODES, EMAIL_CHANGE_STATUSES, CLIENT_EMAIL_INVITE_STATUSES,
+  INVITE_DELIVERY_CHANNEL, EMAIL_CHANGE_STATUSES, CLIENT_EMAIL_INVITE_STATUSES,
   normalizeEmail, emailDomainOf, isLegacyTestEmail, emailFingerprint, maskEmail,
   validateInviteClientEmail, validateCorrectClientInvite, validateResendClientInvite,
   validateCancelClientInvite, validateUpdateClientProfileByStaff,

@@ -8,7 +8,10 @@
  *  - "Password dimenticata?" con messaggio uniforme;
  *  - banner di verifica email con reinvio anti-abuso;
  *  - console: invito con email, anagrafica, proposta di cambio email e azioni
- *    su inviti pendenti; mai password o token nei moduli.
+ *    su inviti pendenti; mai password o token nei moduli;
+ *  - consegna del link SEMPRE a mano: finestra con "Copia link" e
+ *    "Condividi link" (stessi gesti della Lista della spesa), nessuna scelta
+ *    di consegna, nessun invio automatico e nessuno stato di invio fallito.
  * Il file è autonomo: nessuna richiesta di rete, solo lettura dei sorgenti.
  */
 const test = require('node:test');
@@ -97,7 +100,7 @@ test('recupero password e verifica email nel client', () => {
 });
 
 test('console: invito con email, stati distinti e azioni su inviti e anagrafica', () => {
-  for (const id of ['invite-client-email-form', 'invite-client-email', 'invite-client-first-name', 'invite-client-last-name', 'invite-client-email-delivery', 'invite-client-email-result', 'invite-client-email-link', 'invite-fix-dialog', 'client-profile-dialog', 'email-change-dialog']) {
+  for (const id of ['invite-client-email-form', 'invite-client-email', 'invite-client-first-name', 'invite-client-last-name', 'invite-client-email-result', 'invite-fix-dialog', 'client-profile-dialog', 'email-change-dialog']) {
     assert.match(adminHtml, new RegExp(`id="${id}"`), `manca #${id}`);
   }
   // Nessun campo password nei moduli della console.
@@ -106,13 +109,57 @@ test('console: invito con email, stati distinti e azioni su inviti e anagrafica'
     assert.match(adminJs, new RegExp(`['"]${callable}['"]`), `callable ${callable} non usata`);
   }
   // Stati del nuovo flusso riconosciuti dalla console.
-  for (const status of ['invited', 'invite-resent', 'invite-corrected', 'delivery-failed', 'already-pending', 'link-request-created', 'already-linked-same', 'already-linked-other']) {
+  for (const status of ['invited', 'invite-resent', 'invite-corrected', 'already-pending', 'link-request-created', 'already-linked-same', 'already-linked-other']) {
     assert.match(adminJs, new RegExp(`'${status}'`), `stato ${status} non gestito`);
   }
-  assert.match(adminJs, /NON inviata/, 'un invio fallito non viene dichiarato riuscito');
   // Il link lo costruisce il server: la console lo mostra senza inventarlo.
   assert.match(adminJs, /result\.inviteUrl/);
-  assert.match(read('functions/src/email-service.js'), /#\/invito\/\$\{token\}/, 'il link email usa il percorso nuovo');
+  assert.match(indexJs, /#\/invito\/\$\{token\}/, 'il link d’invito usa il percorso nuovo');
+});
+
+test('console: consegna del link a mano con Copia link e Condividi link, nessun invio automatico', () => {
+  // Nessuna scelta di consegna nei moduli: la voce "Non inviare: mostra il
+  // link" e l'invio email sono spariti del tutto.
+  for (const id of ['invite-client-email-delivery', 'invite-fix-delivery', 'invite-client-email-link']) {
+    assert.doesNotMatch(adminHtml, new RegExp(`id="${id}"`), `#${id} non deve più esistere`);
+  }
+  assert.doesNotMatch(adminHtml, /Non inviare: mostra il link|Invia l’email al cliente|Invita con email/);
+  assert.doesNotMatch(adminJs, /delivery-failed|NON inviata|manual-link|deliveryChannel|deliveryStatus|data-delivery/, 'nessuno stato di invio nella console');
+  // Finestra del link con i due pulsanti, dichiarata prima dello script.
+  const scriptIndex = adminHtml.indexOf('<script src="js/admin.js"></script>');
+  const dialog = adminHtml.match(/<div id="invite-link-dialog"[\s\S]*?<\/section><\/div>/);
+  assert.ok(dialog, 'manca #invite-link-dialog');
+  assert.ok(adminHtml.indexOf('id="invite-link-dialog"') < scriptIndex, 'la finestra del link precede js/admin.js');
+  for (const id of ['invite-link-title', 'invite-link-lead', 'invite-link-url', 'invite-link-feedback', 'invite-link-copy', 'invite-link-share']) {
+    assert.match(dialog[0], new RegExp(`id="${id}"`), `manca #${id} nella finestra del link`);
+  }
+  assert.match(dialog[0], /id="invite-link-copy"[^>]*>Copia link</, 'testo esatto “Copia link”');
+  assert.match(dialog[0], /id="invite-link-share"[^>]*>Condividi link</, 'testo esatto “Condividi link”');
+  assert.match(dialog[0], /id="invite-link-url"[^>]*readonly/, 'il link non si modifica a mano');
+  assert.match(dialog[0], /Nessuna email è stata inviata in automatico/);
+  // Gli stessi gesti della Lista della spesa: appunti con fallback, condivisione
+  // nativa con fallback su WhatsApp Web.
+  assert.match(adminJs, /navigator\.clipboard\.writeText/);
+  assert.match(adminJs, /document\.execCommand\('copy'\)/);
+  assert.match(adminJs, /navigator\.share\(\{ title: inviteLinkState\.title, text: inviteLinkState\.message \}\)/);
+  assert.match(adminJs, /https:\/\/api\.whatsapp\.com\/send\?text=\$\{encodeURIComponent\(inviteLinkState\.message\)\}/);
+  assert.match(adminJs, /function inviteShareMessage\(/);
+  assert.match(adminJs, /ti ho invitato a Piano Nutrizionale: apri questo link personale, scegli la password e verifica la tua email\./);
+  // La finestra si apre dopo invito nuovo, reinvio e correzione.
+  const openings = adminJs.match(/(?<!function )openInviteLinkDialog\(\{/g) || [];
+  assert.equal(openings.length, 3, 'una apertura per invito, reinvio e correzione');
+  for (const fn of ['submitClientEmailInvite', 'resendClientInvite', 'submitInviteFix']) {
+    const start = adminJs.indexOf(`async function ${fn}(`);
+    const end = adminJs.indexOf('\n}\n', start);
+    assert.ok(start > 0, `manca ${fn}`);
+    assert.match(adminJs.slice(start, end), /openInviteLinkDialog\(\{ ?[\s\S]*?url: result\.inviteUrl/, `${fn} apre la finestra del link`);
+    assert.doesNotMatch(adminJs.slice(start, end), /delivery:/, `${fn} non invia più la scelta di consegna`);
+  }
+  // Chiudendo la finestra il link non resta nel documento.
+  assert.match(adminJs, /function closeInviteLinkDialog\(\) \{[\s\S]*?\$\('invite-link-url'\)\.value = '';/);
+  // Nessuna variabile d'ambiente o provider lato server.
+  assert.ok(!fs.existsSync(path.join(root, 'functions', 'src', 'email-service.js')), 'il servizio email è stato eliminato');
+  assert.doesNotMatch(indexJs, /INVITE_EMAIL_|APP_PUBLIC_URL \|\||process\.env\.APP_PUBLIC_URL/);
 });
 
 test('clienti: dati identificativi visibili all’utente, cambio email solo su conferma', () => {

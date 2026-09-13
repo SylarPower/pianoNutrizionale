@@ -2,8 +2,17 @@
 
 Riferimento: [ADR 0004](adr/0004-email-reali-inviti.md). Questa guida dice cosa
 fare in pratica: come invitare un cliente reale, come convivono gli account
-tecnici di test, cosa configurare per l'invio email e cosa fare quando qualcosa
-non funziona.
+tecnici di test, come si consegna il link e cosa fare quando qualcosa non
+funziona.
+
+> **Aggiornamento (2026-09-14): nessun invio automatico di email d'invito.**
+> Il servizio di invio (`functions/src/email-service.js`) è stato eliminato:
+> non esistono più provider, chiavi, variabili d'ambiente né stati di "invio
+> fallito". Il backend costruisce solo il link e la console lo mostra con i
+> pulsanti **Copia link** e **Condividi link**; il nutrizionista lo consegna a
+> mano. Verifica dell'email e recupero password restano sui template gratuiti
+> di Firebase Auth. Guida passo passo senza terminale:
+> [`configurazione-manuale.md`](configurazione-manuale.md).
 
 ## 1. Due modelli, esplicitamente separati
 
@@ -26,8 +35,8 @@ Regole non negoziabili:
 - gli account tecnici **esistenti** continuano a funzionare: non si cancellano,
   non si migrano, non si obbligano al nuovo onboarding;
 - i test automatici che usano email fittizie restano validi: nessuna email
-  reale viene inviata a un indirizzo fittizio (il flusso legacy non invia mai
-  email, mostra solo un link).
+  viene inviata a nessuno (né il flusso legacy né quello con email reale
+  inviano email: entrambi mostrano un link da consegnare a mano).
 
 ## 2. Nuovi account tecnici: il flag esplicito
 
@@ -61,82 +70,55 @@ Utenti creati dal seed (email tecniche, password `Demo-sicura-2026`):
 automatici usano questi account: **non** usare un account tecnico per verificare
 la verifica email o il recupero password reali (non hanno una casella).
 
-## 3. Configurazione dell'invio email
+## 3. Consegna del link: Copia link e Condividi link
 
 Verifica email e recupero password usano i **template di Firebase Auth**
 (`sendEmailVerification`, `sendPasswordResetEmail`): non richiedono provider
 esterni e restano dentro le quote gratuite per il volume atteso.
 
-L'invio dell'**invito** è invece gestito da `functions/src/email-service.js`,
-con tre modalità:
+L'**invito** non viene inviato dal sistema. Le callable `inviteClientByEmail`,
+`resendClientInvite` e `correctClientInvite` restituiscono sempre `inviteUrl`
+(`https://sylarpower.github.io/pianoNutrizionale/#/invito/<token>`, indirizzo
+fisso nel codice) e la console apre la finestra **Link d'invito pronto** con:
 
-| Provider | Quando | Effetto |
+| Pulsante | Cosa fa | Se non è disponibile |
 | --- | --- | --- |
-| *(nessuno)* | ambiente di prova, fornitore non ancora scelto | nessuna email: in console si usa **"Non inviare: mostra il link"** e si consegna il link a mano |
-| `memory` | solo emulatori | nessun invio reale, il messaggio resta in memoria (test automatici) |
-| `resend` | produzione | invio reale via API HTTP |
+| **Copia link** | copia il solo URL negli appunti (`navigator.clipboard`, con fallback `execCommand('copy')`) | il campo resta selezionato: copia con Ctrl+C o tenendo premuto |
+| **Condividi link** | apre la condivisione nativa (`navigator.share`) con un messaggio pronto: saluto, istruzioni, scadenza e link | apre WhatsApp Web con lo stesso messaggio (come la Lista della spesa dell'app) |
 
-Variabili d'ambiente per l'invio reale (mai nel repository, mai in chiaro nei
-file pubblicati):
+Il messaggio condiviso è:
 
 ```text
-INVITE_EMAIL_PROVIDER=resend
-INVITE_EMAIL_API_KEY=<chiave del provider>
-INVITE_EMAIL_FROM=Studio Piano <inviti@tuodominio.it>
-APP_PUBLIC_URL=https://sylarpower.github.io/pianoNutrizionale
-# opzionali
-INVITE_EMAIL_ENDPOINT=https://api.resend.com/emails
+Ciao Mario, ti ho invitato a Piano Nutrizionale: apri questo link personale,
+scegli la password e verifica la tua email. Il link scade il 21/09/2026.
+https://sylarpower.github.io/pianoNutrizionale/#/invito/…
 ```
 
-Queste variabili sono lette **a runtime** dalle funzioni che inviano gli inviti
-(`inviteClientByEmail`, `resendClientInvite`, `correctClientInvite`): non basta
-esportarle nella macchina che pubblica. Dove impostarle, in alternativa tra
-loro:
+Regole:
 
-1. **Console Google Cloud** (consigliato, senza terminale) → *Cloud Functions* →
-   le tre funzioni `inviteclientbyemail`, `resendclientinvite`,
-   `correctclientinvite` → *Modifica* → **Variabili di ambiente** → aggiungi le
-   coppie chiave/valore → *Distribuisci*;
-2. file locale `functions/.env.piano-nutrizionale` (ignorato da `.gitignore`) con
-   le stesse righe, seguito da `firebase deploy --only functions`;
-3. `firebase functions:secrets:set` **non** è sufficiente da solo: il codice legge
-   le variabili d'ambiente, quindi i secret di Secret Manager andrebbero
-   collegati alle funzioni dalla console.
-
-I valori non vanno **mai** nel repository. Se il provider non è configurato, la
-callable **non dichiara mai l'invio riuscito**: risponde `delivery-failed` con il
-motivo e l'invito resta pendente, recuperabile con "Rinvio" o con "mostra il
-link". L'adapter `memory` viene **rifiutato in produzione** con un messaggio
-esplicito.
-
-### Dominio mittente, SPF, DKIM, DMARC
-
-Per consegnare le email senza finire nello spam serve un dominio controllato:
-
-1. verifica il dominio nel pannello del provider e aggiungi i record DNS che
-   propone (SPF `TXT`, DKIM `CNAME`/`TXT`);
-2. pubblica una policy DMARC, prima in monitoraggio:
-   `_dmarc.tuodominio.it  TXT  v=DMARC1; p=none; rua=mailto:dmarc@tuodominio.it`;
-3. quando i report sono puliti, passa a `p=quarantine` e poi `p=reject`;
-4. usa un mittente del dominio verificato (`inviti@tuodominio.it`) e un
-   sottoindirizzo di risposta monitorato.
-
-Verifica email e reset password possono invece usare il mittente predefinito di
-Firebase Auth (o un mittente personalizzato da **Authentication → Templates**).
+- il link compare **una sola volta** per token: chiudendo la finestra sparisce
+  dal documento e non viene più rimostrato (su Firestore c'è solo l'hash);
+- **Nuovo link** e **Correggi dati** generano un token nuovo e riaprono la
+  stessa finestra; il link precedente smette di funzionare;
+- il documento dell'invito registra `delivery: { channel: 'manual-link',
+  status: 'manual', handedToConsole: true }`: non esistono stati `sent` o
+  `failed`;
+- nessuna variabile d'ambiente, nessun secret e nessun dominio mittente da
+  configurare. Le voci `INVITE_EMAIL_*` e `APP_PUBLIC_URL`, se ancora presenti
+  in vecchie configurazioni, sono ignorate e si possono rimuovere.
 
 ## 4. Flusso pratico: invitare un cliente reale
 
 1. Console → **Clienti → ＋ Invita nuovo cliente** (dialog con email reale).
 2. Inserisci **email, nome e cognome** (dati che il cliente vedrà precompilati e
-   non modificabili), scegli il professionista destinatario e la consegna
-   (`Invia l'email al cliente` oppure `Non inviare: mostra il link`).
+   non modificabili) e, se sei admin, il professionista destinatario. Non c'è
+   nessuna scelta di consegna: premi **Crea invito**.
 3. La console risponde con uno degli stati possibili:
 
 | Stato | Significato | Cosa fare |
 | --- | --- | --- |
-| `invited` | invito creato, email inviata (o link mostrato) | niente: attendi la registrazione |
-| `delivery-failed` | invito creato ma **email non inviata** | "Rinvio" oppure "mostra il link" |
-| `already-pending` | c'è già un invito richiesta in attesa | usa "Reinvia" o "Correggi" dalla card del cliente |
+| `invited` | invito creato: si apre la finestra con il link | consegna il link con **Copia link** o **Condividi link** |
+| `already-pending` | c'è già un invito o una richiesta in attesa | usa "Nuovo link" o "Correggi dati" dalla card del cliente |
 | `link-request-created` | l'account esiste già: richiesta da accettare in app | il cliente accetta o rifiuta dall'app |
 | `already-linked-same` | il cliente è già collegato a te | niente |
 | `already-linked-other` | account collegato a un altro professionista | niente: nessun dato dell'altro professionista viene mostrato |
@@ -144,17 +126,18 @@ Firebase Auth (o un mittente personalizzato da **Authentication → Templates**)
 | errore account disabilitato | account Auth disattivato | riabilita l'account in Firebase Auth prima di reinvitare |
 
 4. Il cliente apre il link, vede **email, nome e cognome** inseriti da te, sceglie
-   la password e crea l'account. Riceve poi l'email di verifica: **il
-   collegamento si attiva quando l'indirizzo è verificato**.
+   la password e crea l'account. Riceve poi l'email di verifica (Firebase
+   Auth): **il collegamento si attiva quando l'indirizzo è verificato**.
 
 ### Correggere un invito pendente o scaduto
 
-Dalla card del cliente (vista **Clienti**) o della riga in **Utenti**:
+Dalla card o dalla scheda del cliente (vista **Clienti**):
 
-- **Reinvia** → nuovo token monouso; il link precedente smette di funzionare;
-- **Correggi** → modifica email, nome, cognome o consegna: nasce un nuovo token e
-  il vecchio viene marcato `superseded`;
-- **Annulla** → l'invito passa a `revoked` e resta in storico con il motivo.
+- **Nuovo link** → nuovo token monouso mostrato nella finestra del link; il
+  precedente smette di funzionare;
+- **Correggi dati** → modifica email, nome o cognome: nasce un nuovo token
+  (mostrato nella stessa finestra) e il vecchio viene marcato `superseded`;
+- **Annulla invito** → l'invito passa a `revoked` e resta in storico con il motivo.
 
 Non esistono mai due inviti pendenti attivi per lo stesso cliente.
 
@@ -204,8 +187,10 @@ nuovo invito.
 
 | Sintomo | Causa probabile | Rimedio |
 | --- | --- | --- |
-| la console mostra "Invito creato ma email NON inviata" | provider non configurato o errore del provider | controlla i secret, poi "Reinvia"; in alternativa "mostra il link" |
-| il cliente dice "link scaduto" | sono passati più di 7 giorni | card cliente → "Reinvia" |
+| "campi non ammessi (delivery)" o "Backend della console non aggiornato" creando un invito | Functions online non ancora ripubblicate dopo questa modifica | GitHub → Actions → *Deploy Firebase (manuale)* → `functions,firestore:indexes,firestore:rules` |
+| "Copia link" non copia | appunti bloccati dal browser | il campo è selezionato: Ctrl+C o pressione lunga |
+| "Condividi link" apre WhatsApp Web | nessuna condivisione nativa sul dispositivo | comportamento previsto; in alternativa "Copia link" |
+| il cliente dice "link scaduto" | sono passati più di 7 giorni | card cliente → "Nuovo link" |
 | "esiste già un account con questa email" | l'indirizzo è già registrato | il cliente accede; se serve il collegamento, usa l'invito come richiesta in app o "Password dimenticata?" |
 | il cliente ha verificato ma non vede il profilo | collegamento non ancora attivo | nella card deve risultare "email verificata"; altrimenti reinvia la verifica |
 | errore "account tecnici" nel modulo legacy | flag non attivo | usa il modulo con email reale, oppure imposta `LEGACY_TEST_INVITES_ENABLED=true` solo per i test |
@@ -213,10 +198,11 @@ nuovo invito.
 ## 8. Deploy delle modifiche
 
 1. `npm test`, `npm --prefix functions test`, `npm run smoke`, `npm run syntax`.
-2. Deploy di Functions e regole con il workflow GitHub *Deploy Firebase*
-   (pulsante **Run workflow** → scegli *functions* o *functions,firestore:indexes,firestore:rules*).
-3. Imposta le variabili d'ambiente del provider **prima** di provare l'invio
-   (vedi §3) e fai un invito su un indirizzo tuo prima di usarlo con i clienti.
+2. Deploy di Functions e regole con il workflow GitHub *Deploy Firebase
+   (manuale)* (pulsante **Run workflow** → *functions,firestore:indexes,firestore:rules*).
+   Passi senza terminale: [`configurazione-manuale.md`](configurazione-manuale.md).
+3. Nessuna variabile d'ambiente da impostare per gli inviti. Prova un invito su
+   un indirizzo tuo (Copia link / Condividi link) prima di usarlo con i clienti.
 4. Non attivare il flag legacy in produzione se non per una prova concordata.
 5. Quando modifichi JavaScript, CSS o HTML, incrementa `CACHE_VERSION` in
-   `sw.js` (la versione attuale è **74**).
+   `sw.js` (la versione attuale è **76**).

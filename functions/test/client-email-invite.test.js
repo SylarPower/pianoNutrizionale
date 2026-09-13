@@ -12,7 +12,9 @@
  *  - riscatto con verifica email obbligatoria e token consumato una sola volta;
  *  - correzione/reinvio/annullamento dell'invito con vecchio link invalidato;
  *  - anagrafica e cambio email a due passi (proposta + conferma del cliente);
- *  - nessun tokenHash nelle risposte, nessuna password nei documenti.
+ *  - nessun tokenHash nelle risposte, nessuna password nei documenti;
+ *  - consegna del link SEMPRE manuale (Copia link / Condividi link): nessun
+ *    invio automatico di email, nessun provider, nessuno stato "invio fallito".
  */
 const test = require('node:test');
 const assert = require('node:assert/strict');
@@ -24,7 +26,7 @@ const ORG = 'pianoNutrizionale';
 const TOKEN_RE = /^[a-f0-9]{64}$/;
 
 // Firestore finto: doc/collezioni, transazioni, collection group sugli inviti.
-function harness({ entries = {}, users = {}, emailResult = { ok: true, provider: 'test' }, env, sandbox = true } = {}) {
+function harness({ entries = {}, users = {}, env, sandbox = true } = {}) {
   const store = new Map(Object.entries(entries).map(([key, value]) => [key, { ...value }]));
   const writes = [];
   const value = path => store.get(path);
@@ -105,17 +107,12 @@ function harness({ entries = {}, users = {}, emailResult = { ok: true, provider:
   };
   const authUsers = new Map(Object.entries(users));
   class HttpsError extends Error { constructor(code, message) { super(message); this.code = code; } }
-  const emailService = {
-    buildInviteLink: (base, token) => `${base}/#/invito/${token}`,
-    publicAppUrl: () => 'https://app.esempio.it',
-    inviteExpiryDate: ({ days = 7, now = new Date() } = {}) => new Date(now.getTime() + days * 24 * 3600 * 1000),
-    sendInviteEmail: async message => ({ ...emailResult, to: message.to })
-  };
   const context = {
     exports: {}, console, Date, Set, Map,
     require(name) {
       if (name === './domain') return domain;
-      if (name === './email-service') return emailService;
+      // Nessun servizio email: il backend costruisce solo il link. Qualsiasi
+      // tentativo di caricare un modulo di invio deve far fallire il test.
       if (name === 'node:crypto') return require(name);
       if (name === 'firebase-functions/v2/https') return { HttpsError, onCall: (options, handler) => {
         assert.equal(options.region, 'europe-west1'); assert.equal(options.enforceAppCheck, true); return handler;
@@ -178,9 +175,12 @@ const base = () => ({
   'platformMembers/admin-1': { role: 'admin', status: 'active' }
 });
 
+// Indirizzo pubblico fisso dell'app: base di ogni link d'invito.
+const APP_URL = 'https://sylarpower.github.io/pianoNutrizionale';
+
 const invite = (api, extra = {}) => invoke(api, 'inviteClientByEmail', 'nutri-1', {
   organizationId: ORG, email: 'Mario.Rossi@Esempio.it', firstName: 'Mario', lastName: 'Rossi',
-  nutritionistUid: null, delivery: 'manual-link', idempotencyKey: 'k1', ...extra
+  nutritionistUid: null, idempotencyKey: 'k1', ...extra
 });
 
 test('invito reale: profilo in attesa, token monouso e nessun dato sensibile nel documento', async () => {
@@ -188,7 +188,9 @@ test('invito reale: profilo in attesa, token monouso e nessun dato sensibile nel
   const result = await invite(api);
   assert.equal(result.status, 'invited');
   assert.match(result.inviteUrl, /#\/invito\/[a-f0-9]{64}$/);
+  assert.ok(result.inviteUrl.startsWith(`${APP_URL}/#/invito/`), 'il link punta all’app pubblica');
   assert.equal(result.delivery.status, 'manual');
+  assert.equal(result.delivery.channel, 'manual-link');
   const inviteDoc = store.get(`organizations/${ORG}/invitations/${result.inviteId}`);
   assert.equal(inviteDoc.type, 'clientEmail');
   assert.equal(inviteDoc.status, 'pending');
@@ -377,7 +379,7 @@ test('correzione invito: nuovo token, vecchio link invalidato, audit dello stori
   const oldToken = created.inviteUrl.split('/').pop();
   const fixed = await invoke(api, 'correctClientInvite', 'nutri-1', {
     organizationId: ORG, inviteId: created.inviteId, email: 'maria.bianchi@esempio.it',
-    firstName: 'Maria', lastName: 'Bianchi', delivery: 'manual-link', idempotencyKey: 'fix-1'
+    firstName: 'Maria', lastName: 'Bianchi', idempotencyKey: 'fix-1'
   });
   assert.equal(fixed.status, 'invite-corrected');
   assert.notEqual(fixed.inviteId, created.inviteId, 'la correzione crea un nuovo invito');
@@ -401,7 +403,7 @@ test('reinvio e annullamento: ruotano il token, mai due inviti pendenti', async 
   const created = await invite(api);
   const firstToken = created.inviteUrl.split('/').pop();
   const resent = await invoke(api, 'resendClientInvite', 'nutri-1', {
-    organizationId: ORG, inviteId: created.inviteId, delivery: 'manual-link', idempotencyKey: 'resend-1'
+    organizationId: ORG, inviteId: created.inviteId, idempotencyKey: 'resend-1'
   });
   assert.equal(resent.status, 'invite-resent');
   const secondToken = resent.inviteUrl.split('/').pop();
@@ -426,12 +428,12 @@ test('permessi: un nutritionist non tocca gli inviti di un altro', async () => {
   await assert.rejects(
     invoke(api, 'correctClientInvite', 'nutri-2', {
       organizationId: ORG, inviteId: created.inviteId, email: 'x@esempio.it', firstName: 'X', lastName: 'Y',
-      delivery: 'email', idempotencyKey: 'fix-2'
+      idempotencyKey: 'fix-2'
     }),
     error => error.code === 'permission-denied'
   );
   await assert.rejects(
-    invoke(api, 'resendClientInvite', 'nutri-2', { organizationId: ORG, inviteId: created.inviteId, delivery: 'email', idempotencyKey: 'resend-2' }),
+    invoke(api, 'resendClientInvite', 'nutri-2', { organizationId: ORG, inviteId: created.inviteId, idempotencyKey: 'resend-2' }),
     error => error.code === 'permission-denied'
   );
 });
@@ -556,17 +558,42 @@ test('prima della verifica il cliente non accede ad alcun dato professionale', a
   assert.equal(authUsers.size, 0, 'il riscatto non tocca Firebase Auth: la verifica arriva dal client');
 });
 
-test('consegna email non riuscita: l’invito resta pendente e non viene dichiarato inviato', async () => {
-  const { api, store } = harness({
-    entries: base(),
-    emailResult: { ok: false, provider: 'test', code: 'provider-error', message: 'Il provider email ha rifiutato l’invio (codice 500)' }
-  });
-  const result = await invite(api, { delivery: 'email' });
-  assert.equal(result.status, 'delivery-failed');
-  assert.equal(result.delivery.status, 'failed');
-  assert.match(result.message, /NON inviata/i);
+test('consegna sempre manuale: link restituito alla console, nessun invio email e nessuno stato di invio fallito', async () => {
+  const { api, store } = harness({ entries: base() });
+  // Il vecchio campo `delivery` non esiste più: una console non aggiornata
+  // riceve un errore esplicito invece di un invio "silenzioso".
+  await assert.rejects(
+    invite(api, { delivery: 'email' }),
+    error => error.code === 'invalid-argument' && /campi non ammessi/.test(error.message)
+  );
+  const result = await invite(api);
+  assert.equal(result.status, 'invited');
+  assert.match(result.message, /Copia link|Condividi link/, 'il messaggio guida alla consegna a mano');
+  assert.ok(result.inviteUrl.startsWith(`${APP_URL}/#/invito/`));
+  assert.equal(result.deliveryError, undefined, 'nessun errore di consegna possibile');
   const inviteDoc = store.get(`organizations/${ORG}/invitations/${result.inviteId}`);
-  assert.equal(inviteDoc.status, 'pending', 'l’invito resta utilizzabile');
-  assert.equal(inviteDoc.delivery.status, 'failed');
-  assert.equal(inviteDoc.delivery.errorCode, 'provider-error');
+  assert.equal(inviteDoc.status, 'pending', 'l’invito è utilizzabile');
+  assert.equal(inviteDoc.delivery.channel, 'manual-link');
+  assert.equal(inviteDoc.delivery.status, 'manual');
+  assert.equal(inviteDoc.delivery.handedToConsole, true);
+  assert.equal(inviteDoc.delivery.errorCode, undefined, 'nessun codice di errore di invio');
+  assert.equal(inviteDoc.delivery.provider, undefined, 'nessun provider email');
+  const auditTypes = [...store.keys()]
+    .filter(key => key.startsWith(`organizations/${ORG}/auditLog/`))
+    .map(key => store.get(key)?.type);
+  assert.ok(auditTypes.includes('client.email-invite-delivered'), 'audit della consegna alla console');
+  assert.ok(!auditTypes.includes('client.email-invite-delivery-failed'), 'nessun audit di invio fallito');
+  // Anche reinvio e correzione restituiscono sempre il link, senza scelta di consegna.
+  const resent = await invoke(api, 'resendClientInvite', 'nutri-1', { organizationId: ORG, inviteId: result.inviteId, idempotencyKey: 'resend-manual' });
+  assert.equal(resent.status, 'invite-resent');
+  assert.ok(resent.inviteUrl.startsWith(`${APP_URL}/#/invito/`));
+  await assert.rejects(
+    invoke(api, 'resendClientInvite', 'nutri-1', { organizationId: ORG, inviteId: result.inviteId, delivery: 'manual-link', idempotencyKey: 'resend-old' }),
+    error => error.code === 'invalid-argument'
+  );
+  const fixed = await invoke(api, 'correctClientInvite', 'nutri-1', {
+    organizationId: ORG, inviteId: result.inviteId, email: 'mario.rossi@esempio.it', firstName: 'Mario', lastName: 'Rossi', idempotencyKey: 'fix-manual'
+  });
+  assert.equal(fixed.status, 'invite-corrected');
+  assert.ok(fixed.inviteUrl.startsWith(`${APP_URL}/#/invito/`));
 });

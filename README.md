@@ -219,14 +219,18 @@ Gli account creati a mano in Authentication con l'email tecnica
 prove e test automatici e restano validi.
 
 I **clienti reali** si invitano invece dalla console con la loro email vera:
-**Clienti → ＋ Invita nuovo cliente**. Il cliente riceve un link
-monouso, trova email/nome/cognome già compilati (inseriti dal nutrizionista),
-sceglie **solo la password** e verifica l'indirizzo email; il collegamento con
-il professionista si attiva dopo la verifica. Se l'account esiste già, riceve
-una richiesta da accettare in app.
+**Clienti → ＋ Invita nuovo cliente**. La console mostra un link monouso che
+consegni tu con **Copia link** o **Condividi link** (nessuna email parte in
+automatico: niente provider, chiavi o variabili da configurare). Il cliente
+apre il link, trova email/nome/cognome già compilati (inseriti dal
+nutrizionista), sceglie **solo la password** e verifica l'indirizzo email
+(email di Firebase Auth); il collegamento con il professionista si attiva dopo
+la verifica. Se l'account esiste già, riceve una richiesta da accettare in app.
 
-Guida completa (convivenza con gli account di test, invio email, DNS, recupero
+Guida completa (convivenza con gli account di test, consegna del link, recupero
 password, modifica email, diagnostica): [`docs/inviti-email.md`](docs/inviti-email.md).
+Passi manuali senza terminale (deploy delle Functions da GitHub, significato di
+`PIANO_SAAS_CONFIG.enabled`): [`docs/configurazione-manuale.md`](docs/configurazione-manuale.md).
 
 ### Passaggio 4: creare Firestore
 

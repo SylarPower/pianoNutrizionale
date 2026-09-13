@@ -184,12 +184,13 @@ function inviteStatusLabelOf(status) {
 function renderClients() {
   // Un invito email pendente per cliente: stati distinti (In attesa, Scaduto,
   // Annullato) e azioni di correzione, reinvio e annullamento.
+  // Il link si consegna sempre a mano (Copia link / Condividi link): la chip
+  // mostra solo lo stato dell'invito, senza stati di invio email.
   const inviteChip = invite => {
     if (!invite) return '';
-    const delivery = invite.deliveryStatus === 'failed' ? ' · invio NON riuscito' : invite.deliveryStatus === 'manual' ? ' · link da consegnare' : invite.deliveryStatus === 'sent' ? ' · email inviata' : '';
-    return `<p><small>Invito email · ${escapeAdmin(inviteStatusLabelOf(invite.status))}${escapeAdmin(delivery)}</small></p>
+    return `<p><small>Invito · ${escapeAdmin(inviteStatusLabelOf(invite.status))} · link da consegnare a mano</small></p>
       <div class="card-actions">
-        <button class="text-button" data-invite-resend="${escapeAdmin(invite.inviteId)}" data-delivery="${escapeAdmin(invite.deliveryChannel || 'email')}">Reinvia link</button>
+        <button class="text-button" data-invite-resend="${escapeAdmin(invite.inviteId)}">Nuovo link</button>
         <button class="text-button" data-invite-fix="${escapeAdmin(invite.inviteId)}">Correggi dati</button>
         <button class="text-button danger-text" data-invite-cancel="${escapeAdmin(invite.inviteId)}">Annulla invito</button>
       </div>`;
@@ -270,7 +271,7 @@ async function loadClientHistory(clientId) {
 }
 
 function historyRowHtml(kind, item) {
-  const label = kind === 'invite' ? 'Invito email' : 'Richiesta di collegamento';
+  const label = kind === 'invite' ? 'Invito' : 'Richiesta di collegamento';
   const who = item.targetEmail || item.targetUsername || '—';
   return `<div class="history-row"><div><strong>${escapeAdmin(label)}</strong><small>${escapeAdmin(who)}${item.createdAt ? ` · ${escapeAdmin(formatDateOnly(item.createdAt))}` : ''}</small></div><span class="status status-history">${escapeAdmin(inviteStatusLabelOf(item.status))}</span></div>`;
 }
@@ -307,12 +308,12 @@ function renderClientDetail() {
     <section class="detail-section"><h3>Collegamento</h3>
       <dl class="detail-grid">
         <div><dt>Stato</dt><dd><span class="status status-client-${escapeAdmin(status)}">${escapeAdmin(clientStatusLabelOf(status))}</span></dd></div>
-        ${invite ? `<div><dt>Invito email</dt><dd>${escapeAdmin(inviteStatusLabelOf(invite.status))}${invite.deliveryStatus === 'failed' ? ' · invio NON riuscito' : invite.deliveryStatus === 'manual' ? ' · link da consegnare' : invite.deliveryStatus === 'sent' ? ' · email inviata' : ''}${invite.expiresAt ? ` · scade ${escapeAdmin(formatDateOnly(invite.expiresAt))}` : ''}</dd></div>` : ''}
+        ${invite ? `<div><dt>Invito</dt><dd>${escapeAdmin(inviteStatusLabelOf(invite.status))} · link da consegnare a mano${invite.expiresAt ? ` · scade ${escapeAdmin(formatDateOnly(invite.expiresAt))}` : ''}</dd></div>` : ''}
         ${request ? '<div><dt>Richiesta</dt><dd>In attesa di accettazione dal cliente, in app.</dd></div>' : ''}
         ${!invite && !request ? '<div><dt>Inviti e richieste</dt><dd>Nessuna attività in corso.</dd></div>' : ''}
       </dl>
       ${invite ? `<div class="card-actions">
-        <button class="text-button" data-invite-resend="${escapeAdmin(invite.inviteId)}" data-delivery="${escapeAdmin(invite.deliveryChannel || 'email')}">Reinvia link</button>
+        <button class="text-button" data-invite-resend="${escapeAdmin(invite.inviteId)}">Nuovo link</button>
         <button class="text-button" data-invite-fix="${escapeAdmin(invite.inviteId)}">Correggi dati invito</button>
         <button class="text-button danger-text" data-invite-cancel="${escapeAdmin(invite.inviteId)}">Annulla invito</button>
       </div>` : ''}
@@ -357,7 +358,7 @@ function handleClientActions(event) {
   const doses = event.target.closest('[data-goto-doses]');
   if (doses) { gotoDosesForClient(doses.dataset.gotoDoses); return; }
   const resend = event.target.closest('[data-invite-resend]');
-  if (resend) { resendClientInvite(resend.dataset.inviteResend, resend.dataset.delivery); return; }
+  if (resend) { resendClientInvite(resend.dataset.inviteResend); return; }
   const fix = event.target.closest('[data-invite-fix]');
   if (fix) { openInviteFix(fix.dataset.inviteFix); return; }
   const cancel = event.target.closest('[data-invite-cancel]');
@@ -1842,19 +1843,17 @@ async function submitClientInvite(event) {
 // ---- Inviti con email reale (nuovo flusso) ----
 // Il backend distingue le situazioni; la console mostra un messaggio diverso
 // per ciascuna, senza inventare stati e senza rimostrare token già consumati.
+// Nessun invio automatico: quando il server restituisce `inviteUrl`, il link
+// viene mostrato nella finestra dedicata con "Copia link" e "Condividi link".
 function clientEmailInviteMessage(result) {
   const scadenza = result?.expiresAt ? `Scade il ${new Date(result.expiresAt).toLocaleDateString('it-IT')}. ` : '';
   switch (result?.status) {
     case 'invited':
-      return `${scadenza}${result.delivery?.status === 'manual'
-        ? 'Consegna questo link una sola volta, fuori piattaforma: il cliente sceglie la password e poi verifica l’email.'
-        : 'Email inviata al cliente: il collegamento si attiva dopo la verifica dell’indirizzo.'}`;
+      return `${scadenza}Invito creato: consegna il link al cliente con “Copia link” o “Condividi link”. Il cliente sceglie la password e poi verifica l’email.`;
     case 'invite-resent':
-      return `Reinvio completato. ${result.delivery?.status === 'manual' ? 'Nuovo link pronto: il precedente non funziona più.' : 'Il link precedente non funziona più.'}`;
+      return `${scadenza}Nuovo link pronto: il precedente non funziona più. Consegnalo con “Copia link” o “Condividi link”.`;
     case 'invite-corrected':
-      return `Dati corretti. ${result.delivery?.status === 'manual' ? 'Consegna il nuovo link: il precedente non funziona più.' : 'Nuovo link inviato: il precedente non funziona più.'}`;
-    case 'delivery-failed':
-      return `${result.message || 'Invito creato ma email NON inviata.'} Riprova oppure scegli “Non inviare: mostra il link”.`;
+      return `${scadenza}Dati corretti: il link precedente non funziona più. Consegna il nuovo link con “Copia link” o “Condividi link”.`;
     case 'already-pending':
       return result.message || 'Esiste già un invito o una richiesta in attesa per questo indirizzo.';
     case 'link-request-created':
@@ -1872,10 +1871,97 @@ function clientEmailInviteMessage(result) {
   }
 }
 
+// ---- Finestra "Link da consegnare" (Copia link / Condividi link) ----
+// Stessi due gesti della Lista della spesa dell'app: copia negli appunti con
+// fallback su execCommand; condivisione nativa (navigator.share) con fallback
+// su WhatsApp Web quando il dispositivo non la supporta.
+const inviteLinkState = { url: '', message: '', title: '' };
+
+// Testo del messaggio da condividere: chiaro, senza dati oltre a nome, link e
+// scadenza. Il link è personale e monouso: va inviato solo al cliente.
+function inviteShareMessage({ firstName, url, expiresAt }) {
+  const nome = String(firstName || '').trim();
+  const saluto = nome ? `Ciao ${nome}, ` : 'Ciao, ';
+  const scadenza = expiresAt ? ` Il link scade il ${new Date(expiresAt).toLocaleDateString('it-IT')}.` : '';
+  return `${saluto}ti ho invitato a Piano Nutrizionale: apri questo link personale, scegli la password e verifica la tua email.${scadenza}\n${url}`;
+}
+
+function openInviteLinkDialog({ url, firstName, lastName, email, expiresAt, title }) {
+  if (!url) return;
+  const nome = [firstName, lastName].filter(Boolean).join(' ').trim();
+  const destinatario = nome ? `${nome}${email ? ` (${email})` : ''}` : (email || 'il cliente');
+  inviteLinkState.url = url;
+  inviteLinkState.title = title || 'Link d’invito pronto';
+  inviteLinkState.message = inviteShareMessage({ firstName, url, expiresAt });
+  $('invite-link-title').textContent = inviteLinkState.title;
+  $('invite-link-lead').textContent = `Consegna questo link a ${destinatario}: il cliente sceglie la password e verifica l’email.${expiresAt ? ` Il link scade il ${new Date(expiresAt).toLocaleDateString('it-IT')}.` : ''}`;
+  $('invite-link-url').value = url;
+  $('invite-link-feedback').textContent = '';
+  $('invite-link-dialog').classList.remove('hidden');
+  $('invite-link-copy').focus();
+}
+
+function closeInviteLinkDialog() {
+  $('invite-link-dialog').classList.add('hidden');
+  // Il link resta nel documento solo finché la finestra è aperta.
+  $('invite-link-url').value = '';
+  inviteLinkState.url = '';
+  inviteLinkState.message = '';
+}
+
+async function copyTextToClipboard(text) {
+  try {
+    await navigator.clipboard.writeText(text);
+    return true;
+  } catch (_) {
+    try {
+      const textarea = document.createElement('textarea');
+      textarea.value = text;
+      textarea.setAttribute('readonly', '');
+      textarea.style.position = 'fixed';
+      textarea.style.opacity = '0';
+      document.body.appendChild(textarea);
+      textarea.select();
+      const done = document.execCommand('copy');
+      textarea.remove();
+      return done;
+    } catch (__) { return false; }
+  }
+}
+
+async function copyInviteLink() {
+  const out = $('invite-link-feedback');
+  if (!inviteLinkState.url) { out.textContent = 'Nessun link da copiare: crea o rinnova l’invito.'; return; }
+  const done = await copyTextToClipboard(inviteLinkState.url);
+  if (done) { out.textContent = 'Link copiato: incollalo dove preferisci.'; return; }
+  // Ultimo fallback: il campo è selezionato e l'utente copia a mano.
+  const input = $('invite-link-url');
+  input.focus();
+  input.select();
+  out.textContent = 'Copia automatica non disponibile: il link è selezionato, copialo con Ctrl+C (o tieni premuto sul telefono).';
+}
+
+async function shareInviteLink() {
+  const out = $('invite-link-feedback');
+  if (!inviteLinkState.url) { out.textContent = 'Nessun link da condividere: crea o rinnova l’invito.'; return; }
+  if (navigator.share) {
+    try {
+      await navigator.share({ title: inviteLinkState.title, text: inviteLinkState.message });
+      out.textContent = 'Condivisione avviata.';
+      return;
+    } catch (error) {
+      // Annullato dall'utente: nessun messaggio d'errore.
+      if (error?.name === 'AbortError') return;
+    }
+  }
+  // Senza condivisione nativa: WhatsApp Web con il messaggio già pronto,
+  // come fa la Lista della spesa.
+  window.open(`https://api.whatsapp.com/send?text=${encodeURIComponent(inviteLinkState.message)}`, '_blank', 'noopener');
+  out.textContent = 'Messaggio pronto su WhatsApp: scegli il contatto e invia.';
+}
+
 function openInviteClientDialog() {
   $('invite-client-email-result').textContent = '';
-  $('invite-client-email-link').classList.add('hidden');
-  $('invite-client-email-link').value = '';
   $('invite-client-dialog').classList.remove('hidden');
   $('invite-client-email').focus();
 }
@@ -1885,53 +1971,55 @@ function closeInviteClientDialog() { $('invite-client-dialog').classList.add('hi
 async function submitClientEmailInvite(event) {
   event.preventDefault();
   const out = $('invite-client-email-result');
-  const linkInput = $('invite-client-email-link');
-  linkInput.classList.add('hidden');
-  linkInput.value = '';
-  out.textContent = 'Invito in corso…';
+  out.textContent = 'Creazione invito in corso…';
+  const firstName = $('invite-client-first-name').value.trim();
+  const lastName = $('invite-client-last-name').value.trim();
+  const email = $('invite-client-email').value.trim();
   try {
     const result = await callAdminSaasFunction('inviteClientByEmail', {
       organizationId: orgId(),
-      email: $('invite-client-email').value.trim(),
-      firstName: $('invite-client-first-name').value.trim(),
-      lastName: $('invite-client-last-name').value.trim(),
+      email,
+      firstName,
+      lastName,
       nutritionistUid: $('invite-client-email-nutritionist').value || null,
-      delivery: $('invite-client-email-delivery').value,
       idempotencyKey: idem('clientemail')
     });
     out.textContent = clientEmailInviteMessage(result);
     if (result.inviteUrl) {
-      linkInput.value = result.inviteUrl;
-      linkInput.classList.remove('hidden');
-      linkInput.focus();
-      linkInput.select();
-    }
-    if (result.status !== 'delivery-failed') {
       $('invite-client-email').value = '';
       $('invite-client-first-name').value = '';
       $('invite-client-last-name').value = '';
+      closeInviteClientDialog();
+      openInviteLinkDialog({ url: result.inviteUrl, firstName, lastName, email, expiresAt: result.expiresAt, title: 'Link d’invito pronto' });
     }
+    // Il messaggio va scritto DOPO il ricaricamento: loadClients() ripulisce
+    // il riquadro di stato della vista Clienti.
     await Promise.all([loadUsers(), loadClients()]);
+    if (result.inviteUrl) $('clients-feedback').textContent = clientEmailInviteMessage(result);
   } catch (error) { out.textContent = adminError(error); }
 }
 
-async function resendClientInvite(inviteId, delivery) {
-  $('clients-feedback').textContent = 'Reinvio in corso…';
+function inviteById(inviteId) {
+  return adminState.clientInvitations.find(item => item.inviteId === inviteId)
+    || ((adminState.users?.invitations || []).find(item => item.inviteId === inviteId))
+    || null;
+}
+
+async function resendClientInvite(inviteId) {
+  const invite = inviteById(inviteId);
+  $('clients-feedback').textContent = 'Creazione del nuovo link in corso…';
   try {
     const result = await callAdminSaasFunction('resendClientInvite', {
-      organizationId: orgId(), inviteId, delivery: delivery === 'manual-link' ? 'manual-link' : 'email', idempotencyKey: idem('invite-resend')
+      organizationId: orgId(), inviteId, idempotencyKey: idem('invite-resend')
     });
-    $('clients-feedback').textContent = clientEmailInviteMessage(result);
     if (result.inviteUrl) {
-      // Il campo del link vive nel dialog di invito: lo mostriamo lì.
-      openInviteClientDialog();
-      const linkInput = $('invite-client-email-link');
-      linkInput.value = result.inviteUrl;
-      linkInput.classList.remove('hidden');
-      linkInput.focus();
-      linkInput.select();
+      openInviteLinkDialog({
+        url: result.inviteUrl, firstName: invite?.firstName, lastName: invite?.lastName,
+        email: invite?.targetEmail, expiresAt: result.expiresAt, title: 'Nuovo link d’invito'
+      });
     }
     await Promise.all([loadUsers(), loadClients()]);
+    $('clients-feedback').textContent = clientEmailInviteMessage(result);
   } catch (error) { $('clients-feedback').textContent = adminError(error); }
 }
 
@@ -1943,20 +2031,18 @@ async function cancelClientInvite(inviteId) {
     const result = await callAdminSaasFunction('cancelClientInvite', {
       organizationId: orgId(), inviteId, reason: String(reason).trim(), idempotencyKey: idem('invite-cancel')
     });
-    $('clients-feedback').textContent = clientEmailInviteMessage(result);
     await Promise.all([loadUsers(), loadClients()]);
+    $('clients-feedback').textContent = clientEmailInviteMessage(result);
   } catch (error) { $('clients-feedback').textContent = adminError(error); }
 }
 
 function openInviteFix(inviteId) {
-  const invite = adminState.clientInvitations.find(item => item.inviteId === inviteId)
-    || ((adminState.users?.invitations || []).find(item => item.inviteId === inviteId));
+  const invite = inviteById(inviteId);
   if (!invite) { $('clients-feedback').textContent = 'Invito non trovato: aggiorna l’elenco.'; return; }
   $('invite-fix-invite-id').value = invite.inviteId;
   $('invite-fix-email').value = invite.targetEmail || '';
   $('invite-fix-first-name').value = invite.firstName || '';
   $('invite-fix-last-name').value = invite.lastName || '';
-  $('invite-fix-delivery').value = invite.deliveryChannel === 'manual-link' ? 'manual-link' : 'email';
   $('invite-fix-lead').textContent = `Invito per ${invite.targetEmail || 'cliente'}: correggendo i dati il link precedente smette di funzionare.`;
   $('invite-fix-error').textContent = '';
   $('invite-fix-dialog').classList.remove('hidden');
@@ -1969,26 +2055,24 @@ async function submitInviteFix(event) {
   event.preventDefault();
   const errorEl = $('invite-fix-error');
   errorEl.textContent = '';
+  const email = $('invite-fix-email').value.trim();
+  const firstName = $('invite-fix-first-name').value.trim();
+  const lastName = $('invite-fix-last-name').value.trim();
   try {
     const result = await callAdminSaasFunction('correctClientInvite', {
       organizationId: orgId(),
       inviteId: $('invite-fix-invite-id').value,
-      email: $('invite-fix-email').value.trim(),
-      firstName: $('invite-fix-first-name').value.trim(),
-      lastName: $('invite-fix-last-name').value.trim(),
-      delivery: $('invite-fix-delivery').value,
+      email,
+      firstName,
+      lastName,
       idempotencyKey: idem('invite-fix')
     });
     closeInviteFix();
-    $('clients-feedback').textContent = clientEmailInviteMessage(result);
     if (result.inviteUrl) {
-      // Il campo del link vive nel dialog di invito: lo mostriamo lì.
-      openInviteClientDialog();
-      const linkInput = $('invite-client-email-link');
-      linkInput.value = result.inviteUrl;
-      linkInput.classList.remove('hidden');
+      openInviteLinkDialog({ url: result.inviteUrl, firstName, lastName, email, expiresAt: result.expiresAt, title: 'Nuovo link d’invito' });
     }
     await Promise.all([loadUsers(), loadClients()]);
+    $('clients-feedback').textContent = clientEmailInviteMessage(result);
   } catch (error) { errorEl.textContent = adminError(error); }
 }
 
@@ -2250,6 +2334,9 @@ function bindAdmin() {
   $('client-profile-form')?.addEventListener('submit', submitClientProfile);
   $('email-change-form')?.addEventListener('submit', submitEmailChange);
   document.querySelectorAll('[data-close-invite-fix]').forEach(node => node.addEventListener('click', closeInviteFix));
+  document.querySelectorAll('[data-close-invite-link]').forEach(node => node.addEventListener('click', closeInviteLinkDialog));
+  $('invite-link-copy')?.addEventListener('click', copyInviteLink);
+  $('invite-link-share')?.addEventListener('click', shareInviteLink);
   document.querySelectorAll('[data-close-client-profile]').forEach(node => node.addEventListener('click', closeClientProfile));
   document.querySelectorAll('[data-close-email-change]').forEach(node => node.addEventListener('click', closeEmailChange));
   $('links-list')?.addEventListener('click', handleClientActions);

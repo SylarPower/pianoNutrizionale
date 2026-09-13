@@ -14,7 +14,9 @@
 - Firebase progetto Blaze (Cloud Functions e scheduler).
 - Node 22, Firebase CLI e Java 21 per gli emulatori.
 - App Check configurato e enforced per le callable in produzione.
-- Nessun segreto nei file web. Provider email/advertising in Secret Manager.
+- Nessun segreto nei file web. Nessun provider email: gli inviti si consegnano
+  a mano dalla console (Copia link / Condividi link). L'eventuale provider
+  advertising, se mai attivato, va in Secret Manager.
 
 ## Test locale
 
@@ -28,7 +30,7 @@ firebase emulators:start --project piano-nutrizionale-test
 npm --prefix functions run seed:emulator
 ```
 
-Il seed stampa organization ID, username demo, password e checksum del rule set da usare nella console. Per provare il client SaaS nell'emulatore impostare temporaneamente `enabled: true` in `js/saas-config.js` e ripristinarlo a `false` prima del deploy generale. Il test Rules richiede Java. In questa sandbox Java non è installato: eseguire `npm run test:rules` in CI o su una macchina con JRE 21.
+Il seed stampa organization ID, username demo, password e checksum del rule set da usare nella console. `PIANO_SAAS_CONFIG.enabled` in `js/saas-config.js` è **già `true`** ed è il valore di produzione: non va toccato né per provare l'emulatore né per il deploy (vedi «Feature flag client» più sotto). Il test Rules richiede Java. In questa sandbox Java non è installato: eseguire `npm run test:rules` in CI o su una macchina con JRE 21.
 
 ## Fixture minima per prova end-to-end
 
@@ -69,9 +71,23 @@ Creare `globalRuleSets/base/versions/3` con il contratto documentato, `status:"p
    firebase deploy --only functions,firestore:indexes,firestore:rules
    ```
 5. Smoke callable con account test admin e paziente.
-6. Deploy Hosting con `PIANO_SAAS_CONFIG.enabled = false`.
-7. Provisionare un tenant pilota e verificare audit.
-8. Attivare il flag solo per la release concordata. Il flag è pubblico e non è un controllo di sicurezza.
+6. Deploy Hosting (GitHub Pages) con `PIANO_SAAS_CONFIG.enabled = true`
+   (valore attuale: **non** cambiarlo durante il deploy; la procedura storica
+   che lo spegneva prima della pubblicazione non vale più).
+7. Verificare audit e smoke post-deploy (vista Clienti, invito di prova con
+   Copia link / Condividi link).
+
+### Feature flag client: `PIANO_SAAS_CONFIG.enabled`
+
+- Valore di produzione: **`true`**, sempre. È l'interruttore della parte
+  professionale dell'app cliente (collegamento, profilo assegnato, notifiche,
+  inviti con email reale).
+- `false` è **solo la via di emergenza**: l'app cliente torna al comportamento
+  legacy (dosi originali, nessuna chiamata al server professionale) senza
+  cancellare nulla; al ritorno a `true` tutto ricompare. Da usare soltanto in
+  incident response, con bump di `CACHE_VERSION` in `sw.js`.
+- Il flag è pubblico e non è un controllo di sicurezza: le autorizzazioni
+  restano nelle Rules e nelle callable.
 
 ## Console unificata e dieta guidata (ADR 0005, 2026-09-13)
 
@@ -95,7 +111,7 @@ Creare `globalRuleSets/base/versions/3` con il contratto documentato, `status:"p
 - Non spostare né riscrivere ricette.
 - Import segnalazioni locali solo opt-in: calcolare fingerprint, chiamare `submitMappingReport`, registrare l'esito; la deduplica rende il retry sicuro.
 - Prima di associare `authUid` a un client verificare consenso e identità; scrivere `accountClientLinks` server-side.
-- Rollback client: `enabled:false` ripristina il comportamento legacy senza cancellare snapshot.
+- Rollback client (solo emergenza): `enabled:false` ripristina il comportamento legacy senza cancellare snapshot; in condizioni normali il flag resta `true`.
 - Rollback clinico: nuova assignment verso la versione precedente; mai modificare il documento pubblicato.
 - Rollback mapping: pubblicare una nuova versione correttiva/retired, non cancellare la storia.
 
@@ -173,7 +189,7 @@ Alert: spike permission-denied, checksum mismatch, errori scheduler, backlog olt
 
 ## Incident response
 
-1. Disattivare feature flag client; se necessario disabilitare la Function coinvolta.
+1. Disattivare il feature flag client (`enabled:false`, unica situazione in cui va cambiato); se necessario disabilitare la Function coinvolta.
 2. Revocare membership compromessa e token Auth.
 3. Conservare audit e log minimizzati; identificare tenant/documenti coinvolti.
 4. Ripristinare da backup o assegnare versione precedente.
@@ -198,16 +214,20 @@ Queste parti non devono essere simulate nel client. La slice consegnata copre co
 
 Un invito a un account già esistente compare nella campanella dell’app, con il nome del professionista e i pulsanti per accettare o rifiutare. Nome e cognome sono facoltativi: si possono salvare dalla sezione di collegamento professionista (cliente) o dalla console (professionista).
 
-### Inviti con email reale (ADR 0004)
+### Inviti con email reale (ADR 0004) — link consegnato a mano
 
-La console invita i clienti reali con la loro **email** (`Cliente con email
-reale`): il cliente sceglie la password dal link `#/invito/<token>` e il
-collegamento si attiva **dopo la verifica dell’email**. Gli account tecnici con
-email fittizia restano per i test e si creano dal modulo legacy solo negli
+La console invita i clienti reali con la loro **email** (**Clienti → ＋ Invita
+nuovo cliente**): il cliente sceglie la password dal link `#/invito/<token>` e
+il collegamento si attiva **dopo la verifica dell’email**. Gli account tecnici
+con email fittizia restano per i test e si creano dal modulo legacy solo negli
 emulatori o con `LEGACY_TEST_INVITES_ENABLED=true` (mai in produzione se non per
 una prova concordata).
 
-Configurazione dell’invio email (variabili d’ambiente delle funzioni, mai nel
-repository) e procedure di diagnostica: [`docs/inviti-email.md`](inviti-email.md).
-Senza provider configurato l’invito resta pendente e si consegna il link a mano:
-la callable non dichiara mai un invio riuscito se il provider ha dato errore.
+**Nessun invio automatico**: il servizio email è stato eliminato (nessun
+provider, chiave o variabile d’ambiente). Le callable restituiscono il link e
+la console lo mostra con **Copia link** e **Condividi link** (condivisione
+nativa, fallback WhatsApp Web). Verifica email e reset password restano sui
+template di Firebase Auth. Dopo il merge l’unico passo manuale è ripubblicare
+le Functions dal workflow GitHub *Deploy Firebase (manuale)*: guida senza
+terminale in [`docs/configurazione-manuale.md`](configurazione-manuale.md),
+dettagli in [`docs/inviti-email.md`](inviti-email.md).

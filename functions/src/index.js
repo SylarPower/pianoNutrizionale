@@ -15,7 +15,7 @@ const {
   validateInviteOrganizationUser, validateInviteClientLink, validateRespondClientLink,
   validateRemoveClientLink, validateMemberStatus, validateRemoveNutritionist,
   validateTransferStructureOwnership,
-  normalizeEmail, isLegacyTestEmail, emailFingerprint, maskEmail,
+  normalizeEmail, isLegacyTestEmail, emailFingerprint, maskEmail, INVITE_DELIVERY_CHANNEL,
   validateInviteClientEmail, validateCorrectClientInvite, validateResendClientInvite,
   validateCancelClientInvite, validateUpdateClientProfileByStaff,
   validateProposeClientEmailChange, validateRespondClientEmailChange, validateRedeemClientInvite,
@@ -1574,7 +1574,8 @@ function publicRequestRow(doc) {
 }
 
 // Invito lato console: MAI tokenHash né token in chiaro (l'unico momento in cui
-// il link esiste è la risposta in modalità "mostra link").
+// il link esiste è la risposta di creazione, reinvio o correzione, che la
+// console mostra con "Copia link" e "Condividi link").
 function publicInvitationRow(doc) {
   const value = doc.data();
   return {
@@ -1889,11 +1890,30 @@ exports.inviteClientLink = callable(async (data, uid) => {
 //  - la creazione di NUOVI account tecnici è possibile solo con un flag
 //    esplicito (`LEGACY_TEST_INVITES_ENABLED=true`) o negli emulatori: il
 //    fallback legacy non si attiva mai da solo per un invito reale;
-//  - un invito reale non viene mai trasformato in un invito legacy.
+//  - un invito reale non viene mai trasformato in un invito legacy;
+//  - la consegna dell'invito è SEMPRE manuale: il backend costruisce il link
+//    e lo restituisce alla console, che lo mostra con "Copia link" e
+//    "Condividi link". Nessun provider email, nessuna chiave, nessuna
+//    variabile d'ambiente e nessuno stato di "invio fallito". Verifica
+//    dell'email e recupero password restano sui template di Firebase Auth.
 
 const INVITE_TTL_DAYS = 7;
 const CLIENT_EMAIL_INVITE_TYPE = 'clientEmail';
 const LEGACY_CLIENT_INVITE_TYPE = 'client';
+
+// Indirizzo pubblico dell'app dei clienti (GitHub Pages): base fissa dei link
+// d'invito `#/invito/<token>`. Non è un segreto e non dipende dall'ambiente.
+const APP_PUBLIC_URL = 'https://sylarpower.github.io/pianoNutrizionale';
+
+function buildInviteLink(baseUrl, token) {
+  const base = String(baseUrl || '').trim().replace(/\/+$/, '');
+  if (!base) throw new Error('Indirizzo pubblico dell’app non configurato');
+  return `${base}/#/invito/${token}`;
+}
+
+function inviteExpiryDate({ days = INVITE_TTL_DAYS, now = new Date() } = {}) {
+  return new Date(now.getTime() + days * 24 * 3600 * 1000);
+}
 
 // Flag esplicito e documentato per la creazione di account tecnici di test.
 // In produzione è spento per default: si accende solo con la variabile
@@ -1907,17 +1927,11 @@ function legacyTestInvitesAllowed() {
 }
 
 // Require pigra: gli harness dei test esistenti caricano questo file senza
-// stubbare `firebase-admin/auth` né il servizio email.
+// stubbare `firebase-admin/auth`.
 let adminAuthInstance = null;
 function adminAuth() {
   if (!adminAuthInstance) adminAuthInstance = require('firebase-admin/auth').getAuth();
   return adminAuthInstance;
-}
-
-let emailModule = null;
-function emailService() {
-  if (!emailModule) emailModule = require('./email-service');
-  return emailModule;
 }
 
 async function authUserByEmail(emailNormalized) {
@@ -1966,7 +1980,7 @@ function authorizeInviteActor(actor, invite) {
   return Boolean(invite?.createdBy) && invite.createdBy === actor.uid;
 }
 
-// Nome del professionista per l'email dell'invito: mai dati di altri ruoli.
+// Nome del professionista per l'anteprima dell'invito: mai dati di altri ruoli.
 async function professionalDisplayName(orgId, nutritionistUid) {
   if (!nutritionistUid) return null;
   const member = await db.doc(`organizations/${orgId}/members/${nutritionistUid}`).get();
@@ -1988,52 +2002,20 @@ async function recordInviteAudit({ orgId, actor, eventId, type, subject, idempot
   });
 }
 
-// Consegna dell'invito: adapter email isolato oppure link mostrato alla
-// console ("mostra link"). Registra sempre lo stato di consegna: un invio
-// fallito NON viene mai dichiarato riuscito.
-async function deliverClientInvite({ inviteRef, invite, token, delivery, nutritionistName, organizationName, updatedBy }) {
-  const link = emailService().buildInviteLink(emailService().publicAppUrl(), token);
-  if (delivery === 'manual-link') {
-    await inviteRef.update({
-      delivery: {
-        schemaVersion: 1, channel: 'manual-link', status: 'manual',
-        attempts: 0, handedToConsole: true, updatedAt: FieldValue.serverTimestamp()
-      },
-      updatedAt: FieldValue.serverTimestamp(), updatedBy
-    });
-    return { delivery: { channel: 'manual-link', status: 'manual' }, inviteUrl: link };
-  }
-  const result = await emailService().sendInviteEmail({
-    to: invite.targetEmailNormalized,
-    firstName: invite.firstName,
-    lastName: invite.lastName,
-    organizationName,
-    nutritionistName,
-    link,
-    expiresAt: inviteExpiryIso(invite)
-  }, { logger });
+// Consegna dell'invito: il link viene costruito qui e consegnato alla console,
+// che lo mostra al nutrizionista con "Copia link" e "Condividi link". Il
+// documento registra solo che il link è stato consegnato alla console: nessun
+// invio automatico, nessuno stato di "invio fallito".
+async function deliverClientInvite({ inviteRef, token, updatedBy }) {
+  const link = buildInviteLink(APP_PUBLIC_URL, token);
   await inviteRef.update({
     delivery: {
-      schemaVersion: 1, channel: 'email',
-      status: result.ok ? 'sent' : 'failed',
-      provider: result.provider || null,
-      attempts: 1,
-      messageId: result.messageId || null,
-      errorCode: result.ok ? null : (result.code || 'error'),
-      updatedAt: FieldValue.serverTimestamp()
+      schemaVersion: 2, channel: INVITE_DELIVERY_CHANNEL, status: 'manual',
+      handedToConsole: true, updatedAt: FieldValue.serverTimestamp()
     },
     updatedAt: FieldValue.serverTimestamp(), updatedBy
   });
-  return result.ok
-    ? { delivery: { channel: 'email', status: 'sent', provider: result.provider } }
-    : {
-        delivery: { channel: 'email', status: 'failed', errorCode: result.code || 'error' },
-        deliveryError: {
-          code: result.code || 'error',
-          message: result.message
-            || 'Invio email non riuscito: l’invito resta pendente, riprova oppure consegna il link a mano'
-        }
-      };
+  return { delivery: { channel: INVITE_DELIVERY_CHANNEL, status: 'manual' }, inviteUrl: link };
 }
 
 // Invito di un cliente con email reale. Idempotente per `idempotencyKey`,
@@ -2175,7 +2157,7 @@ exports.inviteClientByEmail = callable(async (data, uid) => {
   const inviteRef = db.doc(`organizations/${orgId}/invitations/${inviteId}`);
   const eventId = checksum(`client.email-invited:${inviteId}`).slice(0, 32);
   const token = crypto.randomBytes(32).toString('hex');
-  const expiresAt = emailService().inviteExpiryDate({ days: INVITE_TTL_DAYS });
+  const expiresAt = inviteExpiryDate({ days: INVITE_TTL_DAYS });
   let created = true;
   await db.runTransaction(async tx => {
     const [client, existing, audit] = await Promise.all([
@@ -2211,14 +2193,14 @@ exports.inviteClientByEmail = callable(async (data, uid) => {
       clientId, nutritionistUid: nutritionistUid || null,
       tokenHash: hashToken(token), status: 'pending',
       expiresAt: Timestamp.fromDate(expiresAt),
-      delivery: { schemaVersion: 1, channel: input.delivery, status: 'pending', attempts: 0, updatedAt: FieldValue.serverTimestamp() },
+      delivery: { schemaVersion: 2, channel: INVITE_DELIVERY_CHANNEL, status: 'pending', updatedAt: FieldValue.serverTimestamp() },
       idempotencyKey: input.idempotencyKey,
       createdAt: FieldValue.serverTimestamp(), updatedAt: FieldValue.serverTimestamp(), createdBy: uid
     });
     tx.create(auditRef(orgId, eventId), auditEvent({
       orgId, eventId, type: 'client.email-invited', actor,
       subject: { type: 'invitation', id: inviteId }, idempotencyKey: input.idempotencyKey,
-      metadata: { clientId, nutritionistUid: nutritionistUid || null, delivery: input.delivery }
+      metadata: { clientId, nutritionistUid: nutritionistUid || null, delivery: INVITE_DELIVERY_CHANNEL }
     }));
   });
   if (!created) {
@@ -2227,32 +2209,17 @@ exports.inviteClientByEmail = callable(async (data, uid) => {
       idempotentReplay: true, message: 'Invito già creato in precedenza: nessun nuovo token emesso.'
     };
   }
-  const [inviteSnapshot, nutritionistName, organizationName] = await Promise.all([
-    inviteRef.get(), professionalDisplayName(orgId, nutritionistUid), organizationDisplayName(orgId)
-  ]);
-  const deliveryResult = await deliverClientInvite({
-    inviteRef, invite: inviteSnapshot.data(), token, delivery: input.delivery,
-    nutritionistName, organizationName, updatedBy: uid
-  });
+  const deliveryResult = await deliverClientInvite({ inviteRef, token, updatedBy: uid });
   const deliveredEventId = checksum(`client.email-invite-delivered:${inviteId}`).slice(0, 32);
   await recordInviteAudit({
-    orgId, actor, eventId: deliveredEventId,
-    type: deliveryResult.delivery.status === 'failed' ? 'client.email-invite-delivery-failed' : 'client.email-invite-delivered',
+    orgId, actor, eventId: deliveredEventId, type: 'client.email-invite-delivered',
     subject: { type: 'invitation', id: inviteId }, idempotencyKey: input.idempotencyKey,
     metadata: { channel: deliveryResult.delivery.channel, status: deliveryResult.delivery.status }
   });
-  const base = { inviteId, clientId, expiresAt: expiresAt.toISOString(), ...deliveryResult };
-  if (deliveryResult.delivery.status === 'failed') {
-    return {
-      ...base, status: 'delivery-failed',
-      message: 'Invito creato ma email NON inviata: l’invito resta pendente, riprova oppure consegna il link a mano.'
-    };
-  }
   return {
-    ...base, status: 'invited',
-    message: deliveryResult.delivery.status === 'manual'
-      ? 'Invito creato: consegna questo link una sola volta, fuori piattaforma.'
-      : 'Invito creato e email inviata al cliente.'
+    inviteId, clientId, expiresAt: expiresAt.toISOString(), ...deliveryResult,
+    status: 'invited',
+    message: 'Invito creato: consegna questo link al cliente con “Copia link” o “Condividi link”.'
   };
 });
 
@@ -2418,7 +2385,7 @@ exports.resendClientInvite = callable(async (data, uid) => {
   if (invite.status === 'accepted') throw new HttpsError('failed-precondition', 'Invito già utilizzato: il cliente è registrato');
   if (invite.status === 'revoked') throw new HttpsError('failed-precondition', 'Invito annullato: creane uno nuovo');
   const token = crypto.randomBytes(32).toString('hex');
-  const expiresAt = emailService().inviteExpiryDate({ days: INVITE_TTL_DAYS });
+  const expiresAt = inviteExpiryDate({ days: INVITE_TTL_DAYS });
   const eventId = checksum(`client.email-invite-resent:${input.inviteId}:${input.idempotencyKey}`).slice(0, 32);
   let rotated = true;
   await db.runTransaction(async tx => {
@@ -2428,33 +2395,22 @@ exports.resendClientInvite = callable(async (data, uid) => {
     if (fresh.data()?.status === 'revoked') throw new HttpsError('failed-precondition', 'Invito annullato: creane uno nuovo');
     tx.update(inviteRef, {
       tokenHash: hashToken(token), status: 'pending', expiresAt: Timestamp.fromDate(expiresAt),
-      delivery: { schemaVersion: 1, channel: input.delivery, status: 'pending', attempts: 0, updatedAt: FieldValue.serverTimestamp() },
+      delivery: { schemaVersion: 2, channel: INVITE_DELIVERY_CHANNEL, status: 'pending', updatedAt: FieldValue.serverTimestamp() },
       tokenRotation: FieldValue.increment(1),
       updatedAt: FieldValue.serverTimestamp(), updatedBy: uid
     });
     tx.create(auditRef(orgId, eventId), auditEvent({
       orgId, eventId, type: 'client.email-invite-resent', actor,
       subject: { type: 'invitation', id: input.inviteId }, idempotencyKey: input.idempotencyKey,
-      metadata: { delivery: input.delivery }
+      metadata: { delivery: INVITE_DELIVERY_CHANNEL }
     }));
   });
   if (!rotated) return { status: 'already-pending', inviteId: input.inviteId, message: 'Reinvio già effettuato.' };
-  const [fresh, nutritionistName, organizationName] = await Promise.all([
-    inviteRef.get(), professionalDisplayName(orgId, invite.nutritionistUid), organizationDisplayName(orgId)
-  ]);
-  const deliveryResult = await deliverClientInvite({
-    inviteRef, invite: fresh.data(), token, delivery: input.delivery,
-    nutritionistName, organizationName, updatedBy: uid
-  });
-  const base = { inviteId: input.inviteId, clientId: fresh.data()?.clientId || null, expiresAt: expiresAt.toISOString(), ...deliveryResult };
-  if (deliveryResult.delivery.status === 'failed') {
-    return { ...base, status: 'delivery-failed', message: 'Email NON inviata: l’invito resta pendente, riprova oppure consegna il link a mano.' };
-  }
+  const deliveryResult = await deliverClientInvite({ inviteRef, token, updatedBy: uid });
   return {
-    ...base, status: 'invite-resent',
-    message: deliveryResult.delivery.status === 'manual'
-      ? 'Nuovo link pronto: il link precedente non funziona più.'
-      : 'Nuovo link inviato: il link precedente non funziona più.'
+    inviteId: input.inviteId, clientId: invite.clientId || null, expiresAt: expiresAt.toISOString(), ...deliveryResult,
+    status: 'invite-resent',
+    message: 'Nuovo link pronto: il link precedente non funziona più. Consegnalo con “Copia link” o “Condividi link”.'
   };
 });
 
@@ -2518,7 +2474,7 @@ exports.correctClientInvite = callable(async (data, uid) => {
   }
   const clientId = previous.clientId;
   const clientRef = db.doc(`organizations/${orgId}/clients/${clientId}`);
-  const nextExpiry = emailService().inviteExpiryDate({ days: INVITE_TTL_DAYS });
+  const nextExpiry = inviteExpiryDate({ days: INVITE_TTL_DAYS });
   const token = crypto.randomBytes(32).toString('hex');
   const inviteId = checksum(`${orgId}:clientemail-invite:${input.email}:${input.idempotencyKey}`).slice(0, 32);
   const sameDocument = inviteId === input.inviteId;
@@ -2547,7 +2503,7 @@ exports.correctClientInvite = callable(async (data, uid) => {
       clientId, nutritionistUid: previous.nutritionistUid || null,
       tokenHash: hashToken(token), status: 'pending',
       expiresAt: Timestamp.fromDate(nextExpiry),
-      delivery: { schemaVersion: 1, channel: input.delivery, status: 'pending', attempts: 0, updatedAt: FieldValue.serverTimestamp() },
+      delivery: { schemaVersion: 2, channel: INVITE_DELIVERY_CHANNEL, status: 'pending', updatedAt: FieldValue.serverTimestamp() },
       idempotencyKey: input.idempotencyKey,
       correctedFrom: input.inviteId, createdAt: FieldValue.serverTimestamp(),
       updatedAt: FieldValue.serverTimestamp(), createdBy: previous.createdBy || uid
@@ -2577,25 +2533,14 @@ exports.correctClientInvite = callable(async (data, uid) => {
     tx.create(auditRef(orgId, eventId), auditEvent({
       orgId, eventId, type: 'client.email-invite-corrected', actor,
       subject: { type: 'invitation', id: inviteId }, idempotencyKey: input.idempotencyKey,
-      metadata: { previousInviteId: input.inviteId, changed, delivery: input.delivery }
+      metadata: { previousInviteId: input.inviteId, changed, delivery: INVITE_DELIVERY_CHANNEL }
     }));
   });
-  const [fresh, nutritionistName, organizationName] = await Promise.all([
-    newRef.get(), professionalDisplayName(orgId, previous.nutritionistUid), organizationDisplayName(orgId)
-  ]);
-  const deliveryResult = await deliverClientInvite({
-    inviteRef: newRef, invite: fresh.data(), token, delivery: input.delivery,
-    nutritionistName, organizationName, updatedBy: uid
-  });
-  const base = { inviteId, clientId, expiresAt: nextExpiry.toISOString(), ...deliveryResult };
-  if (deliveryResult.delivery.status === 'failed') {
-    return { ...base, status: 'delivery-failed', message: 'Dati corretti ma email NON inviata: riprova oppure consegna il nuovo link a mano.' };
-  }
+  const deliveryResult = await deliverClientInvite({ inviteRef: newRef, token, updatedBy: uid });
   return {
-    ...base, status: 'invite-corrected',
-    message: deliveryResult.delivery.status === 'manual'
-      ? 'Dati corretti: il link precedente non funziona più, consegna il nuovo link.'
-      : 'Dati corretti e nuovo link inviato: il link precedente non funziona più.'
+    inviteId, clientId, expiresAt: nextExpiry.toISOString(), ...deliveryResult,
+    status: 'invite-corrected',
+    message: 'Dati corretti: il link precedente non funziona più. Consegna il nuovo link con “Copia link” o “Condividi link”.'
   };
 });
 
