@@ -268,11 +268,11 @@ eccezione: il caso `ruleSet.scope: "global"` già verificato al Passo 4).
 
 Se hai anche un modo di lanciare i test automatici (per esempio il workflow
 `Test` su GitHub, che parte da solo a ogni modifica): `npm test` = 331 test,
-`npm --prefix functions test` = 91 test, `npm run smoke` = SMOKE OK,
+`npm --prefix functions test` = 92 test, `npm run smoke` = SMOKE OK,
 `npm run syntax` = OK. Tutti verdi sul ramo aggiornato.
 
 > Conteggi verificati dopo l’introduzione degli inviti con email reale
-> (ADR 0004): 331 test client e 91 test Functions. I conteggi precedenti erano
+> (ADR 0004): 331 test client e 92 test Functions. I conteggi precedenti erano
 > 324 e 61.
 
 > Gli account tecnici con email fittizia (`@utenti.pianonutrizionale.app`)
