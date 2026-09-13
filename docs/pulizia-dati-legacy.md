@@ -267,11 +267,18 @@ dell'app**, perché le Cloud Functions non leggono quelle collezioni (unica
 eccezione: il caso `ruleSet.scope: "global"` già verificato al Passo 4).
 
 Se hai anche un modo di lanciare i test automatici (per esempio il workflow
-`Test` su GitHub, che parte da solo a ogni modifica): `npm test` = 324 test,
-`npm --prefix functions test` = 61 test, `npm run smoke` = SMOKE OK,
+`Test` su GitHub, che parte da solo a ogni modifica): `npm test` = 331 test,
+`npm --prefix functions test` = 91 test, `npm run smoke` = SMOKE OK,
 `npm run syntax` = OK. Tutti verdi sul ramo aggiornato.
 
-> Conteggi verificati dopo l’introduzione dei profili facoltativi e delle notifiche SaaS: 324 test client e 61 test Functions.
+> Conteggi verificati dopo l’introduzione degli inviti con email reale
+> (ADR 0004): 331 test client e 91 test Functions. I conteggi precedenti erano
+> 324 e 61.
+
+> Gli account tecnici con email fittizia (`@utenti.pianonutrizionale.app`)
+> restano intatti dopo la pulizia: servono ai test e alla demo. Le nuove
+> registrazioni dei clienti reali usano l’email vera del cliente e sono
+> descritte in `docs/inviti-email.md`; nessun account fittizio viene convertito.
 
 > Nota storica: fino a settembre 2026 lo smoke test falliva
 > (`test/smoke-app.js`, "profilo coppia") perché controllava l'etichetta del

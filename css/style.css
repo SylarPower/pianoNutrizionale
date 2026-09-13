@@ -2629,3 +2629,37 @@ body.dark-mode .meller-notice-list li strong { color: #d9987a; }
   color: var(--text-muted);
   line-height: 1.35;
 }
+
+/* ---- Inviti con email reale e verifica email (ADR 0004) ---- */
+.login-reset { margin-top: 10px; }
+.invite-summary {
+  margin: 12px 0 6px;
+  padding: 12px 14px;
+  border-radius: 12px;
+  background: rgba(61, 153, 112, 0.08);
+  display: grid;
+  gap: 8px;
+}
+.invite-summary p { margin: 0; display: flex; justify-content: space-between; gap: 10px; align-items: baseline; }
+.invite-summary strong { font-size: 0.72rem; letter-spacing: 0.04em; text-transform: uppercase; color: var(--text-muted); }
+.invite-summary span { font-size: 0.9rem; text-align: right; word-break: break-word; }
+#email-invite-toggle { border: 0; background: transparent; cursor: pointer; font-size: 1.05rem; padding: 0 4px; }
+#email-verification-banner {
+  display: flex;
+  gap: 10px;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  margin: 10px 14px 0;
+  padding: 10px 14px;
+  border-radius: 12px;
+  background: rgba(255, 193, 7, 0.14);
+  border: 1px solid rgba(255, 193, 7, 0.4);
+  font-size: 0.85rem;
+  line-height: 1.4;
+}
+#email-verification-banner.hidden { display: none; }
+#email-verification-banner p { margin: 0; flex: 1 1 220px; }
+.linked-identity { margin: 8px 0; }
+.linked-identity dt { font-size: 0.7rem; letter-spacing: 0.04em; text-transform: uppercase; color: var(--text-muted); }
+.linked-identity dd { margin: 2px 0 8px; font-weight: 600; display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }

@@ -215,6 +215,170 @@ function usernameFromUser(user) {
   return user.email.split("@")[0];
 }
 
+// =====================================================================
+// Nuovo modello con EMAIL REALE (ADR 0004)
+// =====================================================================
+// L'email reale è la credenziale dei clienti; nome e cognome sono dati di
+// profilo inseriti dal nutrizionista. Questo blocco NON converte gli account
+// tecnici in account reali e non crea nuove email tecniche: gli indirizzi del
+// vecchio modello restano solo per gli account di test e vengono riconosciuti
+// in modo ESPLICITO (lista chiusa di domini, nessuna euristica).
+//
+// La stessa lista esiste lato server in functions/src/domain.js
+// (LEGACY_TEST_EMAIL_DOMAINS): se cambia, va aggiornata in entrambi i file.
+const LEGACY_TEST_EMAIL_DOMAINS = Object.freeze([
+  "utenti.pianonutrizionale.app",
+  "pianonutrizionale.app",
+  "pianonutrizionale"
+]);
+
+const EMAIL_ADDRESS_RE = /^[a-z0-9.!#$%&'*+/=?^_`{|}~-]+@[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?(?:\.[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?)+$/;
+
+function normalizeEmailAddress(email) {
+  return String(email || "").trim().toLowerCase();
+}
+
+function emailDomainOf(email) {
+  const normalized = normalizeEmailAddress(email);
+  const at = normalized.lastIndexOf("@");
+  return at <= 0 ? "" : normalized.slice(at + 1);
+}
+
+// Riconoscimento legacy ESPLICITO: dominio nella lista chiusa o sottodominio
+// di essa. Un indirizzo con un typo (es. "mario@gmial.com") NON è legacy: è
+// solo da correggere, quindi non ricade in questo ramo.
+function isLegacyTestEmailAddress(email) {
+  const domain = emailDomainOf(email);
+  if (!domain) return false;
+  return LEGACY_TEST_EMAIL_DOMAINS.some(item => domain === item || domain.endsWith(`.${item}`));
+}
+
+// Validazione client dell'email reale: trim, minuscole, formato, lunghezza.
+// Il backend rifà gli stessi controlli (mai fidarsi del client).
+function validateEmailAddress(email, { allowLegacy = false } = {}) {
+  const normalized = normalizeEmailAddress(email);
+  if (!normalized || normalized.length > 254) {
+    return { ok: false, message: "Inserisci un indirizzo email valido." };
+  }
+  const local = normalized.slice(0, normalized.lastIndexOf("@"));
+  if (local.length > 64 || !EMAIL_ADDRESS_RE.test(normalized)) {
+    return { ok: false, message: "Inserisci un indirizzo email valido (es. nome@esempio.it)." };
+  }
+  if (!allowLegacy && isLegacyTestEmailAddress(normalized)) {
+    return { ok: false, message: "Questo indirizzo tecnico non è utilizzabile per un cliente reale: usa un indirizzo email vero." };
+  }
+  return { ok: true, email: normalized };
+}
+
+// Anteprima dell'invito (callable non autenticata: il token è il segreto).
+async function previewClientInvite(token) {
+  const clean = String(token || "").trim().toLowerCase();
+  if (!/^[a-f0-9]{64}$/.test(clean)) return { status: "not-found" };
+  return callSaasFunction("getClientInvitePreview", { token: clean });
+}
+
+// Riscatto dell'invito da parte del cliente autenticato.
+async function redeemClientInvite(token, idempotencyKey) {
+  const clean = String(token || "").trim().toLowerCase();
+  return callSaasFunction("redeemClientInvite", {
+    token: /^[a-f0-9]{64}$/.test(clean) ? clean : null,
+    idempotencyKey: String(idempotencyKey || "")
+  });
+}
+
+// Registrazione di un cliente reale: email vera + password scelta dal
+// cliente. NESSUN username e nessuna email tecnica.
+async function signUpWithRealEmail(email, password) {
+  const check = validateEmailAddress(email);
+  if (!check.ok) {
+    const error = new Error(check.message);
+    error.code = "auth/invalid-email";
+    throw error;
+  }
+  if (String(password || "").length < 8) {
+    const error = new Error("La password deve avere almeno 8 caratteri.");
+    error.code = "auth/weak-password";
+    throw error;
+  }
+  if (hasCompatFirebase()) return auth.createUserWithEmailAndPassword(check.email, password);
+  await ensureFirebaseReady();
+  return fb.createUserWithEmailAndPassword(auth, check.email, password);
+}
+
+// Accesso con email reale (clienti nuovi). Lo username resta per gli account
+// tecnici legacy: le due strade non si mescolano mai.
+async function signInWithEmailAddress(email, password) {
+  const check = validateEmailAddress(email, { allowLegacy: true });
+  if (!check.ok) {
+    const error = new Error(check.message);
+    error.code = "auth/invalid-email";
+    throw error;
+  }
+  if (!password) {
+    const error = new Error("Inserisci la password.");
+    error.code = "auth/missing-password";
+    throw error;
+  }
+  if (hasCompatFirebase()) return auth.signInWithEmailAndPassword(check.email, password);
+  await ensureFirebaseReady();
+  return fb.signInWithEmailAndPassword(auth, check.email, password);
+}
+
+// Recupero password: il messaggio è SEMPRE lo stesso, così non si può capire
+// se l'indirizzo è registrato. Gli indirizzi tecnici legacy non hanno una
+// casella reale: per loro il reset non viene nemmeno richiesto.
+async function sendPasswordResetForEmail(email) {
+  const check = validateEmailAddress(email, { allowLegacy: false });
+  if (!check.ok) {
+    return { ok: false, message: check.message, uniform: false };
+  }
+  try {
+    if (hasCompatFirebase()) await auth.sendPasswordResetEmail(check.email);
+    else {
+      await ensureFirebaseReady();
+      await fb.sendPasswordResetEmail(auth, check.email);
+    }
+  } catch (error) {
+    // Errori di rete o limiti anti-abuso: il messaggio resta uniforme.
+    console.warn("Invio reset password non riuscito", error?.code || error?.message);
+  }
+  return {
+    ok: true,
+    uniform: true,
+    message: "Se l'indirizzo è registrato riceverai un'email con il link per scegliere una nuova password. Controlla anche la posta indesiderata."
+  };
+}
+
+// Verifica dell'indirizzo email del cliente reale. Il collegamento con il
+// professionista resta inattivo finché l'email non è verificata.
+async function sendVerificationEmailToCurrentUser() {
+  const user = currentUser || (auth && auth.currentUser);
+  if (!user) throw new Error("Autenticazione richiesta");
+  if (isLegacyTestEmailAddress(user.email)) {
+    return { ok: false, legacy: true, message: "Questo è un account tecnico di test: la verifica email non è prevista." };
+  }
+  if (user.emailVerified) return { ok: true, alreadyVerified: true, message: "Indirizzo già verificato." };
+  if (hasCompatFirebase()) await user.sendEmailVerification();
+  else {
+    await ensureFirebaseReady();
+    await fb.sendEmailVerification(auth.currentUser);
+  }
+  return { ok: true, message: "Ti abbiamo inviato un'email di verifica: controlla la posta (anche lo spam)." };
+}
+
+// Ricarica lo stato dell'utente (emailVerified) senza nuovo login.
+async function reloadCurrentUser() {
+  const user = currentUser || (auth && auth.currentUser);
+  if (!user) return null;
+  if (hasCompatFirebase()) await user.reload();
+  else {
+    await ensureFirebaseReady();
+    await fb.reload(auth.currentUser);
+  }
+  currentUser = (auth && auth.currentUser) || currentUser;
+  return currentUser;
+}
+
 function validateSignInInput(username, password) {
   const normalized = normalizeUsername(username);
   if (!isValidUsername(normalized)) {

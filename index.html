@@ -17,16 +17,24 @@
       <div class="login-mark"><img src="assets/loghi/logo-app.svg" alt=""></div>
       <p class="eyebrow">AREA PERSONALE</p>
       <h1 id="login-title">Il tuo piano,<br>sempre con te.</h1>
-      <p class="login-subtitle">Accedi con lo username assegnato. Non è richiesto alcun indirizzo email.</p>
+      <p class="login-subtitle">Accedi con l’email che hai registrato oppure con lo username assegnato per gli account di test.</p>
       <form id="login-form" novalidate>
-        <label for="login-username">Username</label>
-        <div class="login-input-wrap"><span>👤</span><input id="login-username" name="username" type="text" inputmode="text" autocomplete="username" autocapitalize="none" spellcheck="false" minlength="3" maxlength="32" placeholder="es. mario" required></div>
+        <label for="login-username">Email o username</label>
+        <div class="login-input-wrap"><span>👤</span><input id="login-username" name="username" type="text" inputmode="email" autocomplete="username" autocapitalize="none" spellcheck="false" minlength="3" maxlength="254" placeholder="es. mario.rossi@esempio.it" required></div>
         <label for="login-password">Password</label>
         <div class="login-input-wrap"><span>🔒</span><input id="login-password" name="password" type="password" autocomplete="current-password" placeholder="La tua password" required></div>
         <p id="login-error" class="login-error" role="alert"></p>
         <button id="login-submit" class="btn btn-primary login-submit" type="submit">Accedi</button>
       </form>
-      <p class="login-help">Le credenziali vengono create dall’amministratore del piano.</p>
+      <button id="login-reset-password" class="btn btn-outline login-submit login-reset" type="button">Password dimenticata?</button>
+      <form id="reset-form" class="hidden" novalidate>
+        <label for="reset-email">Email dell’account</label>
+        <div class="login-input-wrap"><span>✉️</span><input id="reset-email" name="email" type="email" inputmode="email" autocomplete="email" autocapitalize="none" spellcheck="false" maxlength="254" placeholder="es. mario.rossi@esempio.it" required></div>
+        <p id="reset-message" class="login-hint" role="status"></p>
+        <button id="reset-submit" class="btn btn-primary login-submit" type="submit">Invia il link di recupero</button>
+        <button id="reset-cancel" class="btn btn-outline login-submit" type="button">Torna all’accesso</button>
+      </form>
+      <p class="login-help">Le credenziali dei clienti le crea il cliente stesso dal link del nutrizionista.</p>
     </section>
     <div class="login-decoration decoration-one"></div>
     <div class="login-decoration decoration-two"></div>
@@ -53,6 +61,31 @@
     <div class="login-decoration decoration-two"></div>
   </main>
 
+  <main id="email-invite-screen" class="login-screen hidden">
+    <section class="login-card" aria-labelledby="email-invite-title">
+      <div class="login-mark"><img src="assets/loghi/logo-app.svg" alt=""></div>
+      <p class="eyebrow">INVITO CLIENTE</p>
+      <h1 id="email-invite-title">Crea il tuo accesso personale.</h1>
+      <p class="login-subtitle">Questi dati sono stati inseriti dal tuo nutrizionista: la correzione la fa lui. Scegli solo la password, l’email non si ridigita.</p>
+      <div class="invite-summary" aria-live="polite">
+        <p><strong>Email</strong><span id="email-invite-email">—</span></p>
+        <p><strong>Nome e cognome</strong><span id="email-invite-name">—</span></p>
+        <p><strong>Professionista</strong><span id="email-invite-nutritionist">—</span></p>
+      </div>
+      <form id="email-invite-form" class="hidden" novalidate>
+        <label for="email-invite-password">Scegli la password</label>
+        <div class="login-input-wrap"><span>🔒</span><input id="email-invite-password" name="password" type="password" autocomplete="new-password" minlength="8" placeholder="Almeno 8 caratteri" required><button id="email-invite-toggle" class="btn-icon" type="button" aria-label="Mostra password">👁</button></div>
+        <small class="login-hint">Almeno 8 caratteri. L’email è quella inserita dal nutrizionista e verrà verificata con un link.</small>
+        <p id="email-invite-error" class="login-error" role="alert"></p>
+        <button id="email-invite-submit" class="btn btn-primary login-submit" type="submit">Crea l’account</button>
+      </form>
+      <p id="email-invite-state" class="login-hint hidden" role="status"></p>
+      <p class="login-help">L’invito è personale e monouso. Il collegamento con il nutrizionista si attiva dopo la verifica dell’email.</p>
+    </section>
+    <div class="login-decoration decoration-one"></div>
+    <div class="login-decoration decoration-two"></div>
+  </main>
+
   <div id="loading-overlay" class="loading-overlay">
     <div class="loading-brand" aria-hidden="true"><img src="assets/loghi/logo-app.svg" alt=""></div>
     <div class="loading-spinner" aria-hidden="true"></div>
@@ -60,6 +93,10 @@
   </div>
 
   <div id="app-container" class="hidden">
+    <div id="email-verification-banner" class="hidden" role="status">
+      <p id="email-verification-text"></p>
+      <button id="email-verification-resend" class="btn btn-outline btn-small" type="button">Reinvia email di verifica</button>
+    </div>
     <div id="view-week" class="view hidden"></div>
     <div id="view-recipes" class="view hidden"></div>
     <div id="view-shop" class="view hidden"></div>

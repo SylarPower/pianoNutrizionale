@@ -18,14 +18,18 @@ function harness(entries = {}) {
     collectionGroup() { throw new Error('FAILED_PRECONDITION: collection-group non disponibile'); },
     doc(path) { return { get: async () => { reads.push(path); return snapshot(path); } }; },
     collection(path) {
-      let filter;
+      const filters = [];
+      let limitValue = null;
       const query = {
         select() { return query; },
-        where(field, op, value) { assert.equal(op, '=='); filter = [field, value]; return query; },
+        where(field, op, value) { assert.equal(op, '=='); filters.push([field, value]); return query; },
+        limit(value) { limitValue = value; return query; },
         async get() {
           reads.push(path);
-          return { docs: [...store.keys()].filter(key => key.startsWith(`${path}/`) && key.split('/').length === path.split('/').length + 1)
-            .filter(key => !filter || store.get(key)[filter[0]] === filter[1]).map(snapshot) };
+          let keys = [...store.keys()].filter(key => key.startsWith(`${path}/`) && key.split('/').length === path.split('/').length + 1)
+            .filter(key => filters.every(([field, value]) => store.get(key)[field] === value));
+          if (limitValue != null) keys = keys.slice(0, limitValue);
+          return { docs: keys.map(snapshot) };
         }
       };
       return query;

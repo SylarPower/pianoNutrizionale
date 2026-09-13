@@ -557,6 +557,151 @@ function clearPendingInviteToken() {
   try { history.replaceState(history.state, document.title, window.location.pathname + window.location.search); } catch (_) {}
 }
 
+// --- Invito con EMAIL REALE: link `#/invito/<token>` (ADR 0004) ---
+// Percorso separato dal legacy `#/invite/<token>`: l'email, il nome e il
+// cognome arrivano dal nutrizionista e non si modificano qui; il cliente
+// sceglie solo la password. Il collegamento si attiva dopo la verifica email.
+const PENDING_EMAIL_INVITE_STORAGE = "pn_pending_email_invite_token";
+let pendingEmailInviteToken = null;
+let emailInvitePreview = null;
+
+function readEmailInviteTokenFromHash() {
+  const match = window.location.hash.match(/^#\/invito\/([a-f0-9]{64})$/i);
+  return match ? match[1].toLowerCase() : null;
+}
+
+function loadPendingEmailInviteToken() {
+  const fromHash = readEmailInviteTokenFromHash();
+  if (fromHash) {
+    try { sessionStorage.setItem(PENDING_EMAIL_INVITE_STORAGE, fromHash); } catch (_) {}
+    return fromHash;
+  }
+  try { return sessionStorage.getItem(PENDING_EMAIL_INVITE_STORAGE) || null; } catch (_) { return null; }
+}
+
+function clearPendingEmailInviteToken() {
+  pendingEmailInviteToken = null;
+  try { sessionStorage.removeItem(PENDING_EMAIL_INVITE_STORAGE); } catch (_) {}
+  try { history.replaceState(history.state, document.title, window.location.pathname + window.location.search); } catch (_) {}
+}
+
+function showEmailInviteScreen() {
+  document.body.classList.add("auth-locked");
+  document.getElementById("login-screen")?.classList.add("hidden");
+  document.getElementById("invite-screen")?.classList.add("hidden");
+  document.getElementById("email-invite-screen")?.classList.remove("hidden");
+  document.getElementById("app-container")?.classList.add("hidden");
+  document.querySelector(".bottom-nav")?.classList.add("hidden");
+  document.getElementById("global-header-container")?.remove();
+  clearLoading();
+  setTimeout(() => document.getElementById("email-invite-password")?.focus(), 50);
+}
+
+// I dati mostrati vengono SEMPRE dal server (anteprima dell'invito): il client
+// non li deduce dal link e non li rende modificabili.
+function renderEmailInvitePreview() {
+  const preview = emailInvitePreview;
+  const stateEl = document.getElementById("email-invite-state");
+  const form = document.getElementById("email-invite-form");
+  if (!preview || preview.status !== "valid") {
+    form?.classList.add("hidden");
+    const messaggi = {
+      expired: "Questo invito è scaduto: chiedi un nuovo link al tuo nutrizionista.",
+      used: "Questo invito è già stato utilizzato: accedi con la tua email oppure chiedi un nuovo invito.",
+      revoked: "Questo invito è stato annullato: chiedi un nuovo link al tuo nutrizionista.",
+      superseded: "Questo link è stato sostituito da uno più recente: usa l'ultimo link ricevuto.",
+      "not-found": "Link invito non valido: chiedi un nuovo link al tuo nutrizionista."
+    };
+    if (stateEl) {
+      stateEl.textContent = messaggi[preview?.status] || messaggi["not-found"];
+      stateEl.classList.remove("hidden");
+    }
+    return;
+  }
+  form?.classList.remove("hidden");
+  stateEl?.classList.add("hidden");
+  const emailEl = document.getElementById("email-invite-email");
+  const nameEl = document.getElementById("email-invite-name");
+  const nutritionistEl = document.getElementById("email-invite-nutritionist");
+  if (emailEl) emailEl.textContent = preview.email || "—";
+  if (nameEl) nameEl.textContent = [preview.firstName, preview.lastName].filter(Boolean).join(" ") || "—";
+  if (nutritionistEl) {
+    nutritionistEl.textContent = [preview.nutritionistName, preview.organizationName].filter(Boolean).join(" · ") || "—";
+  }
+}
+
+function mapEmailInviteError(error) {
+  const code = String(error?.code || "");
+  if (code === "auth/email-already-in-use") return "Esiste già un account con questa email: accedi con la tua password oppure usa “Password dimenticata?”.";
+  if (code === "auth/invalid-email") return error.message;
+  if (code === "auth/weak-password") return "La password deve avere almeno 8 caratteri.";
+  if (code === "auth/network-request-failed" || code.endsWith("unavailable")) return "Connessione assente: la registrazione richiede internet.";
+  if (code.endsWith("not-found")) return "Invito non valido o già utilizzato: chiedi un nuovo link al tuo nutrizionista.";
+  if (code.endsWith("failed-precondition") && error?.message) return error.message;
+  if (code.endsWith("permission-denied") && error?.message) return error.message;
+  return "Registrazione non riuscita. Riprova tra poco o chiedi un nuovo link al tuo nutrizionista.";
+}
+
+function setupEmailInviteForm() {
+  const form = document.getElementById("email-invite-form");
+  if (!form || form.dataset.ready) return;
+  form.dataset.ready = "true";
+  const toggle = document.getElementById("email-invite-toggle");
+  toggle?.addEventListener("click", () => {
+    const input = document.getElementById("email-invite-password");
+    if (!input) return;
+    const show = input.type === "password";
+    input.type = show ? "text" : "password";
+    toggle.setAttribute("aria-label", show ? "Nascondi password" : "Mostra password");
+  });
+  form.addEventListener("submit", async event => {
+    event.preventDefault();
+    const password = document.getElementById("email-invite-password")?.value || "";
+    const button = document.getElementById("email-invite-submit");
+    const errorEl = document.getElementById("email-invite-error");
+    errorEl.textContent = "";
+    if (!emailInvitePreview || emailInvitePreview.status !== "valid") {
+      errorEl.textContent = "Link invito non più valido: chiedi un nuovo link al tuo nutrizionista.";
+      return;
+    }
+    if (String(password).length < 8) {
+      errorEl.textContent = "La password deve avere almeno 8 caratteri.";
+      return;
+    }
+    button.disabled = true;
+    button.textContent = "Creazione account…";
+    inviteFlowActive = true;
+    try {
+      await signUpWithRealEmail(emailInvitePreview.email, password);
+      const result = await redeemClientInvite(
+        pendingEmailInviteToken || emailInvitePreview.token,
+        `invito-email-${Date.now()}`
+      );
+      clearPendingEmailInviteToken();
+      document.getElementById("email-invite-screen")?.classList.add("hidden");
+      if (result.status === "email-verification-required") {
+        // Account creato: il collegamento si attiva alla verifica dell'email.
+        try { await sendVerificationEmailToCurrentUser(); } catch (_) {}
+        showToast("Account creato ✅ Controlla la tua email e verifica l'indirizzo per attivare il collegamento");
+      } else {
+        showToast("Account creato e collegato al tuo nutrizionista ✅");
+      }
+    } catch (error) {
+      const message = mapEmailInviteError(error);
+      errorEl.textContent = /esiste già un account/i.test(message)
+        ? message
+        : `${message} Se l'account è stato creato, accedi con la tua email e la password appena scelta.`;
+      // L'account può esistere anche se il riscatto non è andato a buon fine:
+      // resta disconnesso per non mostrare dati mentre il link è da rifare.
+      try { await signOutUser(); } catch (_) {}
+    } finally {
+      inviteFlowActive = false;
+      button.disabled = false;
+      button.textContent = "Crea l’account";
+    }
+  });
+}
+
 function showInviteScreen() {
   document.body.classList.add("auth-locked");
   document.getElementById("login-screen")?.classList.add("hidden");
@@ -639,11 +784,74 @@ function showLogin() {
   setTimeout(() => document.getElementById("login-username")?.focus(), 50);
 }
 
+// ---- Verifica dell'email (clienti reali) ----
+// Il collegamento con il professionista resta inattivo finché l'email non è
+// verificata (ADR 0004). L'account tecnico di test non ha una casella reale:
+// per lui il banner non compare.
+const VERIFICATION_RESEND_KEY = "pn_email_verification_last_sent";
+const VERIFICATION_RESEND_COOLDOWN_MS = 60 * 1000;
+
+function isRealEmailAccount(user) {
+  if (!user?.email || typeof isLegacyTestEmailAddress !== "function") return false;
+  return !isLegacyTestEmailAddress(user.email);
+}
+
+function renderEmailVerificationBanner(user = appState.user) {
+  const banner = document.getElementById("email-verification-banner");
+  const text = document.getElementById("email-verification-text");
+  if (!banner || !text) return;
+  const needsVerification = Boolean(isRealEmailAccount(user) && user.emailVerified !== true);
+  banner.classList.toggle("hidden", !needsVerification);
+  if (!needsVerification) return;
+  const linked = Boolean(appState.clientLink?.link);
+  text.textContent = linked
+    ? `Verifica il tuo indirizzo email (${user.email}) per proteggere l'accesso al tuo piano.`
+    : `Verifica il tuo indirizzo email (${user.email}): il collegamento con il tuo nutrizionista si attiva appena confermi l'indirizzo.`;
+}
+
+async function refreshVerificationState() {
+  try {
+    const user = await reloadCurrentUser();
+    if (user && appState.user) appState.user = { ...appState.user, emailVerified: user.emailVerified === true };
+  } catch (_) {}
+  renderEmailVerificationBanner(appState.user);
+}
+
+function setupVerificationBanner() {
+  const button = document.getElementById("email-verification-resend");
+  if (!button || button.dataset.ready) return;
+  button.dataset.ready = "true";
+  button.addEventListener("click", async () => {
+    const now = Date.now();
+    let last = 0;
+    try { last = Number(localStorage.getItem(VERIFICATION_RESEND_KEY) || 0); } catch (_) {}
+    if (now - last < VERIFICATION_RESEND_COOLDOWN_MS) {
+      showToast("Email già richiesta da poco: attendi un minuto prima di riprovare", true);
+      return;
+    }
+    button.disabled = true;
+    try {
+      const result = await sendVerificationEmailToCurrentUser();
+      if (result.ok && !result.alreadyVerified) {
+        try { localStorage.setItem(VERIFICATION_RESEND_KEY, String(now)); } catch (_) {}
+      }
+      showToast(result.message, result.ok ? false : true);
+      await refreshVerificationState();
+    } catch (error) {
+      showToast(error?.message || "Invio non riuscito: riprova tra poco", true);
+    } finally {
+      button.disabled = false;
+    }
+  });
+}
+
 function showApp() {
   document.body.classList.remove("auth-locked");
   document.getElementById("login-screen")?.classList.add("hidden");
   document.getElementById("invite-screen")?.classList.add("hidden");
+  document.getElementById("email-invite-screen")?.classList.add("hidden");
   document.getElementById("app-container")?.classList.remove("hidden");
+  renderEmailVerificationBanner(appState.user);
   document.querySelector(".bottom-nav")?.classList.remove("hidden");
   // Anche l'avvio rapido da cache deve chiudere l'overlay: in quel percorso
   // loadUserData() è silenzioso e il suo finally non chiama clearLoading().
@@ -651,13 +859,22 @@ function showApp() {
 }
 
 function mapLoginError(error) {
-  if (error?.code === "auth/invalid-username" || error?.code === "auth/missing-password") return error.message;
+  if (error?.code === "auth/invalid-username" || error?.code === "auth/missing-password" || error?.code === "auth/invalid-email") return error.message;
   if (["auth/invalid-login-credentials", "auth/wrong-password", "auth/user-not-found", "auth/invalid-credential"].includes(error?.code)) {
-    return "Username o password non corretti.";
+    return "Credenziali non corrette. Se hai dimenticato la password usa “Password dimenticata?”.";
   }
   if (error?.code === "auth/too-many-requests") return "Troppi tentativi. Attendi qualche minuto e riprova.";
   if (error?.code === "auth/network-request-failed") return "Connessione assente. Il primo accesso richiede internet.";
   return "Accesso non riuscito. Riprova tra poco.";
+}
+
+// L'email reale è la credenziale dei clienti nuovi; lo username resta per gli
+// account tecnici legacy. La scelta è esplicita (presenza della "@") e non
+// converte mai un account da un modello all'altro.
+async function performLogin(identifier, password) {
+  const value = String(identifier || "").trim();
+  if (value.includes("@")) return signInWithEmailAddress(value, password);
+  return signInWithUsername(value, password);
 }
 
 function setupLoginForm() {
@@ -666,7 +883,7 @@ function setupLoginForm() {
   form.dataset.ready = "true";
   form.addEventListener("submit", async event => {
     event.preventDefault();
-    const username = document.getElementById("login-username").value;
+    const identifier = document.getElementById("login-username").value;
     const password = document.getElementById("login-password").value;
     const button = document.getElementById("login-submit");
     const errorEl = document.getElementById("login-error");
@@ -674,7 +891,7 @@ function setupLoginForm() {
     button.disabled = true;
     button.textContent = "Accesso…";
     try {
-      await signInWithUsername(username, password);
+      await performLogin(identifier, password);
       document.getElementById("login-password").value = "";
     } catch (error) {
       errorEl.textContent = mapLoginError(error);
@@ -685,8 +902,54 @@ function setupLoginForm() {
   });
 }
 
+// Recupero password ("Password dimenticata?"): messaggio SEMPRE uniforme, così
+// non si può capire dall'esterno se un indirizzo è registrato. Il reset non
+// viene proposto per gli indirizzi tecnici legacy (non hanno una casella).
+function setResetFormVisible(visible) {
+  document.getElementById("reset-form")?.classList.toggle("hidden", !visible);
+  document.getElementById("login-form")?.classList.toggle("hidden", visible);
+  document.getElementById("login-reset-password")?.classList.toggle("hidden", visible);
+  if (visible) {
+    const note = document.getElementById("reset-message");
+    if (note) note.textContent = "";
+    setTimeout(() => document.getElementById("reset-email")?.focus(), 50);
+  }
+}
+
+function setupResetPasswordForm() {
+  const toggle = document.getElementById("login-reset-password");
+  const form = document.getElementById("reset-form");
+  if (!toggle || !form || form.dataset.ready) return;
+  form.dataset.ready = "true";
+  toggle.addEventListener("click", () => {
+    const identifier = document.getElementById("login-username")?.value || "";
+    const emailInput = document.getElementById("reset-email");
+    if (emailInput && identifier.includes("@")) emailInput.value = identifier.trim();
+    setResetFormVisible(true);
+  });
+  document.getElementById("reset-cancel")?.addEventListener("click", () => setResetFormVisible(false));
+  form.addEventListener("submit", async event => {
+    event.preventDefault();
+    const email = document.getElementById("reset-email")?.value || "";
+    const message = document.getElementById("reset-message");
+    const button = document.getElementById("reset-submit");
+    message.textContent = "";
+    button.disabled = true;
+    button.textContent = "Invio…";
+    try {
+      const result = await sendPasswordResetForEmail(email);
+      message.textContent = result.message;
+      if (!result.ok) form.dataset.invalid = "true";
+    } finally {
+      button.disabled = false;
+      button.textContent = "Invia il link di recupero";
+    }
+  });
+}
+
 async function loadUserData(user, { silent = false } = {}) {
   appState.user = user;
+  renderEmailVerificationBanner(user);
   if (!silent) setLoading("Sincronizzazione del piano personale…");
   if (appStarted && window.location.hash === "#recipes") renderRecipes({ loading: true });
   try {
@@ -841,8 +1104,23 @@ function startAccountRealtimeSync() {
 
 async function initApp() {
   pendingInviteToken = loadPendingInviteToken();
+  pendingEmailInviteToken = loadPendingEmailInviteToken();
   setupLoginForm();
+  setupResetPasswordForm();
   setupInviteForm();
+  setupEmailInviteForm();
+  setupVerificationBanner();
+  // Invito con email reale: l'anteprima arriva dal server e il form resta
+  // nascosto finché i dati non sono disponibili (email/nome non modificabili).
+  if (pendingEmailInviteToken) {
+    showEmailInviteScreen();
+    try {
+      emailInvitePreview = await previewClientInvite(pendingEmailInviteToken);
+    } catch (_) {
+      emailInvitePreview = { status: "not-found" };
+    }
+    renderEmailInvitePreview();
+  }
   if (!initFirebase()) {
     document.getElementById("login-error").textContent = "Il servizio non è configurato correttamente.";
     showLogin();
@@ -884,10 +1162,11 @@ async function initApp() {
       // Link invito in sospeso: la registrazione pubblica ha la precedenza
       // sulla schermata di accesso standard.
       if (pendingInviteToken) showInviteScreen();
+      else if (pendingEmailInviteToken) showEmailInviteScreen();
       else showLogin();
       return;
     }
-    if (pendingInviteToken && !inviteFlowActive) {
+    if ((pendingInviteToken || pendingEmailInviteToken) && !inviteFlowActive) {
       // Account già autenticato che apre un link invito: il token resta
       // parcheggiato finché non esce e riapre il link.
       showToast("Per usare un invito cliente esci dall'account attuale e riapri il link");
@@ -2541,11 +2820,26 @@ function renderClientLinkSection() {
   const requestsHtml = requests.length ? `<div class="linked-member-list">${requests.map(item => `
     <div class="linked-member"><span class="account-avatar small"><img src="assets/loghi/logo-app.svg" alt=""></span><div><strong>${escapeHtml(item.nutritionistDisplayName || item.nutritionistUsername || item.organizationName || "Studio professionale")}</strong><small>Ti ha invitato a collegare il tuo piano · ${escapeHtml(item.organizationName || "Studio professionale")}</small></div>
     <div class="link-request-actions"><button class="btn btn-primary" onclick="respondClientLinkRequest('${escapeHtml(item.requestId)}','accept')">Accetta</button><button class="btn btn-outline" onclick="respondClientLinkRequest('${escapeHtml(item.requestId)}','reject')">Rifiuta</button></div></div>`).join("")}</div>` : "";
+  // Dati identificativi inseriti dal nutrizionista: visibili al cliente, ma
+  // modificabili solo dal professionista (email, nome e cognome). Il cliente
+  // può cambiare solo il nome mostrato.
+  const identityHtml = link
+    ? `<dl class="linked-identity">
+        <dt>Email</dt><dd>${escapeHtml(link.email || "—")} ${link.email ? `<span class="link-status ${link.emailVerified ? "active" : ""}">${link.emailVerified ? "● Verificata" : "Da verificare"}</span>` : ""}</dd>
+        <dt>Nome e cognome</dt><dd>${escapeHtml([link.firstName, link.lastName].filter(Boolean).join(" ") || "Non indicati")}</dd>
+       </dl>
+       ${link.emailVerified ? "" : `<p class="linked-empty">Verifica l'indirizzo email dal banner in alto: finché non è verificato il collegamento resta inattivo.</p>`}
+       ${link.emailChange ? `<div class="link-request-actions"><p>Il tuo professionista propone di cambiare l'email dell'account in <strong>${escapeHtml(link.emailChange.newEmail || "—")}</strong>. Confermi?</p>
+        <button class="btn btn-primary" onclick="respondMyEmailChangeRequest('${escapeHtml(link.emailChange.requestId)}','accept')">Conferma cambio email</button>
+        <button class="btn btn-outline" onclick="respondMyEmailChangeRequest('${escapeHtml(link.emailChange.requestId)}','reject')">Rifiuta</button></div>` : ""}`
+    : "";
   const linkHtml = link
     ? `<div class="linked-member"><span class="account-avatar small">●</span><div><strong>${escapeHtml(link.nutritionistDisplayName || link.nutritionistUsername || link.organizationName || "Studio professionale")}</strong><small>Collegamento attivo · ${escapeHtml(link.organizationName || "Studio professionale")}</small></div></div>
+       ${identityHtml}
        <div class="linked-account-actions"><button class="btn btn-outline" onclick="openUnlinkModal()">Scollegati</button></div>
-       <form class="profile-name-form" onsubmit="saveClientDisplayName(event)"><label>Nome mostrato al tuo professionista<input id="client-display-name" maxlength="120" value="${escapeHtml(link.displayName || "")}" placeholder="Nome e cognome (facoltativo)"></label><button class="btn btn-outline" type="submit">Salva</button></form>`
-    : (requests.length ? "" : `<p class="linked-empty">Nessun professionista collegato. Se il tuo nutrizionista ti invita con il tuo username, la richiesta apparirà qui.</p>`);
+       <form class="profile-name-form" onsubmit="saveClientDisplayName(event)"><label>Nome mostrato al tuo professionista<input id="client-display-name" maxlength="120" value="${escapeHtml(link.displayName || "")}" placeholder="Nome e cognome (facoltativo)"></label><button class="btn btn-outline" type="submit">Salva</button></form>
+       <p class="linked-empty">Nome, cognome ed email dell'account li aggiorna il tuo nutrizionista: chiedi a lui se c'è qualcosa da correggere.</p>`
+    : (requests.length ? "" : `<p class="linked-empty">Nessun professionista collegato. Quando il tuo nutrizionista ti invita con la tua email, la richiesta appare qui.</p>`);
   return `<section class="settings-section linked-accounts-section"><div class="flex-between"><div><p class="eyebrow">PROFESSIONISTA</p><h2>Collegamento professionista</h2></div><span class="link-status ${link ? "active" : ""}">${link ? "● Collegato" : "Non collegato"}</span></div>${requestsHtml}${linkHtml}</section>`;
 }
 
@@ -2557,6 +2851,27 @@ window.saveClientDisplayName = async function(event) {
     appState.clientLink.link.displayName = displayName.trim() || null;
     showToast("Nome aggiornato ✅"); renderSettings();
   } catch (error) { showToast(error?.message || "Impossibile aggiornare il nome", true); }
+};
+
+// Conferma o rifiuto della proposta di cambio email del professionista: il
+// cliente è l'unico che può accettare, e solo dopo la conferma l'email cambia
+// in Firebase Auth (con nuova verifica).
+window.respondMyEmailChangeRequest = async function(requestId, decision) {
+  try {
+    const result = await callSaasFunction("respondMyEmailChange", {
+      requestId, decision, idempotencyKey: `email-change-${decision}-${requestId}`
+    });
+    if (result.status === "email-changed") {
+      showToast("Email aggiornata: accedi con il nuovo indirizzo e verificalo", false);
+      await signOutUser();
+      return;
+    }
+    showToast(result.status === "rejected" ? "Proposta rifiutata: l'email resta invariata" : "Richiesta aggiornata");
+    await refreshClientLinkState();
+    renderSettings();
+  } catch (error) {
+    showToast(error?.message || "Operazione non riuscita", true);
+  }
 };
 
 window.respondClientLinkRequest = async function(requestId, decision) {
