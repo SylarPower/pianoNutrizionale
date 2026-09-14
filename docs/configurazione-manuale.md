@@ -136,3 +136,35 @@ cache. Per tornare indietro, ripeti al contrario.
 | il cliente dice "link scaduto" o "link sostituito" | sono passati 7 giorni, oppure hai premuto **Nuovo link** / **Correggi dati** dopo averglielo mandato | mandagli l'ultimo link mostrato dalla console (scheda cliente → **Nuovo link**) |
 | il cliente si è registrato ma non vede il profilo | non ha ancora confermato l'email | deve aprire l'email di verifica di Firebase; nella scheda cliente deve comparire "email verificata" |
 | il cliente non riceve l'email di verifica o di recupero password | finita nello spam, oppure indirizzo scritto male | controlla lo spam; se l'indirizzo è sbagliato usa **Correggi dati** (invito) o **Proponi cambio email** (cliente già registrato) |
+
+---
+
+## 6. Ricettario professionisti: bozze, studio e invii
+
+Dopo aver pubblicato le funzioni (§1), la console ha la voce **Ricette**.
+Non serve nient'altro: niente regole da cambiare, niente indici da creare.
+
+**Creare una ricetta**: Ricette → **+ Nuova**. Nasce come *bozza privata*:
+la vedi solo tu. Nome, emoji, Pasto (Colazione…Cena), righe ingrediente
+con dose Uomo e Donna, passi e note. **Salva** crea la revisione 1.
+
+**Condividerla con lo studio** (solo il creatore dello studio):
+nella scheda ricetta premi **Condividi**: diventa visibile a tutti i
+professionisti, che possono leggerla, duplicarla e inviarla. Con
+**Rendi privata** torna solo tua. Ognuno modifica solo le proprie.
+
+**Inviarla a un cliente**: **Invia…**, scegli il cliente collegato,
+**Invia ricetta**. Il cliente la trova nella campanella e con **Accetta**
+entra nel suo ricettario con il badge «Studio», in sola lettura: può
+usarla ed eliminarla, ma non modificarla. Finché non accetta, l'invio
+resta in **Invii in attesa** e puoi annullarlo.
+
+**Archiviare**: **Archivia** toglie la ricetta dall'uso (non si modifica
+né si invia più). Non si può ripristinare: archivia solo ciò che non serve
+più. Con **Duplica** fai una copia privata di una ricetta qualsiasi.
+
+| Cosa vedi | Perché | Cosa fare |
+| --- | --- | --- |
+| «Revisione non più attuale, ricarica» salvando | un collega ha salvato prima di te | ricarica la vista e rifai la modifica |
+| «Solo il creatore dello studio può…» | non sei il creatore | chiedi al creatore di condividere |
+| «Solo clienti collegati» inviando | il cliente non ha un collegamento attivo | collegalo prima dalla vista Clienti |

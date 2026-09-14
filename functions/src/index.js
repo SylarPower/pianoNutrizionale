@@ -3162,7 +3162,15 @@ exports.listProfessionalRecipes = callable(async (data, uid) => {
   const includeArchived = data.includeArchived === true;
   const snapshot = await db.collection(`organizations/${actor.organizationId}/recipes`).limit(200).get();
   const recipes = snapshot.docs
-    .map(doc => ({ id: doc.id, ...doc.data() }))
+    .map(doc => {
+      const data = doc.data();
+      return {
+        id: doc.id, ...data,
+        createdAt: data.createdAt?.toDate?.()?.toISOString() || null,
+        updatedAt: data.updatedAt?.toDate?.()?.toISOString() || null,
+        archivedAt: data.archivedAt?.toDate?.()?.toISOString() || null
+      };
+    })
     .filter(item => {
       if (!includeArchived && item.status === 'archived') return false;
       if (actor.isCreator) return true;
@@ -3339,7 +3347,10 @@ exports.listProfessionalShares = callable(async (data, uid) => {
   if (!actor.isCreator) query = query.where('senderUid', '==', uid);
   const snapshot = await query.limit(200).get();
   const shares = snapshot.docs
-    .map(doc => ({ id: doc.id, ...doc.data() }))
+    .map(doc => {
+      const data = doc.data();
+      return { id: doc.id, ...data, createdAt: data.createdAt?.toDate?.()?.toISOString() || null };
+    })
     .filter(share => share.senderRole === 'professional' && share.organizationId === actor.organizationId && share.status === 'pending')
     .sort((a, b) => (b.createdAt?.toMillis?.() || 0) - (a.createdAt?.toMillis?.() || 0));
   return { shares };

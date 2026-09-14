@@ -1,6 +1,6 @@
 'use strict';
 
-const adminState = { user: null, reports: [], clients: [], clientInvitations: [], clientRequests: [], clientEmailChanges: [], clientFilter: 'all', detailClientId: null, detailHistory: null, clientDetailReturnFocus: null, ruleSets: [], structures: [], compareSelection: new Set(), users: null, editingStructure: null, editingDietPlan: null, dietPlan: null, dietPlanRules: [], dietPlanGroups: [], dietPlanEditingId: null, cursor: null, selectedReport: null, pickerSelection: new Set(), catalogPreview: null, isCreator: false };
+const adminState = { user: null, reports: [], clients: [], clientInvitations: [], clientRequests: [], clientEmailChanges: [], clientFilter: 'all', detailClientId: null, detailHistory: null, clientDetailReturnFocus: null, ruleSets: [], structures: [], compareSelection: new Set(), users: null, editingStructure: null, editingDietPlan: null, dietPlan: null, dietPlanRules: [], dietPlanGroups: [], dietPlanEditingId: null, cursor: null, selectedReport: null, pickerSelection: new Set(), catalogPreview: null, isCreator: false, professionalRecipes: [], recipeFilter: 'all', editingRecipe: null, professionalShares: [] };
 let catalogIndexCache = null;
 let catalogCategoriesCache = [];
 let catalogTruncated = false;
@@ -446,6 +446,269 @@ async function submitAssignment(event) {
     closeAssignment(); await loadClients();
     $('clients-feedback').textContent = result.status === 'scheduled' ? 'Assegnazione programmata. Il cliente dovrà confermare l’aggiornamento dall’app.' : 'Struttura assegnata. Il cliente dovrà confermare l’aggiornamento dall’app.';
   } catch (error) { $('assignment-error').textContent = adminError(error); }
+}
+
+// ---- Sezione Ricettario professionisti (ADR 0006) ----
+// Bozze private del professionista, condivisioni di studio (solo creatore)
+// e invii tracciati ai clienti. Tutte le scritture passano dalle callable;
+// le archiviate non sono più modificabili né inviabili (senza ripristino).
+
+const RECIPE_SLOT_LABELS = { breakfast: 'Colazione', snack1: 'Spuntino mattina', lunch: 'Pranzo', snack2: 'Merenda', dinner: 'Cena' };
+const recipeSlotLabel = slot => RECIPE_SLOT_LABELS[slot] || slot;
+
+async function loadProfessionalRecipes() {
+  if (!orgId()) { $('recipes-feedback').textContent = ORG_MISSING_MESSAGE; return; }
+  $('recipes-feedback').textContent = 'Caricamento ricette…';
+  try {
+    const result = await callAdminSaasFunction('listProfessionalRecipes', { organizationId: orgId(), includeArchived: true });
+    adminState.professionalRecipes = result.recipes || [];
+    renderProfessionalRecipes();
+    $('recipes-feedback').textContent = adminState.professionalRecipes.length ? '' : 'Nessuna ricetta: creane una.';
+  } catch (error) { $('recipes-feedback').textContent = adminError(error); adminState.professionalRecipes = []; renderProfessionalRecipes(); }
+}
+
+function renderProfessionalRecipes() {
+  const mine = adminState.user?.uid || null;
+  const items = adminState.professionalRecipes.filter(item => {
+    if (adminState.recipeFilter === 'mine') return item.ownerUid === mine && item.status !== 'archived';
+    if (adminState.recipeFilter === 'studio') return item.visibility === 'studio' && item.status !== 'archived';
+    if (adminState.recipeFilter === 'archived') return item.status === 'archived';
+    return item.status !== 'archived';
+  });
+  document.querySelectorAll('[data-recipe-filter]').forEach(tab => tab.classList.toggle('active', tab.dataset.recipeFilter === adminState.recipeFilter));
+  $('recipes-list').innerHTML = items.map(item => {
+    const isOwner = mine && item.ownerUid === mine;
+    const archived = item.status === 'archived';
+    const other = mine && item.ownerUid && item.ownerUid !== mine ? ' · di un altro professionista' : '';
+    const visibilityTag = item.visibility === 'studio' ? '<p><span class="status status-resolved">Studio</span></p>' : '';
+    return `
+    <article class="client-card ${archived ? 'structure-archived' : ''}">
+      <p class="eyebrow">RICETTA${item.visibility === 'studio' ? ' · STUDIO' : ''}${archived ? ' · ARCHIVIATA' : ''}</p>
+      <h3>${escapeAdmin(item.emoji || '🍲')} ${escapeAdmin(item.name)}</h3>
+      ${visibilityTag}
+      <p>${escapeAdmin(recipeSlotLabel(item.slot))} · ${(item.ingredients || []).length} ingredienti · rev. ${Number(item.revision || 1)}${other}</p>
+      <p class="structure-dates"><small>Ultima modifica ${formatDateOnly(item.updatedAt)}</small></p>
+      <div class="card-actions">
+        <button class="secondary" data-edit-recipe="${escapeAdmin(item.id)}" ${!isOwner || archived ? 'disabled title="Solo il proprietario modifica"' : ''}>Modifica →</button>
+        <button class="secondary" data-duplicate-recipe="${escapeAdmin(item.id)}" ${archived ? 'disabled' : ''}>Duplica</button>
+        <button class="secondary" data-send-recipe="${escapeAdmin(item.id)}" ${archived ? 'disabled' : ''}>Invia…</button>
+        ${adminState.isCreator && !archived ? `<button class="text-button" data-visibility-recipe="${escapeAdmin(item.id)}">${item.visibility === 'studio' ? 'Rendi privata' : 'Condividi'}</button>` : ''}
+        ${isOwner && !archived ? `<button class="text-button archive-toggle" data-archive-recipe="${escapeAdmin(item.id)}">Archivia</button>` : ''}
+      </div>
+    </article>`;
+  }).join('') || '<p class="feedback">Nessuna ricetta in questo filtro.</p>';
+}
+
+function handleRecipeActions(event) {
+  const edit = event.target.closest('[data-edit-recipe]');
+  if (edit && !edit.disabled) { openRecipeDialog(edit.dataset.editRecipe); return; }
+  const duplicate = event.target.closest('[data-duplicate-recipe]');
+  if (duplicate && !duplicate.disabled) { openRecipeDialog(null, duplicate.dataset.duplicateRecipe); return; }
+  const send = event.target.closest('[data-send-recipe]');
+  if (send && !send.disabled) { openRecipeSendDialog(send.dataset.sendRecipe); return; }
+  const visibility = event.target.closest('[data-visibility-recipe]');
+  if (visibility) { toggleRecipeVisibility(visibility.dataset.visibilityRecipe); return; }
+  const archive = event.target.closest('[data-archive-recipe]');
+  if (archive) archiveProfessionalRecipeUI(archive.dataset.archiveRecipe);
+}
+
+function recipeIngredientRow(ingredient = {}) {
+  return `
+  <div class="recipe-ingredient-row">
+    <input class="ing-name" placeholder="Ingrediente (es. Riso)" value="${escapeAdmin(ingredient.name || '')}" aria-label="Ingrediente">
+    <input class="ing-man" placeholder="Uomo (es. 80 g)" value="${escapeAdmin(ingredient.portions?.man || '')}" aria-label="Dose uomo">
+    <input class="ing-ipo" placeholder="Donna (es. 60 g)" value="${escapeAdmin(ingredient.portions?.ipo || '')}" aria-label="Dose donna">
+    <button type="button" class="dialog-close ing-remove" aria-label="Rimuovi ingrediente">×</button>
+  </div>`;
+}
+
+function addRecipeIngredientRow(ingredient = {}) {
+  $('recipe-ingredients').insertAdjacentHTML('beforeend', recipeIngredientRow(ingredient));
+}
+
+async function openRecipeDialog(recipeId = null, duplicateFrom = null) {
+  adminState.editingRecipe = null;
+  $('recipe-id').value = ''; $('recipe-revision').value = ''; $('recipe-protein').value = '';
+  $('recipe-name').value = ''; $('recipe-emoji').value = ''; $('recipe-slot').value = 'lunch';
+  $('recipe-ingredients').innerHTML = ''; $('recipe-steps').value = ''; $('recipe-notes').value = '';
+  $('recipe-error').textContent = '';
+  const source = recipeId
+    ? adminState.professionalRecipes.find(item => item.id === recipeId)
+    : duplicateFrom ? adminState.professionalRecipes.find(item => item.id === duplicateFrom) : null;
+  if ((recipeId || duplicateFrom) && !source) return;
+  if (source) {
+    $('recipe-name').value = recipeId ? (source.name || '') : `${source.name || ''} (copia)`;
+    $('recipe-emoji').value = source.emoji || '';
+    $('recipe-slot').value = source.slot || 'lunch';
+    $('recipe-protein').value = source.proteinCategory || '';
+    (source.ingredients?.length ? source.ingredients : [{}]).forEach(addRecipeIngredientRow);
+    $('recipe-steps').value = (source.steps || []).join('\n');
+    $('recipe-notes').value = (source.notes || []).join('\n');
+  } else {
+    addRecipeIngredientRow();
+  }
+  if (recipeId && source) {
+    adminState.editingRecipe = { id: source.id, revision: source.revision };
+    $('recipe-id').value = source.id;
+    $('recipe-revision').value = String(source.revision ?? 1);
+    $('recipe-title').textContent = 'Modifica ricetta';
+    $('recipe-subtitle').textContent = `Revisione ${source.revision ?? 1}: il salvataggio ne crea una nuova. Visibilità e proprietario non cambiano.`;
+  } else {
+    $('recipe-title').textContent = duplicateFrom ? 'Duplica ricetta' : 'Nuova ricetta';
+    $('recipe-subtitle').textContent = duplicateFrom
+      ? 'Una copia privata con nuovo codice: la ricetta d’origine resta intatta.'
+      : 'Nasce come bozza privata: solo tu la vedi finché il creatore non la condivide con lo studio.';
+  }
+  $('recipe-dialog').classList.remove('hidden');
+  $('recipe-name').focus();
+}
+
+function closeRecipeDialog() { $('recipe-dialog').classList.add('hidden'); }
+
+function collectRecipeForm() {
+  const ingredients = [...document.querySelectorAll('#recipe-ingredients .recipe-ingredient-row')].map(row => ({
+    name: row.querySelector('.ing-name').value.trim(),
+    portions: {
+      man: row.querySelector('.ing-man').value.trim(),
+      ipo: row.querySelector('.ing-ipo').value.trim()
+    }
+  })).filter(item => item.name);
+  const lines = value => String(value || '').split('\n').map(line => line.trim()).filter(Boolean);
+  return {
+    name: $('recipe-name').value.trim(),
+    emoji: $('recipe-emoji').value.trim(),
+    slot: $('recipe-slot').value,
+    proteinCategory: $('recipe-protein').value || null,
+    ingredients,
+    steps: lines($('recipe-steps').value),
+    notes: lines($('recipe-notes').value)
+  };
+}
+
+async function submitRecipeForm(event) {
+  event.preventDefault();
+  $('recipe-error').textContent = '';
+  const recipe = collectRecipeForm();
+  if (!recipe.name) { $('recipe-error').textContent = 'Dai un nome alla ricetta.'; return; }
+  if (!recipe.ingredients.length) { $('recipe-error').textContent = 'Aggiungi almeno un ingrediente.'; return; }
+  const submit = $('recipe-submit');
+  submit.disabled = true;
+  try {
+    const editingId = $('recipe-id').value;
+    if (editingId) {
+      const result = await callAdminSaasFunction('updateProfessionalRecipe', {
+        organizationId: orgId(), recipeId: editingId, recipe,
+        revision: Number($('recipe-revision').value) || 1, idempotencyKey: idem('recipe-update')
+      });
+      closeRecipeDialog();
+      await loadProfessionalRecipes();
+      $('recipes-feedback').textContent = `Ricetta salvata (revisione ${result.revision}).`;
+    } else {
+      await callAdminSaasFunction('createProfessionalRecipe', {
+        organizationId: orgId(), recipe, idempotencyKey: idem('recipe-create')
+      });
+      closeRecipeDialog();
+      await loadProfessionalRecipes();
+      $('recipes-feedback').textContent = 'Ricetta creata come bozza privata.';
+    }
+  } catch (error) { $('recipe-error').textContent = adminError(error); }
+  finally { submit.disabled = false; }
+}
+
+async function archiveProfessionalRecipeUI(recipeId) {
+  if (!confirm('Archiviare questa ricetta? Non sarà più modificabile né inviabile e non si può ripristinare.')) return;
+  try {
+    await callAdminSaasFunction('archiveProfessionalRecipe', { organizationId: orgId(), recipeId, idempotencyKey: idem('recipe-archive') });
+    await loadProfessionalRecipes();
+    $('recipes-feedback').textContent = 'Ricetta archiviata.';
+  } catch (error) { $('recipes-feedback').textContent = adminError(error); }
+}
+
+async function toggleRecipeVisibility(recipeId) {
+  const item = adminState.professionalRecipes.find(entry => entry.id === recipeId);
+  if (!item) return;
+  const next = item.visibility === 'studio' ? 'private' : 'studio';
+  const question = next === 'studio'
+    ? `Condividere "${item.name}" con tutto lo studio? Tutti i professionisti potranno leggerla e inviarla.`
+    : `Rendere privata "${item.name}"? Gli altri professionisti non la vedranno più.`;
+  if (!confirm(question)) return;
+  try {
+    await callAdminSaasFunction('shareProfessionalRecipe', { organizationId: orgId(), recipeId, visibility: next, idempotencyKey: idem('recipe-share') });
+    await loadProfessionalRecipes();
+    $('recipes-feedback').textContent = next === 'studio' ? 'Ricetta condivisa con lo studio.' : 'Ricetta resa privata.';
+  } catch (error) { $('recipes-feedback').textContent = adminError(error); }
+}
+
+async function openRecipeSendDialog(recipeId) {
+  const item = adminState.professionalRecipes.find(entry => entry.id === recipeId);
+  if (!item) return;
+  $('recipe-send-id').value = recipeId;
+  $('recipe-send-subtitle').textContent = `"${item.name}" · rev. ${item.revision ?? 1} → cliente`;
+  $('recipe-send-error').textContent = '';
+  const select = $('recipe-send-client');
+  select.innerHTML = '<option value="">— Seleziona —</option>';
+  try {
+    const result = await callAdminSaasFunction('listAuthorizedClients', { organizationId: orgId() });
+    adminState.clients = result.clients || [];
+    select.innerHTML += adminState.clients.map(client => `<option value="${escapeAdmin(client.id)}">${escapeAdmin(clientLabel(client))}</option>`).join('');
+  } catch (error) { $('recipe-send-error').textContent = adminError(error); }
+  $('recipe-send-dialog').classList.remove('hidden');
+}
+
+function closeRecipeSendDialog() { $('recipe-send-dialog').classList.add('hidden'); }
+
+async function submitRecipeSend(event) {
+  event.preventDefault();
+  $('recipe-send-error').textContent = '';
+  const clientId = $('recipe-send-client').value;
+  if (!clientId) { $('recipe-send-error').textContent = 'Seleziona un cliente.'; return; }
+  const submit = $('recipe-send-submit');
+  submit.disabled = true;
+  try {
+    await callAdminSaasFunction('sendProfessionalRecipe', {
+      organizationId: orgId(), recipeIds: [$('recipe-send-id').value], clientId, idempotencyKey: idem('recipe-send')
+    });
+    closeRecipeSendDialog();
+    await loadProfessionalShares();
+    $('shares-feedback').textContent = 'Inviata: il cliente la troverà nella campanella.';
+  } catch (error) { $('recipe-send-error').textContent = adminError(error); }
+  finally { submit.disabled = false; }
+}
+
+async function loadProfessionalShares() {
+  if (!orgId()) { $('shares-feedback').textContent = ORG_MISSING_MESSAGE; return; }
+  $('shares-feedback').textContent = 'Caricamento invii…';
+  try {
+    const result = await callAdminSaasFunction('listProfessionalShares', { organizationId: orgId() });
+    adminState.professionalShares = result.shares || [];
+    renderProfessionalShares();
+    $('shares-feedback').textContent = adminState.professionalShares.length ? '' : 'Nessun invio in attesa.';
+  } catch (error) { $('shares-feedback').textContent = adminError(error); adminState.professionalShares = []; renderProfessionalShares(); }
+}
+
+function renderProfessionalShares() {
+  $('shares-list').innerHTML = adminState.professionalShares.map(share => {
+    const names = (share.recipes || []).map(entry => entry.name || entry.id).join(' · ') || '—';
+    return `
+    <article class="client-card">
+      <p class="eyebrow">INVIO PROFESSIONALE</p>
+      <h3>${escapeAdmin(names)}</h3>
+      <p>→ ${escapeAdmin(share.recipientUsername || share.recipientUid || 'cliente')}</p>
+      <p class="structure-dates"><small>Inviato ${formatDateOnly(share.createdAt)} · da ${escapeAdmin(share.senderUsername || 'studio')}</small></p>
+      <div class="card-actions">
+        <button class="text-button archive-toggle" data-cancel-share="${escapeAdmin(share.id)}">Annulla invio</button>
+      </div>
+    </article>`;
+  }).join('') || '<p class="feedback">Nessun invio in attesa.</p>';
+}
+
+async function cancelProfessionalShareUI(shareId) {
+  if (!confirm('Annullare questo invio? Il cliente non lo vedrà più.')) return;
+  try {
+    await callAdminSaasFunction('cancelProfessionalShare', { organizationId: orgId(), shareId, idempotencyKey: idem('recipe-cancel') });
+    await loadProfessionalShares();
+    $('shares-feedback').textContent = 'Invio annullato.';
+  } catch (error) { $('shares-feedback').textContent = adminError(error); }
 }
 
 // ---- Sezione Dosi clienti ----
@@ -2216,6 +2479,7 @@ function showView(view) {
   if (view === 'clients') { loadClients(); loadUsers(); }
   else if (view === 'doses') loadDoseClients();
   else if (view === 'structures') loadStructures();
+  else if (view === 'recipes') { loadProfessionalRecipes(); loadProfessionalShares(); }
   else if (view === 'catalog') loadCatalogStatus();
   else loadReports();
 }
@@ -2321,6 +2585,29 @@ function bindAdmin() {
   document.querySelectorAll('[data-close-compare]').forEach(node => node.addEventListener('click', closeCompare));
   $('structure-load-revision').addEventListener('click', loadStructureRevision);
   document.querySelectorAll('[data-close-structure]').forEach(node => node.addEventListener('click', closeStructureDialog));
+  $('new-recipe').addEventListener('click', () => openRecipeDialog());
+  $('refresh-recipes').addEventListener('click', loadProfessionalRecipes);
+  $('refresh-shares').addEventListener('click', loadProfessionalShares);
+  $('recipe-form').addEventListener('submit', submitRecipeForm);
+  $('recipe-add-ingredient').addEventListener('click', () => addRecipeIngredientRow());
+  $('recipe-ingredients').addEventListener('click', event => {
+    const remove = event.target.closest('.ing-remove');
+    if (remove) remove.closest('.recipe-ingredient-row').remove();
+  });
+  $('recipe-send-form').addEventListener('submit', submitRecipeSend);
+  document.querySelectorAll('[data-close-recipe]').forEach(node => node.addEventListener('click', closeRecipeDialog));
+  document.querySelectorAll('[data-close-recipe-send]').forEach(node => node.addEventListener('click', closeRecipeSendDialog));
+  $('recipe-filters').addEventListener('click', event => {
+    const tab = event.target.closest('[data-recipe-filter]');
+    if (!tab) return;
+    adminState.recipeFilter = tab.dataset.recipeFilter;
+    renderProfessionalRecipes();
+  });
+  $('recipes-list').addEventListener('click', handleRecipeActions);
+  $('shares-list').addEventListener('click', event => {
+    const button = event.target.closest('[data-cancel-share]');
+    if (button) cancelProfessionalShareUI(button.dataset.cancelShare);
+  });
   $('catalog-picker-search').addEventListener('input', event => renderCatalogPicker(event.target.value));
   $('catalog-picker-list').addEventListener('change', event => {
     const box = event.target.closest('[data-picker-ing]');
