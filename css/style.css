@@ -2681,6 +2681,10 @@ body.dark-mode .meller-notice-list li strong { color: #d9987a; }
 }
 #email-verification-banner.hidden { display: none; }
 #email-verification-banner p { margin: 0; flex: 1 1 220px; }
+/* Reinvia email + "Ho verificato": restano su una riga sola quando lo spazio
+   lo consente, altrimenti vanno a capo senza schiacciarsi. */
+.email-verification-actions { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
+.email-verification-actions .btn { flex: 1 1 auto; }
 .linked-identity { margin: 8px 0; }
 .linked-identity dt { font-size: 0.7rem; letter-spacing: 0.04em; text-transform: uppercase; color: var(--text-muted); }
 .linked-identity dd { margin: 2px 0 8px; font-weight: 600; display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
