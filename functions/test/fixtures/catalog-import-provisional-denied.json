@@ -3,10 +3,12 @@
     {
       "ingredientId": "provisional-demo-non-importabile",
       "displayName": "Voce dimostrativa non importabile",
-      "aliases": ["voce demo provvisoria"],
+      "aliases": [
+        "voce demo provvisoria"
+      ],
       "categoryId": "carb",
       "mappingKind": "guided",
-      "mellerFamilyId": "riso"
+      "mellerFamilyId": "cereali"
     }
   ]
 }

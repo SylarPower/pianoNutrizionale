@@ -1,0 +1,158 @@
+// === AUTO-GENERATED FROM docs/meller-source-v3.json ===
+  const MELLER_GROUP = {
+    CARB: 'carb',
+    PROTEIN: 'protein',
+    VEGETABLE: 'vegetable',
+    FAT: 'fat',
+    FRUIT: 'fruit',
+    DAIRY: 'dairy',
+    SWEET: 'sweet',
+    FREE: 'free'
+  };
+
+  const MELLER_GRAMMATURE = [
+  // === GENERATO DA docs/meller-source-v3.json — NON MODIFICARE A MANO ===
+  // Ordine = priorità discendente (prima regex che matcha vince)
+  // Dosi esplicite Pranzo A/R e Cena A/R (cena esplicita, non derivata 2/3)
+    { family: 'patateDolci', group: 'carb', label: 'Patate dolci / Batata', match: /patata americana|patate dolci|patata dolce|sweet potato|batata/, slots: { lunch: { training: 300, rest: 220 }, dinner: { training: 160, rest: 160 } } },
+    { family: 'gnocchi', group: 'carb', label: 'Gnocchi di patate', match: /gnocchi|gnocco/, slots: { lunch: { training: 150, rest: 110 }, dinner: { training: 80, rest: 80 } } },
+    { family: 'polenta', group: 'carb', label: 'Polenta cotta', match: /polenta/, slots: { lunch: { training: 330, rest: 240 }, dinner: { training: 170, rest: 170 } } },
+    { family: 'mais', group: 'carb', label: 'Mais dolce (sgocciolato)', match: /mais dolce|mais/, slots: { lunch: { training: 300, rest: 210 }, dinner: { training: 150, rest: 150 } } },
+    { family: 'fiocchiAvena', group: 'carb', label: 'Fiocchi d\'avena / Porridge', match: /fiocchi di avena|fiocchi d avena|porridge|oats|oat/, slots: { lunch: { training: 70, rest: 50 }, dinner: { training: 40, rest: 40 } } },
+    { family: 'gallette', group: 'carb', label: 'Gallette di riso / mais', match: /gallette di riso|gallette di mais|galletta|gallette/, slots: { lunch: { training: 65, rest: 45 }, dinner: { training: 35, rest: 35 } } },
+    { family: 'crackers', group: 'carb', label: 'Crackers / Grissini / Crostini', match: /crackers|grissino|grissini|crostino|crostini|cracker/, slots: { lunch: { training: 60, rest: 45 }, dinner: { training: 30, rest: 30 } } },
+    { family: 'piadina', group: 'carb', label: 'Piadina / Tortilla / Wrap', match: /tortillas|tortilla|piadina|piadine|wraps|wrap/, slots: { lunch: { training: 80, rest: 55 }, dinner: { training: 40, rest: 40 } } },
+    { family: 'cerealiColazione', group: 'carb', label: 'Cereali da colazione (cornflakes, muesli)', match: /cereali integrali colazione|cereali da colazione|cereali soffiati|fiocchi di mais|corn flakes|cornflakes|granola|muesli/, slots: { lunch: { training: 70, rest: 50 }, dinner: { training: 40, rest: 40 } } },
+    { family: 'cereali', group: 'carb', label: 'Cereali e derivati (pasta, riso, farro, orzo, ecc.)', match: /pasta di lenticchie|pasta integrale|pasta di legumi|riso integrale|grano saraceno|mezze maniche|pasta di ceci|tagliatelle|orecchiette|tortiglioni|riso venere|conchiglie|maccheroni|riso rosso|spaghetti|spaghetto|carnaroli|riso nero|cous cous|rigatoni|linguine|farfalle|pennette|paccheri|couscous|saraceno|amaranto|semolino|fusilli|lasagne|risotto|basmati|arborio|burghul|trofie|quinoa|miglio|bulgur|semola|pasta|penne|farro|kamut|riso|orzo/, slots: { lunch: { training: 70, rest: 50 }, dinner: { training: 40, rest: 40 } } },
+    { family: 'pane', group: 'carb', label: 'Pane e affini', match: /fette biscottate|fetta biscottata|pane integrale|pane di segale|pane di farro|pane carasau|cracotte|focaccia|focacce|pane|wasa/, slots: { lunch: { training: 100, rest: 70 }, dinner: { training: 50, rest: 50 } } },
+    { family: 'patate', group: 'carb', label: 'Patate', match: /patata|patate/, slots: { lunch: { training: 340, rest: 240 }, dinner: { training: 170, rest: 170 } } },
+    { family: 'salmoneAffumicato', group: 'protein', label: 'Salmone affumicato', match: /salmone affumicato/, slots: { lunch: { training: 150, rest: 150 }, dinner: { training: 150, rest: 150 } } },
+    { family: 'pesceScatolaNaturale', group: 'protein', label: 'Pesce in scatola al naturale', match: /pesce in scatola al naturale|sgombro al naturale|salmone al naturale|tonno al naturale|pesce al naturale/, slots: { lunch: { training: 220, rest: 220 }, dinner: { training: 220, rest: 220 } } },
+    { family: 'pesceSottOlio', group: 'protein', label: 'Pesce conservato sott\'olio (sgocciolato)', match: /sgombro in scatola|sgombro sott olio|sardine sott olio|sardina sott olio|salmone sott olio|tonno in scatola|tonno sott olio|pesce sott olio/, slots: { lunch: { training: 110, rest: 110 }, dinner: { training: 110, rest: 110 } } },
+    { family: 'pesceAzzurro', group: 'protein', label: 'Pesce azzurro (ricco di omega-3)', match: /tonno fresco|acciughe|salmone|sgombro|sardina|sardine|acciuga|aringhe|aringa|alice|alici/, slots: { lunch: { training: 130, rest: 130 }, dinner: { training: 130, rest: 130 } } },
+    { family: 'pesceBiancoMagro', group: 'protein', label: 'Pesce bianco magro', match: /stoccafisso|pesce spada|merluzzo|sogliola|sogliole|platessa|branzino|nasello|spigola|baccala|orata|orate|trota|trote/, slots: { lunch: { training: 260, rest: 260 }, dinner: { training: 260, rest: 260 } } },
+    { family: 'crostaceiMolluschi', group: 'protein', label: 'Crostacei e Molluschi', match: /gamberetti|gamberoni|calamaro|calamari|aragosta|granchio|gambero|gamberi|vongole|granchi|totano|totani|seppia|seppie|polipo|mitili|scampi|astice|polpo|cozze/, slots: { lunch: { training: 310, rest: 310 }, dinner: { training: 310, rest: 310 } } },
+    { family: 'maiale', group: 'protein', label: 'Maiale (tagli magri)', match: /filetto di maiale|coscia di maiale|maiale|lonza|pork/, slots: { lunch: { training: 200, rest: 200 }, dinner: { training: 200, rest: 200 } } },
+    { family: 'polloTacchino', group: 'protein', label: 'Pollo e Tacchino', match: /sovracoscia di pollo|petto di tacchino|fesa di tacchino|coscia di pollo|petto di pollo|sovracoscia|tacchino|faraona|pollo/, slots: { lunch: { training: 200, rest: 200 }, dinner: { training: 200, rest: 200 } } },
+    { family: 'manzo', group: 'protein', label: 'Manzo (tagli magri) / Vitello', match: /hamburger di manzo|filetto di manzo|fesa di manzo|noce di manzo|roastbeef|sottofesa|girello|scamone|filetto|vitello|vitella|manzo/, slots: { lunch: { training: 190, rest: 190 }, dinner: { training: 190, rest: 190 } } },
+    { family: 'affettatiMagri', group: 'protein', label: 'Affettati magri', match: /prosciutto crudo|prosciutto cotto|prosciutto|bresaola|speck|fesa/, slots: { lunch: { training: 150, rest: 150 }, dinner: { training: 150, rest: 150 } } },
+    { family: 'mozzarellaLight', group: 'protein', label: 'Mozzarella Light', match: /santa lucia light|mozzarella light/, slots: { lunch: { training: 140, rest: 140 }, dinner: { training: 140, rest: 140 } } },
+    { family: 'formaggiFreschiMolli', group: 'protein', label: 'Formaggi freschi e molli', match: /formaggio fresco spalmabile|formaggio spalmabile|fior di latte|philadelphia|mozzarella|stracchino|crescenza|robiola|caprino/, slots: { lunch: { training: 80, rest: 80 }, dinner: { training: 80, rest: 80 } } },
+    { family: 'yogurtGreco', group: 'protein', label: 'Yogurt greco / Skyr', match: /yoghurt greco|yogurt greco|skyr/, slots: { lunch: { training: 400, rest: 400 }, dinner: { training: 400, rest: 400 } } },
+    { family: 'fiocchiLatte', group: 'protein', label: 'Fiocchi di latte', match: /fiocchi di latte|cottage cheese/, slots: { lunch: { training: 200, rest: 200 }, dinner: { training: 200, rest: 200 } } },
+    { family: 'montasio', group: 'protein', label: 'Montasio', match: /montasio/, slots: { lunch: { training: 60, rest: 60 }, dinner: { training: 60, rest: 60 } } },
+    { family: 'grana', group: 'protein', label: 'Grana Padano', match: /grana padano|grana/, slots: { lunch: { training: 55, rest: 55 }, dinner: { training: 55, rest: 55 } } },
+    { family: 'formaggiStagionati', group: 'protein', label: 'Formaggi stagionati', match: /parmigiano reggiano|parmigiano|emmenthal|provolone|pecorino|emmental|scamorza|asiago/, slots: { lunch: { training: 55, rest: 55 }, dinner: { training: 55, rest: 55 } } },
+    { family: 'feta', group: 'protein', label: 'Feta', match: /feta/, slots: { lunch: { training: 85, rest: 85 }, dinner: { training: 85, rest: 85 } } },
+    { family: 'ricotta', group: 'protein', label: 'Ricotta', match: /ricotta/, slots: { lunch: { training: 150, rest: 150 }, dinner: { training: 150, rest: 150 } } },
+    { family: 'uova', group: 'protein', label: 'Uova di gallina', match: /albume|albumi|tuorlo|tuorli|uovo|uova/, slots: { lunch: { training: 180, rest: 180 }, dinner: { training: 180, rest: 180 } } },
+    { family: 'legumotti', group: 'protein', label: 'Legumotti (peso a crudo)', match: /legumotti|legumotto/, slots: { lunch: { training: 70, rest: 70 }, dinner: { training: 70, rest: 70 } } },
+    { family: 'legumiScatola', group: 'protein', label: 'Legumi cotti / in scatola (sgocciolati)', match: /fagioli di soia|cannellini|lenticchia|lenticchie|borlotti|fagiolo|fagioli|pisello|piselli|edamame|tempeh|azuki|ceci|fava|fave|tofu/, slots: { lunch: { training: 240, rest: 240 }, dinner: { training: 240, rest: 240 } } },
+    { family: 'lupini', group: 'protein', label: 'Lupini', match: /lupino|lupini/, slots: { lunch: { training: 200, rest: 200 }, dinner: { training: 200, rest: 200 } } },
+    { family: 'seitan', group: 'protein', label: 'Seitan', match: /seitan/, slots: { lunch: { training: 180, rest: 180 }, dinner: { training: 180, rest: 180 } } },
+    { family: 'burgerVegetali', group: 'protein', label: 'Burger vegetali', match: /hamburger vegetale|burger vegetale|burger vegetali|veggie burger/, slots: { lunch: { training: 100, rest: 100 }, dinner: { training: 100, rest: 100 } } },
+    { family: 'olio', group: 'fat', label: 'Olio extravergine d\'oliva', match: /olio extravergine|extravergine|olio evo|olio|evo/, slots: { lunch: { training: 10, rest: 10 }, dinner: { training: 10, rest: 10 } } },
+    { family: 'verdura', group: 'vegetable', label: 'Verdure', match: /passata di pomodoro|polpa di pomodoro|cavolo cappuccio|germogli di soia|erba cipollina|barba di frate|cime di rapa|barbabietola|barbabietole|cavolo nero|cavolfiore|cavolfiori|champignon|pomodorini|topinambur|fagiolino|fagiolini|finocchio|pleurotus|radicchio|valeriana|melanzana|melanzane|datterini|ciliegino|ciliegini|ravanello|ravanelli|germoglio|ortaggio|scalogno|scalogni|asparago|asparagi|broccolo|broccoli|cetriolo|cetrioli|finocchi|chiodini|insalata|insalate|radicchi|peperone|peperoni|pomodoro|pomodori|spinacio|carciofo|carciofi|pak choi|bok choy|germogli|verdura|verdure|ortaggi|cipolla|cipolle|bietola|bietole|porcini|lattuga|songino|indivia|cicoria|passata|spinaci|zucchin|cappero|capperi|agretti|cavolo|cavoli|carota|carote|funghi|rucola|pelati|sedano|aglio|porro|porri|coste|verza|fungo|zucca|rapa|rape/, slots: { lunch: { training: 200, rest: 200 }, dinner: { training: 200, rest: 200 } } },
+  ];
+
+  // Alimenti liberi — generato da freeIngredients (nessuna dose guidata)
+  const MELLER_FREE_INGREDIENT_PATTERNS = [
+    /latte parzialmente scremato/, /bevanda di mandorla/, /burro chiarificato/, /lievito alimentare/, /lievito in scaglie/, /burro di arachidi/,
+    /burro di mandorle/, /latte di mandorla/, /olio di girasole/, /olio di arachidi/, /semi di girasole/, /bevanda di avena/,
+    /bevanda di cocco/, /frutti di bosco/, /crema di sesamo/, /yogurt naturale/, /bevanda di soia/, /bevanda di riso/,
+    /aceto balsamico/, /erbe aromatiche/, /semi di sesamo/, /latte scremato/, /latte di avena/, /latte di cocco/,
+    /brodo vegetale/, /brodo di pollo/, /brodo di carne/, /olio di cocco/, /semi di zucca/, /yogurt bianco/,
+    /latte di soia/, /latte d avena/, /latte di riso/, /aceto di mele/, /aceto di vino/, /salsa di soia/,
+    /olio di semi/, /olio di mais/, /semi di chia/, /semi di lino/, /latte intero/, /yogurt magro/,
+    /coconut milk/, /noce moscata/, /coconut oil/, /almond milk/, /peperoncino/, /peperoncini/,
+    /clementina/, /clementine/, /albicocche/, /pistacchio/, /prezzemolo/, /coriandolo/,
+    /mandarino/, /mandarini/, /nettarina/, /nettarine/, /albicocca/, /melograno/,
+    /pistacchi/, /rice milk/, /rosmarino/, /zafferano/, /soy sauce/, /pompelmo/,
+    /pompelmi/, /mirtilli/, /ciliegia/, /ciliegie/, /cocomero/, /mandorla/,
+    /mandorle/, /nocciola/, /nocciole/, /anacardo/, /anacardi/, /arachide/,
+    /arachidi/, /soy milk/, /oat milk/, /basilico/, /cannella/, /arancia/,
+    /fragola/, /fragole/, /lamponi/, /anguria/, /dattero/, /datteri/,
+    /avocado/, /yoghurt/, /origano/, /curcuma/, /paprika/, /zenzero/,
+    /mustard/, /banana/, /banane/, /arance/, /pesche/, /prugna/,
+    /prugne/, /susina/, /susine/, /ananas/, /melone/, /meloni/,
+    /papaya/, /butter/, /sesamo/, /tahina/, /tahini/, /yogurt/,
+    /limone/, /limoni/, /salvia/, /alloro/, /ginger/, /cumino/,
+    /senape/, /tamari/, /spezie/, /spezia/, /ribes/, /pesca/,
+    /mango/, /fichi/, /cocco/, /burro/, /oliva/, /olive/,
+    /latte/, /aceto/, /acqua/, /brodo/, /menta/, /curry/,
+    /shoyu/, /avena/, /mela/, /mele/, /pera/, /pere/,
+    /more/, /kiwi/, /fico/, /ghee/, /noce/, /noci/,
+    /lime/, /sale/, /pepe/, /timo/, /uva/
+  ];
+
+  const MELLER_PROTEIN_FREQUENCIES = [
+    { key: 'poultry', label: 'Pollame', min: 1, max: 2 },
+    { key: 'beef', label: 'Manzo e maiale', min: 0, max: 1 },
+    { key: 'curedMeats', label: 'Affettati e carni miste', min: 0, max: 1 },
+    { key: 'omega', label: 'Pesce ricco di omega-3', min: 2, max: 3 },
+    { key: 'otherFish', label: 'Altro pesce e prodotti ittici', min: 1, max: 2 },
+    { key: 'dairy', label: 'Latticini e formaggi', min: 1, max: 2 },
+    { key: 'eggs', label: 'Uova', min: 1, max: 2 },
+    { key: 'legumes', label: 'Legumi e derivati', min: 3, max: 14 },
+  ];
+
+  const CARB_FAMILIES = [
+    { key: 'patateDolci', family: 'patateDolci', label: 'Patate dolci', match: /patata americana|patate dolci|patata dolce|sweet potato|batata/ },
+    { key: 'gnocchi', family: 'gnocchi', label: 'Gnocchi', match: /gnocchi|gnocco/ },
+    { key: 'polenta', family: 'polenta', label: 'Polenta', match: /polenta/ },
+    { key: 'mais', family: 'mais', label: 'Mais', match: /mais dolce|mais/ },
+    { key: 'fiocchiAvena', family: 'fiocchiAvena', label: 'Avena', match: /fiocchi di avena|fiocchi d avena|porridge|oats|oat/ },
+    { key: 'gallette', family: 'gallette', label: 'Gallette', match: /gallette di riso|gallette di mais|galletta|gallette/ },
+    { key: 'crackers', family: 'crackers', label: 'Crackers e grissini', match: /crackers|grissino|grissini|crostino|crostini|cracker/ },
+    { key: 'piadina', family: 'piadina', label: 'Piadina e wrap', match: /tortillas|tortilla|piadina|piadine|wraps|wrap/ },
+    { key: 'cerealiColazione', family: 'cerealiColazione', label: 'Cereali colazione', match: /cereali integrali colazione|cereali da colazione|cereali soffiati|fiocchi di mais|corn flakes|cornflakes|granola|muesli/ },
+    { key: 'cereali', family: 'cereali', label: 'Cereali', match: /pasta di lenticchie|pasta integrale|pasta di legumi|riso integrale|grano saraceno|mezze maniche|pasta di ceci|tagliatelle|orecchiette|tortiglioni|riso venere|conchiglie|maccheroni|riso rosso|spaghetti|spaghetto|carnaroli|riso nero|cous cous|rigatoni|linguine|farfalle|pennette|paccheri|couscous|saraceno|amaranto|semolino|fusilli|lasagne|risotto|basmati|arborio|burghul|trofie|quinoa|miglio|bulgur|semola|pasta|penne|farro|kamut|riso|orzo/ },
+    { key: 'pane', family: 'pane', label: 'Pane', match: /fette biscottate|fetta biscottata|pane integrale|pane di segale|pane di farro|pane carasau|cracotte|focaccia|focacce|pane|wasa/ },
+    { key: 'patate', family: 'patate', label: 'Patate', match: /patata|patate/ },
+  ];
+
+  const MELLER_CARB_ALTERNATIVES = [
+    { label: 'Patate dolci', family: 'patateDolci' },
+    { label: 'Gnocchi', family: 'gnocchi' },
+    { label: 'Polenta', family: 'polenta' },
+    { label: 'Mais', family: 'mais' },
+    { label: 'Avena', family: 'fiocchiAvena' },
+    { label: 'Gallette', family: 'gallette' },
+    { label: 'Crackers e grissini', family: 'crackers' },
+    { label: 'Piadina e wrap', family: 'piadina' },
+    { label: 'Cereali colazione', family: 'cerealiColazione' },
+    { label: 'Cereali', family: 'cereali' },
+    { label: 'Pane', family: 'pane' },
+    { label: 'Patate', family: 'patate' },
+  ];
+
+  const MELLER_PROTEIN_ALTERNATIVES = [
+    { label: 'Salmone affumicato', family: 'salmoneAffumicato' },
+    { label: 'Pesce al naturale', family: 'pesceScatolaNaturale' },
+    { label: 'Pesce sott\'olio', family: 'pesceSottOlio' },
+    { label: 'Pesce azzurro', family: 'pesceAzzurro' },
+    { label: 'Pesce bianco', family: 'pesceBiancoMagro' },
+    { label: 'Crostacei e molluschi', family: 'crostaceiMolluschi' },
+    { label: 'Maiale magro', family: 'maiale' },
+    { label: 'Pollo e tacchino', family: 'polloTacchino' },
+    { label: 'Manzo e vitello', family: 'manzo' },
+    { label: 'Affettati', family: 'affettatiMagri' },
+    { label: 'Mozzarella light', family: 'mozzarellaLight' },
+    { label: 'Formaggi freschi', family: 'formaggiFreschiMolli' },
+    { label: 'Yogurt greco', family: 'yogurtGreco' },
+    { label: 'Fiocchi di latte', family: 'fiocchiLatte' },
+    { label: 'Montasio', family: 'montasio' },
+    { label: 'Grana', family: 'grana' },
+    { label: 'Formaggi stagionati', family: 'formaggiStagionati' },
+    { label: 'Feta', family: 'feta' },
+    { label: 'Ricotta', family: 'ricotta' },
+    { label: 'Uova', family: 'uova' },
+    { label: 'Legumotti', family: 'legumotti' },
+    { label: 'Legumi', family: 'legumiScatola' },
+    { label: 'Lupini', family: 'lupini' },
+    { label: 'Seitan', family: 'seitan' },
+    { label: 'Burger vegetali', family: 'burgerVegetali' },
+  ];
+
+  const MELLER_PROTEIN_REFERENCE = { label: 'Pollo e tacchino', family: 'polloTacchino' };
+

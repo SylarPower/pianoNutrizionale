@@ -154,11 +154,11 @@ test('resolvePlannedRecipe: dosi distinte tra allenamento e riposo', () => {
   setupPlan();
   const training = resolvePlannedRecipe(getRecipe('L1'), 'monday', 'lunch');
   assert.equal(training.applied, true);
-  assert.equal(training.recipe.ingredients[0].portions.man, '90 g');
+  assert.equal(training.recipe.ingredients[0].portions.man, '70 g');
   appState.plan.days.monday.type = 'rest';
   const rest = resolvePlannedRecipe(getRecipe('L1'), 'monday', 'lunch');
   assert.equal(rest.applied, true);
-  assert.equal(rest.recipe.ingredients[0].portions.man, '70 g');
+  assert.equal(rest.recipe.ingredients[0].portions.man, '50 g');
 });
 
 test('changeDayType: persiste il tipo giorno e ri-renderizza la settimana', async () => {

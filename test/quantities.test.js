@@ -8,7 +8,7 @@ const test = require('node:test');
 const assert = require('node:assert/strict');
 const d = require('../js/domain.js');
 
-const pastaLunch = (man = '90 g', ipo = '70 g') => ({
+const pastaLunch = (man = '70 g', ipo = '50 g') => ({
   id: 'L1', slot: 'lunch', name: 'Pasta', emoji: '🍝',
   ingredients: [{ name: 'Pasta di semola', portions: { man, ipo } }]
 });
@@ -60,8 +60,8 @@ test('somme: i cucchiai restano cucchiai, unità diverse non si fondono', () => 
 
 test('adattamento Meller: solo grammi espliciti, resto invariato', () => {
   const adapted = d.resolveRecipeForPlan(pastaLunch('120 g', '120 g'), 'lunch', 'meller', 'training').recipe;
-  assert.equal(adapted.ingredients[0].portions.man, '90 g');
-  assert.equal(adapted.ingredients[0].portions.ipo, '90 g');
+  assert.equal(adapted.ingredients[0].portions.man, '70 g');
+  assert.equal(adapted.ingredients[0].portions.ipo, '70 g');
   for (const dose of ['120', '2 pz', '1 cucchiaio', '250 ml', 'q.b.', '1 mazzetto', '8-10 g', '—']) {
     const result = d.resolveRecipeForPlan(pastaLunch(dose, dose), 'lunch', 'meller', 'training').recipe;
     assert.equal(result.ingredients[0].portions.man, dose, `dose "${dose}" invariata`);
@@ -102,8 +102,8 @@ test('carboidrato cross-slot con unità non-grammi resta testuale', () => {
 test('Riposo/Allenamento: dosi Meller distinte per tipo giorno', () => {
   const training = d.resolveRecipeForPlan(pastaLunch(), 'lunch', 'meller', 'training').recipe;
   const rest = d.resolveRecipeForPlan(pastaLunch(), 'lunch', 'meller', 'rest').recipe;
-  assert.equal(training.ingredients[0].portions.man, '90 g');
-  assert.equal(rest.ingredients[0].portions.man, '70 g');
+  assert.equal(training.ingredients[0].portions.man, '70 g');
+  assert.equal(rest.ingredients[0].portions.man, '50 g');
   assert.notEqual(training.ingredients[0].portions.man, rest.ingredients[0].portions.man);
 });
 
@@ -123,7 +123,7 @@ test('spesa: totali cucchiai separati dai grammi', () => {
       id: 'L9', slot: 'lunch', name: 'Test',
       ingredients: [
         { name: 'Olio extravergine', portions: { man: '1 cucchiaio', ipo: '1 cucchiaio' } },
-        { name: 'Pasta di semola', portions: { man: '90 g', ipo: '70 g' } }
+        { name: 'Pasta di semola', portions: { man: '70 g', ipo: '50 g' } }
       ]
     }
   };
@@ -132,7 +132,7 @@ test('spesa: totali cucchiai separati dai grammi', () => {
   assert.equal(oil.totals.cucchiaio, 1);
   assert.equal(oil.totals.g, undefined, 'nessun grammo inventato dai cucchiai');
   const pasta = list.find(entry => entry.ingredientId === d.ingredientIdFor('Pasta di semola'));
-  assert.equal(pasta.totals.g, 90);
+  assert.equal(pasta.totals.g, 70);
 });
 
 test('batch cooking: somme con cucchiai e unità miste mai fuse', () => {

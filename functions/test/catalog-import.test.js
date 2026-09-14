@@ -164,11 +164,11 @@ const keysWith = (store, prefix) => [...store.keys()].filter(key => key.startsWi
 const dryRun = (api, payload = seedPayload) => invoke(api, { format: 'json', mode: 'dry-run', payload });
 const commit = (api, previewId, payload = seedPayload) => invoke(api, { format: 'json', mode: 'commit', payload, previewId, confirm: true });
 
-test('dry-run sul file Meller: 81 creazioni, zero errori, nessuna scrittura', async () => {
+test('dry-run sul file Meller: 234 creazioni, zero errori, nessuna scrittura', async () => {
   const { api, writes } = harness(base());
   const result = await dryRun(api);
   assert.equal(result.mode, 'dry-run');
-  assert.equal(result.counts.create, 81, '75 ingredienti + 6 categorie');
+  assert.equal(result.counts.create, 235, '230 ingredienti + 5 categorie (free esclusa)');
   assert.equal(result.counts.errors, 0);
   assert.deepEqual(result.errors, []);
   assert.match(result.previewId, /^[a-f0-9]{64}$/, 'previewId esadecimale');
@@ -184,11 +184,11 @@ test('commit con conferma: versione 1, riepilogo, snapshot v0 e audit', async ()
   assert.equal(result.catalogVersion, 1);
   const summary = store.get('globalIngredientCatalog/current/meta/summary');
   assert.equal(summary.catalogVersion, 1);
-  assert.equal(summary.ingredientCount, 75);
-  assert.equal(summary.categoryCount, 6);
+  assert.equal(summary.ingredientCount, 230);
+  assert.equal(summary.categoryCount, 5);
   assert.equal(summary.checksum, result.checksum, 'checksum restituito = checksum scritto');
-  assert.equal(keysWith(store, 'globalIngredientCatalog/current/ingredients/').length, 75);
-  assert.equal(keysWith(store, 'globalIngredientCatalog/current/categories/').length, 6);
+  assert.equal(keysWith(store, 'globalIngredientCatalog/current/ingredients/').length, 230);
+  assert.equal(keysWith(store, 'globalIngredientCatalog/current/categories/').length, 5);
   assert.equal(keysWith(store, 'globalIngredientCatalog/current/categories/').some(key => key.endsWith('/free')), false,
     'nessuna categoria free: la riservata la crea il server, non si importa');
   const snapshotV0 = store.get('globalIngredientCatalog/versions/snapshots/0');
@@ -276,8 +276,8 @@ test('ripristino della versione 0: versione 2, catalogo svuotato, snapshot v1 pr
   const snapshotV1 = store.get('globalIngredientCatalog/versions/snapshots/1');
   assert.ok(snapshotV1, 'snapshot v1 in versions/snapshots/1 (4 segmenti)');
   assert.equal(snapshotV1.catalogVersion, 1);
-  assert.equal(snapshotV1.ingredients.length, 75);
-  assert.equal(snapshotV1.categories.length, 6);
+  assert.equal(snapshotV1.ingredients.length, 230);
+  assert.equal(snapshotV1.categories.length, 5);
   assert.equal(snapshotV1.supersededBy, 2);
   assert.ok(store.get('globalIngredientCatalog/versions/snapshots/0'), 'lo snapshot v0 resta');
   const audits = keysWith(store, 'platformAuditLog/').map(key => store.get(key));

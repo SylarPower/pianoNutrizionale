@@ -119,7 +119,7 @@ test('engineRulesFor: v2 converte revisione+catalogo, v1 passa le regole motore'
   };
   const converted = Saas.engineRulesFor(v2);
   assert.ok(converted.rules.length > 0);
-  assert.equal(converted.rules.find(rule => rule.family === 'pane').slots.lunch.training, 120);
+  assert.equal(converted.rules.find(rule => rule.family === 'pane').slots.lunch.training, 100);
   assert.ok(converted.freeAliases.length > 0);
   // Revisione senza regole valide → null (mai attivare un profilo vuoto).
   assert.equal(Saas.engineRulesFor({ schemaVersion: 2, structureRevision: { rules: [] }, catalog: v2.catalog }), null);
