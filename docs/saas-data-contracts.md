@@ -269,7 +269,7 @@ cambio di catalogo richiede conferma (nudge) senza ricalcoli retroattivi.
 {
   authUid, status: "pending|active|unlinked",
   email, emailNormalized, emailVerified: true|false,
-  firstName, lastName, displayName,
+  firstName, lastName,
   invitedUsername,                          // solo account tecnici legacy
   nutritionistUids, activeAssignment, displayCode,
   createdAt, updatedAt, createdBy, updatedBy
@@ -325,7 +325,8 @@ nuova versione mai sovrascritta; le revisioni strutture conservano
 - `resendClientInvite({ organizationId, inviteId, idempotencyKey })` → nuovo `inviteUrl`
 - `correctClientInvite({ organizationId, inviteId, email, firstName, lastName, idempotencyKey })` → nuovo `inviteUrl`
 - `cancelClientInvite({ organizationId, inviteId, reason, idempotencyKey })`
-- `updateClientProfileByStaff({ organizationId, clientId, firstName, lastName, displayName?, idempotencyKey })`
+- `updateClientProfileByStaff({ organizationId, clientId, firstName, lastName, idempotencyKey })`
+- `updateMemberProfileByStaff({ organizationId, userId, firstName, lastName, idempotencyKey })` — solo creatore
 - `proposeClientEmailChange({ organizationId, clientId, newEmail, reason?, idempotencyKey })`
 - `respondMyEmailChange({ requestId, decision: 'accept'|'reject', idempotencyKey })`
 - `listMyClientLinkRequests({})`
@@ -358,9 +359,9 @@ Deprecati lato UI ma mantenuti per i client legacy: `publishRuleSetVersion`,
 
 ## Profili mostrati
 
-Le risposte di `listAuthorizedClients` e `listOrganizationUsers` includono `displayName` (facoltativo), `username` e `status` per i clienti autorizzati. I membri includono `displayName`; il nome visualizzato segue `displayName || username || displayCode`. `listMyClientLinkRequests` include `nutritionistUsername` e `nutritionistDisplayName` sia nelle richieste sia nel collegamento attivo, senza mai esporre token.
+Le risposte di `listAuthorizedClients` includono `firstName`, `lastName`, `username` e `status` per i clienti autorizzati (il `displayName` è stato rimosso). `listOrganizationUsers` include per i membri `firstName`, `lastName`, `displayName` (legacy) e `username`; il nome visualizzato del professionista segue `firstName lastName → displayName → username`. `listMyClientLinkRequests` include `nutritionistUsername` e `nutritionistDisplayName` (con fallback `firstName lastName`) sia nelle richieste sia nel collegamento attivo, senza mai esporre token.
 
-Il campo facoltativo `displayName` può comparire in `clients/{id}` e `members/{uid}` soltanto tramite le callable `updateMyClientProfile` e `updateMyMemberProfile`, entrambe idempotenti e con audit.
+Per i clienti `displayName` non esiste più: l'anagrafica è `firstName`/`lastName` gestita solo dallo staff via `updateClientProfileByStaff`. Per i professionisti l'anagrafica `firstName`/`lastName` è gestita solo dal creatore via `updateMemberProfileByStaff` (vedi sotto).
 
 ## Vista Clienti unificata (console, ADR 0005)
 
@@ -378,8 +379,7 @@ Stati operativi (calcolati in `js/domain.js`, `clientOperationalStatus`):
 | `inactive` | Inattivo | tutto il resto (`unlinked`, `suspended`, …) |
 
 Titolo del cliente (`clientDisplayTitle`, mai UID o ID tecnici): «Nome
-Cognome» → `displayName` → email mascherata (`m•••@dominio.it`) →
-`displayCode`. Lo username resta solo informazione secondaria per gli account
+Cognome» → email mascherata (`m•••@dominio.it`) → `displayCode`. Lo username resta solo informazione secondaria per gli account
 di test legacy.
 
 `listAuthorizedClients({ organizationId })` restituisce `{ clients,

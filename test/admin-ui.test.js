@@ -136,7 +136,7 @@ test('vista Clienti unificata: nessuna sezione Utenti separata, funzioni ricollo
   assert.match(js, /Nessun account con questo username/);
   // Rimozione cliente: SOLO dentro la scheda, con dialog che spiega gli effetti.
   assert.match(html, /id="unlink-dialog"/);
-  assert.match(html, /Non cancelliamo l’account/);
+  assert.match(html, /L’account resta al sicuro/);
   assert.match(html, /torna alle dosi originali/);
   assert.match(html, /Rimuovi cliente/);
   assert.match(js, /removeClientLink/);

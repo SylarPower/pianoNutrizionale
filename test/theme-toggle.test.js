@@ -40,9 +40,14 @@ test('app: nessun duplicato del tema nelle Impostazioni', () => {
   const settingsView = appJs.slice(settingsStart, settingsEnd);
   assert.doesNotMatch(settingsView, /Tema scuro/, 'niente checkbox duplicata');
   assert.doesNotMatch(settingsView, /toggleDarkMode\(this\.checked\)/);
-  // Il resto delle Impostazioni resta intatto (account, guide).
-  assert.match(settingsView, /Accesso personale/);
+  // Il resto delle Impostazioni resta intatto: 4 sezioni (3 via funzioni + USCITA) + guide.
+  assert.match(settingsView, /renderSaasProfileSection\(\)/);
+  assert.match(settingsView, /renderClientLinkSection\(\)/);
+  assert.match(settingsView, /renderLinkedAccountsSection\(\)/);
+  assert.match(settingsView, /USCITA/);
   assert.match(settingsView, /Dieta e alternative/);
+  assert.doesNotMatch(settingsView, /account-card/);
+  assert.doesNotMatch(settingsView, /profile-name-form/);
 });
 
 test('app: persistenza su dispositivo e primo paint nel tema giusto', () => {

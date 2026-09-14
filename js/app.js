@@ -2947,6 +2947,7 @@ function renderLinkedAccountsSection() {
   const linkedUsernames = (household?.memberUsernames || []).filter(username => username !== ownUsername);
   return `
     <section class="settings-section linked-accounts-section">
+      <p class="eyebrow">ACCOUNT COLLEGATI</p>
       <div class="flex-between"><div><h2>Account collegati</h2><p class="text-muted">Settimana, ricette, batch cooking e spesa condivisi in tempo reale.</p></div><span class="link-status ${household ? "active" : ""}">${household ? "● Sincronizzato" : "Non collegato"}</span></div>
       ${linkedUsernames.length ? `<div class="linked-member-list">${linkedUsernames.map(username => `<div class="linked-member"><span class="account-avatar small">${escapeHtml(username.slice(0, 1).toUpperCase())}</span><div><strong>${escapeHtml(username)}</strong><small>Può leggere e modificare tutti i dati condivisi</small></div></div>`).join("")}</div>` : `<p class="linked-empty">Nessun altro account collegato. Il profilo porzioni resta sempre personale e salvato solo su questo dispositivo.</p>`}
       <div class="linked-account-actions">
@@ -3035,21 +3036,12 @@ function renderClientLinkSection() {
     ? `<div class="linked-member"><span class="account-avatar small">●</span><div><strong>${escapeHtml(link.nutritionistDisplayName || link.nutritionistUsername || link.organizationName || "Studio professionale")}</strong><small>Collegamento attivo · ${escapeHtml(link.organizationName || "Studio professionale")}</small></div></div>
        ${identityHtml}
        <div class="linked-account-actions"><button class="btn btn-outline" onclick="openUnlinkModal()">Scollegati</button></div>
-       <form class="profile-name-form" onsubmit="saveClientDisplayName(event)"><label>Nome mostrato al tuo professionista<input id="client-display-name" maxlength="120" value="${escapeHtml(link.displayName || "")}" placeholder="Nome e cognome (facoltativo)"></label><button class="btn btn-outline" type="submit">Salva</button></form>
        <p class="linked-empty">Nome, cognome ed email dell'account li aggiorna il tuo nutrizionista: chiedi a lui se c'è qualcosa da correggere.</p>`
     : (requests.length ? "" : `<p class="linked-empty">Nessun professionista collegato. Quando il tuo nutrizionista ti invita con la tua email, la richiesta appare qui.</p>`);
   return `<section class="settings-section linked-accounts-section"><div class="flex-between"><div><p class="eyebrow">PROFESSIONISTA</p><h2>Collegamento professionista</h2></div><span class="link-status ${link ? "active" : ""}">${link ? "● Collegato" : "Non collegato"}</span></div>${requestsHtml}${linkHtml}</section>`;
 }
 
-window.saveClientDisplayName = async function(event) {
-  event.preventDefault();
-  try {
-    const displayName = document.getElementById("client-display-name")?.value || "";
-    await callSaasFunction("updateMyClientProfile", { displayName, idempotencyKey: `client-profile-${Date.now()}` });
-    appState.clientLink.link.displayName = displayName.trim() || null;
-    showToast("Nome aggiornato ✅"); renderSettings();
-  } catch (error) { showToast(error?.message || "Impossibile aggiornare il nome", true); }
-};
+// Anagrafica cliente: nome mostrato rimosso (Sessione 1)
 
 // Conferma o rifiuto della proposta di cambio email del professionista: il
 // cliente è l'unico che può accettare, e solo dopo la conferma l'email cambia
@@ -3160,23 +3152,21 @@ window.confirmAssignedNutritionProfile = async function() {
 
 function renderSettings() {
   const container = document.getElementById("view-settings");
-  // Come per "Backup e annullamento": la sezione "Dati e sincronizzazione"
-  // non è più mostrata qui. L'importazione/restauro delle ricette resta
-  // disponibile dal pulsante "Importa" del Ricettario e la sincronizzazione
-  // cloud continua a funzionare in background.
+  // Impostazioni riordinate in 4 sezioni con eyebrow (Sessione 1): PROFILO
+  // NUTRIZIONALE, PROFESSIONISTA, ACCOUNT COLLEGATI, USCITA. La card
+  // "Accesso personale" (account-card) è rimossa: l'uscita vive nella sezione
+  // dedicata USCITA. Il form "Nome mostrato" è rimosso (displayName cliente
+  // eliminato).
   container.innerHTML = `
     <div class="page-heading"><div><p class="eyebrow">Preferenze e manuale alimentare</p><h1>Impostazioni</h1></div></div>
-    <section class="settings-section account-card">
-      <div class="account-avatar">${escapeHtml(usernameFromUser(appState.user).slice(0, 1).toUpperCase())}</div>
-      <div><small>Accesso personale</small><h2>${escapeHtml(usernameFromUser(appState.user))}</h2><p>Account personale protetto</p></div>
-      <button class="btn btn-outline" onclick="logoutCurrentUser()">Esci</button>
-    </section>
 
     ${renderSaasProfileSection()}
 
     ${renderClientLinkSection()}
 
     ${renderLinkedAccountsSection()}
+
+    <section class="settings-section"><p class="eyebrow">USCITA</p><h2>Uscita dall'account</h2><p class="text-muted">Esci in sicurezza. I tuoi dati restano salvati nel cloud.</p><button class="btn btn-outline" onclick="logoutCurrentUser()">Esci</button></section>
 
     <div class="manual-heading"><p class="eyebrow">LINEE GUIDA</p><h2>Dieta e alternative</h2><p>Le alternative originali restano sempre consultabili nell'app.</p></div>
 

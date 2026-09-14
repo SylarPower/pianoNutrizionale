@@ -120,13 +120,18 @@ test('correzione e annullamento invito: campi obbligatori e motivo per l’audit
 test('anagrafica e cambio email: nome e cognome validati, cambio email solo con indirizzi reali', () => {
   const profile = domain.validateUpdateClientProfileByStaff({
     organizationId: 'pianoNutrizionale', clientId: 'cliente-1', firstName: 'Mario', lastName: 'Rossi',
-    displayName: 'Mario R.', idempotencyKey: 'k1'
+    idempotencyKey: 'k1'
   });
-  assert.equal(profile.displayName, 'Mario R.');
+  assert.equal(profile.firstName, 'Mario');
+  assert.equal(profile.lastName, 'Rossi');
   assert.throws(() => domain.validateUpdateClientProfileByStaff({
     organizationId: 'pianoNutrizionale', clientId: 'cliente-1', firstName: 'Mario1', lastName: 'Rossi',
-    displayName: null, idempotencyKey: 'k1'
+    idempotencyKey: 'k1'
   }), /firstName/);
+  assert.throws(() => domain.validateUpdateClientProfileByStaff({
+    organizationId: 'pianoNutrizionale', clientId: 'cliente-1', firstName: 'Mario', lastName: 'Rossi',
+    displayName: 'Mario R.', idempotencyKey: 'k1'
+  }), /campi non ammessi/);
 
   assert.throws(() => domain.validateProposeClientEmailChange({
     organizationId: 'pianoNutrizionale', clientId: 'cliente-1', newEmail: 'cliente-a@utenti.pianonutrizionale.app',

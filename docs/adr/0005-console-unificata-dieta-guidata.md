@@ -35,7 +35,7 @@ lettura automatica di alcun documento.
    conteggi; lo storico (`rejected`, `revoked`, `expired`, `superseded`,
    `accepted`) vive solo nella scheda.
 3. **Titolo sempre «Nome Cognome»** (`clientDisplayTitle`): fallback
-   displayName → email mascherata → displayCode. Mai UID/ID tecnici nel
+   email mascherata → displayCode. Mai UID/ID tecnici nel
    titolo; lo username resta solo info secondaria per i test legacy.
 4. **Scheda cliente** con anagrafica (server-side), collegamento (invito +
    richiesta + azioni), struttura dieta (assegnazione + salto alle dosi),

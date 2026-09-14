@@ -51,7 +51,9 @@ test('stati operativi: active, inactive, pending con etichette italiane', () => 
 
 test('titolo cliente: Nome Cognome, mai UID o ID tecnici', () => {
   assert.equal(domain.clientDisplayTitle({ firstName: 'Mario', lastName: 'Rossi', id: 'abc123', displayCode: 'CL-1' }), 'Mario Rossi');
-  assert.equal(domain.clientDisplayTitle({ displayName: 'Mario R.', id: 'abc123', displayCode: 'CL-1' }), 'Mario R.');
+  // displayName rimosso (Sessione 1): fallback diretto all'email mascherata → displayCode
+  assert.equal(domain.clientDisplayTitle({ displayName: 'Mario R.', id: 'abc123', displayCode: 'CL-1' }), 'CL-1');
+  assert.equal(domain.clientDisplayTitle({ displayName: 'Mario R.', email: 'mario.rossi@esempio.it', id: 'abc123', displayCode: 'CL-1' }), domain.maskEmailClient('mario.rossi@esempio.it'));
   const masked = domain.clientDisplayTitle({ email: 'mario.rossi@esempio.it', id: 'abc123', displayCode: 'CL-1' });
   assert.ok(masked.includes('@esempio.it'), 'dominio visibile');
   assert.ok(!masked.includes('mario.rossi'), 'parte locale mascherata');
@@ -93,7 +95,7 @@ test('rimozione solo dentro la scheda, con revoca logica e audit', () => {
   // Revoca logica server-side: status revocato, audit, niente cancellazioni.
   assert.match(indexJs, /status: 'revoked'/);
   assert.match(indexJs, /client\.link-removed/);
-  assert.match(html, /Non cancelliamo l’account/);
+  assert.match(html, /L’account resta al sicuro/);
 });
 
 test('invito con email reale: dialog dedicato, professionisti senza enumerazione', () => {

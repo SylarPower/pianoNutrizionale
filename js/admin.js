@@ -129,13 +129,20 @@ async function loadClients() {
 }
 
 // Titolo del cliente: Nome e Cognome, mai UID o ID tecnici. Il fallback
-// (displayName → email mascherata → displayCode) vive nel dominio condiviso.
+// (email mascherata → displayCode) vive nel dominio condiviso.
 function clientLabel(client) {
   try {
     if (window.PianoDomain?.clientDisplayTitle) return PianoDomain.clientDisplayTitle(client);
   } catch (_) { /* dominio non caricato: fallback locale */ }
   const full = `${client?.firstName || ''} ${client?.lastName || ''}`.trim();
-  return full || client?.displayName || client?.displayCode || 'Cliente';
+  if (full) return full;
+  try {
+    if (window.PianoDomain?.maskEmailClient) {
+      const email = String(client?.email || client?.emailNormalized || '').trim();
+      if (email) return window.PianoDomain.maskEmailClient(email);
+    }
+  } catch (_) {}
+  return client?.displayCode || 'Cliente';
 }
 
 function clientStatusOf(client) {
@@ -295,7 +302,6 @@ function renderClientDetail() {
     <section class="detail-section"><h3>Dati anagrafici</h3>
       <dl class="detail-grid">
         <div><dt>Nome e cognome</dt><dd>${escapeAdmin(fullName || '—')}</dd></div>
-        <div><dt>Nome mostrato</dt><dd>${escapeAdmin(client.displayName || '—')}</dd></div>
         <div><dt>Email</dt><dd>${escapeAdmin(client.email || '—')}${client.email ? ` · ${client.emailVerified ? 'verificata' : 'da verificare'}` : ''}</dd></div>
         ${client.username ? `<div><dt>Account di test</dt><dd>${escapeAdmin(client.username)} (legacy)</dd></div>` : ''}
       </dl>
@@ -1700,11 +1706,19 @@ function memberStatusLabel(status) {
   return ({ active: 'Attivo', suspended: 'Sospeso', removed: 'Rimosso' })[status] || status;
 }
 
-window.saveMemberDisplayName = async function(event) {
+// saveMemberDisplayName rimosso: anagrafica professionista gestita solo da admin via updateMemberProfileByStaff (Sessione 1)
+async function saveMemberProfileByStaff(event, userId) {
   event.preventDefault();
-  try { await callAdminSaasFunction('updateMyMemberProfile', { organizationId: orgId(), displayName: $('member-display-name').value, idempotencyKey: idem('member-profile') }); $('users-feedback').textContent = 'Nome aggiornato.'; await loadUsers(); }
-  catch (error) { $('users-feedback').textContent = adminError(error); }
-};
+  const form = event.target;
+  const firstName = form.querySelector('[data-member-first-name]')?.value.trim() || '';
+  const lastName = form.querySelector('[data-member-last-name]')?.value.trim() || '';
+  try {
+    await callAdminSaasFunction('updateMemberProfileByStaff', { organizationId: orgId(), userId, firstName, lastName, idempotencyKey: idem('member-profile-' + userId) });
+    $('users-feedback').textContent = 'Anagrafica aggiornata.';
+    await loadUsers();
+  } catch (error) { $('users-feedback').textContent = adminError(error); }
+}
+window.saveMemberProfileByStaff = saveMemberProfileByStaff;
 
 function renderUsers() {
   const data = adminState.users || { members: [], clients: [], invitations: [], requests: [] };
@@ -1714,12 +1728,12 @@ function renderUsers() {
     ? 'Solo l’admin vede e gestisce i membri.'
     : 'Come professionista vedi solo i tuoi clienti e i tuoi inviti.';
   const profileBox = document.getElementById('nutritionist-profile-form');
-  if (profileBox) profileBox.innerHTML = !isAdmin ? `<form onsubmit="saveMemberDisplayName(event)"><label>Il tuo nome per i clienti<input id="member-display-name" maxlength="120" placeholder="Nome e cognome (facoltativo)"></label><button class="secondary" type="submit">Salva</button></form>` : '';
+  if (profileBox) profileBox.innerHTML = '';
   // Il professionista non vede l'elenco membri: solo il proprio nome pubblico.
   $('members-list').style.display = isAdmin ? '' : 'none';
   $('members-list').innerHTML = (data.members || []).map(member => `
     <article class="report-row">
-      <div class="report-main"><span class="ingredient-mark">⛉</span><div><strong>${escapeAdmin(member.displayName || member.username || member.userId.slice(0, 8))}</strong><small>${escapeAdmin(member.role === 'admin' ? 'Admin' : 'Professionista')}</small></div></div>
+      <div class="report-main"><span class="ingredient-mark">⛉</span><div><strong>${escapeAdmin(([member.firstName, member.lastName].filter(Boolean).join(' ') || member.displayName || member.username || member.userId.slice(0, 8)))}</strong><small>${escapeAdmin(member.role === 'admin' ? 'Admin' : 'Professionista')}</small></div></div>
       <div class="report-meta"><small>Stato</small><strong>${escapeAdmin(memberStatusLabel(member.status))}</strong></div>
       <div class="report-meta"><small>Azioni</small><strong class="member-actions">
         ${member.status === 'active'
@@ -1727,15 +1741,16 @@ function renderUsers() {
           : member.status === 'suspended' ? `<button class="text-button archive-toggle" data-member-status="${escapeAdmin(member.userId)}" data-status="active">Riattiva</button>` : ''}
         ${member.role === 'nutritionist' && member.status !== 'removed' ? `<button class="text-button archive-toggle danger-text" data-member-remove="${escapeAdmin(member.userId)}">Rimuovi</button>` : ''}
       </strong></div>
+      ${member.role === 'nutritionist' ? `<form class="member-profile-form" onsubmit="saveMemberProfileByStaff(event, '${escapeAdmin(member.userId)}')"><div class="form-grid"><label>Nome<input data-member-first-name value="${escapeAdmin(member.firstName || '')}" maxlength="80" placeholder="Mario"></label><label>Cognome<input data-member-last-name value="${escapeAdmin(member.lastName || '')}" maxlength="80" placeholder="Rossi"></label></div><button class="secondary" type="submit">Salva anagrafica</button></form>` : ''}
     </article>`).join('') || '<p class="feedback">Nessun membro visibile al tuo ruolo.</p>';
   // Professionisti destinatari per l'invito cliente (solo admin).
   const nutris = (data.members || []).filter(member => member.role === 'nutritionist' && member.status === 'active');
   $('invite-client-nutritionist').innerHTML = '<option value="">Senza professionista (solo admin)</option>' +
-    nutris.map(member => `<option value="${escapeAdmin(member.userId)}">${escapeAdmin(member.displayName || member.username || member.userId.slice(0, 8))}</option>`).join('');
+    nutris.map(member => `<option value="${escapeAdmin(member.userId)}">${escapeAdmin(([member.firstName, member.lastName].filter(Boolean).join(' ') || member.displayName || member.username || member.userId.slice(0, 8)))}</option>`).join('');
   $('invite-client-nutri-field').style.display = isAdmin ? '' : 'none';
   if ($('invite-client-email-nutritionist')) {
     $('invite-client-email-nutritionist').innerHTML = '<option value="">Senza professionista (solo admin)</option>' +
-      nutris.map(member => `<option value="${escapeAdmin(member.userId)}">${escapeAdmin(member.displayName || member.username || member.userId.slice(0, 8))}</option>`).join('');
+      nutris.map(member => `<option value="${escapeAdmin(member.userId)}">${escapeAdmin(([member.firstName, member.lastName].filter(Boolean).join(' ') || member.displayName || member.username || member.userId.slice(0, 8)))}</option>`).join('');
   }
   if ($('invite-client-email-nutri-field')) $('invite-client-email-nutri-field').style.display = isAdmin ? '' : 'none';
   // Richieste di collegamento e inviti legacy: gli inviti email reali vivono
@@ -2083,7 +2098,6 @@ function openClientProfile(clientId) {
   $('client-profile-client-id').value = clientId;
   $('client-profile-first-name').value = client.firstName || '';
   $('client-profile-last-name').value = client.lastName || '';
-  $('client-profile-display-name').value = client.displayName || '';
   $('client-profile-lead').textContent = `${client.email || client.displayCode || 'Cliente'}: nome e cognome sono visibili al cliente e usati nel suo profilo.`;
   $('client-profile-error').textContent = '';
   $('client-profile-dialog').classList.remove('hidden');
@@ -2102,7 +2116,6 @@ async function submitClientProfile(event) {
       clientId: $('client-profile-client-id').value,
       firstName: $('client-profile-first-name').value.trim(),
       lastName: $('client-profile-last-name').value.trim(),
-      displayName: $('client-profile-display-name').value.trim() || null,
       idempotencyKey: idem('client-profile')
     });
     closeClientProfile();
