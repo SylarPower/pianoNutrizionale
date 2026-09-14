@@ -321,7 +321,7 @@ nuova versione mai sovrascritta; le revisioni strutture conservano
 - `inviteClientLink({ organizationId, username, nutritionistUid?, idempotencyKey })` — solo account tecnici di test (`LEGACY_TEST_INVITES_ENABLED` o emulatori)
 - `inviteClientByEmail({ organizationId, email, firstName, lastName, nutritionistUid?, idempotencyKey })` → `{ status, inviteUrl?, expiresAt?, … }` — il link si consegna a mano (nessun campo `delivery`)
 - `getClientInvitePreview({ token })` — non autenticata: il token è il segreto
-- `redeemClientInvite({ token|null, idempotencyKey })` — attiva il collegamento solo con email verificata
+- `redeemClientInvite({ token|null, idempotencyKey })` — attiva il collegamento solo con email verificata; con `token: null` l'app lo richiama a ogni accesso/ricarica (ID token rinnovato a forza) e il server risponde `link-active` / `no-pending-invite`
 - `resendClientInvite({ organizationId, inviteId, idempotencyKey })` → nuovo `inviteUrl`
 - `correctClientInvite({ organizationId, inviteId, email, firstName, lastName, idempotencyKey })` → nuovo `inviteUrl`
 - `cancelClientInvite({ organizationId, inviteId, reason, idempotencyKey })`

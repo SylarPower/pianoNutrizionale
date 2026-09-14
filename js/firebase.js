@@ -277,13 +277,45 @@ async function previewClientInvite(token) {
   return callSaasFunction("getClientInvitePreview", { token: clean });
 }
 
-// Riscatto dell'invito da parte del cliente autenticato.
+// Riscatto dell'invito da parte del cliente autenticato. Con token nullo il
+// server cerca un invito PENDENTE per l'email autenticata e verificata:
+// risponde `link-active` oppure `no-pending-invite`, mai un errore.
 async function redeemClientInvite(token, idempotencyKey) {
   const clean = String(token || "").trim().toLowerCase();
   return callSaasFunction("redeemClientInvite", {
     token: /^[a-f0-9]{64}$/.test(clean) ? clean : null,
     idempotencyKey: String(idempotencyKey || "")
   });
+}
+
+// Esiti del riscatto che significano "collegamento attivo". Solo con questi il
+// token dell'invito può essere cancellato: gli altri esiti lo lasciano in
+// attesa (il server non consuma il token prima della verifica email).
+const CLIENT_LINK_ACTIVE_STATUSES = Object.freeze(["link-active", "already-linked"]);
+
+function isClientLinkActiveStatus(status) {
+  return CLIENT_LINK_ACTIVE_STATUSES.includes(String(status || ""));
+}
+
+// Rinnovo FORZATO dell'ID token (`getIdToken(true)`). Serve prima del riscatto:
+// la verifica email avviene fuori dall'app e il token in cache porta ancora il
+// claim `email_verified: false`, che è esattamente ciò che il server legge.
+async function forceIdTokenRefresh() {
+  const user = currentUser || (auth && auth.currentUser);
+  if (!user) throw new Error("Autenticazione richiesta");
+  if (hasCompatFirebase()) return user.getIdToken(true);
+  await ensureFirebaseReady();
+  // Stessa istanza utente dell'Auth: l'SDK modulare riceve l'utente come primo
+  // argomento (`getIdToken(user, forceRefresh)`).
+  return fb.getIdToken(user, true);
+}
+
+// Riscatto dell'invito SENZA token, con ID token rinnovato: è il percorso che
+// attiva il collegamento dopo la verifica email, anche su un altro dispositivo
+// (l'invito pendente viene ritrovato dall'email autenticata e verificata).
+async function redeemClientInviteForVerifiedEmail(idempotencyKey) {
+  await forceIdTokenRefresh();
+  return redeemClientInvite(null, idempotencyKey);
 }
 
 // Registrazione di un cliente reale: email vera + password scelta dal

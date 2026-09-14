@@ -582,7 +582,61 @@ function loadPendingEmailInviteToken() {
 function clearPendingEmailInviteToken() {
   pendingEmailInviteToken = null;
   try { sessionStorage.removeItem(PENDING_EMAIL_INVITE_STORAGE); } catch (_) {}
-  try { history.replaceState(history.state, document.title, window.location.pathname + window.location.search); } catch (_) {}
+  // Il link d'invito si toglie dalla barra degli indirizzi solo se è ancora lì:
+  // l'invito può essere riscattato dopo l'avvio dell'app, quando la rotta
+  // corrente (#week, #settings…) non va toccata.
+  if (readEmailInviteTokenFromHash()) {
+    try { history.replaceState(history.state, document.title, window.location.pathname + window.location.search); } catch (_) {}
+  }
+}
+
+// Invito già usato per la registrazione e in ATTESA DI ATTIVAZIONE.
+// Il server non consuma il token finché l'email non è verificata (ADR 0004):
+// il token dell'invito NON si cancella, resta in sessione finché il riscatto
+// non risponde `link-active`. Qui si ricorda solo che quel token non è più un
+// link da aprire: non deve riportare alla schermata di registrazione (l'account
+// esiste già) e non deve più far credere che ci sia un invito da riscattare.
+const EMAIL_INVITE_AWAITING_LINK_STORAGE = "pn_email_invite_awaiting_link";
+
+function normalizeInviteToken(token) {
+  const clean = String(token || "").trim().toLowerCase();
+  return /^[a-f0-9]{64}$/.test(clean) ? clean : null;
+}
+
+function readEmailInviteAwaitingLink() {
+  try {
+    const raw = JSON.parse(sessionStorage.getItem(EMAIL_INVITE_AWAITING_LINK_STORAGE) || "null");
+    return raw && normalizeInviteToken(raw.token) ? raw : null;
+  } catch (_) {
+    return null;
+  }
+}
+
+function markEmailInviteAwaitingLink(token, email) {
+  const clean = normalizeInviteToken(token);
+  if (!clean) return null;
+  const value = { token: clean, email: normalizeEmailAddress(email) };
+  try { sessionStorage.setItem(EMAIL_INVITE_AWAITING_LINK_STORAGE, JSON.stringify(value)); } catch (_) {}
+  return value;
+}
+
+function clearEmailInviteAwaitingLink() {
+  try { sessionStorage.removeItem(EMAIL_INVITE_AWAITING_LINK_STORAGE); } catch (_) {}
+}
+
+function isEmailInviteAwaitingLink(token) {
+  const clean = normalizeInviteToken(token);
+  const awaiting = readEmailInviteAwaitingLink();
+  return Boolean(clean && awaiting && awaiting.token === clean);
+}
+
+// Il token in attesa di attivazione vale solo per l'account a cui è intestato:
+// mai riusato per un altro utente o un altro indirizzo.
+function awaitingLinkInviteTokenFor(email) {
+  const awaiting = readEmailInviteAwaitingLink();
+  if (!awaiting?.token) return null;
+  const target = normalizeEmailAddress(email);
+  return target && awaiting.email === target ? awaiting.token : null;
 }
 
 function showEmailInviteScreen() {
@@ -673,18 +727,24 @@ function setupEmailInviteForm() {
     inviteFlowActive = true;
     try {
       await signUpWithRealEmail(emailInvitePreview.email, password);
-      const result = await redeemClientInvite(
-        pendingEmailInviteToken || emailInvitePreview.token,
-        `invito-email-${Date.now()}`
-      );
-      clearPendingEmailInviteToken();
+      const inviteToken = pendingEmailInviteToken || emailInvitePreview.token;
+      const result = await redeemClientInvite(inviteToken, `invito-email-${Date.now()}`);
       document.getElementById("email-invite-screen")?.classList.add("hidden");
-      if (result.status === "email-verification-required") {
+      if (isClientLinkActiveStatus(result?.status)) {
+        // Collegamento attivo: solo ora il token dell'invito non serve più.
+        clearPendingEmailInviteToken();
+        clearEmailInviteAwaitingLink();
+        showToast("Account creato e collegato al tuo nutrizionista ✅");
+      } else if (result?.status === "email-verification-required") {
         // Account creato: il collegamento si attiva alla verifica dell'email.
+        // Il token NON si cancella (il riscatto non è ancora `link-active`):
+        // resta in attesa di attivazione e l'app lo riusa solo se l'utente
+        // chiede esplicitamente di riprovare.
+        markEmailInviteAwaitingLink(inviteToken, emailInvitePreview.email);
         try { await sendVerificationEmailToCurrentUser(); } catch (_) {}
         showToast("Account creato ✅ Controlla la tua email e verifica l'indirizzo per attivare il collegamento");
       } else {
-        showToast("Account creato e collegato al tuo nutrizionista ✅");
+        showToast("Account creato: chiedi al tuo nutrizionista di attivare il collegamento");
       }
     } catch (error) {
       const message = mapEmailInviteError(error);
@@ -802,8 +862,12 @@ function renderEmailVerificationBanner(user = appState.user) {
   if (!banner || !text) return;
   const needsVerification = Boolean(isRealEmailAccount(user) && user.emailVerified !== true);
   banner.classList.toggle("hidden", !needsVerification);
-  if (!needsVerification) return;
   const linked = Boolean(appState.clientLink?.link);
+  // Il pulsante di attivazione serve solo a chi non è ancora collegato:
+  // con collegamento attivo basta la verifica dell'indirizzo.
+  const confirmButton = document.getElementById("email-verification-confirm");
+  if (confirmButton) confirmButton.classList.toggle("hidden", !needsVerification || linked);
+  if (!needsVerification) return;
   text.textContent = linked
     ? `Verifica il tuo indirizzo email (${user.email}) per proteggere l'accesso al tuo piano.`
     : `Verifica il tuo indirizzo email (${user.email}): il collegamento con il tuo nutrizionista si attiva appena confermi l'indirizzo.`;
@@ -819,30 +883,145 @@ async function refreshVerificationState() {
 
 function setupVerificationBanner() {
   const button = document.getElementById("email-verification-resend");
-  if (!button || button.dataset.ready) return;
-  button.dataset.ready = "true";
-  button.addEventListener("click", async () => {
-    const now = Date.now();
-    let last = 0;
-    try { last = Number(localStorage.getItem(VERIFICATION_RESEND_KEY) || 0); } catch (_) {}
-    if (now - last < VERIFICATION_RESEND_COOLDOWN_MS) {
-      showToast("Email già richiesta da poco: attendi un minuto prima di riprovare", true);
-      return;
-    }
-    button.disabled = true;
-    try {
-      const result = await sendVerificationEmailToCurrentUser();
-      if (result.ok && !result.alreadyVerified) {
-        try { localStorage.setItem(VERIFICATION_RESEND_KEY, String(now)); } catch (_) {}
+  if (button && !button.dataset.ready) {
+    button.dataset.ready = "true";
+    button.addEventListener("click", async () => {
+      const now = Date.now();
+      let last = 0;
+      try { last = Number(localStorage.getItem(VERIFICATION_RESEND_KEY) || 0); } catch (_) {}
+      if (now - last < VERIFICATION_RESEND_COOLDOWN_MS) {
+        showToast("Email già richiesta da poco: attendi un minuto prima di riprovare", true);
+        return;
       }
-      showToast(result.message, result.ok ? false : true);
-      await refreshVerificationState();
+      button.disabled = true;
+      try {
+        const result = await sendVerificationEmailToCurrentUser();
+        if (result.ok && !result.alreadyVerified) {
+          try { localStorage.setItem(VERIFICATION_RESEND_KEY, String(now)); } catch (_) {}
+        }
+        showToast(result.message, result.ok ? false : true);
+        await refreshVerificationState();
+      } catch (error) {
+        showToast(error?.message || "Invio non riuscito: riprova tra poco", true);
+      } finally {
+        button.disabled = false;
+      }
+    });
+  }
+
+  // "Ho verificato: attiva il collegamento": rilegge la verifica dal server e,
+  // se l'email risulta verificata, forza il rinnovo dell'ID token e richiama
+  // il riscatto dell'invito. È la via manuale per chi ha appena confermato
+  // l'indirizzo e non vuole attendere il prossimo avvio dell'app.
+  const confirmButton = document.getElementById("email-verification-confirm");
+  if (!confirmButton || confirmButton.dataset.ready) return;
+  confirmButton.dataset.ready = "true";
+  confirmButton.addEventListener("click", async () => {
+    const label = confirmButton.textContent;
+    confirmButton.disabled = true;
+    confirmButton.textContent = "Attivazione…";
+    try {
+      const outcome = await activateClientLinkAfterVerification({
+        useAwaitingInvite: true,
+        feedback: "always"
+      });
+      if (outcome?.activated) await reloadSaasAfterLink();
+      else await refreshVerificationState();
     } catch (error) {
-      showToast(error?.message || "Invio non riuscito: riprova tra poco", true);
+      showToast(error?.message || "Attivazione non riuscita: riprova tra poco", true);
     } finally {
-      button.disabled = false;
+      confirmButton.disabled = false;
+      confirmButton.textContent = label;
     }
   });
+}
+
+// ---- Attivazione del collegamento dopo la verifica email (ADR 0004) ----
+// Alla registrazione il riscatto risponde `email-verification-required` e il
+// backend NON consuma il token: finché l'email non è verificata il collegamento
+// resta inattivo. La verifica avviene fuori dall'app (link nella casella di
+// posta), quindi il riscatto va ritentato a ogni accesso e a ogni ricarica:
+// appena l'account è un cliente con email reale, non ha ancora un collegamento
+// attivo e l'email risulta verificata, si forza il rinnovo dell'ID token
+// (`getIdToken(true)`: il claim `email_verified` in cache può essere vecchio) e
+// si richiama il riscatto SENZA token — il server riconosce l'invito pendente
+// dall'email autenticata e risponde `link-active` oppure `no-pending-invite`.
+const LINK_ACTIVATION_MESSAGES = Object.freeze({
+  "link-active": "Email verificata: collegamento con il tuo nutrizionista attivato ✅",
+  "already-linked": "Collegamento con il tuo nutrizionista già attivo ✅",
+  "no-pending-invite": "Nessun invito in attesa per questo indirizzo: chiedi un nuovo link al tuo nutrizionista.",
+  "not-verified": "Email non ancora verificata: apri il link di verifica che ti abbiamo inviato e riprova.",
+  error: "Attivazione del collegamento non riuscita: riprova tra poco."
+});
+
+let linkActivationInFlight = false;
+
+async function activateClientLinkAfterVerification({
+  user = appState.user,
+  useAwaitingInvite = false,
+  feedback = "success"
+} = {}) {
+  if (!window.PianoSaas?.config().enabled || typeof redeemClientInvite !== "function") return null;
+  // Solo i clienti con email reale hanno un invito da riscattare: per l'account
+  // tecnico di test il banner di verifica non compare nemmeno.
+  if (!isRealEmailAccount(user)) return null;
+  // Collegamento già attivo: non c'è nulla da attivare.
+  if (appState.clientLink?.link) return null;
+  if (linkActivationInFlight) return null;
+  linkActivationInFlight = true;
+  let outcome = { status: "error", activated: false };
+  try {
+    // `emailVerified` è il valore dell'ultimo token noto: si rilegge il profilo
+    // dal server prima di decidere (la conferma arriva da fuori dall'app).
+    try {
+      const fresh = await reloadCurrentUser();
+      if (fresh && appState.user) {
+        appState.user = { ...appState.user, emailVerified: fresh.emailVerified === true };
+      }
+    } catch (_) {}
+    if (appState.user?.emailVerified !== true) {
+      outcome = { status: "not-verified", activated: false };
+    } else {
+      const idempotencyKey = `attivazione-collegamento-${appState.user.uid || "utente"}-${Date.now()}`;
+      // Richiesta esplicita dell'utente: se l'invito è ancora in attesa in
+      // questa scheda si ripresenta il token, che resta valido finché il
+      // collegamento non è attivo. Percorso automatico (accesso/ricarica):
+      // SENZA token, come previsto dal contratto del server.
+      const awaitingToken = useAwaitingInvite
+        ? awaitingLinkInviteTokenFor(appState.user.email)
+        : null;
+      let result;
+      if (awaitingToken) {
+        // Il claim `email_verified` in cache può essere vecchio: il rinnovo
+        // forzato dell'ID token precede SEMPRE il riscatto, anche con il token.
+        await forceIdTokenRefresh();
+        result = await redeemClientInvite(awaitingToken, idempotencyKey);
+      } else {
+        result = await redeemClientInviteForVerifiedEmail(idempotencyKey);
+      }
+      const status = String(result?.status || "");
+      const activated = isClientLinkActiveStatus(status);
+      if (activated) {
+        // Riscatto `link-active`: solo adesso il token dell'invito non serve più.
+        clearPendingEmailInviteToken();
+        clearEmailInviteAwaitingLink();
+        await refreshClientLinkState();
+        renderEmailVerificationBanner(appState.user);
+      }
+      outcome = { status, activated };
+    }
+  } catch (error) {
+    // Un tentativo automatico non deve disturbare: resta il pulsante nel banner.
+    console.warn("Attivazione del collegamento non riuscita", error?.code || error?.message);
+    outcome = { status: "error", activated: false };
+  } finally {
+    linkActivationInFlight = false;
+  }
+  outcome.message = LINK_ACTIVATION_MESSAGES[outcome.status] || LINK_ACTIVATION_MESSAGES.error;
+  if (feedback === "always" || (feedback === "success" && outcome.activated)) {
+    showToast(outcome.message, !outcome.activated);
+  }
+  return outcome;
 }
 
 function showApp() {
@@ -990,7 +1169,18 @@ async function loadUserData(user, { silent = false } = {}) {
     appState.saasContext = window.PianoSaas
       ? await PianoSaas.loadContext(user.uid)
       : { state: "feature-disabled", fallback: "legacy" };
-    refreshClientLinkState();
+    // Lo stato del collegamento decide anche se tentare l'attivazione dopo la
+    // verifica email (sotto): qui va atteso, non solo avviato.
+    await refreshClientLinkState();
+    renderEmailVerificationBanner(appState.user);
+    // Accesso o ricarica con email appena verificata: il collegamento rimasto
+    // in attesa viene attivato adesso (riscatto senza token, ID token forzato).
+    // Se si attiva, il contesto professionale va riletto prima di applicare il
+    // piano: il collegamento attivo può sbloccare un profilo assegnato.
+    const linkActivation = await activateClientLinkAfterVerification({ user });
+    if (linkActivation?.activated && window.PianoSaas) {
+      appState.saasContext = await PianoSaas.loadContext(user.uid);
+    }
     applyState(recipes, plan, shopping);
     writeSessionCache({
       uid: user.uid,
@@ -1112,7 +1302,9 @@ async function initApp() {
   setupVerificationBanner();
   // Invito con email reale: l'anteprima arriva dal server e il form resta
   // nascosto finché i dati non sono disponibili (email/nome non modificabili).
-  if (pendingEmailInviteToken) {
+  // Un invito già usato per registrarsi (in attesa di attivazione) NON è più un
+  // link da aprire: il token resta in sessione, ma la schermata non ricompare.
+  if (pendingEmailInviteToken && !isEmailInviteAwaitingLink(pendingEmailInviteToken)) {
     showEmailInviteScreen();
     try {
       emailInvitePreview = await previewClientInvite(pendingEmailInviteToken);
@@ -1160,13 +1352,14 @@ async function initApp() {
       appState.user = null;
       appState.household = null;
       // Link invito in sospeso: la registrazione pubblica ha la precedenza
-      // sulla schermata di accesso standard.
+      // sulla schermata di accesso standard. Un invito già registrato e in
+      // attesa di attivazione non è più un link da aprire: si va all'accesso.
       if (pendingInviteToken) showInviteScreen();
-      else if (pendingEmailInviteToken) showEmailInviteScreen();
+      else if (pendingEmailInviteToken && !isEmailInviteAwaitingLink(pendingEmailInviteToken)) showEmailInviteScreen();
       else showLogin();
       return;
     }
-    if ((pendingInviteToken || pendingEmailInviteToken) && !inviteFlowActive) {
+    if ((pendingInviteToken || (pendingEmailInviteToken && !isEmailInviteAwaitingLink(pendingEmailInviteToken))) && !inviteFlowActive) {
       // Account già autenticato che apre un link invito: il token resta
       // parcheggiato finché non esce e riapre il link.
       showToast("Per usare un invito cliente esci dall'account attuale e riapri il link");

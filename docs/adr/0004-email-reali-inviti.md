@@ -113,6 +113,17 @@ Punti rilevanti trovati prima di modificare:
   ai volumi attesi (Spark: 1.000 verifica/giorno, 150 reset/giorno).
 - Il reset non rivela se l'account esiste (messaggio uniforme) e non viene
   proposto per gli indirizzi tecnici legacy.
+- **Attivazione dopo la verifica**: il riscatto non si ferma alla
+  registrazione. A ogni accesso o ricarica dell'app, se l'account è un cliente
+  con email reale, l'email risulta verificata e non c'è un collegamento
+  attivo, il client rinnova a forza l'ID token (`getIdToken(true)`: il claim
+  `email_verified` in cache può essere vecchio) e richiama
+  `redeemClientInvite` **senza token**: il server ritrova l'invito pendente
+  dall'email autenticata e risponde `link-active` oppure `no-pending-invite`.
+  Il banner di verifica espone anche il pulsante "Ho verificato: attiva il
+  collegamento" per chi ha appena confermato l'indirizzo. Il token dell'invito
+  resta in sessione finché il riscatto non è `link-active`: solo allora viene
+  cancellato.
 
 ## 4. Decisioni
 
