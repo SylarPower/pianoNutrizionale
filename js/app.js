@@ -2145,11 +2145,10 @@ function renderRecipes({ loading = false } = {}) {
     <div class="page-heading recipes-heading">
       <div><p class="eyebrow">${appState.recipes.length} ricette · sincronizzate nel cloud</p><h1>Ricettario</h1><p>Puoi creare, esportare, importare e condividere le ricette del tuo account.</p></div>
       <div class="recipe-toolbar">
-        <label class="btn btn-outline file-import-button">Importa<input type="file" accept="application/json,.json" onchange="prepareRecipeImport(this.files[0]); this.value='' "></label>
-        <button class="btn btn-outline" onclick="exportAllRecipes()">Esporta</button>
-        <button class="btn btn-outline" onclick="openShareDialog()">Invia tutte</button>
-        ${appState.recipes.length ? `<button class="btn btn-danger" onclick="deleteAllRecipes()">🗑 Elimina tutte</button>` : ""}
+        <button class="btn btn-outline" onclick="openTransferModal()">Importa/Esporta</button>
+        <button class="btn btn-outline" onclick="openShareDialog()">Invia a un utente</button>
         <button class="btn btn-primary" onclick="createNewRecipe()">+ Nuova</button>
+        <button class="btn btn-danger" onclick="deleteAllRecipes()"${appState.recipes.length ? "" : " disabled"}>🗑 Elimina tutte</button>
       </div>
     </div>
     ${appState.recipes.length ? `<label class="search-box"><span>⌕</span><input id="recipe-search" type="search" value="${escapeAttr(recipeLibraryState.searchQuery)}" placeholder="Cerca ricetta, categoria o ingrediente…" oninput="filterRecipeCards(this.value)"><button type="button" id="recipe-search-clear" class="search-clear-btn ${recipeLibraryState.searchQuery ? "" : "hidden"}" onclick="clearRecipeSearch()" aria-label="Cancella ricerca" title="Cancella ricerca">×</button></label><p id="recipe-search-empty" class="text-muted recipe-search-empty hidden">Nessuna ricetta trovata. Prova con un altro nome, ingrediente o categoria.</p>${MEAL_SLOTS.map(slot => recipeSectionHtml(slot.label, appState.recipes.filter(recipe => recipe.slot === slot.id), slot)).join("")}` : `<div class="empty-state recipe-empty-state"><span>🍲</span><h2>Il tuo ricettario è vuoto</h2><p>Puoi creare la prima ricetta manualmente, importare un file JSON o attendere una condivisione da un altro utente.</p><button class="btn btn-primary" onclick="createNewRecipe()">+ Crea la prima ricetta</button></div>`}
@@ -3584,6 +3583,16 @@ function setupTransferModals() {
         <button id="share-send-button" class="btn btn-primary full-width" onclick="submitRecipeShare()">Invia richiesta</button>
       </div>
     </div>
+    <div id="recipe-transfer-modal" class="modal hidden" role="dialog" aria-modal="true">
+      <div class="modal-content transfer-modal-content">
+        <div class="modal-header"><div><p class="eyebrow">FILE JSON</p><h2>Importa o esporta</h2></div><button class="btn-icon" onclick="closeTransferModal()">&times;</button></div>
+        <p class="text-muted">Trasferisci le ricette del tuo account con un file JSON: utile per backup e passaggio ad altri account.</p>
+        <div class="transfer-choice-grid">
+          <label class="transfer-choice file-import-button"><span>⬆️</span><strong>Importa</strong><small>Legge un file JSON esportato in precedenza e propone aggiunta o sostituzione.</small><input type="file" accept="application/json,.json" onchange="closeTransferModal(); prepareRecipeImport(this.files[0]); this.value=''"></label>
+          <button class="transfer-choice" onclick="closeTransferModal(); exportAllRecipes()"><span>⬇️</span><strong>Esporta</strong><small>Scarica tutte le ricette del catalogo in un unico file JSON.</small></button>
+        </div>
+      </div>
+    </div>
     <div id="incoming-shares-modal" class="modal hidden" role="dialog" aria-modal="true" aria-labelledby="incoming-shares-title">
       <div class="modal-content incoming-modal-content">
         <div class="modal-header"><div><p class="eyebrow">NOTIFICHE</p><h2 id="incoming-shares-title">Richieste in attesa</h2></div><button class="btn-icon" onclick="closeIncomingShares()" aria-label="Chiudi notifiche">&times;</button></div>
@@ -3611,6 +3620,7 @@ function setupTransferModals() {
     </div>`);
   bindModalOutsideClose("recipe-import-modal", () => window.closeRecipeImportModal());
   bindModalOutsideClose("share-send-modal", () => window.closeShareDialog());
+  bindModalOutsideClose("recipe-transfer-modal", () => window.closeTransferModal());
   bindModalOutsideClose("incoming-shares-modal", () => window.closeIncomingShares());
   bindModalOutsideClose("share-conflict-modal", () => window.closeShareConflictModal());
   bindModalOutsideClose("account-link-modal", () => window.closeAccountLinkDialog());
@@ -3702,6 +3712,15 @@ window.disconnectAccount = async function() {
   } finally {
     clearLoading();
   }
+};
+
+window.openTransferModal = function() {
+  document.getElementById("recipe-transfer-modal").classList.remove("hidden");
+  setTimeout(() => document.querySelector("#recipe-transfer-modal .btn-icon")?.focus(), 50);
+};
+
+window.closeTransferModal = function() {
+  document.getElementById("recipe-transfer-modal")?.classList.add("hidden");
 };
 
 window.openShareDialog = function(recipeId = null) {
@@ -4672,7 +4691,7 @@ function renderModalContent() {
     // Il campo "Categoria proteica" non è più mostrato né modificabile:
     // la categoria deriva automaticamente dagli ingredienti tramite
     // PianoDomain.classifyProtein, con il valore salvato come fallback.
-    ? `<div class="edit-meta-grid"><label>Emoji<input id="edit-recipe-emoji" value="${escapeAttr(recipe.emoji || "🍲")}" oninput="updateMellerEditorNotice()"></label><label>Tipo<select id="edit-recipe-slot" onchange="updateMellerEditorNotice()">${MEAL_SLOTS.map(slot => `<option value="${slot.id}" ${recipe.slot === slot.id ? "selected" : ""}>${escapeHtml(slot.label)}</option>`).join("")}</select></label></div>`
+    ? `<div class="edit-meta-grid"><label>Emoji<input id="edit-recipe-emoji" value="${escapeAttr(recipe.emoji || "🍲")}" oninput="updateMellerEditorNotice()"></label><label>Pasto<select id="edit-recipe-slot" onchange="updateMellerEditorNotice()">${MEAL_SLOTS.map(slot => `<option value="${slot.id}" ${recipe.slot === slot.id ? "selected" : ""}>${escapeHtml(slot.label)}</option>`).join("")}</select></label></div>`
     : `<div class="modal-context-row"><span>${escapeHtml(getSlotMeta(currentModal.slot || recipe.slot).label)} · ${escapeHtml(dayTypeLabel)} · ${escapeHtml(getProfileLabel())}</span>${toggleHtml}${mellerPlanControl}</div>${plannedResolution?.applied ? `<div class="modal-adapted-note">↻ Dosi delle linee guida applicate a tutti gli ingredienti regolati per ${escapeHtml(getSlotMeta(currentModal.slot || recipe.slot).label.toLowerCase())}</div>` : plannedResolution?.blocked ? `<div class="modal-adapted-note warning">⚠ Adattamento alle linee guida non applicabile: uno o più ingredienti non hanno un mapping nel catalogo attuale. Vengono usate le quantità originali.</div>` : planMode === "original" && currentModal.dayKey && currentModal.planSlot && window.PianoDomain?.MELLER_MAIN_SLOTS?.includes(currentModal.planSlot) ? `<div class="modal-adapted-note warning">↺ Quantità originali: le dosi delle linee guida non sono applicate a questo pasto.</div>` : ""}`;
 
   const ingredientList = document.getElementById("modal-ingredients-list");
