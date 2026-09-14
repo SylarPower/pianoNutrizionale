@@ -22,7 +22,8 @@ const {
   CLIENT_FREQUENCY_KEYS, CLIENT_FREQUENCY_LABELS, CLIENT_FREQUENCY_DEFAULTS,
   DOSE_EDITABLE_ASSIGNMENT_STATUSES,
   validateClientDoseOverrides, validateGetClientDoses,
-  validateUpdateClientDoseOverrides, validateCopyClientDoses
+  validateUpdateClientDoseOverrides, validateCopyClientDoses,
+  PROFESSIONAL_RECIPE_VISIBILITY, validateProfessionalRecipe
 } = require('./domain');
 
 initializeApp();
@@ -1059,6 +1060,19 @@ async function authorizedStructure(actor, structureId, { mustOwn = false } = {})
   if (!doc.exists) throw new HttpsError('not-found', 'Struttura dieta non trovata');
   if (!actor.isCreator && (mustOwn || actor.role === 'nutritionist') && (doc.data().ownerUid || doc.data().createdBy) !== actor.uid) {
     throw new HttpsError('permission-denied', 'Puoi gestire soltanto le tue strutture dieta');
+  }
+  return { ref, doc };
+}
+
+// Ricettario professionisti (ADR 0006): lettura/modifica solo proprietario
+// con mustOwn (vale ANCHE per il creatore: non modifica le ricette altrui).
+// La visibilità 'studio' abilita lettura e invio, mai la modifica.
+async function authorizedProfessionalRecipe(actor, recipeId, { mustOwn = false } = {}) {
+  const ref = db.doc(`organizations/${actor.organizationId}/recipes/${id(recipeId, 'recipeId')}`);
+  const doc = await ref.get();
+  if (!doc.exists) throw new HttpsError('not-found', 'Ricetta non trovata');
+  if (mustOwn && doc.data().ownerUid !== actor.uid) {
+    throw new HttpsError('permission-denied', 'Puoi modificare soltanto le tue ricette');
   }
   return { ref, doc };
 }
@@ -3133,4 +3147,211 @@ exports.activateScheduledAssignments = onSchedule({ region: REGION, schedule: 'e
     });
   }
   logger.info('Scheduled assignments processed', { activated: due.size, expired: expired.size });
+});
+
+// ---- Ricettario professionisti (ADR 0006) ----
+// Raccolta server-only organizations/{org}/recipes (rules: catch-all senza
+// accesso diretto). Concorrenza ottimistica su `revision`; visibilità
+// 'private' (solo proprietario) o 'studio' (lettura+invio per lo studio).
+// Invio al cliente = documento recipeShares con senderRole 'professional'
+// (stessa casella delle condivisioni tra utenti, nessun indice nuovo).
+
+exports.listProfessionalRecipes = callable(async (data, uid) => {
+  exactObject(data, ['organizationId', 'includeArchived']);
+  const actor = await actorContext(data.organizationId, uid);
+  const includeArchived = data.includeArchived === true;
+  const snapshot = await db.collection(`organizations/${actor.organizationId}/recipes`).limit(200).get();
+  const recipes = snapshot.docs
+    .map(doc => {
+      const data = doc.data();
+      return {
+        id: doc.id, ...data,
+        createdAt: data.createdAt?.toDate?.()?.toISOString() || null,
+        updatedAt: data.updatedAt?.toDate?.()?.toISOString() || null,
+        archivedAt: data.archivedAt?.toDate?.()?.toISOString() || null
+      };
+    })
+    .filter(item => {
+      if (!includeArchived && item.status === 'archived') return false;
+      if (actor.isCreator) return true;
+      if (item.ownerUid === uid) return true;
+      return item.visibility === 'studio' && item.status !== 'archived';
+    })
+    .sort((a, b) => (b.updatedAt?.toMillis?.() || 0) - (a.updatedAt?.toMillis?.() || 0));
+  return { recipes };
+});
+
+exports.createProfessionalRecipe = callable(async (data, uid) => {
+  exactObject(data, ['organizationId', 'recipe', 'idempotencyKey']);
+  const actor = await actorContext(data.organizationId, uid);
+  const recipe = validateProfessionalRecipe(data.recipe);
+  const idem = id(data.idempotencyKey, 'idempotencyKey');
+  const recipeId = `R${checksum(`${actor.organizationId}:${uid}:${recipe.name}:${idem}`).slice(0, 12)}`;
+  const ref = db.doc(`organizations/${actor.organizationId}/recipes/${recipeId}`);
+  const eventId = checksum(`recipe.created:${recipeId}`).slice(0, 32);
+  await db.runTransaction(async tx => {
+    const [existing, audit] = await Promise.all([tx.get(ref), tx.get(auditRef(actor.organizationId, eventId))]);
+    if (existing.exists || audit.exists) return;
+    tx.create(ref, {
+      schemaVersion: 1, ...recipe, revision: 1, visibility: 'private', status: 'active',
+      ownerUid: uid, createdBy: uid,
+      createdAt: FieldValue.serverTimestamp(), updatedAt: FieldValue.serverTimestamp()
+    });
+    tx.create(auditRef(actor.organizationId, eventId), auditEvent({ orgId: actor.organizationId, eventId, type: 'recipe.created', actor, subject: { type: 'professionalRecipe', id: recipeId }, idempotencyKey: idem, metadata: { name: recipe.name, slot: recipe.slot } }));
+  });
+  return { recipeId, revision: 1 };
+});
+
+exports.updateProfessionalRecipe = callable(async (data, uid) => {
+  exactObject(data, ['organizationId', 'recipeId', 'recipe', 'revision', 'idempotencyKey']);
+  const actor = await actorContext(data.organizationId, uid);
+  const recipe = validateProfessionalRecipe(data.recipe);
+  const idem = id(data.idempotencyKey, 'idempotencyKey');
+  if (!Number.isInteger(data.revision) || data.revision < 1) throw new HttpsError('invalid-argument', 'revision non valida');
+  const { ref, doc } = await authorizedProfessionalRecipe(actor, data.recipeId, { mustOwn: true });
+  const current = doc.data();
+  if (current.status === 'archived') throw new HttpsError('failed-precondition', 'Ricetta archiviata: non più modificabile');
+  if (current.revision !== data.revision) throw new HttpsError('failed-precondition', 'Versione non aggiornata: ricarica la ricetta e riprova');
+  const nextRevision = current.revision + 1;
+  const eventId = checksum(`recipe.updated:${ref.id}:${nextRevision}:${idem}`).slice(0, 32);
+  await db.runTransaction(async tx => {
+    const audit = await tx.get(auditRef(actor.organizationId, eventId));
+    if (audit.exists) return;
+    tx.update(ref, { ...recipe, revision: nextRevision, updatedAt: FieldValue.serverTimestamp(), updatedBy: uid });
+    tx.create(auditRef(actor.organizationId, eventId), auditEvent({ orgId: actor.organizationId, eventId, type: 'recipe.updated', actor, subject: { type: 'professionalRecipe', id: ref.id }, idempotencyKey: idem, metadata: { revision: nextRevision } }));
+  });
+  return { recipeId: ref.id, revision: nextRevision };
+});
+
+exports.archiveProfessionalRecipe = callable(async (data, uid) => {
+  exactObject(data, ['organizationId', 'recipeId', 'idempotencyKey']);
+  const actor = await actorContext(data.organizationId, uid);
+  const idem = id(data.idempotencyKey, 'idempotencyKey');
+  const { ref, doc } = await authorizedProfessionalRecipe(actor, data.recipeId, { mustOwn: true });
+  if (doc.data().status === 'archived') return { recipeId: ref.id, status: 'archived' };
+  const eventId = checksum(`recipe.archived:${ref.id}:${idem}`).slice(0, 32);
+  await db.runTransaction(async tx => {
+    const audit = await tx.get(auditRef(actor.organizationId, eventId));
+    if (audit.exists) return;
+    tx.update(ref, { status: 'archived', archivedAt: FieldValue.serverTimestamp(), updatedAt: FieldValue.serverTimestamp(), updatedBy: uid });
+    tx.create(auditRef(actor.organizationId, eventId), auditEvent({ orgId: actor.organizationId, eventId, type: 'recipe.archived', actor, subject: { type: 'professionalRecipe', id: ref.id }, idempotencyKey: idem, metadata: {} }));
+  });
+  return { recipeId: ref.id, status: 'archived' };
+});
+
+exports.shareProfessionalRecipe = callable(async (data, uid) => {
+  exactObject(data, ['organizationId', 'recipeId', 'visibility', 'idempotencyKey']);
+  const actor = await actorContext(data.organizationId, uid);
+  if (!actor.isCreator) throw new HttpsError('permission-denied', 'Solo il creatore condivide le ricette con lo studio');
+  const visibility = text(data.visibility, 'visibility', { max: 20 });
+  if (!PROFESSIONAL_RECIPE_VISIBILITY.has(visibility)) throw new HttpsError('invalid-argument', 'visibility non valida');
+  const idem = id(data.idempotencyKey, 'idempotencyKey');
+  const ref = db.doc(`organizations/${actor.organizationId}/recipes/${id(data.recipeId, 'recipeId')}`);
+  const snap = await ref.get();
+  if (!snap.exists) throw new HttpsError('not-found', 'Ricetta non trovata');
+  if (snap.data().status === 'archived') throw new HttpsError('failed-precondition', 'Ricetta archiviata: non più condivisibile');
+  const eventId = checksum(`recipe.visibility:${ref.id}:${visibility}:${idem}`).slice(0, 32);
+  await db.runTransaction(async tx => {
+    const audit = await tx.get(auditRef(actor.organizationId, eventId));
+    if (audit.exists) return;
+    tx.update(ref, { visibility, updatedAt: FieldValue.serverTimestamp(), updatedBy: uid });
+    tx.create(auditRef(actor.organizationId, eventId), auditEvent({ orgId: actor.organizationId, eventId, type: 'recipe.visibility', actor, subject: { type: 'professionalRecipe', id: ref.id }, idempotencyKey: idem, metadata: { visibility } }));
+  });
+  return { recipeId: ref.id, visibility };
+});
+
+exports.sendProfessionalRecipe = callable(async (data, uid) => {
+  exactObject(data, ['organizationId', 'recipeIds', 'clientId', 'idempotencyKey']);
+  const actor = await actorContext(data.organizationId, uid);
+  const idem = id(data.idempotencyKey, 'idempotencyKey');
+  const clientId = id(data.clientId, 'clientId');
+  if (!Array.isArray(data.recipeIds) || !data.recipeIds.length || data.recipeIds.length > 50) {
+    throw new HttpsError('invalid-argument', 'recipeIds non validi');
+  }
+  const recipeIds = [...new Set(data.recipeIds.map(value => id(value, 'recipeId')))];
+  const clientSnap = await db.doc(`organizations/${actor.organizationId}/clients/${clientId}`).get();
+  if (!clientSnap.exists || clientSnap.data()?.status === 'deleted') throw new HttpsError('not-found', 'Cliente non trovato');
+  const client = clientSnap.data();
+  if (!actor.isCreator && !(client.nutritionistUids || []).includes(uid)) {
+    throw new HttpsError('failed-precondition', 'Il cliente non è assegnato a questo professionista');
+  }
+  if (!client.authUid) throw new HttpsError('failed-precondition', 'Il cliente non ha ancora collegato l’app: impossibile inviare');
+  const recipes = [];
+  for (const recipeId of recipeIds) {
+    const snap = await db.doc(`organizations/${actor.organizationId}/recipes/${recipeId}`).get();
+    if (!snap.exists) throw new HttpsError('not-found', `Ricetta ${recipeId} non trovata`);
+    const recipe = snap.data();
+    if (recipe.status === 'archived') throw new HttpsError('failed-precondition', `Ricetta ${recipeId} archiviata: non più inviabile`);
+    if (!actor.isCreator && recipe.ownerUid !== uid && recipe.visibility !== 'studio') {
+      throw new HttpsError('permission-denied', `Ricetta ${recipeId} privata di un altro professionista`);
+    }
+    recipes.push({
+      id: snap.id, name: recipe.name, emoji: recipe.emoji || null, slot: recipe.slot,
+      proteinCategory: recipe.proteinCategory || null, ingredients: recipe.ingredients || [],
+      steps: recipe.steps || [], notes: recipe.notes || [], professionalRevision: recipe.revision ?? null
+    });
+  }
+  const shareId = checksum(`recipeShare:professional:${actor.organizationId}:${uid}:${clientId}:${idem}`).slice(0, 20);
+  const shareRef = db.doc(`recipeShares/${shareId}`);
+  const eventId = checksum(`recipe.sent:${shareId}`).slice(0, 32);
+  const [senderUsername, recipientUsername] = await Promise.all([
+    usernameOfUid(uid),
+    client.invitedUsername ? Promise.resolve(client.invitedUsername) : usernameOfUid(client.authUid)
+  ]);
+  await db.runTransaction(async tx => {
+    const [existing, audit] = await Promise.all([tx.get(shareRef), tx.get(auditRef(actor.organizationId, eventId))]);
+    if (existing.exists || audit.exists) return;
+    tx.create(shareRef, {
+      senderUid: uid, senderUsername: senderUsername || null, senderRole: 'professional',
+      organizationId: actor.organizationId, recipientUid: client.authUid, recipientUsername: recipientUsername || null,
+      status: 'pending', recipeCount: recipes.length, recipes,
+      professionalRecipeIds: recipeIds, includesPlan: false, plan: null,
+      createdAt: FieldValue.serverTimestamp()
+    });
+    tx.create(auditRef(actor.organizationId, eventId), auditEvent({ orgId: actor.organizationId, eventId, type: 'recipe.sent', actor, subject: { type: 'recipeShare', id: shareId }, idempotencyKey: idem, metadata: { clientId, recipeIds, shareId } }));
+  });
+  return { shareId, recipeCount: recipes.length };
+});
+
+exports.cancelProfessionalShare = callable(async (data, uid) => {
+  exactObject(data, ['organizationId', 'shareId', 'idempotencyKey']);
+  const actor = await actorContext(data.organizationId, uid);
+  const idem = id(data.idempotencyKey, 'idempotencyKey');
+  const shareRef = db.doc(`recipeShares/${id(data.shareId, 'shareId')}`);
+  const snap = await shareRef.get();
+  if (!snap.exists) throw new HttpsError('not-found', 'Condivisione non trovata');
+  const share = snap.data();
+  if (share.senderRole !== 'professional' || share.organizationId !== actor.organizationId) {
+    throw new HttpsError('failed-precondition', 'Solo le condivisioni professionali si annullano da qui');
+  }
+  if (share.status !== 'pending') throw new HttpsError('failed-precondition', 'Condivisione già gestita dal cliente');
+  if (!actor.isCreator && share.senderUid !== uid) {
+    throw new HttpsError('permission-denied', 'Solo il mittente può annullare l’invio');
+  }
+  const eventId = checksum(`recipe.shareCancelled:${shareRef.id}:${idem}`).slice(0, 32);
+  await db.runTransaction(async tx => {
+    const audit = await tx.get(auditRef(actor.organizationId, eventId));
+    if (audit.exists) return;
+    tx.delete(shareRef);
+    tx.create(auditRef(actor.organizationId, eventId), auditEvent({ orgId: actor.organizationId, eventId, type: 'recipe.shareCancelled', actor, subject: { type: 'recipeShare', id: shareRef.id }, idempotencyKey: idem, metadata: { shareId: shareRef.id, recipientUid: share.recipientUid || null } }));
+  });
+  return { shareId: shareRef.id, cancelled: true };
+});
+
+exports.listProfessionalShares = callable(async (data, uid) => {
+  exactObject(data, ['organizationId']);
+  const actor = await actorContext(data.organizationId, uid);
+  // Un solo filtro per query (nessun indice composto): il nutrizionista
+  // filtra per mittente, la selezione di ruolo/org/stato avviene in codice.
+  let query = db.collection('recipeShares');
+  if (!actor.isCreator) query = query.where('senderUid', '==', uid);
+  const snapshot = await query.limit(200).get();
+  const shares = snapshot.docs
+    .map(doc => {
+      const data = doc.data();
+      return { id: doc.id, ...data, createdAt: data.createdAt?.toDate?.()?.toISOString() || null };
+    })
+    .filter(share => share.senderRole === 'professional' && share.organizationId === actor.organizationId && share.status === 'pending')
+    .sort((a, b) => (b.createdAt?.toMillis?.() || 0) - (a.createdAt?.toMillis?.() || 0));
+  return { shares };
 });

@@ -458,3 +458,40 @@ revisioni 1/2 restano verificabili e modificabili con l'editor classico, che
 conserva l'eventuale `dietPlan`. `createDietStructure` e
 `updateDietStructureRevision` accettano `dietPlan?` (null per le classiche).
 Guida operativa: `docs/editor-dieta-guidata.md`.
+
+## Ricettario professionisti (ADR 0006)
+
+Collezione `organizations/{orgId}/recipes/{recipeId}` (server-only: le
+regole negano tutto ai client, nessun indice composto):
+
+```js
+{
+  id: "R" + 12 hex, organizationId, ownerUid, ownerUsername,
+  name, emoji, slot, proteinCategory?, ingredients, steps, notes,
+  batch?: "man" | "ipo" | null,
+  visibility: "private" | "studio", status: "active" | "archived",
+  revision: 1, version: 1, archivedAt?, createdAt, updatedAt, createdBy
+}
+```
+
+Limiti (validazione server `validateProfessionalRecipe`, specchio di
+`js/domain.js`): nome 1–120; 1–12 ingredienti (nome 1–120, dosi
+Uomo/Donna ≤ 120 caratteri); 0–12 passi (≤ 500); 0–8 note (≤ 500).
+
+Callable: `listProfessionalRecipes` (proprie + studio, filtri in JS,
+sort `updatedAt` desc, max 200), `createProfessionalRecipe` (bozza
+privata), `updateProfessionalRecipe` (solo proprietario, `revision`
+attesa obbligatoria, 409), `archiveProfessionalRecipe` (solo
+proprietario, senza ripristino), `shareProfessionalRecipe` (solo
+creatore, `private`↔`studio`), `sendProfessionalRecipe` (1–5 ricette
+attive e visibili a clienti collegati, `type: "professional"`,
+`senderRole: "professional"`, snapshot `professionalRevision`),
+`cancelProfessionalShare` (mittente o creatore),
+`listProfessionalShares` (pendenti `senderRole professional`, max 200).
+Chiave idempotente `recipe-<azione>:<uid>:<key>`.
+
+Copie cliente: stesso `id` + `fromProfessional: { recipeId, revision,
+organizationId, senderUid, senderUsername, acceptedAt, shareType }`
+(provenienza col contenuto, anche in transfer/export); sola lettura
+con badge «Studio». Audit: `recipe.created/updated/archived/visibility/
+sent/shareCancelled`.

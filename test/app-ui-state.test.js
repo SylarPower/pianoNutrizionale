@@ -261,8 +261,10 @@ test('Impostazioni: niente sezione "Dati e sincronizzazione", import dal Ricetta
   assert.doesNotMatch(html, /account-card/);
   renderRecipes();
   const recipesHtml = document.getElementById('view-recipes').innerHTML;
-  assert.match(recipesHtml, /file-import-button/, 'l\u2019importazione resta disponibile dal Ricettario');
-  assert.match(recipesHtml, /prepareRecipeImport/, 'il ripristino/import ricette resta attivo');
+  assert.match(recipesHtml, /openTransferModal/, 'l\u2019importazione resta disponibile dal Ricettario (modale Importa/Esporta)');
+  const appSource = fs.readFileSync(path.join(ROOT, 'js/app.js'), 'utf8');
+  assert.match(appSource, /id="recipe-transfer-modal"/, 'modale Importa/Esporta installata');
+  assert.match(appSource, /prepareRecipeImport\(this\.files\[0\]\)/, 'il ripristino/import ricette resta attivo');
 });
 
 test('pulsanti "Ricevute" rimossi da Impostazioni e Ricettario', () => {

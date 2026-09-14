@@ -31,7 +31,7 @@ test('admin console non ha alcun riferimento all’organizzazione in header', ()
   assert.doesNotMatch(adminHtml, /tenant-field/, 'campo tenant rimosso dalla topbar');
   assert.doesNotMatch(adminHtml, /<span>Organizzazione<\/span>/, 'etichetta Organizzazione rimossa');
   assert.doesNotMatch(adminCss, /\.org-badge|\.tenant-field/, 'stili badge org rimossi');
-  assert.match(adminCss, /margin-left:auto/, 'topbar utente allineata a destra senza campo org');
+  assert.match(adminCss, /margin-left:\s*auto/, 'topbar utente allineata a destra senza campo org');
 });
 
 test('admin.js usa costante SINGLE_ORG_ID senza UI org', () => {
