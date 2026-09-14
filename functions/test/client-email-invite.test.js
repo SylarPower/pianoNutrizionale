@@ -447,13 +447,14 @@ test('anagrafica dal professionista: nome e cognome aggiornati, clienti altrui v
     }
   });
   const result = await invoke(api, 'updateClientProfileByStaff', 'nutri-1', {
-    organizationId: ORG, clientId: 'client-1', firstName: 'Mario', lastName: 'Rossi', displayName: 'Mario R.', idempotencyKey: 'p1'
+    organizationId: ORG, clientId: 'client-1', firstName: 'Mario', lastName: 'Rossi', idempotencyKey: 'p1'
   });
-  assert.equal(result.displayName, 'Mario R.');
+  assert.equal(result.firstName, 'Mario');
+  assert.equal(result.lastName, 'Rossi');
   assert.equal(store.get(`organizations/${ORG}/clients/client-1`).lastName, 'Rossi');
   await assert.rejects(
     invoke(api, 'updateClientProfileByStaff', 'nutri-1', {
-      organizationId: ORG, clientId: 'client-9', firstName: 'Mario', lastName: 'Rossi', displayName: null, idempotencyKey: 'p2'
+      organizationId: ORG, clientId: 'client-9', firstName: 'Mario', lastName: 'Rossi', idempotencyKey: 'p2'
     }),
     error => error.code === 'permission-denied'
   );

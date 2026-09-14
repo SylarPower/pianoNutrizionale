@@ -551,7 +551,6 @@ exports.listAuthorizedClients = callable(async (data, uid) => {
   return {
     clients: rows.map((row, index) => ({
       id: row.id, displayCode: row.data.displayCode || row.id,
-      displayName: row.data.displayName || null,
       firstName: row.data.firstName || null, lastName: row.data.lastName || null,
       email: row.data.emailNormalized || null, emailVerified: row.data.emailVerified === true,
       username: row.data.invitedUsername || fallbackUsernames[index] || null,
@@ -1527,8 +1526,9 @@ async function usernameOfUid(uid) {
 
 // Sospende assignment attivi/programmati del cliente (revoca associazione).
 // Eseguita in transazione con rilettura: nessuna assegnazione resta attiva.
-async function suspendClientAssignmentsTx(tx, clientRef, uid, reason) {
-  const open = await tx.get(clientRef.collection('assignments').where('status', 'in', ['active', 'scheduled']));
+// Sessione 1: tutte le letture avvengono prima delle scritture, mai dopo.
+async function suspendClientAssignmentsTx(tx, clientRef, uid, reason, openSnap = null) {
+  const open = openSnap || await tx.get(clientRef.collection('assignments').where('status', 'in', ['active', 'scheduled']));
   open.docs.forEach(doc => {
     tx.update(doc.ref, {
       status: 'suspended', statusReason: reason,
@@ -1555,7 +1555,7 @@ exports.searchUserByUsername = callable(async (data, uid) => {
 function publicClientRow(item, username) {
   const value = item.data;
   return {
-    id: item.id, displayCode: value.displayCode || item.id, displayName: value.displayName || null,
+    id: item.id, displayCode: value.displayCode || item.id,
     firstName: value.firstName || null, lastName: value.lastName || null,
     email: value.emailNormalized || null, emailVerified: value.emailVerified === true,
     username: value.invitedUsername || username || null,
@@ -1633,6 +1633,7 @@ exports.listOrganizationUsers = callable(async (data, uid) => {
   return {
     members: membersSnap.docs.map(doc => ({
       userId: doc.id, username: doc.data().username || null, displayName: doc.data().displayName || null,
+      firstName: doc.data().firstName || null, lastName: doc.data().lastName || null,
       role: doc.data().role, status: doc.data().status, updatedAt: iso(doc.data().updatedAt)
     })),
     clients: clientRows.map((row, index) => publicClientRow(row, clientFallbackUsernames[index])),
@@ -1981,11 +1982,17 @@ function authorizeInviteActor(actor, invite) {
 }
 
 // Nome del professionista per l'anteprima dell'invito: mai dati di altri ruoli.
+// Sessione 1: fallback [firstName lastName] → displayName → username.
 async function professionalDisplayName(orgId, nutritionistUid) {
   if (!nutritionistUid) return null;
   const member = await db.doc(`organizations/${orgId}/members/${nutritionistUid}`).get();
   if (!member.exists) return null;
-  return member.data()?.displayName || member.data()?.username || null;
+  const data = member.data() || {};
+  const first = String(data.firstName || '').trim();
+  const last = String(data.lastName || '').trim();
+  const full = `${first} ${last}`.trim();
+  if (full) return full;
+  return data.displayName || data.username || null;
 }
 
 async function organizationDisplayName(orgId) {
@@ -2121,7 +2128,6 @@ exports.inviteClientByEmail = callable(async (data, uid) => {
         schemaVersion: 2, authUid: authUser.uid, displayCode, status: 'pending',
         email: input.email, emailNormalized: input.email,
         firstName: input.firstName, lastName: input.lastName,
-        displayName: `${input.firstName} ${input.lastName}`,
         nutritionistUids, activeAssignment: null,
         updatedAt: FieldValue.serverTimestamp(), updatedBy: uid
       };
@@ -2179,7 +2185,6 @@ exports.inviteClientByEmail = callable(async (data, uid) => {
       schemaVersion: 2, authUid: null, displayCode, status: 'pending',
       email: input.email, emailNormalized: input.email,
       firstName: input.firstName, lastName: input.lastName,
-      displayName: `${input.firstName} ${input.lastName}`,
       nutritionistUids, activeAssignment: null,
       updatedAt: FieldValue.serverTimestamp(), updatedBy: uid
     };
@@ -2328,11 +2333,10 @@ exports.redeemClientInvite = callable(async (data, uid, request) => {
     if (audit.exists) return;
     if (fresh.data()?.status !== 'pending') throw new HttpsError('failed-precondition', 'Invito non più valido: chiedi un nuovo link al tuo nutrizionista');
     const previous = client.exists ? client.data() : {};
-    const displayName = previous.displayName || `${invite.firstName} ${invite.lastName}`;
     tx.set(clientRef, {
       schemaVersion: 2, authUid: uid, status: 'active',
       email: authEmail, emailNormalized: authEmail, emailVerified: true,
-      firstName: invite.firstName, lastName: invite.lastName, displayName,
+      firstName: invite.firstName, lastName: invite.lastName,
       invitedUsername: previous.invitedUsername || null,
       nutritionistUids: previous.nutritionistUids || (invite.nutritionistUid ? [invite.nutritionistUid] : []),
       activeAssignment: previous.activeAssignment || null,
@@ -2523,7 +2527,6 @@ exports.correctClientInvite = callable(async (data, uid) => {
       schemaVersion: 2, status: 'pending',
       email: input.email, emailNormalized: input.email,
       firstName: input.firstName, lastName: input.lastName,
-      displayName: `${input.firstName} ${input.lastName}`,
       updatedAt: FieldValue.serverTimestamp(), updatedBy: uid
     }, { merge: true });
     const changed = [];
@@ -2551,19 +2554,18 @@ exports.updateClientProfileByStaff = callable(async (data, uid) => {
   const input = validateUpdateClientProfileByStaff(data);
   const actor = await actorContext(input.organizationId, uid);
   const client = await authorizedClient(actor, input.clientId);
-  const displayName = input.displayName || `${input.firstName} ${input.lastName}`;
   const eventId = checksum(`client.profile-updated-staff:${client.id}:${input.idempotencyKey}`).slice(0, 32);
   await db.runTransaction(async tx => {
     const [fresh, audit] = await Promise.all([tx.get(client.ref), tx.get(auditRef(actor.organizationId, eventId))]);
     if (audit.exists) return;
     tx.update(client.ref, {
-      firstName: input.firstName, lastName: input.lastName, displayName,
+      firstName: input.firstName, lastName: input.lastName,
       updatedAt: FieldValue.serverTimestamp(), updatedBy: uid
     });
     tx.create(auditRef(actor.organizationId, eventId), auditEvent({
       orgId: actor.organizationId, eventId, type: 'client.profile-updated-staff', actor,
       subject: { type: 'client', id: client.id }, idempotencyKey: input.idempotencyKey,
-      metadata: { fields: ['firstName', 'lastName', 'displayName'] }
+      metadata: { fields: ['firstName', 'lastName'] }
     }));
     if (fresh.data()?.authUid) {
       tx.create(db.doc(`organizations/${actor.organizationId}/notifications/${eventId}`), {
@@ -2574,7 +2576,32 @@ exports.updateClientProfileByStaff = callable(async (data, uid) => {
       });
     }
   });
-  return { clientId: client.id, firstName: input.firstName, lastName: input.lastName, displayName };
+  return { clientId: client.id, firstName: input.firstName, lastName: input.lastName };
+});
+
+// Anagrafica professionista gestita solo da admin (Sessione 1)
+exports.updateMemberProfileByStaff = callable(async (data, uid) => {
+  const input = validateUpdateMemberProfileByStaff(data);
+  const actor = await actorContext(input.organizationId, uid);
+  requireCreator(actor);
+  const memberRef = db.doc(`organizations/${actor.organizationId}/members/${input.userId}`);
+  const eventId = checksum(`member.profile-updated-staff:${input.userId}:${input.idempotencyKey}`).slice(0, 32);
+  await db.runTransaction(async tx => {
+    const [member, audit] = await Promise.all([tx.get(memberRef), tx.get(auditRef(actor.organizationId, eventId))]);
+    if (audit.exists) return;
+    if (!member.exists) throw new HttpsError('not-found', 'Profilo professionista non trovato');
+    tx.update(memberRef, {
+      firstName: input.firstName, lastName: input.lastName,
+      displayName: `${input.firstName} ${input.lastName}`,
+      updatedAt: FieldValue.serverTimestamp(), updatedBy: uid
+    });
+    tx.create(auditRef(actor.organizationId, eventId), auditEvent({
+      orgId: actor.organizationId, eventId, type: 'member.profile-updated-staff', actor,
+      subject: { type: 'member', id: input.userId }, idempotencyKey: input.idempotencyKey,
+      metadata: { fields: ['firstName', 'lastName'] }
+    }));
+  });
+  return { userId: input.userId, firstName: input.firstName, lastName: input.lastName };
 });
 
 // Proposta di cambio email (nutrizionista → cliente). Nulla cambia finché il
@@ -2790,7 +2817,6 @@ exports.listMyClientLinkRequests = callable(async (data, uid) => {
     const client = await db.doc(`organizations/${SINGLE_ORGANIZATION_ID}/clients/${link.data().clientId}`).get();
     const clientData = client.data() || {};
     activeClientProfile = {
-      displayName: clientData.displayName || null,
       firstName: clientData.firstName || null,
       lastName: clientData.lastName || null,
       email: clientData.emailNormalized || null,
@@ -2819,7 +2845,16 @@ exports.listMyClientLinkRequests = callable(async (data, uid) => {
   }));
   await Promise.all([...memberRefs.entries()].map(async ([key, value]) => {
     const member = await db.doc(`organizations/${value.organizationId}/members/${value.nutritionistUid}`).get();
-    memberNames.set(key, member.exists ? { username: member.data()?.username || null, displayName: member.data()?.displayName || null } : { username: null, displayName: null });
+    if (!member.exists) { memberNames.set(key, { username: null, displayName: null, firstName: null, lastName: null }); return; }
+    const data = member.data() || {};
+    const first = String(data.firstName || '').trim();
+    const last = String(data.lastName || '').trim();
+    const full = `${first} ${last}`.trim();
+    memberNames.set(key, {
+      username: data.username || null,
+      displayName: full || data.displayName || null,
+      firstName: data.firstName || null, lastName: data.lastName || null
+    });
   }));
   const person = value => memberNames.get(`${value.organizationId}/${value.nutritionistUid}`) || { username: null, displayName: null };
   return {
@@ -2832,7 +2867,7 @@ exports.listMyClientLinkRequests = callable(async (data, uid) => {
     })),
     link: link.exists && link.data()?.status === 'active' && link.data().organizationId === SINGLE_ORGANIZATION_ID
       ? { organizationId: link.data().organizationId, organizationName: orgNames.get(link.data().organizationId) || link.data().organizationId,
-          clientId: link.data().clientId, displayName: activeClientProfile?.displayName || null,
+          clientId: link.data().clientId,
           firstName: activeClientProfile?.firstName || null, lastName: activeClientProfile?.lastName || null,
           email: activeClientProfile?.email || null, emailVerified: activeClientProfile?.emailVerified === true,
           emailChange,
@@ -2842,46 +2877,8 @@ exports.listMyClientLinkRequests = callable(async (data, uid) => {
   };
 });
 
-// Aggiorna il nome mostrato al professionista, senza passare da Auth.
-exports.updateMyClientProfile = callable(async (data, uid) => {
-  exactObject(data, ['displayName', 'idempotencyKey']);
-  const displayName = optionalText(data.displayName, 'displayName', 120);
-  const idem = id(data.idempotencyKey, 'idempotencyKey');
-  const linkRef = db.doc(`accountClientLinks/${uid}`);
-  const link = await linkRef.get();
-  if (!link.exists || link.data()?.status !== 'active' || link.data()?.organizationId !== SINGLE_ORGANIZATION_ID) throw new HttpsError('permission-denied', 'Profilo cliente non autorizzato');
-  const clientRef = db.doc(`organizations/${SINGLE_ORGANIZATION_ID}/clients/${link.data().clientId}`);
-  const eventId = checksum(`client.profile-updated:${uid}:${idem}`).slice(0, 32);
-  const actor = { uid, role: 'client' };
-  await db.runTransaction(async tx => {
-    const [client, audit] = await Promise.all([tx.get(clientRef), tx.get(auditRef(SINGLE_ORGANIZATION_ID, eventId))]);
-    if (audit.exists) return;
-    if (!client.exists || client.data()?.authUid !== uid) throw new HttpsError('permission-denied', 'Profilo cliente non autorizzato');
-    tx.update(clientRef, { displayName, updatedAt: FieldValue.serverTimestamp(), updatedBy: uid });
-    tx.create(auditRef(SINGLE_ORGANIZATION_ID, eventId), auditEvent({ orgId: SINGLE_ORGANIZATION_ID, eventId, type: 'client.profile-updated', actor, subject: { type: 'client', id: clientRef.id }, idempotencyKey: idem }));
-  });
-  return { displayName };
-});
-
-// Aggiorna il nome del professionista per i propri clienti.
-exports.updateMyMemberProfile = callable(async (data, uid) => {
-  exactObject(data, ['organizationId', 'displayName', 'idempotencyKey']);
-  const actor = await actorContext(data.organizationId, uid);
-  if (actor.role !== 'nutritionist') throw new HttpsError('failed-precondition', 'Il creatore non ha un profilo professionista modificabile');
-  const displayName = optionalText(data.displayName, 'displayName', 120);
-  const idem = id(data.idempotencyKey, 'idempotencyKey');
-  const memberRef = db.doc(`organizations/${actor.organizationId}/members/${uid}`);
-  const eventId = checksum(`member.profile-updated:${uid}:${idem}`).slice(0, 32);
-  await db.runTransaction(async tx => {
-    const audit = await tx.get(auditRef(actor.organizationId, eventId));
-    if (audit.exists) return;
-    const member = await tx.get(memberRef);
-    if (!member.exists || member.data()?.role !== 'nutritionist') throw new HttpsError('failed-precondition', 'Profilo professionista non trovato');
-    tx.update(memberRef, { displayName, updatedAt: FieldValue.serverTimestamp(), updatedBy: uid });
-    tx.create(auditRef(actor.organizationId, eventId), auditEvent({ orgId: actor.organizationId, eventId, type: 'member.profile-updated', actor, subject: { type: 'member', id: uid }, idempotencyKey: idem }));
-  });
-  return { displayName };
-});
+// updateMyClientProfile e updateMyMemberProfile rimossi (Sessione 1): il displayName cliente non esiste più
+// e l'anagrafica professionista è gestita solo da admin via updateMemberProfileByStaff.
 
 // Accettazione/rifiuto dal cliente (app). IDEMPOTENTE: decisioni già prese
 // ritornano no-op; ogni transizione è registrata in audit.
@@ -2962,14 +2959,31 @@ exports.requestClientUnlink = callable(async (data, uid) => {
   const actor = { uid, role: 'client' };
   let suspended = 0;
   await db.runTransaction(async tx => {
-    const [freshLink, client, audit] = await Promise.all([tx.get(linkRef), tx.get(clientRef), tx.get(auditRef(orgId, eventId))]);
+    const [freshLink, client, audit, openAssignments] = await Promise.all([
+      tx.get(linkRef), tx.get(clientRef), tx.get(auditRef(orgId, eventId)),
+      tx.get(clientRef.collection('assignments').where('status', 'in', ['active', 'scheduled']))
+    ]);
     if (audit.exists) return;
     if (!freshLink.exists || freshLink.data()?.status !== 'active') return;
+    // Tutte le letture prima delle scritture (Sessione 1)
+    suspended = openAssignments.size;
     tx.update(linkRef, { status: 'revoked', updatedAt: FieldValue.serverTimestamp() });
     if (client.exists) {
       tx.update(clientRef, { status: 'unlinked', authUid: null, updatedAt: FieldValue.serverTimestamp(), updatedBy: uid });
     }
-    suspended = await suspendClientAssignmentsTx(tx, clientRef, uid, 'Scollegamento richiesto dal cliente');
+    openAssignments.docs.forEach(doc => {
+      tx.update(doc.ref, {
+        status: 'suspended', statusReason: 'Scollegamento richiesto dal cliente',
+        updatedAt: FieldValue.serverTimestamp(), updatedBy: uid
+      });
+    });
+    tx.delete(clientRef.collection('state').doc('activeAssignment'));
+    // activeAssignment azzerato senza sovrascrivere lo stato già impostato
+    if (client.exists) {
+      tx.update(clientRef, { activeAssignment: null, updatedAt: FieldValue.serverTimestamp(), updatedBy: uid });
+    } else {
+      tx.update(clientRef, { activeAssignment: null, updatedAt: FieldValue.serverTimestamp(), updatedBy: uid });
+    }
     tx.create(auditRef(orgId, eventId), auditEvent({ orgId, eventId, type: 'client.unlinked', actor, subject: { type: 'client', id: clientId }, idempotencyKey: eventId, metadata: { suspendedAssignments: suspended } }));
   });
   return { status: 'unlinked', suspendedAssignments: suspended };
@@ -2986,21 +3000,31 @@ exports.removeClientLink = callable(async (data, uid) => {
   const eventId = checksum(`client.link-removed:${client.id}:${input.idempotencyKey}`).slice(0, 32);
   let suspended = 0;
   await db.runTransaction(async tx => {
-    const [fresh, audit, link] = await Promise.all([
+    const [fresh, audit, link, openAssignments, pendingRequests, pendingInvites] = await Promise.all([
       tx.get(client.ref),
       tx.get(auditRef(actor.organizationId, eventId)),
-      client.authUid ? tx.get(db.doc(`accountClientLinks/${client.authUid}`)) : Promise.resolve(null)
+      client.authUid ? tx.get(db.doc(`accountClientLinks/${client.authUid}`)) : Promise.resolve(null),
+      tx.get(client.ref.collection('assignments').where('status', 'in', ['active', 'scheduled'])),
+      tx.get(client.ref.parent.parent.collection('clientLinkRequests').where('clientId', '==', client.id)),
+      tx.get(client.ref.parent.parent.collection('invitations').where('clientId', '==', client.id))
     ]);
     if (audit.exists) return;
+    // Tutte le letture prima delle scritture (Sessione 1)
+    suspended = openAssignments.size;
     if (link?.exists && link.data()?.status === 'active') {
       tx.update(link.ref, { status: 'revoked', updatedAt: FieldValue.serverTimestamp() });
     }
     tx.update(client.ref, { status: 'unlinked', authUid: null, updatedAt: FieldValue.serverTimestamp(), updatedBy: uid });
-    suspended = await suspendClientAssignmentsTx(tx, client.ref, uid, input.reason);
+    openAssignments.docs.forEach(doc => {
+      tx.update(doc.ref, {
+        status: 'suspended', statusReason: input.reason,
+        updatedAt: FieldValue.serverTimestamp(), updatedBy: uid
+      });
+    });
+    tx.delete(client.ref.collection('state').doc('activeAssignment'));
+    tx.update(client.ref, { activeAssignment: null, updatedAt: FieldValue.serverTimestamp(), updatedBy: uid });
     // Singolo filtro (ADR 0003): lo stato si seleziona in codice.
-    const pendingRequests = await tx.get(client.ref.parent.parent.collection('clientLinkRequests').where('clientId', '==', client.id));
     pendingRequests.docs.filter(doc => doc.data()?.status === 'pending').forEach(doc => tx.update(doc.ref, { status: 'revoked', decidedAt: FieldValue.serverTimestamp(), decidedBy: uid, updatedAt: FieldValue.serverTimestamp() }));
-    const pendingInvites = await tx.get(client.ref.parent.parent.collection('invitations').where('clientId', '==', client.id));
     pendingInvites.docs.filter(doc => doc.data()?.status === 'pending').forEach(doc => tx.update(doc.ref, { status: 'revoked', decidedAt: FieldValue.serverTimestamp(), decidedBy: uid, updatedAt: FieldValue.serverTimestamp() }));
     tx.create(auditRef(actor.organizationId, eventId), auditEvent({ orgId: actor.organizationId, eventId, type: 'client.link-removed', actor, subject: { type: 'client', id: client.id }, idempotencyKey: input.idempotencyKey, metadata: { reason: input.reason, suspendedAssignments: suspended } }));
   });

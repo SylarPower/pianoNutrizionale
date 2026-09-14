@@ -2803,15 +2803,13 @@ const PROTEIN_CATEGORY_LABELS = {
   }
 
   // Titolo del cliente: mai UID o ID tecnici. Ordine di fallback:
-  // «Nome Cognome» → displayName → email mascherata → displayCode.
+  // «Nome Cognome» → email mascherata → displayCode.
   // Lo username legacy resta solo un'informazione secondaria in scheda.
   function clientDisplayTitle(client) {
     const first = String(client?.firstName || '').trim();
     const last = String(client?.lastName || '').trim();
     const full = `${first} ${last}`.trim();
     if (full) return full;
-    const display = String(client?.displayName || '').trim();
-    if (display) return display;
     const email = String(client?.email || client?.emailNormalized || '').trim();
     if (email) return maskEmailClient(email);
     return String(client?.displayCode || 'Cliente');

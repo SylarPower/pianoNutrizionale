@@ -27,7 +27,7 @@ nessun'altra cosa. Nessuna migrazione automatica, nessuna cancellazione.
 | Accettazione invito | il cliente apre `index.html#/invite/<64hex>`; il token viene messo in `sessionStorage` (`pn_pending_invite_token`); la registrazione crea l'account con l'email tecnica, crea la voce `usernames/{username}` e chiama `acceptOrganizationInvite`, che risolve l'invito con `collectionGroup('invitations')` su `tokenHash` + confronto `targetUsername`. | `js/app.js` → `setupInviteForm`, `functions/src/index.js` → `acceptOrganizationInvite` |
 | Login cliente | username + password → email tecnica; nessuna verifica email, nessun recupero password. | `js/firebase.js` → `signInWithUsername`, `signUpWithUsername` |
 | Consulenza/associazione | se l'account esiste già ma non è associato viene creata una richiesta (`clientLinkRequests`) che il cliente Accetta/Rifiuta in Impostazioni; "Scollegati" invia una richiesta di revoca. | `respondClientLink`, `listMyClientLinkRequests`, `requestClientUnlink`, `js/app.js` → `renderClientLinkSection` |
-| Profilo cliente | il cliente modifica solo `displayName` via callable; anagrafica e associazione sono in mano al nutrizionista. | `updateMyClientProfile` |
+| Profilo cliente | anagrafica e associazione sono in mano al nutrizionista; il `displayName` cliente è stato rimosso (Sessione 1). | `updateClientProfileByStaff` |
 | Console | stati `invited` / `already-invited` / `already-member`; il link mostrato è `index.html#/invite/<token>`. | `js/admin.js` → `submitClientInvite`, `inviteLinkForToken` |
 | Account tecnici | utenti `admin-demo`, `nutri-demo`, `cliente-a`, `cliente-b` con password `Demo-sicura-2026` e email `@utenti.pianonutrizionale.app`; usati da seed e test. | `functions/scripts/seed-emulator.js`, test in `test/` e `functions/test/` |
 
@@ -103,7 +103,7 @@ Punti rilevanti trovati prima di modificare:
   (`respondMyEmailChange`); solo la conferma aggiorna l'email in Firebase Auth
   (con nuova verifica). Vecchio indirizzo valido fino alla conferma: nessun
   takeover.
-- **Cosa può modificare il cliente**: solo il nome mostrato (`displayName`).
+- **Cosa può modificare il cliente**: anagrafica e unlink sono gestiti dal nutrizionista/creatore; il `displayName` cliente non esiste più (Sessione 1).
   Email, nome e cognome li corregge il nutrizionista.
 
 ### 3.4 Recupero password e verifica email
@@ -128,7 +128,7 @@ Punti rilevanti trovati prima di modificare:
 ## 4. Decisioni
 
 1. **L'email reale è la credenziale**; nome e cognome sono dati di profilo;
-   `displayName` è il nome mostrato. Nessun nuovo username e nessuna nuova
+   Il `displayName` cliente è stato rimosso; resta solo per i professionisti come fallback. Nessun nuovo username e nessuna nuova
    email tecnica per i clienti reali.
 2. **Il collegamento si attiva dopo la verifica email** e non prima; per gli
    account tecnici legacy resta l'attivazione al riscatto (comportamento di
@@ -173,7 +173,7 @@ Punti rilevanti trovati prima di modificare:
 - Nuovo percorso di invito `#/invito/<token>`; il legacy `#/invite/<64hex>`
   resta attivo per gli account tecnici.
 - Nuovi campi profilo cliente: `email`, `emailNormalized`, `emailVerified`,
-  `firstName`, `lastName` (oltre a `displayName`, `authUid`, `status`).
+  `firstName`, `lastName` (oltre a `authUid`, `status`; `displayName` rimosso per i clienti, resta solo per i membri come fallback).
 - L'invito dei **professionisti** resta sul flusso attuale (username +
   `inviteOrganizationUser`): è un debito tecnico documentato, non oggetto di
   questa modifica.

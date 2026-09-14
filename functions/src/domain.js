@@ -1014,15 +1014,27 @@ function validateCancelClientInvite(input) {
 }
 
 // Anagrafica del cliente aggiornata dal nutrizionista (nome e cognome).
-// Il nome visualizzato resta facoltativo; l'email NON si tocca qui.
+// Il displayName è stato rimosso: resta solo firstName/lastName (Sessione 1).
 function validateUpdateClientProfileByStaff(input) {
-  exactObject(input, ['organizationId', 'clientId', 'firstName', 'lastName', 'displayName', 'idempotencyKey']);
+  exactObject(input, ['organizationId', 'clientId', 'firstName', 'lastName', 'idempotencyKey']);
   return {
     organizationId: id(input.organizationId, 'organizationId'),
     clientId: id(input.clientId, 'clientId'),
     firstName: text(input.firstName, 'firstName', { min: 1, max: 80, pattern: PERSON_NAME_PATTERN }),
     lastName: text(input.lastName, 'lastName', { min: 1, max: 80, pattern: PERSON_NAME_PATTERN }),
-    displayName: optionalText(input.displayName, 'displayName', 120),
+    idempotencyKey: id(input.idempotencyKey, 'idempotencyKey')
+  };
+}
+
+// Anagrafica del professionista (firstName/lastName) gestita solo da admin
+// via updateMemberProfileByStaff (Sessione 1).
+function validateUpdateMemberProfileByStaff(input) {
+  exactObject(input, ['organizationId', 'userId', 'firstName', 'lastName', 'idempotencyKey']);
+  return {
+    organizationId: id(input.organizationId, 'organizationId'),
+    userId: text(input.userId, 'userId', { max: 128 }),
+    firstName: text(input.firstName, 'firstName', { min: 1, max: 80, pattern: PERSON_NAME_PATTERN }),
+    lastName: text(input.lastName, 'lastName', { min: 1, max: 80, pattern: PERSON_NAME_PATTERN }),
     idempotencyKey: id(input.idempotencyKey, 'idempotencyKey')
   };
 }
@@ -1254,7 +1266,7 @@ module.exports = {
   INVITE_DELIVERY_CHANNEL, EMAIL_CHANGE_STATUSES, CLIENT_EMAIL_INVITE_STATUSES,
   normalizeEmail, emailDomainOf, isLegacyTestEmail, emailFingerprint, maskEmail,
   validateInviteClientEmail, validateCorrectClientInvite, validateResendClientInvite,
-  validateCancelClientInvite, validateUpdateClientProfileByStaff,
+  validateCancelClientInvite, validateUpdateClientProfileByStaff, validateUpdateMemberProfileByStaff,
   validateProposeClientEmailChange, validateRespondClientEmailChange, validateRedeemClientInvite,
   CLIENT_FREQUENCY_KEYS, CLIENT_FREQUENCY_LABELS, CLIENT_FREQUENCY_DEFAULTS,
   CLIENT_FREQUENCY_MAX, DOSE_EDITABLE_ASSIGNMENT_STATUSES,
