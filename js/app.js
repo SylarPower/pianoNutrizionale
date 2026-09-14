@@ -2178,7 +2178,7 @@ function recipeSectionHtml(title, recipes, slot) {
             const mellerFlag = mellerCheck && mellerCheck.status !== "not-applicable" && !mellerCheck.aligned
               ? `<span class="meller-card-flag" title="${mellerCheck.status === "blocked" ? "Mapping delle linee guida incompleto" : "Dosi fuori dalle linee guida"}">⚠</span>`
               : "";
-            return `<button class="recipe-library-card" data-search="${escapeAttr(`${recipe.id} ${recipe.name} ${recipe.namesByDayType?.training || ""} ${recipe.namesByDayType?.rest || ""} ${recipeProteinLabel(recipe)} ${(recipe.ingredients || []).map(i => i.name).join(" ")}`.toLowerCase())}" onclick="openRecipeModal('${escapeAttr(recipe.id)}')"><span class="recipe-code">${escapeHtml(recipe.id)}</span>${mellerFlag}<span class="recipe-card-emoji">${escapeHtml(recipe.emoji || "🍲")}</span><strong>${escapeHtml(recipe.name)}</strong><small>${escapeHtml(recipeProteinLabel(recipe))}</small></button>`;
+            return `<button class="recipe-library-card" data-search="${escapeAttr(`${recipe.id} ${recipe.name} ${recipe.namesByDayType?.training || ""} ${recipe.namesByDayType?.rest || ""} ${recipeProteinLabel(recipe)} ${(recipe.ingredients || []).map(i => i.name).join(" ")}`.toLowerCase())}" onclick="openRecipeModal('${escapeAttr(recipe.id)}')"><span class="recipe-code">${escapeHtml(recipe.id)}</span>${recipe.fromProfessional ? '<span class="pro-badge">🩺 Professionista</span>' : ''}${mellerFlag}<span class="recipe-card-emoji">${escapeHtml(recipe.emoji || "🍲")}</span><strong>${escapeHtml(recipe.name)}</strong><small>${escapeHtml(recipeProteinLabel(recipe))}</small></button>`;
           }).join("")}
         </div>
       </div>
@@ -3832,7 +3832,7 @@ function renderIncomingShares() {
          <button class="btn btn-danger" onclick="acceptSharedRecipes('${share.id}', 'replace')">Sostituisci tutte</button>`;
     return `
     <article class="incoming-share-card">
-      <div><span class="account-avatar small">${escapeHtml((share.senderUsername || "?").slice(0, 1).toUpperCase())}</span><div><strong>${escapeHtml(share.senderUsername || "Utente")}</strong><small>${count} ricett${count === 1 ? "a" : "e"}${hasPlan ? " · 📅 include settimana" : ""}</small></div></div>
+      <div><span class="account-avatar small">${escapeHtml((share.senderUsername || "?").slice(0, 1).toUpperCase())}</span><div><strong>${escapeHtml(share.senderUsername || "Utente")}</strong><small>${count} ricett${count === 1 ? "a" : "e"}${hasPlan ? " · 📅 include settimana" : ""}${share.senderRole === 'professional' ? " · 🩺 Dal tuo professionista" : ""}</small></div></div>
       <p>${escapeHtml((share.recipes || []).slice(0, 4).map(recipe => recipe.name).join(" · "))}${(share.recipes || []).length > 4 ? "…" : ""}</p>
       <div class="incoming-share-actions">${actions}<button class="btn btn-outline" onclick="rejectSharedRecipes('${share.id}')">Rifiuta</button></div>
     </article>`;
@@ -3906,6 +3906,8 @@ function openShareConflictPreview(share, mode) {
   const incoming = (share.recipes || []).map(cleanRecipeForTransfer);
   const analysis = window.PianoDomain ? PianoDomain.analyzeShare(appState.recipes, incoming) : { newRecipes: incoming, identical: [], conflicts: [], invalid: [], migratedIngredients: 0, missingIngredientIds: [], incoming };
   pendingShareAccept = { shareId: share.id, mode, resolution: {}, analysis };
+  const isProfessionalShare = share.senderRole === 'professional';
+  if (isProfessionalShare) analysis.conflicts.forEach(conflict => { pendingShareAccept.resolution[conflict.incoming.id] = 'theirs'; });
   const body = document.getElementById("share-conflict-body");
   const hasPlan = Boolean(share.includesPlan && share.plan?.days);
   let html = `
@@ -3925,6 +3927,9 @@ function openShareConflictPreview(share, mode) {
     html += `<h3 class="share-preview-heading">Identiche alle tue (${analysis.identical.length})</h3><p class="share-preview-names">${escapeHtml(analysis.identical.map(shareRecipeName).join(" · "))}</p>`;
   }
   if (analysis.conflicts.length) {
+    if (isProfessionalShare) {
+      html += `<h3 class="share-preview-heading">Aggiornamenti dal professionista (${analysis.conflicts.length})</h3><p class="share-preview-names">${escapeHtml(analysis.conflicts.map(conflict => conflict.incoming.name).join(" · "))}</p><div class="share-replace-note">🩺 Le ricette del professionista sostituiscono quelle con lo stesso codice e restano in sola lettura.</div>`;
+    } else {
     html += `<h3 class="share-preview-heading">Conflitti: scegli per ogni ricetta</h3>`;
     html += analysis.conflicts.map((conflict, index) => `
       <div class="share-conflict-row">
@@ -3935,6 +3940,7 @@ function openShareConflictPreview(share, mode) {
           <option value="both">Salva entrambe con nuovo ID</option>
         </select>
       </div>`).join("");
+    }
   }
   if (analysis.invalid.length) {
     html += `<h3 class="share-preview-heading">Non valide (${analysis.invalid.length})</h3><p class="share-preview-warning">Verranno ignorate: ${escapeHtml(analysis.invalid.map(item => item?.id || "?").join(", "))}</p>`;
@@ -4002,6 +4008,17 @@ window.applyShareAccept = async function() {
       nextPlan = window.PianoDomain
         ? PianoDomain.sanitizePlanForCatalog(PianoDomain.migratePlan(share.plan), nextRecipes)
         : sanitizePlanForCatalog(appState.plan, nextRecipes);
+    } else if (share.senderRole === 'professional' && window.PianoDomain) {
+      const provenance = {
+        senderUid: share.senderUid || null,
+        senderUsername: share.senderUsername || null,
+        organizationId: share.organizationId || null,
+        receivedAt: new Date().toISOString()
+      };
+      // Sostituzione mirata per stesso id (catalogo intero solo con 'replace').
+      nextRecipes = mode === 'replace'
+        ? PianoDomain.applyProfessionalRecipes([], incoming, provenance)
+        : PianoDomain.applyProfessionalRecipes(appState.recipes, incoming, provenance);
     } else {
       nextRecipes = window.PianoDomain
         ? PianoDomain.resolveRecipeConflicts(appState.recipes, incoming, resolution)
@@ -4499,6 +4516,7 @@ function setupModal() {
     });
   });
   document.getElementById("modal-edit-btn").addEventListener("click", () => {
+    if (currentModal?.recipe?.fromProfessional) { showToast("Ricetta del professionista: sola lettura", true); return; }
     editMode = true;
     currentModal.recipe = clone(currentModal.recipe);
     // Primo render della modifica: gli ingredienti sono la tab di partenza
@@ -4687,12 +4705,15 @@ function renderModalContent() {
   const mellerPlanControl = (!editMode && currentModal.dayKey && currentModal.planSlot && window.PianoDomain?.MELLER_MAIN_SLOTS?.includes(currentModal.planSlot))
     ? `<span class="meller-plan-control"><button type="button" class="meller-mode-toggle ${planMode === "meller" ? "active" : "original"}" onclick="toggleCurrentPlanMellerMode()">${planMode === "meller" ? "✓ Dosi linee guida" : "↺ Quantità originali"}</button></span>`
     : "";
+  const professionalBadge = recipe.fromProfessional
+    ? `<span class="pro-badge" title="Inviata da ${escapeAttr(recipe.fromProfessional.senderUsername || "professionista")}">🩺 Dal tuo professionista · sola lettura</span>`
+    : "";
   document.getElementById("modal-time").innerHTML = editMode
     // Il campo "Categoria proteica" non è più mostrato né modificabile:
     // la categoria deriva automaticamente dagli ingredienti tramite
     // PianoDomain.classifyProtein, con il valore salvato come fallback.
     ? `<div class="edit-meta-grid"><label>Emoji<input id="edit-recipe-emoji" value="${escapeAttr(recipe.emoji || "🍲")}" oninput="updateMellerEditorNotice()"></label><label>Pasto<select id="edit-recipe-slot" onchange="updateMellerEditorNotice()">${MEAL_SLOTS.map(slot => `<option value="${slot.id}" ${recipe.slot === slot.id ? "selected" : ""}>${escapeHtml(slot.label)}</option>`).join("")}</select></label></div>`
-    : `<div class="modal-context-row"><span>${escapeHtml(getSlotMeta(currentModal.slot || recipe.slot).label)} · ${escapeHtml(dayTypeLabel)} · ${escapeHtml(getProfileLabel())}</span>${toggleHtml}${mellerPlanControl}</div>${plannedResolution?.applied ? `<div class="modal-adapted-note">↻ Dosi delle linee guida applicate a tutti gli ingredienti regolati per ${escapeHtml(getSlotMeta(currentModal.slot || recipe.slot).label.toLowerCase())}</div>` : plannedResolution?.blocked ? `<div class="modal-adapted-note warning">⚠ Adattamento alle linee guida non applicabile: uno o più ingredienti non hanno un mapping nel catalogo attuale. Vengono usate le quantità originali.</div>` : planMode === "original" && currentModal.dayKey && currentModal.planSlot && window.PianoDomain?.MELLER_MAIN_SLOTS?.includes(currentModal.planSlot) ? `<div class="modal-adapted-note warning">↺ Quantità originali: le dosi delle linee guida non sono applicate a questo pasto.</div>` : ""}`;
+    : `<div class="modal-context-row">${professionalBadge}<span>${escapeHtml(getSlotMeta(currentModal.slot || recipe.slot).label)} · ${escapeHtml(dayTypeLabel)} · ${escapeHtml(getProfileLabel())}</span>${toggleHtml}${mellerPlanControl}</div>${plannedResolution?.applied ? `<div class="modal-adapted-note">↻ Dosi delle linee guida applicate a tutti gli ingredienti regolati per ${escapeHtml(getSlotMeta(currentModal.slot || recipe.slot).label.toLowerCase())}</div>` : plannedResolution?.blocked ? `<div class="modal-adapted-note warning">⚠ Adattamento alle linee guida non applicabile: uno o più ingredienti non hanno un mapping nel catalogo attuale. Vengono usate le quantità originali.</div>` : planMode === "original" && currentModal.dayKey && currentModal.planSlot && window.PianoDomain?.MELLER_MAIN_SLOTS?.includes(currentModal.planSlot) ? `<div class="modal-adapted-note warning">↺ Quantità originali: le dosi delle linee guida non sono applicate a questo pasto.</div>` : ""}`;
 
   const ingredientList = document.getElementById("modal-ingredients-list");
   if (editMode) {
@@ -4754,6 +4775,9 @@ function renderModalContent() {
   }
 
   document.getElementById("modal-edit-btn").classList.toggle("hidden", editMode);
+  const recipeReadOnly = Boolean(recipe.fromProfessional);
+  document.getElementById("modal-edit-btn").disabled = recipeReadOnly;
+  document.getElementById("modal-edit-btn").title = recipeReadOnly ? "Ricetta del professionista: sola lettura" : "";
   document.getElementById("modal-duplicate-btn").classList.toggle("hidden", editMode || currentModal.isNew);
   document.getElementById("modal-save-btn").classList.toggle("hidden", !editMode);
   document.getElementById("modal-export-btn").classList.toggle("hidden", editMode || currentModal.isNew);

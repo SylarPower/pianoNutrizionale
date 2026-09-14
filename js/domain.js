@@ -1440,6 +1440,31 @@ function portionFor(ingredient, profile, dayType, slot, recipeSlot) {
     return out.sort((a, b) => String(a.id).localeCompare(String(b.id), 'it', { numeric: true }));
   }
 
+  // Accettazione di una condivisione professionale (ADR 0006): il catalogo
+  // corrente è PRESERVATO e ogni ricetta ricevuta sostituisce quella con lo
+  // STESSO id, marcata con fromProfessional (provenienza + sola lettura).
+  // Pura e deterministica: receivedAt arriva dal chiamante.
+  function applyProfessionalRecipes(currentRecipes, incomingRecipes, provenance = {}) {
+    const result = deepClone(currentRecipes || []);
+    const indexById = new Map(result.map((recipe, index) => [recipe.id, index]));
+    const { senderUid = null, senderUsername = null, organizationId = null, receivedAt = null } = provenance || {};
+    (incomingRecipes || []).forEach(source => {
+      const recipe = migrateRecipe(source);
+      if (!recipe || !recipe.id) return;
+      const flagged = {
+        ...recipe,
+        fromProfessional: { senderUid, senderUsername, organizationId, receivedAt }
+      };
+      if (indexById.has(recipe.id)) result[indexById.get(recipe.id)] = flagged;
+      else { indexById.set(recipe.id, result.length); result.push(flagged); }
+    });
+    return result.sort((a, b) => String(a.id).localeCompare(String(b.id), 'it', { numeric: true }));
+  }
+
+  function isProfessionalRecipe(recipe) {
+    return Boolean(recipe && recipe.fromProfessional);
+  }
+
   // Slot del piano che diventerebbero vuoti rimuovendo le ricette indicate.
   function planSlotsForRecipeRemoval(plan, recipeIds) {
     const ids = new Set(recipeIds);
@@ -3144,6 +3169,8 @@ const PROTEIN_CATEGORY_LABELS = {
     recipeEquals,
     analyzeShare,
     resolveRecipeConflicts,
+    applyProfessionalRecipes,
+    isProfessionalRecipe,
     planSlotsForRecipeRemoval,
     diffPlans,
     buildBackup,

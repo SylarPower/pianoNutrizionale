@@ -528,6 +528,7 @@ body.dark-mode .notification-badge { border-color: #000; }
 .section-title > span { display: grid; place-items: center; width: 41px; height: 41px; border-radius: 13px; background: var(--primary-soft); font-size: var(--fs-h3); }
 .section-title small { color: var(--text-muted); font-size: var(--fs-label); font-weight: 750; letter-spacing: .08em; text-transform: uppercase; }
 .section-title h2 { margin-top: 0px; }
+.pro-badge { display: inline-flex; align-items: center; gap: 4px; padding: 4px 8px; border-radius: 999px; background: var(--primary-soft); color: var(--primary); font-size: var(--fs-badge); font-weight: 750; white-space: nowrap; }
 .recipe-code { color: var(--primary); font-size: var(--fs-label); font-weight: 850; letter-spacing: .11em; }
 .frequency-chip, .profile-chip, .batch-active-chip {
   display: inline-flex;
