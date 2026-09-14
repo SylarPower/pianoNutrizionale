@@ -11,15 +11,20 @@
     {
       "ingredientId": "sorgo",
       "displayName": "Sorgo",
-      "aliases": ["sorgo bianco", "sorgo decorticato"],
+      "aliases": [
+        "sorgo bianco",
+        "sorgo decorticato"
+      ],
       "categoryId": "cereali-minori",
       "mappingKind": "guided",
-      "mellerFamilyId": "pseudo"
+      "mellerFamilyId": "cereali"
     },
     {
       "ingredientId": "free-finocchio-selvatico",
       "displayName": "Finocchio selvatico",
-      "aliases": ["finocchio selvatico"],
+      "aliases": [
+        "finocchio selvatico"
+      ],
       "categoryId": "free",
       "mappingKind": "free",
       "mellerFamilyId": null

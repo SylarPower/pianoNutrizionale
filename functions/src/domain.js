@@ -8,19 +8,20 @@ const REPORT_STATUSES = new Set(['open', 'triaged', 'needs-review', 'resolved', 
 const ASSIGNMENT_STATUSES = new Set(['scheduled', 'active', 'suspended', 'revoked', 'expired']);
 const ASSIGNMENT_STRATEGIES = new Set(['freeze', 'migrate-on-confirmation', 'original-only']);
 const MAPPING_KINDS = new Set(['guided', 'free']);
-const GROUPS = new Set(['carb', 'protein', 'dairy', 'fat', 'sweet', 'fruit', 'free']);
+const GROUPS = new Set(['carb', 'protein', 'vegetable', 'dairy', 'fat', 'sweet', 'fruit', 'free']);
 
-// ID delle 25 famiglie del motore Meller (js/domain.js → MELLER_GRAMMATURE).
+// ID delle 39 famiglie del motore Meller (js/domain.js → MELLER_GRAMMATURE).
 // SOLO identificativi: nessuna quantità, nessuna dose, nessuna regola di
 // riconoscimento. Il server li usa per rifiutare strutture/catalogo che
 // puntano a famiglie inesistenti nel motore; la parità con il client è
 // verificata dai test (functions/test/domain.test.js). Se il manuale aggiunge
 // una famiglia, aggiornare qui + engine + catalogo nello stesso deploy.
+// Generato da docs/meller-source-v3.json — ordine priorità motore.
 const MELLER_FAMILY_IDS = new Set([
-  'gnocchi', 'polenta', 'piadina', 'pseudo', 'couscous', 'farroorzo', 'pasta',
-  'riso', 'crackers', 'patate', 'pane', 'pollame', 'manzo', 'maiale', 'salumi',
-  'pesceOmega', 'molluschi', 'tonno', 'pesceBianco', 'legumotti', 'legumi',
-  'uova', 'fiocchiLatte', 'formaggi', 'olio'
+  'patateDolci', 'patate', 'gnocchi', 'polenta', 'mais', 'fiocchiAvena', 'gallette', 'crackers', 'piadina', 'cerealiColazione', 'cereali', 'pane',
+  'salmoneAffumicato', 'pesceScatolaNaturale', 'pesceSottOlio', 'pesceAzzurro', 'pesceBiancoMagro', 'crostaceiMolluschi', 'maiale', 'polloTacchino', 'manzo',
+  'affettatiMagri', 'mozzarellaLight', 'formaggiFreschiMolli', 'yogurtGreco', 'fiocchiLatte', 'montasio', 'grana', 'formaggiStagionati', 'feta', 'ricotta',
+  'uova', 'legumotti', 'legumiScatola', 'lupini', 'seitan', 'burgerVegetali', 'olio', 'verdura'
 ]);
 
 const MEMBER_STATUSES = new Set(['active', 'suspended', 'removed']);

@@ -32,9 +32,11 @@ test('il catalogo di import passa la validazione server senza errori', () => {
   assert.deepEqual(report.errors, [], `errori di validazione: ${report.errors.join(' | ')}`);
   assert.equal(report.counts.conflicts, 0, 'nessuna collisione di alias');
   assert.equal(report.counts.create, report.normalized.ingredients.length + report.normalized.categories.length);
-  // 25 famiglie guidate del motore + ingredienti liberi, mai quantità.
+  // 39 famiglie guidate del motore (v3) con 154 ingredienti guidati + liberi, mai quantità.
   const guided = report.normalized.ingredients.filter(item => item.mappingKind === 'guided');
-  assert.equal(guided.length, 25, 'tutte le famiglie guidate del motore');
+  const uniqueFamilies = [...new Set(guided.map(item => item.mellerFamilyId))];
+  assert.equal(uniqueFamilies.length, 39, 'tutte le famiglie guidate del motore v3');
+  assert.ok(guided.length >= 39, 'almeno una per famiglia');
   guided.forEach(item => assert.ok(domain.MELLER_FAMILY_IDS.has(item.mellerFamilyId), `${item.ingredientId} → famiglia del motore`));
   const serialized = JSON.stringify(report.normalized);
   assert.doesNotMatch(serialized, /quantity|quantit|dose|grams|slots/i, 'nessuna quantità nel catalogo');

@@ -101,14 +101,14 @@ test('revisioni: schema 3 con piano, 1/2 invariati, checksum dedicato', () => {
   const other = validateDietPlan({ ...validPlan(), generalNotes: 'Altro' });
   assert.notEqual(v3a, structureRevisionChecksum({ schemaVersion: 3, rules: [], alternativeGroups: [], dietPlan: other }));
   // Schema 2 invariato: stesso input, stesso checksum di prima.
-  const rules = [{ mellerFamilyId: 'riso', ingredientIds: [], quantityGrams: { lunch: { training: 80, rest: 60 }, dinner: null }, enabled: true, categoryId: null }];
+  const rules = [{ mellerFamilyId: 'cereali', ingredientIds: [], quantityGrams: { lunch: { training: 80, rest: 60 }, dinner: null }, enabled: true, categoryId: null }];
   const v2 = structureRevisionChecksum({ schemaVersion: 2, rules, alternativeGroups: [] });
   assert.equal(v2, structureRevisionChecksum({ schemaVersion: 2, rules, alternativeGroups: [] }));
   assert.notEqual(v2, structureRevisionChecksum({ schemaVersion: 3, rules, alternativeGroups: [], dietPlan: plan }));
 });
 
 test('verifyStructureRevision: v1/v2 come prima, v3 con regole vuote solo se c’è il piano', () => {
-  const rules = [{ mellerFamilyId: 'riso', ingredientIds: [], quantityGrams: { lunch: { training: 80, rest: 60 }, dinner: null }, enabled: true, categoryId: null }];
+  const rules = [{ mellerFamilyId: 'cereali', ingredientIds: [], quantityGrams: { lunch: { training: 80, rest: 60 }, dinner: null }, enabled: true, categoryId: null }];
   const v2sum = structureRevisionChecksum({ schemaVersion: 2, rules, alternativeGroups: [] });
   assert.equal(verifyStructureRevision({ status: 'published', schemaVersion: 2, rules, alternativeGroups: [], checksum: v2sum }), true);
   assert.equal(verifyStructureRevision({ status: 'published', schemaVersion: 2, rules, alternativeGroups: [], checksum: 'x'.repeat(64) }), false);
@@ -123,7 +123,7 @@ test('regole vuote ammesse solo con piano guidato (strutture descrittive)', () =
   assert.deepEqual(validateDietStructureRules([], { allowEmpty: true }), []);
   assert.throws(() => validateDietStructureRules([]), /tra 1 e 40/);
   assert.throws(() => validateDietStructureRules([], {}), /tra 1 e 40/);
-  const rule = { mellerFamilyId: 'riso', ingredientIds: [], quantityGrams: { lunch: { training: 80, rest: 60 }, dinner: null }, enabled: true, categoryId: null };
+  const rule = { mellerFamilyId: 'cereali', ingredientIds: [], quantityGrams: { lunch: { training: 80, rest: 60 }, dinner: null }, enabled: true, categoryId: null };
   assert.equal(validateDietStructureRules([rule]).length, 1);
   assert.equal(validateDietStructureRules([rule], { allowEmpty: true }).length, 1);
 });

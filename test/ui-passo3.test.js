@@ -137,7 +137,7 @@ const ASSIGNED = {
 };
 const alignedRecipe = () => ({
   id: 'L1', slot: 'lunch', name: 'Pasta', emoji: '🍝',
-  ingredients: [{ name: 'Pasta di semola', portions: { man: '90 g', ipo: '90 g' } }],
+  ingredients: [{ name: 'Pasta di semola', portions: { man: '70 g', ipo: '70 g' } }],
   steps: [], notes: []
 });
 const unknownRecipe = (name = 'Proteina misteriosa') => ({

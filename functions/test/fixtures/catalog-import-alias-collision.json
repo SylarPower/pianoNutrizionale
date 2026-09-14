@@ -3,10 +3,12 @@
     {
       "ingredientId": "riso-rosso",
       "displayName": "Riso rosso",
-      "aliases": ["riso"],
+      "aliases": [
+        "riso"
+      ],
       "categoryId": "carb",
       "mappingKind": "guided",
-      "mellerFamilyId": "riso"
+      "mellerFamilyId": "cereali"
     }
   ]
 }
