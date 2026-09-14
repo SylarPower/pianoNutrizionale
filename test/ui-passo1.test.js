@@ -192,12 +192,12 @@ test('header senza nome utente: resta la sola icona con nome accessibile', () =>
 test('icone impostazioni e campanella: stessa dimensione desktop e mobile', () => {
   const bellBlock = css.match(/\.notification-bell \{[^}]*\}/)[0];
   const gearBlock = css.match(/\.header-account \{[^}]*\}/)[0];
-  assert.match(bellBlock, /font-size: 1\.15rem;/);
-  assert.match(gearBlock, /font-size: 1\.15rem;/);
+  assert.match(bellBlock, /font-size: var\(--fs-subtitle\);/);
+  assert.match(gearBlock, /font-size: var\(--fs-subtitle\);/);
   assert.match(gearBlock, /line-height: 1;/);
   assert.match(gearBlock, /align-items: center;/, 'allineamento coerente col select profilo');
-  assert.match(css, /\.header-account \{ font-size: 1\.05rem;/, 'mobile: ingranaggio leggibile');
-  assert.match(css, /\.notification-bell \{ width: 40px; height: 40px; font-size: 1\.05rem; \}/, 'mobile: campanella stessa misura');
+  assert.match(css, /\.header-account \{ font-size: var\(--fs-nav\);/, 'mobile: ingranaggio leggibile');
+  assert.match(css, /\.notification-bell \{ width: 40px; height: 40px; font-size: var\(--fs-nav\); \}/, 'mobile: campanella stessa misura');
 });
 
 // ---- Switch quantità adattate ----

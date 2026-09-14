@@ -1932,7 +1932,7 @@ test('CSS smartphone: titoli ricettario, profilo e tipo giornata non collassano'
   assert.match(mobile, /\.profile-chip \{ margin-left: 0; \}/, 'profilo senza offset fragile');
   assert.match(mobile, /\.recipe-count-full \{ display: none; \}/, 'conteggio esteso nascosto su smartphone');
   assert.match(mobile, /\.recipe-count-compact \{ display: inline; \}/, 'conteggio compatto visibile su smartphone');
-  assert.match(css, /\.recipe-library-section \{ margin: 8px 0 22px; \}/, 'categorie più compatte nel ricettario');
+  assert.match(css, /\.recipe-library-section \{ margin: 8px 0 24px; \}/, 'categorie più compatte nel ricettario');
   assert.match(css, /@media \(max-width: 980px\) \{[\s\S]*?\.recipes-heading \{ align-items: stretch; flex-direction: column; \}/, 'toolbar a capo prima che possa sovrapporsi');
   assert.match(css, /\.recipe-library-card strong \{[\s\S]*?overflow-wrap: anywhere;/, 'titoli lunghi non rompono le card');
   assert.match(mobile, /\.meller-notice-list li \{ align-items: flex-start; flex-direction: column;/, 'avvisi Meller senza sovrapposizioni su mobile');
