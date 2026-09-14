@@ -1244,6 +1244,62 @@ function validateCopyClientDoses(input) {
   };
 }
 
+
+// ---- Ricettario professionisti (ADR 0006) ----
+// Slot pasti: stessi ID del client (js/domain.js SLOTS e MEAL_SLOTS in
+// js/app.js). La parità esatta è verificata dai test
+// (functions/test/domain.test.js). Le ricette restano server-only: nessun
+// accesso diretto da rules (catch-all organizations), solo callable.
+const RECIPE_SLOTS = new Set(['breakfast', 'snack1', 'lunch', 'snack2', 'dinner']);
+const PROFESSIONAL_RECIPE_VISIBILITY = new Set(['private', 'studio']);
+const PROFESSIONAL_RECIPE_LIMITS = {
+  name: 120, emoji: 12, proteinCategory: 40,
+  ingredients: 100, ingredientName: 120, portion: 40,
+  steps: 50, step: 500, notes: 20, note: 500
+};
+
+function validateProfessionalRecipePortions(portions) {
+  if (portions == null) return { man: null, ipo: null };
+  exactObject(portions, ['man', 'ipo'], 'portions');
+  return {
+    man: optionalText(portions.man, 'portions.man', PROFESSIONAL_RECIPE_LIMITS.portion),
+    ipo: optionalText(portions.ipo, 'portions.ipo', PROFESSIONAL_RECIPE_LIMITS.portion)
+  };
+}
+
+function validateProfessionalRecipeIngredient(ingredient, index) {
+  const where = `ingredients[${index}]`;
+  exactObject(ingredient, ['name', 'ingredientId', 'portions'], where);
+  return {
+    name: text(ingredient.name, `${where}.name`, { max: PROFESSIONAL_RECIPE_LIMITS.ingredientName }),
+    ingredientId: ingredient.ingredientId == null || ingredient.ingredientId === ''
+      ? null
+      : id(ingredient.ingredientId, `${where}.ingredientId`),
+    portions: validateProfessionalRecipePortions(ingredient.portions)
+  };
+}
+
+function validateProfessionalRecipe(recipe) {
+  exactObject(recipe, ['name', 'emoji', 'slot', 'proteinCategory', 'ingredients', 'steps', 'notes'], 'recipe');
+  if (!RECIPE_SLOTS.has(recipe.slot)) fail('invalid-argument', 'recipe.slot non valido');
+  if (!Array.isArray(recipe.ingredients) || !recipe.ingredients.length || recipe.ingredients.length > PROFESSIONAL_RECIPE_LIMITS.ingredients) {
+    fail('invalid-argument', 'recipe.ingredients non validi');
+  }
+  const steps = recipe.steps == null ? [] : recipe.steps;
+  const notes = recipe.notes == null ? [] : recipe.notes;
+  if (!Array.isArray(steps) || steps.length > PROFESSIONAL_RECIPE_LIMITS.steps) fail('invalid-argument', 'recipe.steps non validi');
+  if (!Array.isArray(notes) || notes.length > PROFESSIONAL_RECIPE_LIMITS.notes) fail('invalid-argument', 'recipe.notes non validi');
+  return {
+    name: text(recipe.name, 'recipe.name', { max: PROFESSIONAL_RECIPE_LIMITS.name }),
+    emoji: optionalText(recipe.emoji, 'recipe.emoji', PROFESSIONAL_RECIPE_LIMITS.emoji),
+    slot: recipe.slot,
+    proteinCategory: optionalText(recipe.proteinCategory, 'recipe.proteinCategory', PROFESSIONAL_RECIPE_LIMITS.proteinCategory),
+    ingredients: recipe.ingredients.map((ingredient, index) => validateProfessionalRecipeIngredient(ingredient, index)),
+    steps: steps.map((step, index) => text(step, `steps[${index}]`, { max: PROFESSIONAL_RECIPE_LIMITS.step })),
+    notes: notes.map((note, index) => text(note, `notes[${index}]`, { max: PROFESSIONAL_RECIPE_LIMITS.note }))
+  };
+}
+
 module.exports = {
   SINGLE_ORGANIZATION_ID,
   ROLES, REPORT_STATUSES, ASSIGNMENT_STATUSES, ASSIGNMENT_STRATEGIES, MEMBER_STATUSES,
@@ -1271,6 +1327,8 @@ module.exports = {
   CLIENT_FREQUENCY_KEYS, CLIENT_FREQUENCY_LABELS, CLIENT_FREQUENCY_DEFAULTS,
   CLIENT_FREQUENCY_MAX, DOSE_EDITABLE_ASSIGNMENT_STATUSES,
   frequencyBound, validateClientDoseOverrides, validateGetClientDoses,
-  validateExpectedRevision, validateUpdateClientDoseOverrides, validateCopyClientDoses
+  validateExpectedRevision, validateUpdateClientDoseOverrides, validateCopyClientDoses,
+  RECIPE_SLOTS, PROFESSIONAL_RECIPE_VISIBILITY, PROFESSIONAL_RECIPE_LIMITS,
+  validateProfessionalRecipePortions, validateProfessionalRecipeIngredient, validateProfessionalRecipe
 };
 

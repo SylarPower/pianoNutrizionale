@@ -12,7 +12,9 @@ const {
   parseCatalogPayload, validateCatalogImport, catalogImportPreviewId,
   validateInviteOrganizationUser, validateInviteClientLink, validateRespondClientLink,
   validateRemoveClientLink, validateMemberStatus, validateRemoveNutritionist,
-  validateTransferStructureOwnership
+  validateTransferStructureOwnership,
+  RECIPE_SLOTS, PROFESSIONAL_RECIPE_VISIBILITY, PROFESSIONAL_RECIPE_LIMITS,
+  validateProfessionalRecipePortions, validateProfessionalRecipeIngredient, validateProfessionalRecipe
 } = require('../src/domain');
 
 const ClientDomain = require('../../js/domain');
@@ -361,4 +363,31 @@ test('utenti: validatori inviti, link, stati e username normalizzati', () => {
   assert.equal(transfer.newOwnerUid, 'uid-2');
   const remove = validateRemoveNutritionist({ organizationId: 'o', userId: 'uid-2', idempotencyKey: 'k' });
   assert.equal(remove.userId, 'uid-2');
+});
+
+test('validateProfessionalRecipe: normalizza porzioni, default e trimming', () => {
+  const out = validateProfessionalRecipe({
+    name: '  Riso  ', slot: 'lunch',
+    ingredients: [
+      { name: 'Riso', portions: { man: '80 g' } },
+      { name: 'Sale', ingredientId: '', portions: null }
+    ]
+  });
+  assert.equal(out.name, 'Riso');
+  assert.equal(out.emoji, null);
+  assert.deepEqual(out.steps, []);
+  assert.deepEqual(out.notes, []);
+  assert.deepEqual(out.ingredients[0].portions, { man: '80 g', ipo: null });
+  assert.deepEqual(out.ingredients[1], { name: 'Sale', ingredientId: null, portions: { man: null, ipo: null } });
+});
+
+test('validateProfessionalRecipe: rifiuta slot, limiti e campi extra', () => {
+  const good = { name: 'R', slot: 'dinner', ingredients: [{ name: 'X' }] };
+  assert.throws(() => validateProfessionalRecipe({ ...good, slot: 'brunch' }), /slot/);
+  assert.throws(() => validateProfessionalRecipe({ ...good, ingredients: [] }), /ingredients/);
+  assert.throws(() => validateProfessionalRecipe({ ...good, id: 'X' }), /non ammessi/);
+  assert.throws(() => validateProfessionalRecipe({ ...good, steps: ['ok', 42] }), /steps/);
+  assert.throws(() => validateProfessionalRecipePortions({ man: 'x', extra: 1 }), /non ammessi/);
+  assert.equal(PROFESSIONAL_RECIPE_VISIBILITY.has('studio'), true);
+  assert.equal(PROFESSIONAL_RECIPE_LIMITS.ingredients, 100);
 });
