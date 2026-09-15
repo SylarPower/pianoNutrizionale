@@ -3,12 +3,11 @@
 Questa guida serve a **costruire la struttura nuova** e a riportare online gli
 account che vuoi tenere:
 
-| Account | Ruolo | Cosa diventa |
+| Profilo | Ruolo | Cosa diventa |
 |---|---|---|
-| `admin` | creatore (platform admin) | entra nella console `admin.html` con tutti i poteri |
-| `nutrizionista` | professionista | entra nella console e segue i clienti che gli assegni |
-| `cliente` | cliente di prova | cliente dell'organizzazione `pianoNutrizionale`, da collegare dalla console |
-| `gabriele`, `martina` | utenti reali | clienti dell'organizzazione `pianoNutrizionale`, con le ricette re-importate |
+| Account amministrativo | platform admin | entra nella console `admin.html` con i poteri di gestione |
+| Account professionale | nutrizionista | entra nella console e segue i clienti assegnati |
+| Clienti reali | cliente | vengono invitati dalla console con email, nome e cognome |
 
 È il **complemento** dell'altra guida: qui si costruisce, in
 [pulizia-dati-legacy.md](pulizia-dati-legacy.md) si cancella. L'ordine giusto è:
@@ -224,41 +223,25 @@ giusto, oppure si usa la modalità `restore` del callable (server-side).
 
 ---
 
-## Passo 7 — I clienti (compresi `gabriele` e `martina`)
+## Passo 7 — I clienti reali
 
 Per ogni persona da seguire ripeti:
 
-1. Console → menu **Utenti** → scheda **Cliente**.
-2. Scrivi lo **username esatto** (es. `gabriele`) → **Verifica** per conferma.
-3. Se vuoi che sia il nutrizionista a seguirlo, scegli il suo nome nel campo
-   **Professionista destinatario** (tu come creatore puoi anche lasciare "Senza
-   professionista").
-4. **Invita cliente**:
-   - l'account **esiste già** (`gabriele`, `martina`, `cliente`) → nell'app del
-     cliente compare la richiesta di collegamento: **Accetta**;
-   - l'account **non esiste** → la console ti dà un **link monouso** (7 giorni)
-     da consegnare fuori piattaforma: chi lo apre crea l'account e risulta
-     collegato al professionista che lo ha invitato.
+1. Console → **Clienti → ＋ Invita nuovo cliente**.
+2. Inserisci l'**email reale**, nome e cognome; se sei admin puoi scegliere il
+   professionista destinatario.
+3. Crea l'invito e consegna il link monouso con **Copia link** o
+   **Condividi link**.
+4. Il cliente apre `#/invito/<token>`: email, nome e cognome sono già
+   precompilati, sceglie solo la password e verifica l'indirizzo email.
+5. Dopo la verifica il collegamento diventa attivo. A quel punto vai in
+   **Clienti → Assegna profilo**, scegli una Struttura dieta e salva; il cliente
+   conferma dall'app.
+6. **Rimuovi cliente** interrompe il collegamento senza cancellare credenziali,
+   ricette o backup.
 
-   Alla registrazione il cliente sceglie **solo nickname e password**: l'email
-   tecnica interna `nickname@utenti.pianonutrizionale.app` viene aggiunta
-   automaticamente e non è visibile né modificabile. Il dominio è vincolato
-   dalle Security Rules (`firestore.rules`): cambiarlo richiederebbe di
-   ricreare **tutti** gli account, quindi si lascia così.
-
-   > **Clienti reali (modello attuale)**: questo modulo con username è riservato
-   > agli account di test. Per un cliente vero usa **Clienti → ＋ Invita nuovo
-   > cliente**: riceve un link monouso, trova email/nome/cognome
-   > precompilati dal nutrizionista, sceglie la password e verifica l'email; il
-   > collegamento si attiva dopo la verifica. Guida:
-   > [`inviti-email.md`](inviti-email.md). In produzione la creazione di nuovi
-   > account tecnici è disattivata (`LEGACY_TEST_INVITES_ENABLED`).
-5. Quando il cliente è collegato: menu **Clienti** → **Assegna profilo** → scegli
-   una Struttura dieta → **Salva**. Il cliente la vede in app e la conferma: la
-   conferma è obbligatoria, nessun protocollo parte da solo.
-6. Da quel momento il cliente ha il profilo del professionista e la Lista della
-   spesa "inclusa" finché il collegamento è attivo. **Rimuovi collegamento**
-   riporta tutto alle dosi originali senza cancellare nulla.
+Non creare account cliente direttamente in Authentication e non usare indirizzi
+tecnici: la piattaforma live non espone percorsi di prova.
 
 ---
 
@@ -277,11 +260,11 @@ senza terminale: [`configurazione-manuale.md`](configurazione-manuale.md).
 
 ---
 
-## Passo 8 — Le ricette di `gabriele` e `martina`
+## Passo 8 — Le ricette già presenti
 
 I file di esportazione che hai già scaricato restano validi per sempre.
 
-1. Dopo la pulizia, apri l'app client con l'account (`gabriele`, poi `martina`).
+1. Dopo la pulizia, apri l'app client con l'email del cliente interessato.
 2. **Ricettario** → **Importa** (attenzione: **non** in Impostazioni).
 3. Il formato è `piano-nutrizionale-recipes`, schema **5**: in modalità
    "sostituisci" il server salva prima una copia in
@@ -308,16 +291,16 @@ Solo adesso passa a
 
 Ordine consigliato:
 
-1. **App con `gabriele`**: login, ricette presenti, Settimana, Lista della spesa.
-2. **App con `martina`**: come sopra.
-3. **Console con `admin`**: menu **Utenti** mostra `admin` e `nutrizionista`;
+1. **App con un cliente reale**: login con email, ricette presenti, Settimana, Lista della spesa.
+2. **App con un secondo cliente reale**: come sopra.
+3. **Console con l'admin**: menu **Team dello studio** mostra i professionisti autorizzati;
    **Clienti** mostra i clienti collegati; **Strutture dieta** apre e salva senza
    errori; **Catalogo** mostra la versione importata.
 4. **Console con `nutrizionista`**: entra, vede i suoi clienti, **non** vede la
    voce Catalogo né il riquadro "Invita professionista" (è riservato al
    creatore: se li vedesse sarebbe un errore).
-5. **App con `cliente`**: login, eventuale richiesta di collegamento accettata,
-   piano applicato.
+5. **App con un cliente invitato**: login, verifica email, eventuale richiesta
+   di collegamento accettata e piano applicato.
 
 Se un passo non riesce, l'errore mostrato in pagina dice cosa manca: la console
 traduce i codici delle Functions (permesso negato, membership non valida,
@@ -335,8 +318,8 @@ mancante (Passo 5) e il catalogo non importato (Passo 6).
 5. Fai entrare `nutrizionista` in `organizations/pianoNutrizionale/members`.
 6. Accendi `globalIngredientCatalog/config/docs/import = { enabled: true }`.
 7. Console → Catalogo → dry-run → Conferma import del file Guide.
-8. Collega i clienti (gabriele, martina, cliente) e assegna loro una struttura.
-9. Re-importa le ricette di gabriele e martina dal Ricettario.
+8. Collega i clienti reali invitati e assegna loro una struttura.
+9. Re-importa le ricette eventualmente già presenti nel Ricettario.
 10. Pulisci le organizzazioni vecchie e verifica tutto.
 
 

@@ -131,9 +131,6 @@ async function loadClients() {
 // Titolo del cliente: Nome e Cognome, mai UID o ID tecnici. Il fallback
 // (email mascherata → displayCode) vive nel dominio condiviso.
 function clientLabel(client) {
-  try {
-    if (window.PianoDomain?.clientDisplayTitle) return PianoDomain.clientDisplayTitle(client);
-  } catch (_) { /* dominio non caricato: fallback locale */ }
   const full = `${client?.firstName || ''} ${client?.lastName || ''}`.trim();
   if (full) return full;
   try {
@@ -142,7 +139,9 @@ function clientLabel(client) {
       if (email) return window.PianoDomain.maskEmailClient(email);
     }
   } catch (_) {}
-  return client?.displayCode || 'Cliente';
+  // Mai UID, displayCode o altri identificativi come fallback visivo: se il
+  // profilo è incompleto, il professionista legge semplicemente «Cliente».
+  return 'Cliente';
 }
 
 function clientStatusOf(client) {
@@ -176,8 +175,8 @@ function requestForClient(clientId) {
 function assignmentSummary(client) {
   const active = client.activeAssignment;
   if (!active) return 'Nessun profilo attivo · dosi originali';
-  if (active.structureId) return `Struttura ${active.structureName || active.structureId}`;
-  return `Profilo ${active.ruleSet?.ruleSetId || 'assegnato'} · v${active.ruleSet?.version || ''}`;
+  if (active.structureId) return active.structureName ? `Struttura ${active.structureName}` : 'Struttura assegnata';
+  return `Profilo ${active.ruleSet?.name || 'assegnato'}`;
 }
 
 function inviteStatusLabelOf(status) {
@@ -237,7 +236,7 @@ function renderClients() {
 }
 
 // ---- Scheda cliente ----
-// Un solo posto per anagrafica, collegamento, struttura dieta e dati tecnici.
+// Un solo posto per nome, email, collegamento e struttura dieta.
 // La rimozione («Rimuovi cliente», revoca logica con audit) esiste SOLO qui:
 // nessuna azione distruttiva appare negli elenchi.
 function detailClient() {
@@ -279,7 +278,7 @@ async function loadClientHistory(clientId) {
 
 function historyRowHtml(kind, item) {
   const label = kind === 'invite' ? 'Invito' : 'Richiesta di collegamento';
-  const who = item.targetEmail || item.targetUsername || '—';
+  const who = item.targetEmail || 'Cliente';
   return `<div class="history-row"><div><strong>${escapeAdmin(label)}</strong><small>${escapeAdmin(who)}${item.createdAt ? ` · ${escapeAdmin(formatDateOnly(item.createdAt))}` : ''}</small></div><span class="status status-history">${escapeAdmin(inviteStatusLabelOf(item.status))}</span></div>`;
 }
 
@@ -287,42 +286,44 @@ function renderClientDetail() {
   const client = detailClient();
   if (!client) return;
   const status = clientStatusOf(client);
+  const email = String(client.email || '').trim();
   $('client-detail-title').textContent = clientLabel(client);
+  $('client-detail-email').textContent = email
+    ? `${email}${client.emailVerified ? ' · email verificata' : ' · email da verificare'}`
+    : 'Email non disponibile';
   $('client-detail-subtitle').textContent = `${clientStatusLabelOf(status)} · aggiornato il ${formatDateOnly(client.updatedAt)}`;
   const invite = inviteForClient(client.id);
   const request = requestForClient(client.id);
   const emailChange = adminState.clientEmailChanges.find(item => item.clientId === client.id) || null;
-  const fullName = `${client.firstName || ''} ${client.lastName || ''}`.trim();
   const history = adminState.detailHistory;
   const historyHtml = !history
-    ? '<p class="feedback">Caricamento storico…</p>'
+    ? '<p class="feedback">Caricamento attività…</p>'
     : ([...(history.invitations || []).map(item => historyRowHtml('invite', item)), ...(history.requests || []).map(item => historyRowHtml('request', item))].join('')
-      || '<p class="feedback">Nessun movimento precedente: solo attività in corso.</p>');
+      || '<p class="feedback">Nessuna attività precedente.</p>');
+  // La scheda è volutamente operativa: nome ed email sono già nell'intestazione;
+  // le informazioni interne restano disponibili soltanto all'admin, mai come
+  // campi che il nutrizionista debba interpretare.
+  const adminIdentifier = adminState.isCreator
+    ? `<p class="detail-admin-meta"><span>Identificativo amministrativo</span><code>${escapeAdmin(client.id)}</code></p>`
+    : '';
   $('client-detail-body').innerHTML = `
-    <section class="detail-section"><h3>Dati anagrafici</h3>
-      <dl class="detail-grid">
-        <div><dt>Nome e cognome</dt><dd>${escapeAdmin(fullName || '—')}</dd></div>
-        <div><dt>Email</dt><dd>${escapeAdmin(client.email || '—')}${client.email ? ` · ${client.emailVerified ? 'verificata' : 'da verificare'}` : ''}</dd></div>
-        ${client.username ? `<div><dt>Account di test</dt><dd>${escapeAdmin(client.username)} (legacy)</dd></div>` : ''}
-      </dl>
-      <div class="card-actions">
-        <button class="secondary" data-client-profile="${escapeAdmin(client.id)}">Correggi anagrafica</button>
-        ${client.email ? `<button class="text-button" data-client-email-change="${escapeAdmin(client.id)}">Proponi cambio email</button>` : ''}
-      </div>
-      ${emailChange ? `<p class="callout">Cambio email proposto: ${escapeAdmin(emailChange.newEmail || '—')} · in attesa di conferma del cliente.</p>` : ''}
-    </section>
     <section class="detail-section"><h3>Collegamento</h3>
       <dl class="detail-grid">
         <div><dt>Stato</dt><dd><span class="status status-client-${escapeAdmin(status)}">${escapeAdmin(clientStatusLabelOf(status))}</span></dd></div>
         ${invite ? `<div><dt>Invito</dt><dd>${escapeAdmin(inviteStatusLabelOf(invite.status))} · link da consegnare a mano${invite.expiresAt ? ` · scade ${escapeAdmin(formatDateOnly(invite.expiresAt))}` : ''}</dd></div>` : ''}
-        ${request ? '<div><dt>Richiesta</dt><dd>In attesa di accettazione dal cliente, in app.</dd></div>' : ''}
+        ${request ? '<div><dt>Richiesta</dt><dd>In attesa di accettazione dal cliente.</dd></div>' : ''}
         ${!invite && !request ? '<div><dt>Inviti e richieste</dt><dd>Nessuna attività in corso.</dd></div>' : ''}
       </dl>
+      <div class="card-actions">
+        <button class="secondary" data-client-profile="${escapeAdmin(client.id)}">Correggi nome e cognome</button>
+        ${email ? `<button class="text-button" data-client-email-change="${escapeAdmin(client.id)}">Proponi cambio email</button>` : ''}
+      </div>
       ${invite ? `<div class="card-actions">
         <button class="text-button" data-invite-resend="${escapeAdmin(invite.inviteId)}">Nuovo link</button>
         <button class="text-button" data-invite-fix="${escapeAdmin(invite.inviteId)}">Correggi dati invito</button>
         <button class="text-button danger-text" data-invite-cancel="${escapeAdmin(invite.inviteId)}">Annulla invito</button>
       </div>` : ''}
+      ${emailChange ? `<p class="callout">Cambio email proposto: ${escapeAdmin(emailChange.newEmail || '—')} · in attesa di conferma del cliente.</p>` : ''}
     </section>
     <section class="detail-section"><h3>Struttura dieta</h3>
       <dl class="detail-grid"><div><dt>Assegnazione</dt><dd>${escapeAdmin(assignmentSummary(client))}</dd></div></dl>
@@ -331,15 +332,8 @@ function renderClientDetail() {
         ${client.activeAssignment ? `<button class="text-button" data-goto-doses="${escapeAdmin(client.id)}">Vai alle dosi</button>` : ''}
       </div>
     </section>
-    <section class="detail-section"><h3>Dati tecnici</h3>
-      <dl class="detail-grid">
-        <div><dt>Codice cliente</dt><dd class="mono">${escapeAdmin(client.displayCode)}</dd></div>
-        <div><dt>Identificativo</dt><dd class="mono">${escapeAdmin(client.id)}</dd></div>
-        <div><dt>Censito il</dt><dd>${escapeAdmin(formatDateOnly(client.createdAt))}</dd></div>
-        <div><dt>Professionisti collegati</dt><dd>${Array.isArray(client.nutritionistUids) ? client.nutritionistUids.length : '—'}</dd></div>
-      </dl>
-    </section>
-    <section class="detail-section"><h3>Storico collegamenti</h3>${historyHtml}</section>`;
+    <section class="detail-section"><h3>Attività collegamento</h3>${historyHtml}</section>
+    ${adminIdentifier}`;
 }
 
 // Dopo ogni ricarico dei clienti, la scheda aperta (se c'è) si aggiorna.
@@ -1514,6 +1508,9 @@ async function openDietPlanDialog(structureId = null) {
   if (!adminState.professionalRecipes.length) {
     try { await loadProfessionalRecipes(); } catch (_) { /* elenco ricette vuoto */ }
   }
+  // Il catalogo è la fonte delle categorie e dei nomi: il professionista non
+  // deve ricordare un testo tecnico né ricreare manualmente la tabella.
+  try { await loadCatalogIndex(); } catch (_) { /* editor utilizzabile anche offline */ }
   adminState.dietPlanEditingId = structureId || null;
   adminState.dietPlanRules = [];
   adminState.dietPlanGroups = [];
@@ -1538,18 +1535,15 @@ async function openDietPlanDialog(structureId = null) {
       adminState.dietPlanRules = result.revision.rules || [];
       adminState.dietPlanGroups = result.revision.alternativeGroups || [];
       adminState.dietPlan = domain.createEmptyDietPlan(result.revision.dietPlan || {});
-      if (adminState.dietPlanRules.length) {
-        const note = $('diet-plan-classic-note');
-        note.textContent = `Questa dieta ha anche ${adminState.dietPlanRules.length} famiglie classiche per il calcolo delle dosi: il salvataggio le conserva. Per modificarle usa l’editor classico.`;
-        note.classList.remove('hidden');
-      }
+      // Eventuali impostazioni storiche vengono conservate senza esporre
+      // dettagli tecnici nell'editor guidato.
     } catch (error) {
       $('structures-feedback').textContent = adminError(error);
       return;
     }
   } else {
     $('diet-plan-title').textContent = 'Nuova dieta guidata';
-    $('diet-plan-subtitle').textContent = 'Pasti nell’ordine fisso (colazione → spuntino serale), opzioni A/B/C/D di tipo ricetta o alimenti liberi con gruppi scelta. Pesi sempre al netto degli scarti e a crudo. I valori energetici sono appunti manuali: nessun calcolo automatico.';
+    $('diet-plan-subtitle').textContent = 'Scegli i pasti e aggiungi gli alimenti dal catalogo per comporre una giornata chiara. Le alternative della tabella di riferimento sono già disponibili per velocizzare la compilazione.';
     adminState.dietPlan = domain.createEmptyDietPlan();
   }
   renderDietPlanDays();
@@ -1587,13 +1581,9 @@ function collectDietPlan() {
       dayId: null,
       label: value('[data-f="day-label"]').trim(),
       dayType: value('[data-f="day-type"]'),
-      target: {
-        kcal: dietPlanNumberOrNull(value('[data-f="target-kcal"]')),
-        proteinG: dietPlanNumberOrNull(value('[data-f="target-protein"]')),
-        carbsG: dietPlanNumberOrNull(value('[data-f="target-carbs"]')),
-        fatG: dietPlanNumberOrNull(value('[data-f="target-fat"]')),
-        waterMl: dietPlanNumberOrNull(value('[data-f="target-water"]'))
-      },
+      // Il contratto mantiene il contenitore target per compatibilità, ma la
+      // console non chiede più valori energetici manuali.
+      target: {},
       meals: [],
       supplements: value('[data-f="day-supplements"]').trim(),
       hydration: value('[data-f="day-hydration"]').trim(),
@@ -1696,11 +1686,64 @@ function dietPlanOptions(list, current) {
 // Pesi sempre al netto degli scarti e a crudo: niente select crudo/cotto,
 // niente flag «al netto», niente alternativa «oppure». Eventuali revisioni
 // salvate con quei campi perdono i controlli ma si aprono lo stesso.
+function renderDietCatalogOptions() {
+  const datalist = $('diet-catalog-options');
+  if (!datalist) return;
+  const entries = (catalogIndexCache?.items || [])
+    .slice()
+    .sort((a, b) => String(a.ingredient?.displayName || '').localeCompare(String(b.ingredient?.displayName || ''), 'it'));
+  datalist.innerHTML = entries.map(entry => {
+    const ingredient = entry.ingredient || {};
+    const category = entry.category?.displayName || ingredient.categoryId || '';
+    return `<option value="${escapeAdmin(ingredient.displayName || '')}" label="${escapeAdmin(category)}"></option>`;
+  }).join('');
+}
+
+function catalogEntryForDescription(description) {
+  const typed = window.PianoDomain?.aliasKey
+    ? PianoDomain.aliasKey(description)
+    : canonicalId(description).replace(/-/g, ' ');
+  if (!typed || !catalogIndexCache?.items) return null;
+  return catalogIndexCache.items.find(entry => {
+    const ingredient = entry.ingredient || {};
+    return entry.key === typed || (entry.aliasKeys || []).includes(typed)
+      || canonicalId(ingredient.displayName) === canonicalId(description);
+  }) || null;
+}
+
+function dietFoodGroupFromCatalog(entry) {
+  const ingredient = entry?.ingredient || {};
+  const family = String(ingredient.guideFamilyId || '').trim();
+  const familyGroups = {
+    pesceAzzurro: 'pesce', pesceBiancoMagro: 'pesce', salmoneAffumicato: 'pesce',
+    pesceScatolaNaturale: 'pesce', pesceSottOlio: 'pesce', crostaceiMolluschi: 'pesce',
+    uova: 'uova', polloTacchino: 'carne', manzo: 'carne', maiale: 'carne',
+    affettatiMagri: 'carne', yogurtGreco: 'latticini', fiocchiLatte: 'latticini',
+    mozzarellaLight: 'latticini', formaggiFreschiMolli: 'latticini', formaggiStagionati: 'latticini',
+    feta: 'latticini', ricotta: 'latticini', grana: 'latticini', montasio: 'latticini',
+    legumotti: 'legumi', legumiScatola: 'legumi', lupini: 'legumi',
+    seitan: 'carne', burgerVegetali: 'carne'
+  };
+  if (familyGroups[family]) return familyGroups[family];
+  return ({ carb: 'cereali', vegetable: 'verdura', fruit: 'frutta', fat: 'grassi', protein: 'altro' })[ingredient.categoryId] || null;
+}
+
+function applyDietCatalogSelection(input) {
+  const entry = catalogEntryForDescription(input?.value || '');
+  if (!entry) return;
+  const category = input.closest('.diet-item')?.querySelector('[data-f="item-group"]');
+  const group = dietFoodGroupFromCatalog(entry);
+  if (category && group) {
+    const known = [...category.options].some(option => option.value === group);
+    if (known) category.value = group;
+  }
+}
+
 function dietItemHtml(domain, item, path) {
   return `
   <div class="diet-item" data-day="${path.day}" data-meal="${path.meal}" data-option="${path.option}" data-item="${path.item}">
-    <select data-f="item-group" aria-label="Gruppo alimentare">${dietPlanOptions(domain.DIET_PLAN_FOOD_GROUPS, item.foodGroup)}</select>
-    <input data-f="item-desc" placeholder="Alimento (es. Riso Venere)" value="${escapeAdmin(item.description || '')}" aria-label="Alimento" maxlength="200">
+    <select data-f="item-group" aria-label="Categoria alimento">${dietPlanOptions(domain.DIET_PLAN_FOOD_GROUPS, item.foodGroup)}</select>
+    <input data-f="item-desc" list="diet-catalog-options" placeholder="Cerca nel catalogo (es. riso)" value="${escapeAdmin(item.description || '')}" aria-label="Alimento dal catalogo" maxlength="200">
     <div class="diet-qty">
       <input data-f="item-qty" type="number" min="0" max="5000" step="any" placeholder="Qtà" value="${item.quantity ?? ''}" aria-label="Quantità">
       <select data-f="item-unit" aria-label="Unità di misura">${dietPlanOptions(domain.DIET_PLAN_UNITS, item.unit || 'g')}</select>
@@ -1871,13 +1914,6 @@ function dietDayHtml(domain, day, dayIndex, dayCount) {
         ${dayCount > 1 ? '<button type="button" class="text-button danger-text" data-act="day-del">Elimina</button>' : ''}
       </span>
     </div>
-    <fieldset class="diet-targets"><legend>Valori della giornata (appunti manuali, facoltativi)</legend>
-      <label>Energia (kcal)<input data-f="target-kcal" type="number" min="0" max="50000" step="any" value="${day.target?.kcal ?? ''}"></label>
-      <label>Proteine (g)<input data-f="target-protein" type="number" min="0" max="50000" step="any" value="${day.target?.proteinG ?? ''}"></label>
-      <label>Carboidrati (g)<input data-f="target-carbs" type="number" min="0" max="50000" step="any" value="${day.target?.carbsG ?? ''}"></label>
-      <label>Grassi (g)<input data-f="target-fat" type="number" min="0" max="50000" step="any" value="${day.target?.fatG ?? ''}"></label>
-      <label>Acqua (ml)<input data-f="target-water" type="number" min="0" max="50000" step="any" value="${day.target?.waterMl ?? ''}"></label>
-    </fieldset>
     <div class="diet-meals">${day.meals.map((meal, mealIndex) => dietMealHtml(domain, meal, { day: dayIndex, meal: mealIndex }, day.meals.length > 1)).join('')}</div>
     ${(() => {
       const chips = dietMealAddChips(domain, day);
@@ -1896,6 +1932,7 @@ function renderDietPlanDays() {
   const plan = adminState.dietPlan;
   if (!domain || !plan) return;
   $('diet-plan-general-notes').value = plan.generalNotes || '';
+  renderDietCatalogOptions();
   $('diet-plan-days').innerHTML = plan.days.map((day, dayIndex) => dietDayHtml(domain, day, dayIndex, plan.days.length)).join('');
 }
 
@@ -1953,16 +1990,7 @@ function renderDietPlanPreview() {
     <p class="preview-meta">${summary.dayCount} giornate · ${summary.mealCount} pasti · ${summary.optionCount} opzioni · ${summary.itemCount} alimenti${summary.choiceGroupCount ? ` · ${summary.choiceGroupCount} gruppi scelta` : ''}</p>
     ${warnings}
     ${plan.days.map((day, dayIndex) => {
-      const target = day.target || {};
-      const targetBits = [
-        target.kcal != null && target.kcal !== '' ? `${escapeAdmin(String(target.kcal))} kcal` : null,
-        target.proteinG != null && target.proteinG !== '' ? `P ${escapeAdmin(String(target.proteinG))} g` : null,
-        target.carbsG != null && target.carbsG !== '' ? `C ${escapeAdmin(String(target.carbsG))} g` : null,
-        target.fatG != null && target.fatG !== '' ? `G ${escapeAdmin(String(target.fatG))} g` : null,
-        target.waterMl != null && target.waterMl !== '' ? `Acqua ${escapeAdmin(String(target.waterMl))} ml` : null
-      ].filter(Boolean);
       return `<section class="preview-day"><h4>Giornata ${dayIndex + 1} — ${escapeAdmin(domain.dietPlanDayLabel(day.dayType))}${day.label ? ` · ${escapeAdmin(day.label)}` : ''}</h4>
-        ${targetBits.length ? `<p class="preview-target">${targetBits.join(' · ')}</p>` : ''}
         ${(day.meals || []).map(meal => `
           <div class="preview-meal"><strong>${escapeAdmin(domain.dietPlanMealLabel(meal.mealId))}</strong>${meal.time ? ` <small>(${escapeAdmin(meal.time)})</small>` : ''}
             ${(meal.options || []).map((option, optionIndex) => dietPreviewOptionHtml(domain, option, domain.DIET_PLAN_OPTION_LABELS[optionIndex] || 'A')).join('')}
@@ -2073,9 +2101,10 @@ function handleDietPlanStructure(event) {
       if (option && option.type !== 'recipe' && option.items.length < domain.DIET_PLAN_LIMITS.itemsPerOption) option.items.push(domain.createDietPlanItem());
       break;
     case 'item-del':
-      // L'ultimo alimento si toglie solo se l'opzione ha almeno un gruppo
-      // scelta: un'opzione non resta mai completamente vuota.
-      if (option && itemIndex >= 0 && (option.items.length > 1 || option.choiceGroups.length > 0)) option.items.splice(itemIndex, 1);
+      // Anche l'ultimo alimento può essere rimosso: l'opzione resta vuota e
+      // mostra «Aggiungi alimento». La pubblicazione viene bloccata dalla
+      // validazione finché il professionista non la completa.
+      if (option && itemIndex >= 0) option.items.splice(itemIndex, 1);
       break;
     case 'cg-add': {
       if (option && option.type !== 'recipe' && (option.choiceGroups?.length || 0) < domain.DIET_PLAN_LIMITS.choiceGroupsPerOption) {
@@ -2264,8 +2293,9 @@ window.saveMemberProfileByStaff = saveMemberProfileByStaff;
 
 function renderUsers() {
   const data = adminState.users || { members: [], clients: [], invitations: [], requests: [] };
-  // Il server omette membri e inviti al nutritionist: la presenza dei membri distingue l'admin.
-  const isAdmin = (data.members || []).length > 0;
+  // Il server omette membri e inviti al nutritionist; il creator resta admin
+  // anche quando l'organizzazione non ha ancora altri membri.
+  const isAdmin = adminState.isCreator || (data.members || []).length > 0;
   $('users-scope').textContent = isAdmin
     ? 'Solo l’admin vede e gestisce i membri.'
     : 'Come professionista vedi solo i tuoi clienti e i tuoi inviti.';
@@ -2285,44 +2315,23 @@ function renderUsers() {
       </strong></div>
       ${member.role === 'nutritionist' ? `<form class="member-profile-form" onsubmit="saveMemberProfileByStaff(event, '${escapeAdmin(member.userId)}')"><div class="form-grid"><label>Nome<input data-member-first-name value="${escapeAdmin(member.firstName || '')}" maxlength="80" placeholder="Mario"></label><label>Cognome<input data-member-last-name value="${escapeAdmin(member.lastName || '')}" maxlength="80" placeholder="Rossi"></label></div><button class="secondary" type="submit">Salva anagrafica</button></form>` : ''}
     </article>`).join('') || '<p class="feedback">Nessun membro visibile al tuo ruolo.</p>';
-  // Professionisti destinatari per l'invito cliente (solo admin).
+  // Il cliente vede inviti e richieste direttamente nella propria card, dove
+  // trova anche l'azione corretta. Non ripetiamo gli stessi dati in un secondo
+  // elenco duplicato. Gli inviti ai professionisti restano invece qui,
+  // nell'area già riservata all'admin.
   const nutris = (data.members || []).filter(member => member.role === 'nutritionist' && member.status === 'active');
-  $('invite-client-nutritionist').innerHTML = '<option value="">Senza professionista (solo admin)</option>' +
-    nutris.map(member => `<option value="${escapeAdmin(member.userId)}">${escapeAdmin(([member.firstName, member.lastName].filter(Boolean).join(' ') || member.displayName || member.username || member.userId.slice(0, 8)))}</option>`).join('');
-  $('invite-client-nutri-field').style.display = isAdmin ? '' : 'none';
   if ($('invite-client-email-nutritionist')) {
     $('invite-client-email-nutritionist').innerHTML = '<option value="">Senza professionista (solo admin)</option>' +
       nutris.map(member => `<option value="${escapeAdmin(member.userId)}">${escapeAdmin(([member.firstName, member.lastName].filter(Boolean).join(' ') || member.displayName || member.username || member.userId.slice(0, 8)))}</option>`).join('');
   }
   if ($('invite-client-email-nutri-field')) $('invite-client-email-nutri-field').style.display = isAdmin ? '' : 'none';
-  // Richieste di collegamento e inviti legacy: gli inviti email reali vivono
-  // sulle card dei clienti (con reinvio, correzione e annullamento), qui resta
-  // solo ciò che non ha una card. I titoli non mostrano mai ID tecnici.
-  const clientNameFor = clientId => {
-    const client = adminState.clients.find(item => item.id === clientId);
-    return client ? clientLabel(client) : 'Cliente';
-  };
-  const pendingLinks = [...(data.requests || []).filter(item => !item.status || item.status === 'pending').map(item => ({ ...item, kind: 'request' })),
-    ...(data.invitations || []).filter(item => item.type === 'client').map(item => ({ ...item, kind: 'invite' }))];
-  const linksHtml = pendingLinks.map(item => `
-    <article class="report-row">
-      <div class="report-main"><span class="ingredient-mark">${item.kind === 'request' ? '✉' : '◈'}</span><div><strong>${escapeAdmin(item.targetUsername || item.targetEmail || clientNameFor(item.clientId))}</strong><small>${item.kind === 'request' ? `Richiesta da accettare in app · ${escapeAdmin(clientNameFor(item.clientId))}` : `Invito monouso${item.expiresAt ? ` · scade ${formatDateOnly(item.expiresAt)}` : ''} · ${escapeAdmin(clientNameFor(item.clientId))}`}</small></div></div>
-      <div class="report-meta"><small>Stato</small><strong>In attesa</strong></div>
-      <div class="report-meta"><small>Scheda</small><strong>${item.clientId ? `<button class="text-button" data-client-detail="${escapeAdmin(item.clientId)}">Apri scheda</button>` : '—'}</strong></div>
-    </article>`).join('');
-  $('links-list').innerHTML = linksHtml || '<p class="feedback">Nessun collegamento in attesa.</p>';
   const nutriInvites = (data.invitations || []).filter(item => item.type === 'nutritionist');
-  if (nutriInvites.length) {
-    $('links-list').insertAdjacentHTML('beforeend', nutriInvites.map(item => `
-    <article class="report-row">
+  if (isAdmin && nutriInvites.length) {
+    $('members-list').insertAdjacentHTML('beforeend', nutriInvites.map(item => `
+    <article class="report-row pending-member-invite">
       <div class="report-main"><span class="ingredient-mark">◈</span><div><strong>${escapeAdmin(item.targetUsername || '—')}</strong><small>Invito professionista${item.expiresAt ? ` · scade ${formatDateOnly(item.expiresAt)}` : ''}</small></div></div>
       <div class="report-meta"><small>Stato</small><strong>In attesa di registrazione</strong></div>
-      <div class="report-meta"><small>Tipo</small><strong>Nutritionist</strong></div>
     </article>`).join(''));
-  }
-  // Promemoria per il professionista: tutto si gestisce dalle schede qui sopra.
-  if (!isAdmin && (data.clients || []).length) {
-    $('links-list').insertAdjacentHTML('beforeend', '<p class="feedback">Apri la scheda di un cliente per anagrafica, collegamento, struttura dieta e rimozione.</p>');
   }
 }
 
@@ -2358,41 +2367,6 @@ async function submitNutritionistInvite(event) {
       out.textContent = result.status === 'already-member' ? 'Account già membro attivo.' : 'Professionista aggiunto.';
     }
     $('invite-nutritionist-username').value = '';
-    await loadUsers();
-  } catch (error) { out.textContent = adminError(error); }
-}
-
-// Link di registrazione pubblica: punta all'app dei clienti (index.html),
-// che interpreta `#/invite/<token>` mostrando la schermata di registrazione.
-function inviteLinkForToken(token) {
-  return new URL(`./#/invite/${token}`, new URL('./index.html', location.href)).href;
-}
-
-async function submitClientInvite(event) {
-  event.preventDefault();
-  const out = $('invite-client-result');
-  const linkInput = $('invite-client-link');
-  linkInput.classList.add('hidden');
-  linkInput.value = '';
-  out.textContent = 'Invito in corso…';
-  try {
-    const result = await callAdminSaasFunction('inviteClientLink', {
-      organizationId: orgId(), username: $('invite-client-username').value.trim(),
-      nutritionistUid: $('invite-client-nutritionist').value || null,
-      idempotencyKey: idem('clientlink')
-    });
-    if (result.status === 'invited') {
-      out.textContent = `Invito monouso creato (scade ${new Date(result.expiresAt).toLocaleDateString('it-IT')}). Consegna questo link una sola volta, fuori piattaforma: il cliente registrerà l’account con lo username indicato.`;
-      linkInput.value = inviteLinkForToken(result.token);
-      linkInput.classList.remove('hidden');
-      linkInput.focus();
-      linkInput.select();
-    } else if (result.status === 'already-invited') {
-      out.textContent = 'Invito già esistente: il token non viene rimostrato.';
-    } else {
-      out.textContent = 'Richiesta inviata: il cliente accetta o rifiuta dall’app.';
-    }
-    $('invite-client-username').value = '';
     await loadUsers();
   } catch (error) { out.textContent = adminError(error); }
 }
@@ -2803,7 +2777,6 @@ function bindAdmin() {
   $('confirm-copy').addEventListener('click', confirmDoseCopy);
   document.querySelectorAll('.nav-link').forEach(node => node.addEventListener('click', () => showView(node.dataset.view)));
   $('refresh-structures').addEventListener('click', loadStructures);
-  $('new-structure').addEventListener('click', () => openStructureDialog());
   $('new-diet-plan').addEventListener('click', () => openDietPlanDialog());
   $('diet-plan-form').addEventListener('submit', submitDietPlan);
   $('diet-plan-days').addEventListener('click', handleDietPlanStructure);
@@ -2813,6 +2786,9 @@ function bindAdmin() {
     if (event.target.matches?.('[data-f="option-recipe"], [data-f="option-mult"]')) {
       updateDietRecipePreview(event.target.closest('.diet-option'));
     }
+  });
+  $('diet-plan-days').addEventListener('change', event => {
+    if (event.target.matches?.('[data-f="item-desc"]')) applyDietCatalogSelection(event.target);
   });
   $('diet-plan-add-day').addEventListener('click', () => {
     const domain = dietPlanDomain();
@@ -2914,7 +2890,6 @@ function bindAdmin() {
   $('catalog-file').addEventListener('change', () => { $('catalog-report').innerHTML = ''; $('catalog-commit').disabled = true; adminState.catalogPreview = null; });
   document.querySelectorAll('[data-verify-username]').forEach(node => node.addEventListener('click', () => verifyUsername(node.dataset.verifyUsername, node.dataset.verifyOut)));
   $('invite-nutritionist-form').addEventListener('submit', submitNutritionistInvite);
-  $('invite-client-form').addEventListener('submit', submitClientInvite);
   $('invite-client-email-form')?.addEventListener('submit', submitClientEmailInvite);
   $('invite-fix-form')?.addEventListener('submit', submitInviteFix);
   $('client-profile-form')?.addEventListener('submit', submitClientProfile);
@@ -2925,7 +2900,6 @@ function bindAdmin() {
   $('invite-link-share')?.addEventListener('click', shareInviteLink);
   document.querySelectorAll('[data-close-client-profile]').forEach(node => node.addEventListener('click', closeClientProfile));
   document.querySelectorAll('[data-close-email-change]').forEach(node => node.addEventListener('click', closeEmailChange));
-  $('links-list')?.addEventListener('click', handleClientActions);
   $('members-list').addEventListener('click', event => {
     const statusButton = event.target.closest('[data-member-status]');
     if (statusButton) { changeMemberStatus(statusButton.dataset.memberStatus, statusButton.dataset.status); return; }
@@ -2998,6 +2972,7 @@ observeAdminAuthState(async user => {
   if (!user) {
     adminState.isCreator = false;
     $('invite-nutritionist-form').classList.add('hidden');
+    $('team-panel')?.classList.add('hidden');
     $('nav-catalog').classList.add('hidden');
     $('admin-login').classList.remove('hidden');
     $('admin-app').classList.add('hidden');
@@ -3031,6 +3006,7 @@ observeAdminAuthState(async user => {
   $('admin-login').classList.add('hidden');
   $('admin-app').classList.remove('hidden');
   $('invite-nutritionist-form').classList.toggle('hidden', !adminState.isCreator);
+  $('team-panel')?.classList.toggle('hidden', !adminState.isCreator);
   $('nav-catalog').classList.toggle('hidden', !adminState.isCreator);
   const name = usernameFromUser(user) || 'Professionista';
   $('admin-name').textContent = name; $('admin-avatar').textContent = name.slice(0, 1).toUpperCase();

@@ -12,6 +12,11 @@
 </head>
 <body>
   <div class="ambient ambient-a" aria-hidden="true"></div><div class="ambient ambient-b" aria-hidden="true"></div>
+  <div id="loading-overlay" class="loading-overlay hidden" role="status" aria-live="polite" aria-busy="false">
+    <div class="loading-brand" aria-hidden="true"><img src="assets/loghi/logo-console.svg" alt=""></div>
+    <div class="loading-spinner" aria-hidden="true"></div>
+    <p id="loading-message">Caricamento…</p>
+  </div>
   <main id="admin-login" class="auth-shell">
     <section class="auth-card" aria-labelledby="admin-login-title">
       <div class="brand-lockup"><span><img src="assets/loghi/logo-console.svg" alt=""></span><div><strong>Piano</strong><small>Console professionale</small></div></div>
@@ -75,13 +80,9 @@
             <button type="button" class="filter-tab" data-client-filter="inactive" aria-pressed="false">Inattivi <b id="count-inactive">0</b></button>
           </div>
           <div id="clients-feedback" class="feedback" role="status"></div><div id="clients-list" class="client-grid"></div></section>
-        <section class="panel"><div class="panel-head"><div><h2>Richieste e inviti in attesa</h2><p>Richieste da accettare in app e inviti monouso non ancora riscattati.</p></div></div><div id="links-feedback" class="feedback" role="status"></div><div id="links-list" class="report-list"></div></section>
-        <section class="panel"><div class="panel-head"><div><h2>Team dello studio</h2><p id="users-scope">Solo l’admin vede e gestisce i membri.</p></div></div><div id="users-feedback" class="feedback" role="status"></div><div id="nutritionist-profile-form" class="profile-name-form"></div><div id="members-list" class="report-list"></div>
+        <section id="team-panel" class="panel hidden"><div class="panel-head"><div><h2>Professionisti dello studio</h2><p id="users-scope">Visibile solo all’admin: qui si gestiscono i professionisti che lavorano nello studio.</p></div></div><div id="users-feedback" class="feedback" role="status"></div><div id="nutritionist-profile-form" class="profile-name-form"></div><div id="members-list" class="report-list"></div>
           <form id="invite-nutritionist-form" class="invite-card hidden"><h3>Invita professionista</h3><label>Username<div class="restore-row"><input id="invite-nutritionist-username" required autocomplete="off" placeholder="username esatto"><button type="button" class="secondary" data-verify-username="invite-nutritionist-username" data-verify-out="invite-nutritionist-result">Verifica</button></div></label><p class="field-hint">Ruolo consentito: solo nutritionist. Se l’account non esiste, ricevi un invito monouso (7 giorni) da consegnare fuori piattaforma.</p><p id="invite-nutritionist-result" class="feedback" role="status"></p><button class="primary" type="submit">Invita professionista →</button></form>
         </section>
-        <section class="panel"><details id="legacy-invite-details" class="legacy-details"><summary>Account di test (legacy, solo per i test)</summary>
-          <form id="invite-client-form" class="invite-card"><h3>Cliente con account di test (legacy)</h3><label>Username<div class="restore-row"><input id="invite-client-username" required autocomplete="off" placeholder="username esatto"><button type="button" class="secondary" data-verify-username="invite-client-username" data-verify-out="invite-client-result">Verifica</button></div></label><label id="invite-client-nutri-field">Professionista destinatario<select id="invite-client-nutritionist"><option value="">Senza professionista (solo admin)</option></select></label><p class="field-hint">Solo per i test: crea un account tecnico con email fittizia, consentito negli emulatori o con il flag <span class="mono">LEGACY_TEST_INVITES_ENABLED=true</span>. Per i clienti reali usa “Invita nuovo cliente” con l’email reale.</p><p id="invite-client-result" class="feedback" role="status"></p><input id="invite-client-link" class="invite-link mono hidden" type="text" readonly aria-label="Link di invito da consegnare al cliente"><button class="primary" type="submit">Invita account di test →</button></form>
-        </details></section>
       </main>
 
       <main id="view-doses" class="console-view hidden">
@@ -91,7 +92,7 @@
       </main>
 
       <main id="view-structures" class="console-view hidden">
-        <section class="hero-row"><div><p class="eyebrow">STRUTTURE DIETA</p><h1>Le tue strutture,<br>revisionate e tracciate.</h1><p>Ogni modifica crea una nuova revisione: le precedenti restano intatte e ripristinabili.</p></div><div class="hero-actions"><button id="new-diet-plan" class="primary small-primary">＋ Nuova dieta guidata</button><button id="new-structure" class="secondary">＋ Nuova struttura classica</button><button id="refresh-structures" class="secondary">↻ Aggiorna</button></div></section>
+        <section class="hero-row"><div><p class="eyebrow">STRUTTURE DIETA</p><h1>Le tue strutture,<br>revisionate e tracciate.</h1><p>Ogni modifica crea una nuova revisione: le precedenti restano intatte e ripristinabili.</p></div><div class="hero-actions"><button id="new-diet-plan" class="primary small-primary">＋ Nuova dieta guidata</button><button id="refresh-structures" class="secondary">↻ Aggiorna</button></div></section>
         <section class="panel"><div class="panel-head"><div><h2>Strutture dieta</h2><p id="structures-scope">Vedi tutte le strutture che il tuo ruolo autorizza.</p></div><div class="hero-actions"><button id="compare-structures" class="secondary" disabled>Confronta (0)</button></div></div><div id="structures-feedback" class="feedback" role="status"></div><div id="compare-hint" class="feedback" role="status">Seleziona almeno 2 strutture per confrontarle.</div><div id="structures-list" class="client-grid"></div></section>
       </main>
 
@@ -115,7 +116,7 @@
     </div>
   </div>
 
-  <div id="client-detail-dialog" class="dialog hidden" role="dialog" aria-modal="true" aria-labelledby="client-detail-title"><div class="dialog-backdrop" data-close-client-detail></div><section class="dialog-card wide"><button class="dialog-close" data-close-client-detail aria-label="Chiudi scheda">×</button><p class="eyebrow">SCHEDA CLIENTE</p><h2 id="client-detail-title">Scheda cliente</h2><p id="client-detail-subtitle" class="dialog-lead"></p>
+  <div id="client-detail-dialog" class="dialog hidden" role="dialog" aria-modal="true" aria-labelledby="client-detail-title"><div class="dialog-backdrop" data-close-client-detail></div><section class="dialog-card wide"><button class="dialog-close" data-close-client-detail aria-label="Chiudi scheda">×</button><p class="eyebrow">SCHEDA CLIENTE</p><h2 id="client-detail-title">Scheda cliente</h2><p id="client-detail-email" class="client-detail-email"></p><p id="client-detail-subtitle" class="dialog-lead"></p>
     <div id="client-detail-body"></div>
     <p id="client-detail-feedback" class="feedback" role="status"></p>
     <div class="dialog-actions danger-zone"><button type="button" id="client-remove-open" class="primary danger">Rimuovi cliente</button><button type="button" class="secondary" data-close-client-detail>Chiudi</button></div>
@@ -126,10 +127,12 @@
   </section></div>
 
   
-<div id="diet-plan-dialog" class="dialog hidden" role="dialog" aria-modal="true" aria-labelledby="diet-plan-title"><div class="dialog-backdrop" data-close-diet-plan></div><section class="dialog-card wide"><button class="dialog-close" data-close-diet-plan aria-label="Chiudi editor">×</button><p class="eyebrow">DIETA GUIDATA</p><h2 id="diet-plan-title">Nuova dieta guidata</h2><p id="diet-plan-subtitle" class="dialog-lead">Pasti nell’ordine fisso (colazione → spuntino serale), opzioni A/B/C/D di tipo ricetta o alimenti liberi con gruppi scelta. Pesi sempre al netto degli scarti e a crudo. I valori energetici sono appunti manuali: nessun calcolo automatico.</p>
+<div id="diet-plan-dialog" class="dialog hidden" role="dialog" aria-modal="true" aria-labelledby="diet-plan-title"><div class="dialog-backdrop" data-close-diet-plan></div><section class="dialog-card wide"><button class="dialog-close" data-close-diet-plan aria-label="Chiudi editor">×</button><p class="eyebrow">DIETA GUIDATA</p><h2 id="diet-plan-title">Nuova dieta guidata</h2><p id="diet-plan-subtitle" class="dialog-lead">Scegli i pasti e aggiungi gli alimenti dal catalogo per comporre una giornata chiara. Le alternative della tabella di riferimento sono già disponibili per velocizzare la compilazione.</p>
     <form id="diet-plan-form"><input id="diet-plan-id" type="hidden">
       <label>Nome dieta<input id="diet-plan-name" required minlength="3" maxlength="80" placeholder="es. Piano iposodico — primavera"></label>
       <p id="diet-plan-classic-note" class="callout hidden"></p>
+      <p class="field-hint diet-catalog-hint">Scrivi il nome di un alimento e sceglilo dal catalogo: la categoria viene compilata automaticamente. Puoi sempre correggere dose e unità.</p>
+      <datalist id="diet-catalog-options"></datalist>
       <div id="diet-plan-days" class="diet-days"></div>
       <button type="button" id="diet-plan-add-day" class="secondary full">＋ Aggiungi giornata</button>
       <label>Note generali<textarea id="diet-plan-general-notes" maxlength="2000" placeholder="Indicazioni valide per tutte le giornate (visibili allo staff)"></textarea></label>
@@ -282,6 +285,7 @@
   </section></div>
 
   <script>if (["localhost", "127.0.0.1"].includes(location.hostname)) self.FIREBASE_APPCHECK_DEBUG_TOKEN = true;</script>
+  <script src="js/loading.js"></script>
   <script src="js/domain.js"></script>
   <script src="js/firebase.js"></script>
   <script src="js/admin.js"></script>

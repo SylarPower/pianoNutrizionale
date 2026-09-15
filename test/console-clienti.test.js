@@ -63,7 +63,7 @@ test('titolo cliente: Nome Cognome, mai UID o ID tecnici', () => {
   assert.match(js, /Apri scheda/);
 });
 
-test('scheda cliente: anagrafica, collegamento, struttura, dati tecnici, storico', () => {
+test('scheda cliente: intestazione operativa, collegamento, struttura e attività', () => {
   for (const id of ['client-detail-dialog', 'client-detail-title', 'client-detail-subtitle', 'client-detail-body', 'client-detail-feedback', 'client-remove-open']) {
     assert.match(html, new RegExp(`id="${id}"`), `manca #${id}`);
   }
@@ -71,9 +71,12 @@ test('scheda cliente: anagrafica, collegamento, struttura, dati tecnici, storico
   assert.match(js, /function openClientDetail\(clientId\)/);
   assert.match(js, /function closeClientDetail\(\)/);
   assert.match(js, /function renderClientDetail\(\)/);
-  for (const section of ['Dati anagrafici', 'Collegamento', 'Struttura dieta', 'Dati tecnici', 'Storico collegamenti']) {
+  for (const section of ['Collegamento', 'Struttura dieta', 'Attività collegamento']) {
     assert.match(js, new RegExp(section), `sezione «${section}»`);
   }
+  assert.match(html, /id="client-detail-email"/);
+  assert.doesNotMatch(js, /<h3>Dati anagrafici<\/h3>|<h3>Dati tecnici<\/h3>/);
+  assert.match(js, /detail-admin-meta/);
   // Anagrafica e cambio email solo server-side, mai scritture dirette.
   assert.match(js, /'updateClientProfileByStaff'/);
   assert.match(js, /'proposeClientEmailChange'/);

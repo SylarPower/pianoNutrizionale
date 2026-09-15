@@ -30,7 +30,13 @@ firebase emulators:start --project piano-nutrizionale-test
 npm --prefix functions run seed:emulator
 ```
 
-Il seed stampa organization ID, username demo, password e checksum del rule set da usare nella console. `PIANO_SAAS_CONFIG.enabled` in `js/saas-config.js` è **già `true`** ed è il valore di produzione: non va toccato né per provare l'emulatore né per il deploy (vedi «Feature flag client» più sotto). Il test Rules richiede Java. In questa sandbox Java non è installato: eseguire `npm run test:rules` in CI o su una macchina con JRE 21.
+Il seed stampa le credenziali della fixture locale e il checksum del rule set:
+sono dati esclusivi dell'emulatore e non appartengono alla piattaforma live.
+`PIANO_SAAS_CONFIG.enabled` in `js/saas-config.js` è **già `true`** ed è il
+valore di produzione: non va toccato né per provare l'emulatore né per il
+deploy (vedi «Feature flag client» più sotto). Il test Rules richiede Java. In
+questa sandbox Java non è installato: eseguire `npm run test:rules` in CI o su
+una macchina con JRE 21.
 
 ## Fixture minima per prova end-to-end
 
@@ -74,8 +80,8 @@ Creare `globalRuleSets/base/versions/3` con il contratto documentato, `status:"p
 6. Deploy Hosting (GitHub Pages) con `PIANO_SAAS_CONFIG.enabled = true`
    (valore attuale: **non** cambiarlo durante il deploy; la procedura storica
    che lo spegneva prima della pubblicazione non vale più).
-7. Verificare audit e smoke post-deploy (vista Clienti, invito di prova con
-   Copia link / Condividi link).
+7. Verificare audit e smoke post-deploy (vista Clienti, invito controllato a
+   un indirizzo reale dell'organizzazione con Copia link / Condividi link).
 
 ### Feature flag client: `PIANO_SAAS_CONFIG.enabled`
 
@@ -200,7 +206,7 @@ Alert: spike permission-denied, checksum mismatch, errori scheduler, backlog olt
 
 - provider pubblicitario reale e verifica ricevuta (`requestShoppingReward` verifica solo l'entitlement da assignment);
 - billing/abbonamenti;
-- UI completa inviti, audit, contenuti editoriali e GDPR self-service;
+- contenuti editoriali e GDPR self-service (la UI inviti email è già inclusa nella console);
 - job definitivi export/cancellazione/retention;
 - analytics esterne;
 - conversione automatica dei rule set canonici già in produzione;
@@ -216,12 +222,11 @@ Un invito a un account già esistente compare nella campanella dell’app, con i
 
 ### Inviti con email reale (ADR 0004) — link consegnato a mano
 
-La console invita i clienti reali con la loro **email** (**Clienti → ＋ Invita
-nuovo cliente**): il cliente sceglie la password dal link `#/invito/<token>` e
-il collegamento si attiva **dopo la verifica dell’email**. Gli account tecnici
-con email fittizia restano per i test e si creano dal modulo legacy solo negli
-emulatori o con `LEGACY_TEST_INVITES_ENABLED=true` (mai in produzione se non per
-una prova concordata).
+La console invita i clienti reali con la loro **email**, nome e cognome
+(**Clienti → ＋ Invita nuovo cliente**): il cliente sceglie la password dal link
+`#/invito/<token>` già precompilato e il collegamento si attiva **dopo la
+verifica dell’email**. Questo è l'unico percorso disponibile nella piattaforma
+live.
 
 **Nessun invio automatico**: il servizio email è stato eliminato (nessun
 provider, chiave o variabile d’ambiente). Le callable restituiscono il link e

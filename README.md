@@ -6,7 +6,7 @@ WebApp PWA privata per gestire colazioni, spuntini, pranzi, cene, batch cooking 
 
 ## Cosa offre
 
-- accesso personale con username e password, senza email mostrata nell'interfaccia;
+- accesso personale con email e password, con l'indirizzo usato come credenziale;
 - account utilizzabile anche con ricettario completamente vuoto;
 - creazione manuale di ricette con dosi Donna IPO A/R e Uomo A/R;
 - importazione ed esportazione JSON di una ricetta o dell'intero catalogo (schema 5);
@@ -171,9 +171,9 @@ Seguire i passaggi nell'ordine indicato.
 
 Il file `js/firebase.js` contiene già la configurazione del progetto `piano-nutrizionale`. Se ne crei uno con un nome diverso, devi sostituire `firebaseConfig` con quello mostrato da Firebase in **Impostazioni progetto → Le tue app → Web app**.
 
-### Passaggio 2: abilitare username e password
+### Passaggio 2: abilitare email e password
 
-Firebase usa tecnicamente email/password. L'app nasconde l'email e la costruisce partendo dallo username.
+Firebase usa email/password e l'app mostra l'indirizzo email reale come credenziale del cliente.
 
 1. Nel menu Firebase apri **Authentication**.
 2. Premi **Inizia**, se richiesto.
@@ -183,54 +183,32 @@ Firebase usa tecnicamente email/password. L'app nasconde l'email e la costruisce
 6. Non è necessario attivare Email Link.
 7. Premi **Salva**.
 
-### Passaggio 3: creare il primo utente
+### Passaggio 3: abilitare l'accesso del primo amministratore
 
 1. Vai in **Authentication → Users**.
-2. Premi **Add user / Aggiungi utente**.
-3. Scegli uno username, per esempio `mario`.
-4. Nel campo email scrivi esattamente:
+2. Premi **Add user / Aggiungi utente** per creare l'account del platform admin.
+3. Usa le credenziali amministrative previste dal deploy e conservale fuori dal
+   repository: non inserire mai password nei file JavaScript, su GitHub o in
+   Firestore.
+4. Apri `admin.html` e accedi alla console professionale. Solo il platform
+   admin può gestire il catalogo e invitare altri professionisti.
 
-   ```text
-   mario@utenti.pianonutrizionale.app
-   ```
+### Passaggio 3-bis: invitare i clienti reali
 
-5. Imposta una password di almeno 6 caratteri, preferibilmente più lunga.
-6. Salva.
+I clienti si invitano dalla console con la loro email vera:
+**Clienti → ＋ Invita nuovo cliente**. Inserisci email, nome e cognome; la
+console mostra un link monouso da consegnare con **Copia link** o
+**Condividi link** (nessuna email d'invito parte in automatico).
 
-Nella webapp l'utente inserirà:
+Quando il cliente apre il link, trova email, nome e cognome già compilati dal
+nutrizionista, sceglie **solo la password** e verifica l'indirizzo tramite
+Firebase Auth. Il collegamento con il professionista si attiva dopo la
+verifica. Se l'account esiste già, riceve una richiesta da accettare nell'app.
 
-```text
-Username: mario
-Password: la password scelta
-```
-
-Non inserire mai password nei file JavaScript, su GitHub o in Firestore.
-
-Per creare `anna`, usa:
-
-```text
-anna@utenti.pianonutrizionale.app
-```
-
-### Passaggio 3-bis: inviti dei clienti reali (modello attuale)
-
-Gli account creati a mano in Authentication con l'email tecnica
-`nome@utenti.pianonutrizionale.app` sono **account di test**: servono a demo,
-prove e test automatici e restano validi.
-
-I **clienti reali** si invitano invece dalla console con la loro email vera:
-**Clienti → ＋ Invita nuovo cliente**. La console mostra un link monouso che
-consegni tu con **Copia link** o **Condividi link** (nessuna email parte in
-automatico: niente provider, chiavi o variabili da configurare). Il cliente
-apre il link, trova email/nome/cognome già compilati (inseriti dal
-nutrizionista), sceglie **solo la password** e verifica l'indirizzo email
-(email di Firebase Auth); il collegamento con il professionista si attiva dopo
-la verifica. Se l'account esiste già, riceve una richiesta da accettare in app.
-
-Guida completa (convivenza con gli account di test, consegna del link, recupero
-password, modifica email, diagnostica): [`docs/inviti-email.md`](docs/inviti-email.md).
-Passi manuali senza terminale (deploy delle Functions da GitHub, significato di
-`PIANO_SAAS_CONFIG.enabled`): [`docs/configurazione-manuale.md`](docs/configurazione-manuale.md).
+Guida completa all'invito, al recupero password e alla diagnostica:
+[`docs/inviti-email.md`](docs/inviti-email.md). Passi manuali senza terminale
+(deploy delle Functions e `PIANO_SAAS_CONFIG.enabled`):
+[`docs/configurazione-manuale.md`](docs/configurazione-manuale.md).
 
 ### Passaggio 4: creare Firestore
 
@@ -316,7 +294,7 @@ http://localhost:8080
 
 ### Passaggio 9: primo accesso
 
-1. Inserisci username e password.
+1. Inserisci email e password.
 2. La webapp si apre anche se non hai importato alcun JSON.
 3. Il Ricettario può essere vuoto.
 4. Premi **Ricettario → + Nuova** per creare una ricetta manualmente.
@@ -447,7 +425,7 @@ https://TUO-USERNAME-GITHUB.github.io/pianoNutrizionale/
 
 Apri l'indirizzo online e controlla, nell'ordine:
 
-1. login con username e password;
+1. login con email e password;
 2. apertura con ricettario vuoto;
 3. creazione e salvataggio di una ricetta;
 4. logout e nuovo login: la ricetta deve essere ancora presente;
@@ -742,7 +720,7 @@ Anteprima prima dell'accettazione con: mittente, numero di ricette, ricette nuov
 
 # PWA offline
 
-`sw.js` (cache versionata `piano-nutrizionale-shell-v<CACHE_VERSION>`, attualmente v54):
+`sw.js` (cache versionata `piano-nutrizionale-shell-v<CACHE_VERSION>`, attualmente v88):
 
 - shell dell'app: `index.html`, CSS, JS, manifest, icone, `offline.html`;
 - navigazione **network-first** con fallback in cache (e pagina offline comprensibile);

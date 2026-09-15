@@ -318,7 +318,7 @@ nuova versione mai sovrascritta; le revisioni strutture conservano
 - `acceptOrganizationInvite({ token })`
 - `listOrganizationUsers({ organizationId })`
 - `setMemberStatus({ organizationId, userId, status: 'active|suspended', idempotencyKey })`
-- `inviteClientLink({ organizationId, username, nutritionistUid?, idempotencyKey })` — solo account tecnici di test (`LEGACY_TEST_INVITES_ENABLED` o emulatori)
+- `inviteClientLink({ organizationId, username, nutritionistUid?, idempotencyKey })` — compatibilità interna per emulatori/migrazioni; non è esposto dalla console live
 - `inviteClientByEmail({ organizationId, email, firstName, lastName, nutritionistUid?, idempotencyKey })` → `{ status, inviteUrl?, expiresAt?, … }` — il link si consegna a mano (nessun campo `delivery`)
 - `getClientInvitePreview({ token })` — non autenticata: il token è il segreto
 - `redeemClientInvite({ token|null, idempotencyKey })` — attiva il collegamento solo con email verificata; con `token: null` l'app lo richiama a ogni accesso/ricarica (ID token rinnovato a forza) e il server risponde `link-active` / `no-pending-invite`
@@ -365,10 +365,11 @@ Per i clienti `displayName` non esiste più: l'anagrafica è `firstName`/`lastNa
 
 ## Vista Clienti unificata (console, ADR 0005)
 
-La console ha un'unica area «Clienti»: niente vista «Utenti» separata. Team
-dello studio, richieste e invito legacy vivono dentro la vista Clienti;
-l'invito con email reale è un dialog dedicato. Il nutrizionista vede solo i
-propri clienti, in tutti gli stati operativi.
+La console ha un'unica area «Clienti»: niente vista «Utenti» separata. Il
+team dello studio è riservato all'admin; richieste e inviti del cliente vivono
+nella scheda del cliente, senza elenco duplicato. L'invito con email reale è un
+dialog dedicato e il nutrizionista vede solo i propri clienti, in tutti gli
+stati operativi.
 
 Stati operativi (calcolati in `js/domain.js`, `clientOperationalStatus`):
 
@@ -378,9 +379,9 @@ Stati operativi (calcolati in `js/domain.js`, `clientOperationalStatus`):
 | `pending` | In attesa | profilo `pending`, oppure invito o richiesta pendente |
 | `inactive` | Inattivo | tutto il resto (`unlinked`, `suspended`, …) |
 
-Titolo del cliente (`clientDisplayTitle`, mai UID o ID tecnici): «Nome
-Cognome» → email mascherata (`m•••@dominio.it`) → `displayCode`. Lo username resta solo informazione secondaria per gli account
-di test legacy.
+Titolo del cliente (mai UID o ID tecnici): «Nome Cognome» → email
+mascherata (`m•••@dominio.it`) → «Cliente». Username, codici e identificativi
+restano dati interni e non vengono mostrati al nutrizionista.
 
 `listAuthorizedClients({ organizationId })` restituisce `{ clients,
 invitations, requests, emailChanges }`: clienti in ogni stato (ordinati per

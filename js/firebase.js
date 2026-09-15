@@ -167,16 +167,21 @@ async function ensureFirebaseReady() {
 }
 
 async function callSaasFunction(name, data = {}) {
-  await ensureFirebaseReady();
-  if (!functionsService) throw new Error("Servizio SaaS non disponibile");
-  // Il serializer Firebase rifiuta `undefined`: i form opzionali lo omettono.
-  const cleanData = JSON.parse(JSON.stringify(data));
-  if (hasCompatFirebase()) {
-    const response = await functionsService.httpsCallable(name)(cleanData);
+  window.PianoLoading?.start("Aggiornamento in corso…");
+  try {
+    await ensureFirebaseReady();
+    if (!functionsService) throw new Error("Servizio SaaS non disponibile");
+    // Il serializer Firebase rifiuta `undefined`: i form opzionali lo omettono.
+    const cleanData = JSON.parse(JSON.stringify(data));
+    if (hasCompatFirebase()) {
+      const response = await functionsService.httpsCallable(name)(cleanData);
+      return response.data;
+    }
+    const response = await fb.httpsCallable(functionsService, name)(cleanData);
     return response.data;
+  } finally {
+    window.PianoLoading?.stop();
   }
-  const response = await fb.httpsCallable(functionsService, name)(cleanData);
-  return response.data;
 }
 
 function serverTimestamp() {
@@ -303,11 +308,13 @@ function isClientLinkActiveStatus(status) {
 async function forceIdTokenRefresh() {
   const user = currentUser || (auth && auth.currentUser);
   if (!user) throw new Error("Autenticazione richiesta");
-  if (hasCompatFirebase()) return user.getIdToken(true);
-  await ensureFirebaseReady();
-  // Stessa istanza utente dell'Auth: l'SDK modulare riceve l'utente come primo
-  // argomento (`getIdToken(user, forceRefresh)`).
-  return fb.getIdToken(user, true);
+  return withDataLoading(async () => {
+    if (hasCompatFirebase()) return user.getIdToken(true);
+    await ensureFirebaseReady();
+    // Stessa istanza utente dell'Auth: l'SDK modulare riceve l'utente come primo
+    // argomento (`getIdToken(user, forceRefresh)`).
+    return fb.getIdToken(user, true);
+  }, "Verifica email…");
 }
 
 // Riscatto dell'invito SENZA token, con ID token rinnovato: è il percorso che
@@ -332,15 +339,17 @@ async function signUpWithRealEmail(email, password) {
     error.code = "auth/weak-password";
     throw error;
   }
-  if (hasCompatFirebase()) return auth.createUserWithEmailAndPassword(check.email, password);
-  await ensureFirebaseReady();
-  return fb.createUserWithEmailAndPassword(auth, check.email, password);
+  return withDataLoading(async () => {
+    if (hasCompatFirebase()) return auth.createUserWithEmailAndPassword(check.email, password);
+    await ensureFirebaseReady();
+    return fb.createUserWithEmailAndPassword(auth, check.email, password);
+  }, "Creazione accesso…");
 }
 
 // Accesso con email reale (clienti nuovi). Lo username resta per gli account
 // tecnici legacy: le due strade non si mescolano mai.
 async function signInWithEmailAddress(email, password) {
-  const check = validateEmailAddress(email, { allowLegacy: true });
+  const check = validateEmailAddress(email, { allowLegacy: false });
   if (!check.ok) {
     const error = new Error(check.message);
     error.code = "auth/invalid-email";
@@ -351,9 +360,11 @@ async function signInWithEmailAddress(email, password) {
     error.code = "auth/missing-password";
     throw error;
   }
-  if (hasCompatFirebase()) return auth.signInWithEmailAndPassword(check.email, password);
-  await ensureFirebaseReady();
-  return fb.signInWithEmailAndPassword(auth, check.email, password);
+  return withDataLoading(async () => {
+    if (hasCompatFirebase()) return auth.signInWithEmailAndPassword(check.email, password);
+    await ensureFirebaseReady();
+    return fb.signInWithEmailAndPassword(auth, check.email, password);
+  }, "Verifica accesso…");
 }
 
 // Recupero password: il messaggio è SEMPRE lo stesso, così non si può capire
@@ -365,11 +376,13 @@ async function sendPasswordResetForEmail(email) {
     return { ok: false, message: check.message, uniform: false };
   }
   try {
-    if (hasCompatFirebase()) await auth.sendPasswordResetEmail(check.email);
-    else {
-      await ensureFirebaseReady();
-      await fb.sendPasswordResetEmail(auth, check.email);
-    }
+    await withDataLoading(async () => {
+      if (hasCompatFirebase()) await auth.sendPasswordResetEmail(check.email);
+      else {
+        await ensureFirebaseReady();
+        await fb.sendPasswordResetEmail(auth, check.email);
+      }
+    }, "Invio recupero password…");
   } catch (error) {
     // Errori di rete o limiti anti-abuso: il messaggio resta uniforme.
     console.warn("Invio reset password non riuscito", error?.code || error?.message);
@@ -390,11 +403,13 @@ async function sendVerificationEmailToCurrentUser() {
     return { ok: false, legacy: true, message: "Questo è un account tecnico di test: la verifica email non è prevista." };
   }
   if (user.emailVerified) return { ok: true, alreadyVerified: true, message: "Indirizzo già verificato." };
-  if (hasCompatFirebase()) await user.sendEmailVerification();
-  else {
-    await ensureFirebaseReady();
-    await fb.sendEmailVerification(auth.currentUser);
-  }
+  await withDataLoading(async () => {
+    if (hasCompatFirebase()) await user.sendEmailVerification();
+    else {
+      await ensureFirebaseReady();
+      await fb.sendEmailVerification(auth.currentUser);
+    }
+  }, "Invio verifica email…");
   return { ok: true, message: "Ti abbiamo inviato un'email di verifica: controlla la posta (anche lo spam)." };
 }
 
@@ -402,11 +417,13 @@ async function sendVerificationEmailToCurrentUser() {
 async function reloadCurrentUser() {
   const user = currentUser || (auth && auth.currentUser);
   if (!user) return null;
-  if (hasCompatFirebase()) await user.reload();
-  else {
-    await ensureFirebaseReady();
-    await fb.reload(auth.currentUser);
-  }
+  await withDataLoading(async () => {
+    if (hasCompatFirebase()) await user.reload();
+    else {
+      await ensureFirebaseReady();
+      await fb.reload(auth.currentUser);
+    }
+  }, "Aggiornamento profilo…");
   currentUser = (auth && auth.currentUser) || currentUser;
   return currentUser;
 }
@@ -428,11 +445,11 @@ function validateSignInInput(username, password) {
 
 async function signInWithUsername(username, password) {
   const normalized = validateSignInInput(username, password);
-  if (hasCompatFirebase()) {
-    return auth.signInWithEmailAndPassword(usernameToInternalEmail(normalized), password);
-  }
-  await ensureFirebaseReady();
-  return fb.signInWithEmailAndPassword(auth, usernameToInternalEmail(normalized), password);
+  return withDataLoading(async () => {
+    if (hasCompatFirebase()) return auth.signInWithEmailAndPassword(usernameToInternalEmail(normalized), password);
+    await ensureFirebaseReady();
+    return fb.signInWithEmailAndPassword(auth, usernameToInternalEmail(normalized), password);
+  }, "Verifica accesso…");
 }
 
 // Registrazione pubblica da link invito: username 3-20 caratteri (lettere
@@ -459,21 +476,22 @@ function validateSignUpInput(username, password) {
 
 async function signUpWithUsername(username, password) {
   const normalized = validateSignUpInput(username, password);
-  if (hasCompatFirebase()) {
-    return auth.createUserWithEmailAndPassword(usernameToInternalEmail(normalized), password);
-  }
-  await ensureFirebaseReady();
-  return fb.createUserWithEmailAndPassword(auth, usernameToInternalEmail(normalized), password);
+  return withDataLoading(async () => {
+    if (hasCompatFirebase()) return auth.createUserWithEmailAndPassword(usernameToInternalEmail(normalized), password);
+    await ensureFirebaseReady();
+    return fb.createUserWithEmailAndPassword(auth, usernameToInternalEmail(normalized), password);
+  }, "Creazione accesso…");
 }
 
 async function signOutUser() {
   if (!auth) return;
-  if (hasCompatFirebase()) {
-    await auth.signOut();
-  } else {
-    await ensureFirebaseReady();
-    await fb.signOut(auth);
-  }
+  await withDataLoading(async () => {
+    if (hasCompatFirebase()) await auth.signOut();
+    else {
+      await ensureFirebaseReady();
+      await fb.signOut(auth);
+    }
+  }, "Chiusura sessione…");
 }
 
 function observeAuthState(callback) {
@@ -597,23 +615,30 @@ function compatAppCheckAvailable(compat) {
 // Login della console: stessa validazione di input, ma sull'Auth separato.
 async function adminSignInWithUsername(username, password) {
   const normalized = validateSignInInput(username, password);
-  await ensureAdminServices();
-  if (hasCompatFirebase()) {
-    return adminAuth.signInWithEmailAndPassword(usernameToInternalEmail(normalized), password);
+  window.PianoLoading?.start("Verifica accesso…");
+  try {
+    await ensureAdminServices();
+    if (hasCompatFirebase()) {
+      return adminAuth.signInWithEmailAndPassword(usernameToInternalEmail(normalized), password);
+    }
+    return fb.signInWithEmailAndPassword(adminAuth, usernameToInternalEmail(normalized), password);
+  } finally {
+    window.PianoLoading?.stop();
   }
-  return fb.signInWithEmailAndPassword(adminAuth, usernameToInternalEmail(normalized), password);
 }
 
 // Logout SOLO della console: opera sull'Auth dell'app nominata, quindi la
 // sessione dell'app cliente (e viceversa) resta intatta.
 async function adminSignOutUser() {
   if (!adminAuth) return;
-  if (hasCompatFirebase()) {
-    await adminAuth.signOut();
-    return;
-  }
-  await ensureAdminServices();
-  await fb.signOut(adminAuth);
+  await withDataLoading(async () => {
+    if (hasCompatFirebase()) {
+      await adminAuth.signOut();
+      return;
+    }
+    await ensureAdminServices();
+    await fb.signOut(adminAuth);
+  }, "Chiusura sessione…");
 }
 
 function getAdminCurrentUser() {
@@ -624,6 +649,7 @@ function getAdminCurrentUser() {
 // nell'app cliente non viene mai rilevata qui.
 function observeAdminAuthState(callback) {
   let unsubscribe = () => {};
+  window.PianoLoading?.start("Verifica accesso…");
   ensureAdminServices().then(() => {
     if (!adminAuth) { callback(null); return; }
     const handler = user => {
@@ -635,7 +661,7 @@ function observeAdminAuthState(callback) {
   }).catch(error => {
     console.error("Servizi della console non disponibili", error);
     callback(null);
-  });
+  }).finally(() => window.PianoLoading?.stop());
   return () => unsubscribe && unsubscribe();
 }
 
@@ -643,15 +669,20 @@ function observeAdminAuthState(callback) {
 // provengono dall'app nominata, quindi il server autorizza l'account
 // professionale e NON l'eventuale sessione dell'app cliente.
 async function callAdminSaasFunction(name, data = {}) {
-  await ensureAdminServices();
-  if (!adminFunctionsService) throw new Error("Servizio SaaS non disponibile");
-  const cleanData = JSON.parse(JSON.stringify(data));
-  if (hasCompatFirebase()) {
-    const response = await adminFunctionsService.httpsCallable(name)(cleanData);
+  window.PianoLoading?.start("Aggiornamento in corso…");
+  try {
+    await ensureAdminServices();
+    if (!adminFunctionsService) throw new Error("Servizio SaaS non disponibile");
+    const cleanData = JSON.parse(JSON.stringify(data));
+    if (hasCompatFirebase()) {
+      const response = await adminFunctionsService.httpsCallable(name)(cleanData);
+      return response.data;
+    }
+    const response = await fb.httpsCallable(adminFunctionsService, name)(cleanData);
     return response.data;
+  } finally {
+    window.PianoLoading?.stop();
   }
-  const response = await fb.httpsCallable(adminFunctionsService, name)(cleanData);
-  return response.data;
 }
 
 // ---- Letture Firestore della console (es. autocomplete catalogo globale) ----
@@ -667,16 +698,26 @@ function adminQueryLimit(collectionRef, limit) {
 }
 
 async function adminGetDocsQuery(query) {
-  if (hasCompatFirebase()) return query.get();
-  await ensureAdminServices();
-  return fb.getDocs(query);
+  window.PianoLoading?.start("Lettura catalogo…");
+  try {
+    if (hasCompatFirebase()) return query.get();
+    await ensureAdminServices();
+    return fb.getDocs(query);
+  } finally {
+    window.PianoLoading?.stop();
+  }
 }
 
 // Lettura singola della console (es. riepilogo del catalogo globale).
 async function adminGetDoc(path) {
-  if (hasCompatFirebase()) return adminDb.doc(path).get();
-  await ensureAdminServices();
-  return fb.getDoc(fb.doc(adminDb, path));
+  window.PianoLoading?.start("Lettura catalogo…");
+  try {
+    if (hasCompatFirebase()) return adminDb.doc(path).get();
+    await ensureAdminServices();
+    return fb.getDoc(fb.doc(adminDb, path));
+  } finally {
+    window.PianoLoading?.stop();
+  }
 }
 
 // ----- Riferimenti Firestore (API modulare a documenti/collezioni) -----
@@ -803,31 +844,51 @@ function docInCollection(collectionRef, id) {
   return fb.doc(collectionRef, id);
 }
 
-async function getDoc(ref) {
-  if (hasCompatFirebase()) return ref.get();
-  await ensureFirebaseReady();
-  return fb.getDoc(ref);
+function withDataLoading(operation, message = "Caricamento dati…") {
+  window.PianoLoading?.start(message);
+  try {
+    return Promise.resolve(operation()).finally(() => window.PianoLoading?.stop());
+  } catch (error) {
+    window.PianoLoading?.stop();
+    return Promise.reject(error);
+  }
+}
+
+function getDoc(ref) {
+  return withDataLoading(async () => {
+    if (hasCompatFirebase()) return ref.get();
+    await ensureFirebaseReady();
+    return fb.getDoc(ref);
+  });
 }
 
 function setDoc(ref, data, options = undefined) {
-  if (hasCompatFirebase()) return ref.set(data, options);
-  // L'SDK modulare usa { merge: true } come opzione di setDoc, stessa forma.
-  return ensureFirebaseReady().then(() => fb.setDoc(ref, data, options));
+  return withDataLoading(() => {
+    if (hasCompatFirebase()) return ref.set(data, options);
+    // L'SDK modulare usa { merge: true } come opzione di setDoc, stessa forma.
+    return ensureFirebaseReady().then(() => fb.setDoc(ref, data, options));
+  }, "Salvataggio dati…");
 }
 
 function updateDoc(ref, data) {
-  if (hasCompatFirebase()) return ref.update(data);
-  return ensureFirebaseReady().then(() => fb.updateDoc(ref, data));
+  return withDataLoading(() => {
+    if (hasCompatFirebase()) return ref.update(data);
+    return ensureFirebaseReady().then(() => fb.updateDoc(ref, data));
+  }, "Salvataggio dati…");
 }
 
 function deleteDocRef(ref) {
-  if (hasCompatFirebase()) return ref.delete();
-  return ensureFirebaseReady().then(() => fb.deleteDoc(ref));
+  return withDataLoading(() => {
+    if (hasCompatFirebase()) return ref.delete();
+    return ensureFirebaseReady().then(() => fb.deleteDoc(ref));
+  }, "Aggiornamento dati…");
 }
 
 function addDocRef(collectionRef, data) {
-  if (hasCompatFirebase()) return collectionRef.add(data);
-  return ensureFirebaseReady().then(() => fb.addDoc(collectionRef, data));
+  return withDataLoading(() => {
+    if (hasCompatFirebase()) return collectionRef.add(data);
+    return ensureFirebaseReady().then(() => fb.addDoc(collectionRef, data));
+  }, "Salvataggio dati…");
 }
 
 function queryWhere(collectionRef, field, op, value) {
@@ -854,10 +915,12 @@ function legacyRecipesQuery() {
   return queryLimit(collectionAt(`users/${requireUser().uid}/recipes`), 100);
 }
 
-async function getDocsQuery(query) {
-  if (hasCompatFirebase()) return query.get();
-  await ensureFirebaseReady();
-  return fb.getDocs(query);
+function getDocsQuery(query) {
+  return withDataLoading(async () => {
+    if (hasCompatFirebase()) return query.get();
+    await ensureFirebaseReady();
+    return fb.getDocs(query);
+  });
 }
 
 function onSnapshotRef(ref, onNext, onError) {
@@ -870,13 +933,15 @@ function onSnapshotRef(ref, onNext, onError) {
 }
 
 function writeBatch() {
-  if (hasCompatFirebase()) return db.batch();
-  const batch = fb.writeBatch(db);
+  const batch = hasCompatFirebase() ? db.batch() : fb.writeBatch(db);
   return {
     set: (ref, data, options) => batch.set(ref, data, options),
     update: (ref, data) => batch.update(ref, data),
     delete: ref => batch.delete(ref),
-    commit: async () => { await ensureFirebaseReady(); return batch.commit(); }
+    commit: () => withDataLoading(async () => {
+      if (!hasCompatFirebase()) await ensureFirebaseReady();
+      return batch.commit();
+    }, "Salvataggio dati…")
   };
 }
 

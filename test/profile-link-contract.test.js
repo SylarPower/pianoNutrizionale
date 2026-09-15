@@ -22,19 +22,17 @@ test('il centro notifiche mostra le richieste SaaS con entrambe le azioni', () =
   assert.match(app, /respondClientLinkRequest\('\$\{escapeHtml\(request\.requestId\)\}',\'reject\'\)/);
 });
 
-test('la console usa il fallback nome e cognome, email, codice (displayName rimosso)', () => {
-  // Titolo nel dominio condiviso: «Nome Cognome» → email mascherata → displayCode.
-  // displayName cliente rimosso (Sessione 1); mai username come identità
-  // principale (resta solo info secondaria per gli account di test legacy),
-  // mai UID o ID tecnici nel titolo.
-  assert.match(admin, /clientDisplayTitle/);
+test('la console usa nome e cognome o email mascherata senza dati tecnici', () => {
+  // La console non usa displayName, username o identificativi come titolo:
+  // quando il profilo è incompleto mostra al massimo l'email mascherata.
+  assert.match(admin, /function clientLabel\(client\)/);
+  assert.doesNotMatch(admin, /return client\?\.displayCode/);
   assert.match(domain, /function clientDisplayTitle\(client\)/);
   const titleFn = domain.slice(domain.indexOf('function clientDisplayTitle(client)'), domain.indexOf('function clientInitials('));
   assert.ok(titleFn.indexOf('firstName') < titleFn.indexOf('maskEmailClient'), 'nome e cognome prima dell’email mascherata');
   assert.doesNotMatch(titleFn, /displayName/, 'displayName cliente rimosso dal titolo');
-  assert.ok(titleFn.indexOf('maskEmailClient') < titleFn.indexOf('displayCode'), 'email prima del codice cliente');
   assert.doesNotMatch(titleFn, /username/, 'lo username non fa parte del titolo');
-  assert.match(admin, /filter\(item => !item\.status \|\| item\.status === 'pending'\)/);
+  assert.match(admin, /clientInvitations = \(result\.invitations \|\| \[\]\)\.filter/);
 });
 
 test('le callable profilo sono idempotenti e auditabili', () => {
