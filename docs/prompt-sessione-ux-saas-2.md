@@ -1,15 +1,15 @@
 # Prompt completo per nuova sessione — Ricette, catalogo globale, Strutture dieta e console SaaS
 
-Lavora sul repository `SylarPower/pianoNutrizionale`, partendo dall’ultima versione di `main` che include la PR #53 (`47f6f21`). La nuova sessione non ha accesso a questa conversazione: considera questo documento e i due JSON `catalogo-ingredienti-meller.json` e `schema-catalogo-strutture-v2.json` come allegati autorevoli forniti insieme al messaggio iniziale; questi tre file non sono ancora presenti su `main`. Prima di modificare il codice, leggi nel repository gli ADR, `docs/saas-data-contracts.md`, `docs/saas-runbook.md` e i test esistenti. Usa il JSON Schema allegato come direzione del nuovo contratto, adattandolo alle convenzioni effettive del repository, e conserva nel repository la documentazione/contratti aggiornati durante l’implementazione.
+Lavora sul repository `SylarPower/pianoNutrizionale`, partendo dall’ultima versione di `main` che include la PR #53 (`47f6f21`). La nuova sessione non ha accesso a questa conversazione: considera questo documento e i due JSON `catalogo-ingredienti.json` e `schema-catalogo-strutture-v2.json` come allegati autorevoli forniti insieme al messaggio iniziale; questi tre file non sono ancora presenti su `main`. Prima di modificare il codice, leggi nel repository gli ADR, `docs/saas-data-contracts.md`, `docs/saas-runbook.md` e i test esistenti. Usa il JSON Schema allegato come direzione del nuovo contratto, adattandolo alle convenzioni effettive del repository, e conserva nel repository la documentazione/contratti aggiornati durante l’implementazione.
 
 Non sacrificare sicurezza clinica, isolamento multi-tenant, accessibilità, compatibilità dei dati, audit e non-retroattività. Se trovi una vera incoerenza non risolta, chiedimi conferma prima di scegliere autonomamente.
 
 ## Consegna per fasi e catalogo futuro
 
-La webapp deve poter essere implementata subito senza attendere il nuovo catalogo alimentare che verrà revisionato con il dott. Meller nei prossimi giorni.
+La webapp deve poter essere implementata subito senza attendere il nuovo catalogo alimentare che verrà revisionato con il nutrizionista nei prossimi giorni.
 
 - Non importare come dati approvati i 58 ingredienti del lotto provvisorio e non inventare le quantità mancanti.
-- Implementa subito schema, repository/service layer, autocomplete, CRUD Strutture dieta, assegnazioni, permessi, migrazioni e UI usando come seed soltanto i dati Meller già autorevoli presenti nel repository.
+- Implementa subito schema, repository/service layer, autocomplete, CRUD Strutture dieta, assegnazioni, permessi, migrazioni e UI usando come seed soltanto i dati Guide già autorevoli presenti nel repository.
 - Progetta il catalogo come dato esterno/versionato, non come array hardcoded nella UI: il nuovo JSON/CSV approvato dovrà poter essere caricato successivamente senza riscrivere l’app.
 - Predisponi per il platform admin un import globale JSON/CSV con validazione, deduplica, collisioni alias, preview, dry-run e commit atomico; nessun admin tenant o nutritionist può pubblicare il catalogo globale.
 - Un ingrediente nuovo senza famiglia/dosaggi approvati può essere ricercabile, ma non deve attivare adattamenti, regex di fallback o quantità presunte.
@@ -18,15 +18,15 @@ La webapp deve poter essere implementata subito senza attendere il nuovo catalog
 
 ## Architettura dati richiesta
 
-Il JSON Meller estratto non deve essere importato direttamente come catalogo globale: oggi mescola famiglie, espressioni di riconoscimento e quantità. Separalo in tre concetti.
+Il JSON Guide estratto non deve essere importato direttamente come catalogo globale: oggi mescola famiglie, espressioni di riconoscimento e quantità. Separalo in tre concetti.
 
 1. **Catalogo ingredienti globale**
    - contiene ingredienti, nomi canonici, alias e categorie globali;
    - non contiene quantità;
-   - usa ID stabili e riferimenti opzionali alle famiglie di dosaggio Meller;
+   - usa ID stabili e riferimenti opzionali alle famiglie di dosaggio Guide;
    - è governato dal platform admin separato, secondo le decisioni esistenti;
    - è la fonte dell’autocompletamento nell’editor ricetta.
-2. **Famiglie/motore di dosaggio Meller**
+2. **Famiglie/motore di dosaggio Guide**
    - mantiene la logica che determina le quantità adattate per allenamento/riposo e pranzo/cena;
    - non riscrive mai la quantità originale della ricetta;
    - lavora tramite ID, non tramite etichette fragili o regex come contratto principale;
@@ -34,13 +34,13 @@ Il JSON Meller estratto non deve essere importato direttamente come catalogo glo
 3. **Strutture dieta private del nutrizionista, dentro l’organizzazione**
    - sostituiscono il concetto UI di Rule set;
    - appartengono sempre a una sola organizzazione e hanno un `ownerUid`: nessun campo Ambito nella UI;
-   - referenziano ingredienti globali/categorie/famiglie Meller e contengono regole, alternative e quantità configurabili per quella struttura;
+   - referenziano ingredienti globali/categorie/famiglie Guide e contengono regole, alternative e quantità configurabili per quella struttura;
    - ogni nutritionist vede, crea, duplica, modifica, confronta, archivia e assegna soltanto le proprie strutture e soltanto ai propri clienti autorizzati;
    - l’admin dell’organizzazione vede e gestisce tutte le strutture di tutti i nutrizionisti, con autore/proprietario sempre evidente e audit completo;
    - un nutrizionista non può leggere, usare, duplicare o modificare le strutture private di un altro nutrizionista;
    - le revisioni tecniche restano immutabili nel backend per audit, rollback e snapshot, ma il numero di versione non viene mostrato come campo operativo.
 
-Migra l’attuale `MELLER_GRAMMATURE` senza perdere dati: le quantità entrano nel seed della Struttura dieta iniziale/motore Meller; ingredienti e categorie entrano nel catalogo globale normalizzato. Non trattare etichette di famiglia come catalogo esaustivo di singoli alimenti: crea record canonici e alias espliciti.
+Migra l’attuale `GUIDE_GRAMMATURE` senza perdere dati: le quantità entrano nel seed della Struttura dieta iniziale/motore Guide; ingredienti e categorie entrano nel catalogo globale normalizzato. Non trattare etichette di famiglia come catalogo esaustivo di singoli alimenti: crea record canonici e alias espliciti.
 
 ## Creazione e modifica ricette
 
@@ -192,7 +192,7 @@ Migra l’attuale `MELLER_GRAMMATURE` senza perdere dati: le quantità entrano n
 
 - Nessuna sovrapposizione/overflow da 320 px a desktop; target touch 44×44; tastiera, screen reader, focus, Escape, backdrop e `prefers-reduced-motion`.
 - Testa: preparazione opzionale; autofocus/selezione nome; primo rendering Preparazione; assenza tab Batch con batch automatico invariato; quantità singola; autocomplete ingredienti/alias/unknown; toggle settimana; Prezzi nascosto; landing ruolo; badge 0/>0; drawer mobile; CRUD/duplica/archivia/ripristina/confronta Strutture; privacy `ownerUid` tra due nutrizionisti della stessa organizzazione e visibilità completa admin; scadenza obbligatoria/flag; campi tecnici nascosti; popup cliente; invito esistente/nuovo/scaduto/riutilizzato/rifiutato; assenza di enumerazione username; permessi admin/nutritionist; revoca associazione senza cancellazione account; sospensione assignment e ritorno `original-only`; accesso Spesa associato vs non associato e reward 24h; rimozione nutritionist con clienti pendenti; non-retroattività; isolamento Rules.
-- Aggiungi test di migrazione dal vecchio rule set e dal JSON Meller monolitico ai nuovi catalogo globale + Struttura dieta.
+- Aggiungi test di migrazione dal vecchio rule set e dal JSON Guide monolitico ai nuovi catalogo globale + Struttura dieta.
 - Esegui `npm test`, `npm run test:functions`, `npm run test:rules`, `npm run syntax`, `npm run smoke`, audit production root/Functions e `git diff --check`.
 - Esegui verifiche visuali reali desktop/tablet/mobile e non dichiarare test non realmente effettuati.
 - Crea una PR e verifica i check. Se emergono vere decisioni prodotto non definite, chiedi prima di implementare.

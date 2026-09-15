@@ -939,7 +939,7 @@ function catalogSearch(query, limit = 8) {
 // (es. "pesce omega" → "pesceOmega"). Il server rivalida comunque.
 function engineFamilyId(typed) {
   const normalized = canonicalId(typed).replace(/-/g, '');
-  const found = (window.PianoDomain?.MELLER_GRAMMATURE || [])
+  const found = (window.PianoDomain?.GUIDE_GRAMMATURE || [])
     .find(rule => String(rule.family).toLowerCase() === normalized);
   return found ? found.family : null;
 }
@@ -1074,7 +1074,7 @@ function structureRuleRow(rule = {}) {
   return `
   <div class="structure-rule">
     <div class="rule-head">
-      <input class="rule-family" required placeholder="Famiglia (es. riso)" value="${escapeAdmin(rule.mellerFamilyId || '')}" aria-label="Famiglia">
+      <input class="rule-family" required placeholder="Famiglia (es. riso)" value="${escapeAdmin(rule.guideFamilyId || '')}" aria-label="Famiglia">
       <input class="rule-ings" placeholder="ID ingredienti separati da virgola" value="${escapeAdmin((rule.ingredientIds || []).join(', '))}" aria-label="ID ingredienti">
       <select class="rule-cat" data-value="${escapeAdmin(rule.categoryId || '')}" aria-label="Categoria (opzionale)"><option value="">—</option></select>
       <label><input type="checkbox" class="rule-enabled" ${rule.enabled === false ? '' : 'checked'}>Attiva</label>
@@ -1227,14 +1227,14 @@ function submitGrouping(event) {
     const quantityGrams = collectGroupDoses();
     if ($('group-dest-rule').checked) {
       const typed = $('group-family').value;
-      const mellerFamilyId = engineFamilyId(typed);
-      if (!mellerFamilyId) throw new Error(`La famiglia "${typed.trim() || '?'}" non esiste nel motore delle famiglie.`);
+      const guideFamilyId = engineFamilyId(typed);
+      if (!guideFamilyId) throw new Error(`La famiglia "${typed.trim() || '?'}" non esiste nel motore delle famiglie.`);
       const existing = [...$('structure-rules').querySelectorAll('.rule-family')]
         .map(input => engineFamilyId(input.value)).filter(Boolean);
-      if (existing.includes(mellerFamilyId)) throw new Error(`Famiglia duplicata: ${mellerFamilyId}`);
-      addStructureRuleRow({ mellerFamilyId, ingredientIds, quantityGrams, enabled: true });
+      if (existing.includes(guideFamilyId)) throw new Error(`Famiglia duplicata: ${guideFamilyId}`);
+      addStructureRuleRow({ guideFamilyId, ingredientIds, quantityGrams, enabled: true });
       fillCategorySelects();
-      $('picker-feedback').textContent = `${ingredientIds.length} alimenti raggruppati nella famiglia ${mellerFamilyId}.`;
+      $('picker-feedback').textContent = `${ingredientIds.length} alimenti raggruppati nella famiglia ${guideFamilyId}.`;
     } else {
       const target = $('group-target').value;
       if (target === '__new__') {
@@ -1271,23 +1271,23 @@ function collectStructureRules() {
   const dose = (row, cls) => { const raw = row.querySelector(cls).value; return raw === '' ? null : Number(raw); };
   const rules = rows.map((row, index) => {
     const typedFamily = row.querySelector('.rule-family').value;
-    const mellerFamilyId = engineFamilyId(typedFamily);
-    if (!mellerFamilyId) throw new Error(`Regola ${index + 1}: la famiglia "${typedFamily.trim() || '?'}" non esiste nel motore delle famiglie.`);
+    const guideFamilyId = engineFamilyId(typedFamily);
+    if (!guideFamilyId) throw new Error(`Regola ${index + 1}: la famiglia "${typedFamily.trim() || '?'}" non esiste nel motore delle famiglie.`);
     const quantityGrams = {
       lunch: dose(row, '.rule-la') == null && dose(row, '.rule-lr') == null ? null : { training: dose(row, '.rule-la'), rest: dose(row, '.rule-lr') },
       dinner: dose(row, '.rule-ca') == null && dose(row, '.rule-cr') == null ? null : { training: dose(row, '.rule-ca'), rest: dose(row, '.rule-cr') }
     };
-    if (!quantityGrams.lunch && !quantityGrams.dinner) throw new Error(`Regola ${index + 1} (${mellerFamilyId}): almeno una dose per pranzo o cena.`);
+    if (!quantityGrams.lunch && !quantityGrams.dinner) throw new Error(`Regola ${index + 1} (${guideFamilyId}): almeno una dose per pranzo o cena.`);
     for (const meal of ['lunch', 'dinner']) for (const day of ['training', 'rest']) {
       const value = quantityGrams[meal]?.[day];
-      if (value != null && (!Number.isInteger(value) || value < 1 || value > 2000)) throw new Error(`Regola ${index + 1} (${mellerFamilyId}): le dosi devono essere interi tra 1 e 2000.`);
+      if (value != null && (!Number.isInteger(value) || value < 1 || value > 2000)) throw new Error(`Regola ${index + 1} (${guideFamilyId}): le dosi devono essere interi tra 1 e 2000.`);
     }
     const ingredientIds = [...new Set(row.querySelector('.rule-ings').value.split(',').map(part => canonicalId(part)).filter(Boolean))];
     const categoryId = row.querySelector('.rule-cat')?.value || null;
-    return { mellerFamilyId, ingredientIds, quantityGrams, enabled: row.querySelector('.rule-enabled').checked, categoryId };
+    return { guideFamilyId, ingredientIds, quantityGrams, enabled: row.querySelector('.rule-enabled').checked, categoryId };
   });
   const families = new Set();
-  rules.forEach(rule => { if (families.has(rule.mellerFamilyId)) throw new Error(`Famiglia duplicata: ${rule.mellerFamilyId}`); families.add(rule.mellerFamilyId); });
+  rules.forEach(rule => { if (families.has(rule.guideFamilyId)) throw new Error(`Famiglia duplicata: ${rule.guideFamilyId}`); families.add(rule.guideFamilyId); });
   if (!rules.length) throw new Error('Aggiungi almeno una famiglia.');
   return rules;
 }
@@ -1451,7 +1451,7 @@ function renderCompareMatrix(result) {
   const head = structures.map(item => `<th scope="col">${escapeAdmin(item.name)}<small>${escapeAdmin(item.status === 'archived' ? 'archiviata' : `${item.ruleCount ?? 0} famiglie`)}</small></th>`).join('');
   const familyRows = (result.rows || []).map(row => `
     <tr data-differs="${row.differs ? '1' : '0'}" class="${row.differs ? 'differs' : 'same'}">
-      <th scope="row"><span class="diff-mark" aria-hidden="true">${row.differs ? '≠' : '='}</span> ${escapeAdmin(row.mellerFamilyId)}<small class="diff-word">${row.differs ? 'diverso' : 'uguale'}</small></th>
+      <th scope="row"><span class="diff-mark" aria-hidden="true">${row.differs ? '≠' : '='}</span> ${escapeAdmin(row.guideFamilyId)}<small class="diff-word">${row.differs ? 'diverso' : 'uguale'}</small></th>
       ${structures.map(item => `<td data-label="${escapeAdmin(item.name)}">${escapeAdmin(doseSummary(row.cells?.[item.id] || {}))}</td>`).join('')}
     </tr>`).join('');
   const groupRows = (result.groupRows || []).map(row => `
@@ -1495,15 +1495,30 @@ function closeCompare() { $('compare-dialog').classList.add('hidden'); }
 // conserva le eventuali regole classiche per il calcolo delle dosi.
 function dietPlanDomain() { return window.PianoDomain || null; }
 
+// Stato effimero dell'editor: i gruppi scelta attualmente espansi (chiave
+// "giornata:pasto:opzione:gruppo") e l'eventuale lista alimenti messa da
+// parte quando un'opzione viene convertita in «Ricetta» (così un tocco di
+// troppo sul selettore non fa perdere il lavoro).
+const dietChoiceGroupsExpanded = new Set();
+let dietOptionStash = null;
+
 async function openDietPlanDialog(structureId = null) {
   const domain = dietPlanDomain();
   if (!domain?.createEmptyDietPlan) {
     $('structures-feedback').textContent = 'Editor non disponibile: ricarica la pagina.';
     return;
   }
+  // Il selettore ricetta delle opzioni di tipo «Ricetta» legge dal ricettario:
+  // se non è ancora stato caricato in sessione, lo carico ora. Un fallimento
+  // non blocca l'editor: si può sempre scrivere opzioni «Alimenti liberi».
+  if (!adminState.professionalRecipes.length) {
+    try { await loadProfessionalRecipes(); } catch (_) { /* elenco ricette vuoto */ }
+  }
   adminState.dietPlanEditingId = structureId || null;
   adminState.dietPlanRules = [];
   adminState.dietPlanGroups = [];
+  dietChoiceGroupsExpanded.clear();
+  dietOptionStash = null;
   $('diet-plan-id').value = '';
   $('diet-plan-name').value = '';
   $('diet-plan-general-notes').value = '';
@@ -1534,7 +1549,7 @@ async function openDietPlanDialog(structureId = null) {
     }
   } else {
     $('diet-plan-title').textContent = 'Nuova dieta guidata';
-    $('diet-plan-subtitle').textContent = 'Giornate di allenamento e riposo, pasti con opzioni A/B/C/D, quantità con unità di misura. I valori energetici sono appunti manuali: nessun calcolo automatico.';
+    $('diet-plan-subtitle').textContent = 'Pasti nell’ordine fisso (colazione → spuntino serale), opzioni A/B/C/D di tipo ricetta o alimenti liberi con gruppi scelta. Pesi sempre al netto degli scarti e a crudo. I valori energetici sono appunti manuali: nessun calcolo automatico.';
     adminState.dietPlan = domain.createEmptyDietPlan();
   }
   renderDietPlanDays();
@@ -1559,6 +1574,9 @@ function dietPlanNumberOrNull(raw) {
 
 // Legge il modulo così com'è (senza validare): le operazioni strutturali
 // (aggiungi, duplica, sposta, elimina) non devono mai perdere il digitato.
+// I pasti vengono rilitti nell'ordine del DOM e poi riportati all'ordine
+// fisso del modello (colazione → spuntino serale): il render non sbaglia
+// mai posizione, anche se i dati arrivano in ordine diverso.
 function collectDietPlan() {
   const domain = dietPlanDomain();
   const labels = domain?.DIET_PLAN_OPTION_LABELS || ['A', 'B', 'C', 'D'];
@@ -1584,33 +1602,55 @@ function collectDietPlan() {
     dayNode.querySelectorAll(':scope > .diet-meals > .diet-meal').forEach(mealNode => {
       const mealValue = selector => mealNode.querySelector(`:scope ${selector}`)?.value ?? '';
       const meal = {
-        mealId: mealValue(':scope > .diet-meal-head [data-f="meal-id"]'),
+        mealId: mealNode.dataset.mealType || 'lunch',
         time: mealValue(':scope > .diet-meal-head [data-f="meal-time"]').trim(),
         options: [],
         note: mealNode.querySelector(':scope > [data-f="meal-note"]')?.value?.trim() || ''
       };
       mealNode.querySelectorAll(':scope > .diet-options > .diet-option').forEach((optionNode, optionIndex) => {
+        const type = optionNode.querySelector('[data-f="option-type"]')?.value === 'recipe' ? 'recipe' : 'free-foods';
         const option = {
           label: labels[optionIndex] || 'A',
+          type,
+          recipeId: type === 'recipe' ? (optionNode.querySelector('[data-f="option-recipe"]')?.value || null) : null,
+          recipeMultiplier: type === 'recipe' ? dietPlanNumberOrNull(optionNode.querySelector('[data-f="option-mult"]')?.value) ?? 1 : null,
           items: [],
+          choiceGroups: [],
           note: optionNode.querySelector(':scope > [data-f="option-note"]')?.value?.trim() || ''
         };
-        optionNode.querySelectorAll(':scope > .diet-items > .diet-item').forEach(itemNode => {
-          const itemValue = selector => itemNode.querySelector(selector)?.value ?? '';
-          option.items.push({
-            foodGroup: itemValue('[data-f="item-group"]'),
-            description: itemValue('[data-f="item-desc"]').trim(),
-            quantity: dietPlanNumberOrNull(itemValue('[data-f="item-qty"]')),
-            unit: itemValue('[data-f="item-unit"]'),
-            quantityState: itemValue('[data-f="item-state"]') || null,
-            netOfWaste: itemNode.querySelector('[data-f="item-net"]')?.checked === true,
-            alternative: itemValue('[data-f="item-alt"]').trim()
+        if (type === 'free-foods') {
+          optionNode.querySelectorAll(':scope > .diet-items > .diet-item').forEach(itemNode => {
+            const itemValue = selector => itemNode.querySelector(selector)?.value ?? '';
+            option.items.push({
+              foodGroup: itemValue('[data-f="item-group"]'),
+              description: itemValue('[data-f="item-desc"]').trim(),
+              quantity: dietPlanNumberOrNull(itemValue('[data-f="item-qty"]')),
+              unit: itemValue('[data-f="item-unit"]')
+            });
           });
-        });
+          optionNode.querySelectorAll(':scope > .diet-choice-groups > .diet-choice-group').forEach(groupNode => {
+            const group = {
+              title: groupNode.querySelector('[data-f="cg-title"]')?.value?.trim() || '',
+              optional: groupNode.querySelector('[data-f="cg-optional"]')?.checked !== false,
+              alternatives: []
+            };
+            groupNode.querySelectorAll('.diet-choice-alternatives > .diet-choice-alt').forEach(altNode => {
+              const altValue = selector => altNode.querySelector(selector)?.value ?? '';
+              group.alternatives.push({
+                foodGroup: altValue('[data-f="alt-group"]'),
+                description: altValue('[data-f="alt-desc"]').trim(),
+                quantity: dietPlanNumberOrNull(altValue('[data-f="alt-qty"]')),
+                unit: altValue('[data-f="alt-unit"]')
+              });
+            });
+            option.choiceGroups.push(group);
+          });
+        }
         meal.options.push(option);
       });
       day.meals.push(meal);
     });
+    day.meals = domain?.sortDietPlanMeals ? domain.sortDietPlanMeals(day.meals) : day.meals;
     plan.days.push(day);
   });
   return plan;
@@ -1653,6 +1693,9 @@ function dietPlanOptions(list, current) {
   return list.map(item => `<option value="${escapeAdmin(item.id)}" ${item.id === current ? 'selected' : ''}>${escapeAdmin(item.label)}</option>`).join('');
 }
 
+// Pesi sempre al netto degli scarti e a crudo: niente select crudo/cotto,
+// niente flag «al netto», niente alternativa «oppure». Eventuali revisioni
+// salvate con quei campi perdono i controlli ma si aprono lo stesso.
 function dietItemHtml(domain, item, path) {
   return `
   <div class="diet-item" data-day="${path.day}" data-meal="${path.meal}" data-option="${path.option}" data-item="${path.item}">
@@ -1661,33 +1704,150 @@ function dietItemHtml(domain, item, path) {
     <div class="diet-qty">
       <input data-f="item-qty" type="number" min="0" max="5000" step="any" placeholder="Qtà" value="${item.quantity ?? ''}" aria-label="Quantità">
       <select data-f="item-unit" aria-label="Unità di misura">${dietPlanOptions(domain.DIET_PLAN_UNITS, item.unit || 'g')}</select>
-      <select data-f="item-state" aria-label="Peso a crudo o a cotto"><option value="">—</option><option value="crudo" ${item.quantityState === 'crudo' ? 'selected' : ''}>Crudo</option><option value="cotto" ${item.quantityState === 'cotto' ? 'selected' : ''}>Cotto</option></select>
     </div>
-    <label class="check-inline"><input data-f="item-net" type="checkbox" ${item.netOfWaste ? 'checked' : ''}>Al netto degli scarti</label>
-    <input data-f="item-alt" placeholder="Oppure (alternativa, facoltativa)" value="${escapeAdmin(item.alternative || '')}" aria-label="Alternativa (oppure)" maxlength="200">
     <button type="button" class="dialog-close diet-del" data-act="item-del" aria-label="Rimuovi alimento">×</button>
   </div>`;
 }
 
-function dietOptionHtml(domain, option, path, label, canDelete) {
+// Elenco ricette del ricettario professionale per il selettore delle opzioni
+// di tipo «Ricetta». Le archiviate restano selezionabili: una dieta pubblicata
+// non deve perdere il riferimento solo perché la ricetta è stata archiviata.
+function dietRecipeOptions(current) {
+  const recipes = adminState.professionalRecipes || [];
+  return ['<option value="">— Seleziona ricetta —</option>']
+    .concat(recipes.map(recipe => `<option value="${escapeAdmin(recipe.id)}" ${recipe.id === current ? 'selected' : ''}>${escapeAdmin(`${recipe.emoji || '🍲'} ${recipe.name || recipe.id}${recipe.status === 'archived' ? ' (archiviata)' : ''}`)}</option>`))
+    .join('');
+}
+
+// Anteprima ingredienti della ricetta con dosi scalate dal moltiplicatore.
+// Le dosi della ricetta sono testo libero ("80 g", "q.b."): la scala tocca
+// solo i numeri e mostra l'originale accanto al risultato (80 g → 120 g).
+function dietRecipePreviewInner(domain, recipe, multiplier) {
+  if (!recipe) return '<p class="diet-recipe-hint">Seleziona una ricetta per vedere gli ingredienti.</p>';
+  const factor = Number(multiplier);
+  const rows = (recipe.ingredients || []).map(ingredient => {
+    const doses = [['Uomo', ingredient.portions?.man], ['Donna', ingredient.portions?.ipo]]
+      .filter(([, raw]) => String(raw || '').trim())
+      .map(([labelText, raw]) => {
+        const scaled = domain.scalePortionText(String(raw), factor);
+        const value = scaled === String(raw) ? escapeAdmin(String(raw)) : `${escapeAdmin(String(raw))} → <strong>${escapeAdmin(scaled)}</strong>`;
+        return `${labelText} ${value}`;
+      });
+    return `<li>${escapeAdmin(ingredient.name || '—')}${doses.length ? ` — ${doses.join(' · ')}` : ''}</li>`;
+  }).join('');
+  return `<p class="diet-recipe-title">${escapeAdmin(recipe.emoji || '🍲')} ${escapeAdmin(recipe.name || 'Ricetta')} ×${escapeAdmin(String(Number.isFinite(factor) ? factor : 1).replace('.', ','))}</p><ul class="diet-recipe-ingredients">${rows || '<li>Nessun ingrediente.</li>'}</ul>`;
+}
+
+function updateDietRecipePreview(optionNode) {
+  if (!optionNode) return;
+  const domain = dietPlanDomain();
+  const box = optionNode.querySelector('[data-f="recipe-preview"]');
+  if (!domain || !box) return;
+  const recipeId = optionNode.querySelector('[data-f="option-recipe"]')?.value || '';
+  const multiplier = Number((optionNode.querySelector('[data-f="option-mult"]')?.value || '1').replace(',', '.'));
+  const recipe = adminState.professionalRecipes.find(item => item.id === recipeId) || null;
+  box.innerHTML = dietRecipePreviewInner(domain, recipe, multiplier);
+}
+
+// Gruppo scelta («Scegli 1 tra:»): titolo + alternative con dose, ciascuna
+// editabile. Il gruppo si mostra minimizzato (solo riepilogo) quando è
+// completo; si espande con «Modifica» per intervenire. Il precompilamento
+// dalla tabella di riferimento minimizza subito il gruppo.
+function dietChoiceGroupHtml(domain, group, path, groupIndex) {
+  const key = `${path.day}:${path.meal}:${path.option}:${groupIndex}`;
+  const expanded = dietChoiceGroupsExpanded.has(key);
+  const alternatives = group.alternatives || [];
+  const summary = alternatives
+    .map(item => `${item.description || '—'}${item.quantity != null && item.quantity !== '' ? ` ${item.quantity} ${domain.dietPlanUnitLabel(item.unit)}` : ''}`)
+    .slice(0, 6)
+    .map(escapeAdmin)
+    .join(' · ');
+  const alternativeRows = alternatives.map((alternative, alternativeIndex) => `
+    <div class="diet-choice-alt">
+      <select data-f="alt-group" aria-label="Gruppo alimentare alternativa">${dietPlanOptions(domain.DIET_PLAN_FOOD_GROUPS, alternative.foodGroup)}</select>
+      <input data-f="alt-desc" placeholder="Alternativa (es. Riso basmati)" value="${escapeAdmin(alternative.description || '')}" aria-label="Alternativa" maxlength="200">
+      <input data-f="alt-qty" type="number" min="0" max="5000" step="any" placeholder="Qtà" value="${alternative.quantity ?? ''}" aria-label="Quantità alternativa">
+      <select data-f="alt-unit" aria-label="Unità alternativa">${dietPlanOptions(domain.DIET_PLAN_UNITS, alternative.unit || 'g')}</select>
+      <button type="button" class="dialog-close diet-del" data-act="cg-alt-del" data-cg="${groupIndex}" data-alt="${alternativeIndex}" aria-label="Rimuovi alternativa">×</button>
+    </div>`).join('');
   return `
-  <div class="diet-option" data-day="${path.day}" data-meal="${path.meal}" data-option="${path.option}">
-    <div class="diet-option-head"><strong>Opzione ${escapeAdmin(label)}</strong><span class="diet-option-actions">
-      <button type="button" class="text-button" data-act="option-dup">Duplica</button>
-      ${canDelete ? '<button type="button" class="text-button danger-text" data-act="option-del">Elimina</button>' : ''}
-    </span></div>
-    <div class="diet-items">${option.items.map((item, itemIndex) => dietItemHtml(domain, item, { ...path, item: itemIndex })).join('')}</div>
+  <div class="diet-choice-group ${expanded ? 'expanded' : ''}" data-day="${path.day}" data-meal="${path.meal}" data-option="${path.option}" data-cg="${groupIndex}">
+    <div class="diet-choice-head">
+      <strong>Gruppo scelta</strong>
+      <span class="diet-choice-summary">${escapeAdmin(group.title || 'Scegli 1 tra:')}${summary ? ` <span class="diet-choice-alts">${summary}${alternatives.length > 6 ? ' …' : ''}</span>` : ' <span class="diet-choice-alts">nessuna alternativa</span>'}${group.optional === false ? '' : ' <em>(facoltativa)</em>'}</span>
+      <span class="diet-option-actions">
+        <button type="button" class="text-button" data-act="cg-toggle" data-cg="${groupIndex}">${expanded ? 'Riduci' : 'Modifica'}</button>
+        <button type="button" class="text-button danger-text" data-act="cg-del" data-cg="${groupIndex}">Elimina</button>
+      </span>
+    </div>
+    <div class="diet-choice-body">
+      <input data-f="cg-title" placeholder="Titolo del gruppo (es. Scegli 1 carboidrato tra:)" value="${escapeAdmin(group.title || '')}" aria-label="Titolo gruppo scelta" maxlength="200">
+      <label class="check-inline"><input data-f="cg-optional" type="checkbox" ${group.optional === false ? '' : 'checked'}>Scelta facoltativa (il cliente può saltare il gruppo)</label>
+      <div class="diet-choice-alternatives">${alternativeRows}</div>
+      ${alternatives.length < domain.DIET_PLAN_LIMITS.alternativesPerChoiceGroup ? '<button type="button" class="secondary diet-add" data-act="cg-alt-add" data-cg="' + groupIndex + '">＋ Aggiungi alternativa</button>' : ''}
+      <div class="diet-choice-prefill">
+        <label>Precompila dalla tabella di riferimento
+          <select data-f="cg-prefill-kind" aria-label="Tabella di riferimento"><option value="carb">Carboidrati (dosi pranzo/cena)</option><option value="protein">Proteine (dosi pranzo/cena)</option></select>
+        </label>
+        <button type="button" class="secondary" data-act="cg-prefill" data-cg="${groupIndex}">Precompila alternative</button>
+      </div>
+    </div>
+  </div>`;
+}
+
+function dietOptionHtml(domain, option, path, label, canDelete) {
+  const isRecipe = option.type === 'recipe';
+  const recipe = isRecipe && option.recipeId ? adminState.professionalRecipes.find(item => item.id === option.recipeId) || null : null;
+  const itemsBlock = isRecipe ? '' : `
+    ${option.items.length ? `<div class="diet-items">${option.items.map((item, itemIndex) => dietItemHtml(domain, item, { ...path, item: itemIndex })).join('')}</div>` : ''}
     ${option.items.length < domain.DIET_PLAN_LIMITS.itemsPerOption ? '<button type="button" class="secondary diet-add" data-act="item-add">＋ Aggiungi alimento</button>' : ''}
+    ${option.choiceGroups.map((group, groupIndex) => dietChoiceGroupHtml(domain, group, { ...path }, groupIndex)).join('')}
+    ${option.choiceGroups.length < domain.DIET_PLAN_LIMITS.choiceGroupsPerOption ? '<button type="button" class="secondary diet-add" data-act="cg-add">＋ Gruppo scelta («Scegli 1 tra:»)</button>' : ''}`;
+  const recipeBlock = !isRecipe ? '' : `
+    <div class="diet-recipe-fields">
+      <select data-f="option-recipe" aria-label="Ricetta">${dietRecipeOptions(option.recipeId)}</select>
+      <label class="diet-mult">× Moltiplicatore porzioni
+        <input data-f="option-mult" type="number" min="${domain.DIET_PLAN_LIMITS.recipeMultiplierMin}" max="${domain.DIET_PLAN_LIMITS.recipeMultiplierMax}" step="0.05" value="${option.recipeMultiplier ?? 1}" aria-label="Moltiplicatore ricetta">
+      </label>
+      <div class="diet-recipe-preview" data-f="recipe-preview">${dietRecipePreviewInner(domain, recipe, option.recipeMultiplier ?? 1)}</div>
+    </div>`;
+  return `
+  <div class="diet-option ${isRecipe ? 'is-recipe' : ''}" data-day="${path.day}" data-meal="${path.meal}" data-option="${path.option}">
+    <div class="diet-option-head">
+      <input type="hidden" data-f="option-type" value="${isRecipe ? 'recipe' : 'free-foods'}">
+      <strong>Opzione ${escapeAdmin(label)}</strong>
+      <span class="diet-type-toggle" role="group" aria-label="Tipo opzione">
+        <button type="button" class="diet-type-chip ${isRecipe ? '' : 'active'}" data-act="option-type" data-option-type="free-foods" ${isRecipe ? '' : 'disabled'}>Alimenti</button>
+        <button type="button" class="diet-type-chip ${isRecipe ? 'active' : ''}" data-act="option-type" data-option-type="recipe" ${isRecipe ? 'disabled' : ''}>Ricetta</button>
+      </span>
+      <span class="diet-option-actions">
+        <button type="button" class="text-button" data-act="option-dup">Duplica</button>
+        ${canDelete ? '<button type="button" class="text-button danger-text" data-act="option-del">Elimina</button>' : ''}
+      </span>
+    </div>
+    ${itemsBlock}
+    ${recipeBlock}
     <textarea data-f="option-note" placeholder="Nota dell’opzione (facoltativa)" maxlength="1000">${escapeAdmin(option.note || '')}</textarea>
   </div>`;
+}
+
+// I pasti hanno un ordine fisso e un solo tipo ciascuno: la testa mostra
+// l'etichetta (nessun menu di scelta tipo) e «＋ Aggiungi pasto» elenca solo
+// i tipi ancora assenti dalla giornata.
+function dietMealAddChips(domain, day) {
+  const used = new Set(day.meals.map(meal => meal.mealId));
+  return domain.DIET_PLAN_MEALS
+    .filter(meal => !used.has(meal.id))
+    .map(meal => `<button type="button" class="diet-add-chip" data-act="meal-add" data-meal-type="${meal.id}">＋ ${escapeAdmin(meal.label)}</button>`)
+    .join('');
 }
 
 function dietMealHtml(domain, meal, path, canDelete) {
   const labels = domain.DIET_PLAN_OPTION_LABELS;
   return `
-  <article class="diet-meal" data-day="${path.day}" data-meal="${path.meal}">
+  <article class="diet-meal" data-day="${path.day}" data-meal="${path.meal}" data-meal-type="${escapeAdmin(meal.mealId)}">
     <div class="diet-meal-head">
-      <select data-f="meal-id" aria-label="Pasto">${dietPlanOptions(domain.DIET_PLAN_MEALS, meal.mealId)}</select>
+      <span class="diet-meal-name">${escapeAdmin(domain.dietPlanMealLabel(meal.mealId))}</span>
       <input data-f="meal-time" placeholder="Orario (es. 12:30)" value="${escapeAdmin(meal.time || '')}" aria-label="Orario" maxlength="20">
       ${canDelete ? '<button type="button" class="text-button danger-text" data-act="meal-del">Elimina pasto</button>' : ''}
     </div>
@@ -1719,7 +1879,10 @@ function dietDayHtml(domain, day, dayIndex, dayCount) {
       <label>Acqua (ml)<input data-f="target-water" type="number" min="0" max="50000" step="any" value="${day.target?.waterMl ?? ''}"></label>
     </fieldset>
     <div class="diet-meals">${day.meals.map((meal, mealIndex) => dietMealHtml(domain, meal, { day: dayIndex, meal: mealIndex }, day.meals.length > 1)).join('')}</div>
-    ${day.meals.length < domain.DIET_PLAN_LIMITS.mealsPerDay ? '<button type="button" class="secondary diet-add" data-act="meal-add">＋ Aggiungi pasto</button>' : ''}
+    ${(() => {
+      const chips = dietMealAddChips(domain, day);
+      return chips ? `<div class="diet-meal-add">${chips}</div>` : '';
+    })()}
     <div class="form-grid">
       <label>Integrazione<textarea data-f="day-supplements" placeholder="es. Vitamina D al mattino" maxlength="1000">${escapeAdmin(day.supplements || '')}</textarea></label>
       <label>Idratazione<textarea data-f="day-hydration" placeholder="es. Almeno 2 litri d’acqua" maxlength="1000">${escapeAdmin(day.hydration || '')}</textarea></label>
@@ -1739,11 +1902,41 @@ function renderDietPlanDays() {
 function dietPreviewItemHtml(domain, item) {
   const bits = [];
   if (item.quantity != null && item.quantity !== '') {
-    bits.push(`${escapeAdmin(String(item.quantity))} ${escapeAdmin(domain.dietPlanUnitLabel(item.unit))}${item.quantityState ? ` (${escapeAdmin(item.quantityState)})` : ''}${item.netOfWaste ? ', al netto degli scarti' : ''}`);
+    bits.push(`${escapeAdmin(String(item.quantity))} ${escapeAdmin(domain.dietPlanUnitLabel(item.unit))}`);
   }
   bits.push(`<strong>${escapeAdmin(item.description || '—')}</strong>`);
-  if (item.alternative) bits.push(`<em>oppure: ${escapeAdmin(item.alternative)}</em>`);
   return `<li>${bits.join(' · ')} <small>(${escapeAdmin(domain.dietPlanFoodGroupLabel(item.foodGroup))})</small></li>`;
+}
+
+function dietPreviewOptionHtml(domain, option, label) {
+  const head = `<span>Opzione ${escapeAdmin(label)}</span>`;
+  if (option.type === 'recipe') {
+    const recipe = option.recipeId ? adminState.professionalRecipes.find(item => item.id === option.recipeId) || null : null;
+    const multiplier = Number(option.recipeMultiplier) || 1;
+    const ingredients = recipe
+      ? (recipe.ingredients || []).map(ingredient => {
+          const doses = [ingredient.portions?.man, ingredient.portions?.ipo].filter(raw => String(raw || '').trim())
+            .map(raw => domain.scalePortionText(String(raw), multiplier)).join(' / ');
+          return `<li>${escapeAdmin(ingredient.name || '—')}${doses ? ` — ${escapeAdmin(doses)}` : ''}</li>`;
+        }).join('')
+      : '';
+    return `<div class="preview-option">${head} <em>ricetta</em>
+      <p><strong>${escapeAdmin(recipe ? `${recipe.emoji || '🍲'} ${recipe.name}` : 'Ricetta non selezionata')}</strong> ×${escapeAdmin(String(multiplier).replace('.', ','))}</p>
+      ${ingredients ? `<ul>${ingredients}</ul>` : ''}
+      ${option.note ? `<p><small>Nota: ${escapeAdmin(option.note)}</small></p>` : ''}
+    </div>`;
+  }
+  const groups = (option.choiceGroups || []).map(group => {
+    const alternatives = (group.alternatives || [])
+      .map(item => `${item.description || '—'}${item.quantity != null && item.quantity !== '' ? ` ${item.quantity} ${domain.dietPlanUnitLabel(item.unit)}` : ''}`)
+      .map(escapeAdmin).join(' · ');
+    return `<p class="preview-choice">${escapeAdmin(group.title || 'Scegli 1 tra:')} ${escapeAdmin(alternatives)}${group.optional === false ? '' : ' <em>(facoltativa)</em>'}</p>`;
+  }).join('');
+  return `<div class="preview-option">${head}
+    <ul>${(option.items || []).map(item => dietPreviewItemHtml(domain, item)).join('')}</ul>
+    ${groups}
+    ${option.note ? `<p><small>Nota: ${escapeAdmin(option.note)}</small></p>` : ''}
+  </div>`;
 }
 
 function renderDietPlanPreview() {
@@ -1757,7 +1950,7 @@ function renderDietPlanPreview() {
     ? ''
     : `<p class="callout">Bozza non ancora valida: ${check.errors.slice(0, 3).map(escapeAdmin).join(' · ')}${check.errors.length > 3 ? ` (altri ${check.errors.length - 3})` : ''}</p>`;
   box.innerHTML = `
-    <p class="preview-meta">${summary.dayCount} giornate · ${summary.mealCount} pasti · ${summary.optionCount} opzioni · ${summary.itemCount} alimenti</p>
+    <p class="preview-meta">${summary.dayCount} giornate · ${summary.mealCount} pasti · ${summary.optionCount} opzioni · ${summary.itemCount} alimenti${summary.choiceGroupCount ? ` · ${summary.choiceGroupCount} gruppi scelta` : ''}</p>
     ${warnings}
     ${plan.days.map((day, dayIndex) => {
       const target = day.target || {};
@@ -1772,11 +1965,7 @@ function renderDietPlanPreview() {
         ${targetBits.length ? `<p class="preview-target">${targetBits.join(' · ')}</p>` : ''}
         ${(day.meals || []).map(meal => `
           <div class="preview-meal"><strong>${escapeAdmin(domain.dietPlanMealLabel(meal.mealId))}</strong>${meal.time ? ` <small>(${escapeAdmin(meal.time)})</small>` : ''}
-            ${(meal.options || []).map((option, optionIndex) => `
-              <div class="preview-option"><span>Opzione ${escapeAdmin(domain.DIET_PLAN_OPTION_LABELS[optionIndex] || 'A')}</span>
-                <ul>${(option.items || []).map(item => dietPreviewItemHtml(domain, item)).join('')}</ul>
-                ${option.note ? `<p><small>Nota: ${escapeAdmin(option.note)}</small></p>` : ''}
-              </div>`).join('')}
+            ${(meal.options || []).map((option, optionIndex) => dietPreviewOptionHtml(domain, option, domain.DIET_PLAN_OPTION_LABELS[optionIndex] || 'A')).join('')}
             ${meal.note ? `<p><small>Nota pasto: ${escapeAdmin(meal.note)}</small></p>` : ''}
           </div>`).join('')}
         ${day.supplements ? `<p><small><strong>Integrazione:</strong> ${escapeAdmin(day.supplements)}</small></p>` : ''}
@@ -1796,7 +1985,7 @@ function handleDietPlanStructure(event) {
   if (!domain) return;
   const plan = collectDietPlan();
   adminState.dietPlan = plan;
-  const node = button.closest('.diet-day, .diet-meal, .diet-option, .diet-item');
+  const node = button.closest('.diet-day, .diet-meal, .diet-option, .diet-item, .diet-choice-group');
   const dayIndex = node?.dataset?.day != null ? Number(node.dataset.day) : -1;
   const mealIndex = node?.dataset?.meal != null ? Number(node.dataset.meal) : -1;
   const optionIndex = node?.dataset?.option != null ? Number(node.dataset.option) : -1;
@@ -1804,6 +1993,14 @@ function handleDietPlanStructure(event) {
   const day = dayIndex >= 0 ? plan.days[dayIndex] : null;
   const meal = day && mealIndex >= 0 ? day.meals[mealIndex] : null;
   const option = meal && optionIndex >= 0 ? meal.options[optionIndex] : null;
+  const cgIndex = button.dataset.cg != null ? Number(button.dataset.cg) : -1;
+  const altIndex = button.dataset.alt != null ? Number(button.dataset.alt) : -1;
+  const choiceGroup = option && option.type !== 'recipe' && cgIndex >= 0 ? option.choiceGroups?.[cgIndex] : null;
+  const stashKey = `${dayIndex}:${mealIndex}:${optionIndex}`;
+  const hasMeaningfulItems = candidate => Boolean(
+    (candidate?.items || []).some(item => String(item.description || '').trim())
+    || (candidate?.choiceGroups || []).some(group => (group.alternatives || []).some(item => String(item.description || '').trim()))
+  );
   const clone = value => JSON.parse(JSON.stringify(value));
   switch (button.dataset.act) {
     case 'day-add':
@@ -1812,18 +2009,34 @@ function handleDietPlanStructure(event) {
     case 'day-del':
       if (day && plan.days.length > 1) plan.days.splice(dayIndex, 1);
       break;
-    case 'day-dup':
-      if (day && plan.days.length < domain.DIET_PLAN_LIMITS.days) plan.days.splice(dayIndex + 1, 0, clone(day));
+    case 'day-dup': {
+      // Clonazione profonda con nuova identità: dayId rigenerato (null → il
+      // salvataggio ne assegna uno nuovo) e titolo « (copia)». Così la copia
+      // non collida mai con l'originale nella validazione.
+      if (day && plan.days.length < domain.DIET_PLAN_LIMITS.days) {
+        const copy = clone(day);
+        copy.dayId = null;
+        copy.label = day.label ? `${day.label} (copia)` : '';
+        plan.days.splice(dayIndex + 1, 0, copy);
+      }
       break;
+    }
     case 'day-up':
       if (day && dayIndex > 0) [plan.days[dayIndex - 1], plan.days[dayIndex]] = [plan.days[dayIndex], plan.days[dayIndex - 1]];
       break;
     case 'day-down':
       if (day && dayIndex < plan.days.length - 1) [plan.days[dayIndex + 1], plan.days[dayIndex]] = [plan.days[dayIndex], plan.days[dayIndex + 1]];
       break;
-    case 'meal-add':
-      if (day && day.meals.length < domain.DIET_PLAN_LIMITS.mealsPerDay) day.meals.push(domain.createDietPlanMeal('lunch'));
+    case 'meal-add': {
+      // Un solo pasto per tipo: il chip esiste solo per i tipi mancanti e il
+      // click aggiunge il tipo indicato dal chip stesso (mai «lunch» fisso).
+      const mealType = button.dataset.mealType || '';
+      if (day && mealType && !day.meals.some(item => item.mealId === mealType) && day.meals.length < domain.DIET_PLAN_LIMITS.mealsPerDay) {
+        day.meals.push(domain.createDietPlanMeal(mealType));
+        day.meals = domain.sortDietPlanMeals(day.meals);
+      }
       break;
+    }
     case 'meal-del':
       if (day && meal && day.meals.length > 1) day.meals.splice(mealIndex, 1);
       break;
@@ -1836,12 +2049,78 @@ function handleDietPlanStructure(event) {
     case 'option-del':
       if (meal && option && meal.options.length > 1) meal.options.splice(optionIndex, 1);
       break;
+    case 'option-type': {
+      if (!option || option.type === button.dataset.optionType) break;
+      const nextType = button.dataset.optionType === 'recipe' ? 'recipe' : 'free-foods';
+      if (nextType === 'recipe') {
+        // La lista alimenti torna se si ri-sceglie «Alimenti»: la metto da parte.
+        dietOptionStash = hasMeaningfulItems(option) ? { key: stashKey, items: clone(option.items), choiceGroups: clone(option.choiceGroups) } : null;
+        option.type = 'recipe';
+        if (!option.recipeId) option.recipeId = null;
+        if (!Number.isFinite(Number(option.recipeMultiplier))) option.recipeMultiplier = 1;
+      } else {
+        option.type = 'free-foods';
+        if (!option.items.length) {
+          const restored = dietOptionStash && dietOptionStash.key === stashKey ? dietOptionStash : null;
+          option.items = restored ? restored.items : [domain.createDietPlanItem()];
+          option.choiceGroups = restored ? restored.choiceGroups : [];
+          dietOptionStash = null;
+        }
+      }
+      break;
+    }
     case 'item-add':
-      if (option && option.items.length < domain.DIET_PLAN_LIMITS.itemsPerOption) option.items.push(domain.createDietPlanItem());
+      if (option && option.type !== 'recipe' && option.items.length < domain.DIET_PLAN_LIMITS.itemsPerOption) option.items.push(domain.createDietPlanItem());
       break;
     case 'item-del':
-      if (option && itemIndex >= 0 && option.items.length > 1) option.items.splice(itemIndex, 1);
+      // L'ultimo alimento si toglie solo se l'opzione ha almeno un gruppo
+      // scelta: un'opzione non resta mai completamente vuota.
+      if (option && itemIndex >= 0 && (option.items.length > 1 || option.choiceGroups.length > 0)) option.items.splice(itemIndex, 1);
       break;
+    case 'cg-add': {
+      if (option && option.type !== 'recipe' && (option.choiceGroups?.length || 0) < domain.DIET_PLAN_LIMITS.choiceGroupsPerOption) {
+        option.choiceGroups.push(domain.createDietPlanChoiceGroup());
+        dietChoiceGroupsExpanded.add(`${dayIndex}:${mealIndex}:${optionIndex}:${option.choiceGroups.length - 1}`);
+      }
+      break;
+    }
+    case 'cg-del':
+      if (choiceGroup && option.choiceGroups.length > 0) {
+        option.choiceGroups.splice(cgIndex, 1);
+        dietChoiceGroupsExpanded.delete(`${dayIndex}:${mealIndex}:${optionIndex}:${cgIndex}`);
+      }
+      break;
+    case 'cg-toggle':
+      if (choiceGroup) {
+        const key = `${dayIndex}:${mealIndex}:${optionIndex}:${cgIndex}`;
+        if (dietChoiceGroupsExpanded.has(key)) dietChoiceGroupsExpanded.delete(key);
+        else dietChoiceGroupsExpanded.add(key);
+      }
+      break;
+    case 'cg-alt-add':
+      if (choiceGroup && choiceGroup.alternatives.length < domain.DIET_PLAN_LIMITS.alternativesPerChoiceGroup) {
+        choiceGroup.alternatives.push(domain.createDietPlanItem());
+        dietChoiceGroupsExpanded.add(`${dayIndex}:${mealIndex}:${optionIndex}:${cgIndex}`);
+      }
+      break;
+    case 'cg-alt-del':
+      if (choiceGroup && altIndex >= 0 && choiceGroup.alternatives.length > 1) choiceGroup.alternatives.splice(altIndex, 1);
+      break;
+    case 'cg-prefill': {
+      // Precompilazione dalla tabella di riferimento: le dosi seguono il pasto
+      // (pranzo con colonna A/R della giornata, cena con dose serale) e il
+      // gruppo si minimizza subito, pronto da leggere.
+      if (choiceGroup) {
+        const kind = (button.closest('.diet-choice-group')?.querySelector('[data-f="cg-prefill-kind"]')?.value) === 'protein' ? 'protein' : 'carb';
+        const alternatives = domain.dietPlanReferenceAlternatives(kind, meal.mealId, day.dayType);
+        if (alternatives.length) {
+          choiceGroup.alternatives = alternatives;
+          if (!String(choiceGroup.title || '').trim()) choiceGroup.title = domain.dietPlanReferenceGroupTitle(kind);
+        }
+        dietChoiceGroupsExpanded.delete(`${dayIndex}:${mealIndex}:${optionIndex}:${cgIndex}`);
+      }
+      break;
+    }
     default:
       return;
   }
@@ -1859,7 +2138,7 @@ function handleDietPlanStructure(event) {
 function renderCatalogStatus(summary) {
   const version = Number(summary?.catalogVersion || 0);
   if (!version) {
-    $('catalog-status').innerHTML = '<article class="client-card"><p class="eyebrow">CATALOGO</p><h3>Non ancora importato</h3><p>Finché il catalogo è vuoto la console non può salvare Strutture dieta: importa <span class="mono">docs/catalogo-import-meller.json</span>.</p></article>';
+    $('catalog-status').innerHTML = '<article class="client-card"><p class="eyebrow">CATALOGO</p><h3>Non ancora importato</h3><p>Finché il catalogo è vuoto la console non può salvare Strutture dieta: importa <span class="mono">docs/catalogo-import.json</span>.</p></article>';
     return;
   }
   $('catalog-status').innerHTML = `
@@ -2528,6 +2807,13 @@ function bindAdmin() {
   $('new-diet-plan').addEventListener('click', () => openDietPlanDialog());
   $('diet-plan-form').addEventListener('submit', submitDietPlan);
   $('diet-plan-days').addEventListener('click', handleDietPlanStructure);
+  // Anteprima ingredienti della ricetta live: cambiare ricetta o moltiplicatore
+  // aggiorna solo il riquadro dell'opzione (nessun ridisegno: il focus resta).
+  $('diet-plan-days').addEventListener('input', event => {
+    if (event.target.matches?.('[data-f="option-recipe"], [data-f="option-mult"]')) {
+      updateDietRecipePreview(event.target.closest('.diet-option'));
+    }
+  });
   $('diet-plan-add-day').addEventListener('click', () => {
     const domain = dietPlanDomain();
     if (!domain || !adminState.dietPlan) return;

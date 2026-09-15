@@ -8,7 +8,7 @@
       ],
       "categoryId": "carb",
       "mappingKind": "guided",
-      "mellerFamilyId": "cereali"
+      "guideFamilyId": "cereali"
     }
   ]
 }

@@ -1,5 +1,5 @@
 'use strict';
-/* Passo 3 — avviso mapping Meller e auto-report:
+/* Passo 3 — avviso mapping Guide e auto-report:
  *  - avviso nascosto senza problemi, stabile tra i render;
  *  - invio automatico solo per mapping NUOVI, una tantum;
  *  - toast solo a invio riuscito; offline → muto + warn + stato "failed". */
@@ -149,7 +149,7 @@ function openModal(recipe, dayKey = null, planSlot = null) {
   currentModal = {
     recipe: JSON.parse(JSON.stringify(recipe)), original: JSON.parse(JSON.stringify(recipe)),
     dayKey, dayType: 'training', slot: null, planSlot, isNew: false, assignAfterSave: null,
-    mellerPreviewActive: false, mellerPreviewOriginal: null, mellerSaveWithAdaptation: false
+    guidePreviewActive: false, guidePreviewOriginal: null, guideSaveWithAdaptation: false
   };
   editMode = false;
 }
@@ -168,10 +168,10 @@ test('avviso nascosto con dosi allineate e stabile tra i render', () => {
   assigned();
   setRecipes([alignedRecipe()]);
   openModal(alignedRecipe());
-  assert.equal(mellerNoticeHtml(), '', 'nessun problema: nessun avviso');
+  assert.equal(guideNoticeHtml(), '', 'nessun problema: nessun avviso');
   renderModalContent();
   renderModalContent();
-  assert.equal(document.getElementById('modal-meller-notice').innerHTML, '', 'i re-render non riattivano l’avviso');
+  assert.equal(document.getElementById('modal-guide-notice').innerHTML, '', 'i re-render non riattivano l’avviso');
   currentModal = null;
 });
 
@@ -179,7 +179,7 @@ test('avviso nascosto per pasti non applicabili (colazione)', () => {
   assigned();
   const breakfast = { ...alignedRecipe(), id: 'B1', slot: 'breakfast' };
   openModal(breakfast);
-  assert.equal(mellerNoticeHtml(), '');
+  assert.equal(guideNoticeHtml(), '');
   currentModal = null;
 });
 
@@ -187,7 +187,7 @@ test('avviso visibile con mapping mancante, testi di prodotto invariati', () => 
   assigned();
   setRecipes([unknownRecipe()]);
   openModal(unknownRecipe());
-  const html = mellerNoticeHtml();
+  const html = guideNoticeHtml();
   assert.match(html, /Mapping delle linee guida incompleto/);
   assert.match(html, /non hanno un mapping nel catalogo attuale/);
   assert.match(html, /mapping mancante/);

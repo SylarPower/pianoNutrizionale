@@ -10,14 +10,14 @@ const ASSIGNMENT_STRATEGIES = new Set(['freeze', 'migrate-on-confirmation', 'ori
 const MAPPING_KINDS = new Set(['guided', 'free']);
 const GROUPS = new Set(['carb', 'protein', 'vegetable', 'dairy', 'fat', 'sweet', 'fruit', 'free']);
 
-// ID delle 39 famiglie del motore Meller (js/domain.js → MELLER_GRAMMATURE).
+// ID delle 39 famiglie del motore delle linee guida (js/domain.js → GUIDE_GRAMMATURE).
 // SOLO identificativi: nessuna quantità, nessuna dose, nessuna regola di
 // riconoscimento. Il server li usa per rifiutare strutture/catalogo che
 // puntano a famiglie inesistenti nel motore; la parità con il client è
 // verificata dai test (functions/test/domain.test.js). Se il manuale aggiunge
 // una famiglia, aggiornare qui + engine + catalogo nello stesso deploy.
-// Generato da docs/meller-source-v3.json — ordine priorità motore.
-const MELLER_FAMILY_IDS = new Set([
+// Generato da docs/guide-source-v3.json — ordine priorità motore.
+const GUIDE_FAMILY_IDS = new Set([
   'patateDolci', 'patate', 'gnocchi', 'polenta', 'mais', 'fiocchiAvena', 'gallette', 'crackers', 'piadina', 'cerealiColazione', 'cereali', 'pane',
   'salmoneAffumicato', 'pesceScatolaNaturale', 'pesceSottOlio', 'pesceAzzurro', 'pesceBiancoMagro', 'crostaceiMolluschi', 'maiale', 'polloTacchino', 'manzo',
   'affettatiMagri', 'mozzarellaLight', 'formaggiFreschiMolli', 'yogurtGreco', 'fiocchiLatte', 'montasio', 'grana', 'formaggiStagionati', 'feta', 'ricotta',
@@ -351,7 +351,7 @@ function effectiveAssignment(assignment, now = new Date()) {
   return { valid: assignment.status === 'active', reason: assignment.status === 'active' ? null : assignment.status };
 }
 
-// Regole di una revisione struttura dieta (schema v2): famiglie Meller con
+// Regole di una revisione struttura dieta (schema v2): famiglie Guide con
 // dosi per pasto (pranzo/cena) × giorno (allenamento/riposo). Le quantità sono
 // interi in grammi tra 1 e 2000; un pasto può essere `null` se non gestito,
 // mai entrambi. Schema esatto: docs/schema-catalogo-strutture-v2.json.
@@ -394,15 +394,23 @@ function validateDietStructureRules(rules, { allowEmpty = false } = {}) {
       : 'rules deve contenere tra 1 e 40 famiglie');
   }
   const seen = new Set();
-  return rules.map((rule, index) => {
-    exactObject(rule, ['mellerFamilyId', 'ingredientIds', 'quantityGrams', 'enabled', 'categoryId'], `rules[${index}]`);
-    const mellerFamilyId = id(rule.mellerFamilyId, `rules[${index}].mellerFamilyId`);
-    if (seen.has(mellerFamilyId)) fail('invalid-argument', `Famiglia duplicata: ${mellerFamilyId}`);
-    seen.add(mellerFamilyId);
+  return rules.map((rawRule, index) => {
+    // Compatibilità: le revisioni salvate prima del cambio nome usano la
+    // chiave storica `mellerFamilyId`. Viene accettata in ingresso, rivalidata
+    // e riscritta con il nome attuale nella nuova revisione.
+    let rule = rawRule;
+    if (rule && typeof rule === 'object' && rule.guideFamilyId == null && rule.mellerFamilyId != null) {
+      rule = { ...rule, guideFamilyId: rule.mellerFamilyId };
+      delete rule.mellerFamilyId;
+    }
+    exactObject(rule, ['guideFamilyId', 'ingredientIds', 'quantityGrams', 'enabled', 'categoryId'], `rules[${index}]`);
+    const guideFamilyId = id(rule.guideFamilyId, `rules[${index}].guideFamilyId`);
+    if (seen.has(guideFamilyId)) fail('invalid-argument', `Famiglia duplicata: ${guideFamilyId}`);
+    seen.add(guideFamilyId);
     // La famiglia deve esistere nel motore: niente regole orfane che il
     // client convertirebbe in silenzio in "nessuna dose".
-    if (!MELLER_FAMILY_IDS.has(mellerFamilyId)) {
-      fail('invalid-argument', `rules[${index}].mellerFamilyId non esiste nel motore delle famiglie`);
+    if (!GUIDE_FAMILY_IDS.has(guideFamilyId)) {
+      fail('invalid-argument', `rules[${index}].guideFamilyId non esiste nel motore delle famiglie`);
     }
     const quantityGrams = validateContextQuantity(rule.quantityGrams, `rules[${index}].quantityGrams`);
     const ingredientIds = Array.isArray(rule.ingredientIds)
@@ -413,7 +421,7 @@ function validateDietStructureRules(rules, { allowEmpty = false } = {}) {
       fail('invalid-argument', `rules[${index}].enabled deve essere booleano`);
     }
     return {
-      mellerFamilyId,
+      guideFamilyId,
       ingredientIds,
       quantityGrams,
       enabled: rule.enabled === undefined ? true : rule.enabled,
@@ -503,9 +511,16 @@ const DIET_PLAN_DAY_TYPES = new Set(['training', 'rest', 'other']);
 const DIET_PLAN_MEAL_IDS = new Set(['breakfast', 'morning-snack', 'lunch', 'afternoon-snack', 'dinner', 'evening-snack']);
 const DIET_PLAN_FOOD_GROUPS = new Set(['cereali', 'pseudo-cereali', 'legumi', 'carne', 'pesce', 'uova', 'latticini', 'verdura', 'frutta', 'frutta-secca', 'grassi', 'dolci', 'bevande', 'integratori', 'altro']);
 const DIET_PLAN_UNITS = new Set(['g', 'kg', 'ml', 'l', 'pz', 'fette', 'cucchiai', 'cucchiaini', 'tazze', 'bicchieri', 'porzioni', 'scatolette', 'misurini', 'qb']);
+// Legacy: le revisioni pubblicate prima dell'evoluzione del contratto usano
+// quantityState (crudo/cotto), netOfWaste e alternative («oppure»). Restano
+// valide in lettura e round-trip, ma i nuovi piani non le producono più.
 const DIET_PLAN_QUANTITY_STATES = new Set(['crudo', 'cotto']);
 const DIET_PLAN_OPTION_LABELS = new Set(['A', 'B', 'C', 'D']);
-const DIET_PLAN_LIMITS = { days: 14, mealsPerDay: 10, optionsPerMeal: 4, itemsPerOption: 20 };
+const DIET_PLAN_OPTION_TYPES = new Set(['free-foods', 'recipe']);
+const DIET_PLAN_LIMITS = {
+  days: 14, mealsPerDay: 10, optionsPerMeal: 4, itemsPerOption: 20,
+  choiceGroupsPerOption: 3, alternativesPerChoiceGroup: 30, choiceGroupTitle: 200
+};
 
 function dietPlanNumber(value, name, { max }) {
   if (value == null || value === '') return null;
@@ -517,42 +532,79 @@ function dietPlanNumber(value, name, { max }) {
 }
 
 function validateDietPlanItem(item, name) {
+  // I campi legacy (quantityState, netOfWaste, alternative) sono ammessi solo
+  // per le revisioni salvate prima della rimozione: se presenti vengono
+  // rivalidati e conservati, così il round-trip dell'editor classico non
+  // riscrive le revisioni. I nuovi piani non li producono.
   exactObject(item, ['foodGroup', 'description', 'quantity', 'unit', 'quantityState', 'netOfWaste', 'alternative'], name);
   if (!DIET_PLAN_FOOD_GROUPS.has(item.foodGroup)) fail('invalid-argument', `${name}.foodGroup non valido`);
   const description = text(item.description, `${name}.description`, { max: 200 });
   const quantity = dietPlanNumber(item.quantity, `${name}.quantity`, { max: 5000 });
   let unit = null;
-  let quantityState = null;
   if (quantity != null) {
     if (!DIET_PLAN_UNITS.has(item.unit)) fail('invalid-argument', `${name}.unit non valida`);
     unit = item.unit;
-    if (item.quantityState != null && item.quantityState !== '') {
-      if (!DIET_PLAN_QUANTITY_STATES.has(item.quantityState)) fail('invalid-argument', `${name}.quantityState non valido`);
-      quantityState = item.quantityState;
-    }
+  }
+  const clean = { foodGroup: item.foodGroup, description, quantity, unit };
+  if (item.quantityState != null && item.quantityState !== '') {
+    if (!DIET_PLAN_QUANTITY_STATES.has(item.quantityState)) fail('invalid-argument', `${name}.quantityState non valido`);
+    clean.quantityState = item.quantityState;
+  }
+  if (item.netOfWaste === true) clean.netOfWaste = true;
+  const alternative = optionalText(item.alternative, `${name}.alternative`, 200);
+  if (alternative != null) clean.alternative = alternative;
+  return clean;
+}
+
+function validateDietPlanChoiceGroup(group, name) {
+  exactObject(group, ['title', 'optional', 'alternatives'], name);
+  const title = text(group.title, `${name}.title`, { max: DIET_PLAN_LIMITS.choiceGroupTitle });
+  if (!Array.isArray(group.alternatives) || !group.alternatives.length || group.alternatives.length > DIET_PLAN_LIMITS.alternativesPerChoiceGroup) {
+    fail('invalid-argument', `${name}.alternatives deve contenere da 1 a ${DIET_PLAN_LIMITS.alternativesPerChoiceGroup} alternative`);
   }
   return {
-    foodGroup: item.foodGroup,
-    description,
-    quantity,
-    unit,
-    quantityState,
-    netOfWaste: item.netOfWaste === true,
-    alternative: optionalText(item.alternative, `${name}.alternative`, 200)
+    title,
+    optional: group.optional !== false,
+    alternatives: group.alternatives.map((alternative, index) => validateDietPlanItem(alternative, `${name}.alternatives[${index}]`))
   };
 }
 
 function validateDietPlanOption(option, name) {
-  exactObject(option, ['label', 'items', 'note'], name);
+  // Due tipi mutuamente esclusivi: «free-foods» (lista alimenti + gruppi
+  // scelta) oppure «recipe» (ricetta del ricettario con moltiplicatore).
+  // Le opzioni senza `type` sono legacy e restano «free-foods».
+  exactObject(option, ['label', 'items', 'note', 'type', 'recipeId', 'recipeMultiplier', 'choiceGroups'], name);
   if (!DIET_PLAN_OPTION_LABELS.has(option.label)) fail('invalid-argument', `${name}.label non valido (A–D)`);
-  if (!Array.isArray(option.items) || !option.items.length || option.items.length > DIET_PLAN_LIMITS.itemsPerOption) {
-    fail('invalid-argument', `${name}.items deve contenere da 1 a ${DIET_PLAN_LIMITS.itemsPerOption} alimenti`);
+  if (option.type != null && option.type !== '' && !DIET_PLAN_OPTION_TYPES.has(option.type)) {
+    fail('invalid-argument', `${name}.type non valido (recipe|free-foods)`);
   }
-  return {
-    label: option.label,
-    items: option.items.map((item, index) => validateDietPlanItem(item, `${name}.items[${index}]`)),
-    note: optionalText(option.note, `${name}.note`, 1000)
-  };
+  const type = option.type === 'recipe' || (!option.type && option.recipeId) ? 'recipe' : 'free-foods';
+  const note = optionalText(option.note, `${name}.note`, 1000);
+  if (type === 'recipe') {
+    if (!option.recipeId || typeof option.recipeId !== 'string') fail('invalid-argument', `${name}.recipeId mancante per opzione ricetta`);
+    const recipeId = id(option.recipeId, `${name}.recipeId`);
+    const multiplierRaw = dietPlanNumber(option.recipeMultiplier ?? 1, `${name}.recipeMultiplier`, { max: 10 });
+    if (multiplierRaw == null || multiplierRaw < 0.1) fail('invalid-argument', `${name}.recipeMultiplier non valido (0,1–10)`);
+    if (Array.isArray(option.items) && option.items.length) fail('invalid-argument', `${name}: opzione ricetta non ammette items`);
+    if (Array.isArray(option.choiceGroups) && option.choiceGroups.length) fail('invalid-argument', `${name}: opzione ricetta non ammette choiceGroups`);
+    return { label: option.label, type: 'recipe', recipeId, recipeMultiplier: multiplierRaw, items: [], choiceGroups: [], note };
+  }
+  if (option.recipeId != null && option.recipeId !== '') fail('invalid-argument', `${name}: recipeId ammesso solo con type "recipe"`);
+  if (option.recipeMultiplier != null && option.recipeMultiplier !== '') fail('invalid-argument', `${name}: recipeMultiplier ammesso solo con type "recipe"`);
+  const items = Array.isArray(option.items) ? option.items.map((item, index) => validateDietPlanItem(item, `${name}.items[${index}]`)) : [];
+  if (items.length > DIET_PLAN_LIMITS.itemsPerOption) {
+    fail('invalid-argument', `${name}.items può contenere al massimo ${DIET_PLAN_LIMITS.itemsPerOption} alimenti`);
+  }
+  const choiceGroups = Array.isArray(option.choiceGroups)
+    ? option.choiceGroups.map((group, index) => validateDietPlanChoiceGroup(group, `${name}.choiceGroups[${index}]`))
+    : [];
+  if (choiceGroups.length > DIET_PLAN_LIMITS.choiceGroupsPerOption) {
+    fail('invalid-argument', `${name}.choiceGroups può contenere al massimo ${DIET_PLAN_LIMITS.choiceGroupsPerOption} gruppi`);
+  }
+  if (!items.length && !choiceGroups.length) {
+    fail('invalid-argument', `${name}: serve almeno un alimento o un gruppo scelta`);
+  }
+  return { label: option.label, type: 'free-foods', recipeId: null, recipeMultiplier: null, items, choiceGroups, note };
 }
 
 function validateDietPlanMeal(meal, name) {
@@ -635,7 +687,7 @@ function validateDietPlan(plan) {
 
 const CATALOG_IMPORT_FORMATS = new Set(['json', 'csv']);
 const CATALOG_IMPORT_MODES = new Set(['dry-run', 'commit', 'restore']);
-const CATALOG_CSV_COLUMNS = ['ingredientId', 'displayName', 'aliases', 'categoryId', 'mappingKind', 'mellerFamilyId'];
+const CATALOG_CSV_COLUMNS = ['ingredientId', 'displayName', 'aliases', 'categoryId', 'mappingKind', 'guideFamilyId'];
 const CATALOG_INGREDIENT_ID_PATTERN = /^[a-z0-9][a-z0-9-]{1,95}$/;
 const CATALOG_CATEGORY_ID_PATTERN = /^[a-z0-9][a-z0-9-]{1,63}$/;
 // Zero quantità: qualsiasi chiave che somigli a una dose rifiuta il file.
@@ -663,7 +715,14 @@ function parseCatalogCsv(payload) {
   const lines = source.split(/\r?\n/).map(line => line.trim()).filter(line => line.length > 0);
   if (!lines.length) fail('invalid-argument', 'CSV vuoto o senza intestazione');
   const separator = lines[0].includes(';') ? ';' : ',';
-  const header = lines[0].split(separator).map(cell => cell.trim());
+  // Legacy: i file esportati prima dell'evoluzione del contratto intestano
+  // la colonna famiglia "mellerFamilyId": viene accettata e mappata sul
+  // nome attuale. Presenti entrambe, il file è ambiguo e viene rifiutato.
+  const rawHeader = lines[0].split(separator).map(cell => cell.trim());
+  if (rawHeader.includes('mellerFamilyId') && rawHeader.includes('guideFamilyId')) {
+    fail('invalid-argument', 'CSV: colonne guideFamilyId e mellerFamilyId insieme non ammesse');
+  }
+  const header = rawHeader.map(column => (column === 'mellerFamilyId' ? 'guideFamilyId' : column));
   const unknown = header.filter(column => !CATALOG_CSV_COLUMNS.includes(column));
   const doseColumns = unknown.filter(column => CATALOG_DOSE_KEY_PATTERN.test(column));
   if (doseColumns.length) {
@@ -683,7 +742,7 @@ function parseCatalogCsv(payload) {
     const row = {};
     header.forEach((column, position) => { row[column] = cells[position]; });
     row.aliases = String(row.aliases || '').split('|').map(part => part.trim()).filter(Boolean);
-    row.mellerFamilyId = row.mellerFamilyId === '' || row.mellerFamilyId == null ? null : row.mellerFamilyId;
+    row.guideFamilyId = row.guideFamilyId === '' || row.guideFamilyId == null ? null : row.guideFamilyId;
     row.__line = index + 2;
     return row;
   });
@@ -733,8 +792,14 @@ function validateCatalogIngredient(raw, knownCategories, errors, where) {
     return null;
   }
   assertNoDoseKeys(raw, label);
-  const extra = Object.keys(raw).filter(key => !['ingredientId', 'displayName', 'aliases', 'categoryId', 'mappingKind', 'mellerFamilyId', '__line'].includes(key) && !key.startsWith('__'));
+  // Legacy "mellerFamilyId" ammesso come chiave di ingresso e mappato sul
+  // nome attuale; i nuovi file usano solo guideFamilyId.
+  const familyRaw = raw.guideFamilyId != null ? raw.guideFamilyId : raw.mellerFamilyId;
+  const extra = Object.keys(raw).filter(key => !['ingredientId', 'displayName', 'aliases', 'categoryId', 'mappingKind', 'guideFamilyId', 'mellerFamilyId', '__line'].includes(key) && !key.startsWith('__'));
   extra.forEach(key => push(`campo non riconosciuto ("${key}")`));
+  if (raw.guideFamilyId != null && raw.mellerFamilyId != null && String(raw.guideFamilyId).trim() !== String(raw.mellerFamilyId).trim()) {
+    push('guideFamilyId e mellerFamilyId insieme con valori diversi');
+  }
   const ingredientId = String(raw.ingredientId || '').trim();
   if (!CATALOG_INGREDIENT_ID_PATTERN.test(ingredientId)) push('ingredientId non valido (minuscolo, trattini, 2-96 caratteri)');
   const displayName = String(raw.displayName || '').trim();
@@ -756,12 +821,12 @@ function validateCatalogIngredient(raw, knownCategories, errors, where) {
   else if (!knownCategories.has(categoryId)) push(`categoryId inesistente ("${categoryId}")`);
   const mappingKind = String(raw.mappingKind || '').trim();
   if (!MAPPING_KINDS.has(mappingKind)) push('mappingKind non valido (guided|free)');
-  const mellerFamilyId = raw.mellerFamilyId == null || raw.mellerFamilyId === '' ? null : String(raw.mellerFamilyId).trim();
+  const guideFamilyId = familyRaw == null || familyRaw === '' ? null : String(familyRaw).trim();
   if (mappingKind === 'guided') {
-    if (!mellerFamilyId) push('guided richiede mellerFamilyId');
-    else if (!MELLER_FAMILY_IDS.has(mellerFamilyId)) push(`mellerFamilyId inesistente nel motore ("${mellerFamilyId}")`);
+    if (!guideFamilyId) push('guided richiede guideFamilyId');
+    else if (!GUIDE_FAMILY_IDS.has(guideFamilyId)) push(`guideFamilyId inesistente nel motore ("${guideFamilyId}")`);
   }
-  if (mappingKind === 'free' && mellerFamilyId) push('free non ammette mellerFamilyId');
+  if (mappingKind === 'free' && guideFamilyId) push('free non ammette guideFamilyId');
   if (problems.length) {
     errors.push(...problems);
     return null;
@@ -775,7 +840,7 @@ function validateCatalogIngredient(raw, knownCategories, errors, where) {
     // searchTokens SEMPRE rigenerati server-side, mai dal file.
     searchTokens: searchTokensFor(displayName, aliases),
     mappingKind,
-    mellerFamilyId: mappingKind === 'guided' ? mellerFamilyId : null,
+    guideFamilyId: mappingKind === 'guided' ? guideFamilyId : null,
     status: 'active'
   };
 }
@@ -819,10 +884,10 @@ function validateCatalogCategory(raw, errors, where) {
 function sameCatalogEntry(a, b) {
   return canonicalJson({
     displayName: a.displayName, categoryId: a.categoryId, aliases: [...(a.aliases || [])].sort(),
-    mappingKind: a.mappingKind, mellerFamilyId: a.mellerFamilyId || null
+    mappingKind: a.mappingKind, guideFamilyId: a.guideFamilyId || null
   }) === canonicalJson({
     displayName: b.displayName, categoryId: b.categoryId, aliases: [...(b.aliases || [])].sort(),
-    mappingKind: b.mappingKind, mellerFamilyId: b.mellerFamilyId || null
+    mappingKind: b.mappingKind, guideFamilyId: b.guideFamilyId || null
   });
 }
 
@@ -1127,7 +1192,7 @@ function validateTransferStructureOwnership(input) {
 }
 
 // ---- Dosi e frequenze personalizzate per cliente (console) ----
-// Le frequenze sono il mirror server-side di MELLER_PROTEIN_FREQUENCIES in
+// Le frequenze sono il mirror server-side di GUIDE_PROTEIN_FREQUENCIES in
 // js/domain.js (chiavi, etichette e default: allineamento verificato dai test
 // client). Max 14 = 7 giorni × 2 pasti principali (vincolo strutturale).
 const CLIENT_FREQUENCY_KEYS = ['poultry', 'beef', 'curedMeats', 'omega', 'otherFish', 'dairy', 'eggs', 'legumes'];
@@ -1304,7 +1369,7 @@ function validateProfessionalRecipe(recipe) {
 module.exports = {
   SINGLE_ORGANIZATION_ID,
   ROLES, REPORT_STATUSES, ASSIGNMENT_STATUSES, ASSIGNMENT_STRATEGIES, MEMBER_STATUSES,
-  MELLER_FAMILY_IDS, STRUCTURE_REVISION_SCHEMA_VERSION, STRUCTURE_REVISION_SCHEMA_VERSION_WITH_PLAN,
+  GUIDE_FAMILY_IDS, STRUCTURE_REVISION_SCHEMA_VERSION, STRUCTURE_REVISION_SCHEMA_VERSION_WITH_PLAN,
   fail, exactObject, text, optionalText, id, isoDate, canonicalJson, checksum,
   normalizeIngredient, aliasKey, searchTokensFor, normalizeUsername, hashToken,
   reportKey, validateReport, validateMapping, validateRuleSetRules, validateAssignment,

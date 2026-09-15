@@ -195,11 +195,11 @@ test('computeGeneratorProposal: senza profilo usa le preferenze dispositivo', ()
 
 test('dosi override nel motore: settimana e spesa usano la dose cliente', () => {
   const snapshot = {
-    grammature: [...PianoDomain.MELLER_GRAMMATURE],
+    grammature: [...PianoDomain.GUIDE_GRAMMATURE],
     carbs: [...PianoDomain.CARB_REFERENCE],
-    alternatives: { ...PianoDomain.MELLER_ALTERNATIVES },
+    alternatives: { ...PianoDomain.GUIDE_ALTERNATIVES },
     constraints: { ...PianoDomain.DEFAULT_CONSTRAINTS },
-    guide: { ...PianoDomain.MELLER_GUIDE }
+    guide: { ...PianoDomain.GUIDE_MANUAL }
   };
   try {
     assignedWithFreq();
@@ -213,7 +213,7 @@ test('dosi override nel motore: settimana e spesa usano la dose cliente', () => 
       freeAliases: [],
       clientOverrides: { revision: 1, doses: { pasta: { lunch: { training: 120 } } }, frequencies: {} }
     });
-    assert.equal(PianoDomain.activateMellerRuleSet(engine.rules, engine.freeAliases), true);
+    assert.equal(PianoDomain.activateGuideRuleSet(engine.rules, engine.freeAliases), true);
     const recipe = {
       id: 'L1', slot: 'lunch', name: 'Pasta', emoji: '🍝',
       ingredients: [{ name: 'Pasta di semola', portions: { man: '120 g', ipo: '120 g' } }]
@@ -229,12 +229,12 @@ test('dosi override nel motore: settimana e spesa usano la dose cliente', () => 
     const pasta = list.find(entry => entry.ingredientId === PianoDomain.ingredientIdFor('Pasta di semola'));
     assert.equal(pasta.totals.g, 120, 'spesa unica riflette la dose cliente');
   } finally {
-    PianoDomain.MELLER_GRAMMATURE.splice(0, PianoDomain.MELLER_GRAMMATURE.length, ...snapshot.grammature);
+    PianoDomain.GUIDE_GRAMMATURE.splice(0, PianoDomain.GUIDE_GRAMMATURE.length, ...snapshot.grammature);
     PianoDomain.CARB_REFERENCE.splice(0, PianoDomain.CARB_REFERENCE.length, ...snapshot.carbs);
-    Object.keys(PianoDomain.MELLER_ALTERNATIVES).forEach(key => delete PianoDomain.MELLER_ALTERNATIVES[key]);
-    Object.assign(PianoDomain.MELLER_ALTERNATIVES, snapshot.alternatives);
+    Object.keys(PianoDomain.GUIDE_ALTERNATIVES).forEach(key => delete PianoDomain.GUIDE_ALTERNATIVES[key]);
+    Object.assign(PianoDomain.GUIDE_ALTERNATIVES, snapshot.alternatives);
     Object.assign(PianoDomain.DEFAULT_CONSTRAINTS, snapshot.constraints);
-    Object.assign(PianoDomain.MELLER_GUIDE, snapshot.guide);
+    Object.assign(PianoDomain.GUIDE_MANUAL, snapshot.guide);
   }
 });
 

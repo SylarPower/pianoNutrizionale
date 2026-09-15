@@ -31,7 +31,7 @@ const v1Profile = (overrides = null) => ({
 });
 const V2_REVISION = {
   revisionId: 'r1',
-  rules: [{ mellerFamilyId: 'pasta', ingredientIds: ['pasta-semola'], quantityGrams: { lunch: { training: 90, rest: 70 }, dinner: { training: 40, rest: 40 } }, enabled: true }],
+  rules: [{ guideFamilyId: 'pasta', ingredientIds: ['pasta-semola'], quantityGrams: { lunch: { training: 90, rest: 70 }, dinner: { training: 40, rest: 40 } }, enabled: true }],
   alternativeGroups: []
 };
 const V2_CATALOG = {
@@ -51,7 +51,7 @@ const OVERRIDES = { revision: 2, doses: { pasta: { lunch: { training: 120 } } },
 // ---- Allineamento client/server ----
 
 test('frequenze: chiavi, etichette e default allineati tra client e server', () => {
-  const client = Domain.MELLER_PROTEIN_FREQUENCIES;
+  const client = Domain.GUIDE_PROTEIN_FREQUENCIES;
   assert.deepEqual([...serverDomain.CLIENT_FREQUENCY_KEYS].sort(), client.map(item => item.key).sort());
   client.forEach(item => {
     assert.equal(serverDomain.CLIENT_FREQUENCY_LABELS[item.key].split(' (')[0], item.label.split(' (')[0], `etichetta ${item.key}`);
@@ -130,8 +130,8 @@ test('snapshot legacy senza campo resta valido senza override', () => {
 
 test('loadContext online: attiva il motore convertito con override', async () => {
   const activated = [];
-  const previous = Domain.activateMellerRuleSet;
-  Domain.activateMellerRuleSet = (rules, freeAliases) => { activated.push({ rules, freeAliases }); return true; };
+  const previous = Domain.activateGuideRuleSet;
+  Domain.activateGuideRuleSet = (rules, freeAliases) => { activated.push({ rules, freeAliases }); return true; };
   try {
     const context = await saas.loadContext('u1', async () => ({ state: 'assigned', profile: v2Profile(OVERRIDES) }));
     assert.equal(context.state, 'assigned');
@@ -139,14 +139,14 @@ test('loadContext online: attiva il motore convertito con override', async () =>
     assert.equal(activated[0].rules[0].slots.lunch.training, 120, 'regole v2 convertite e personalizzate');
     assert.ok(store['pn_saas_profile_u1'], 'profilo in cache per l’offline');
   } finally {
-    Domain.activateMellerRuleSet = previous;
+    Domain.activateGuideRuleSet = previous;
   }
 });
 
 test('loadContext online v1 invariato, offline usa la cache verificata', async () => {
   const activated = [];
-  const previous = Domain.activateMellerRuleSet;
-  Domain.activateMellerRuleSet = (rules, freeAliases) => { activated.push(rules); return true; };
+  const previous = Domain.activateGuideRuleSet;
+  Domain.activateGuideRuleSet = (rules, freeAliases) => { activated.push(rules); return true; };
   try {
     await saas.loadContext('u2', async () => ({ state: 'assigned', profile: v1Profile() }));
     assert.equal(activated[0][0].slots.lunch.training, 90);
@@ -155,7 +155,7 @@ test('loadContext online v1 invariato, offline usa la cache verificata', async (
     assert.equal(offline.offline, true);
     assert.equal(offline.profile.rules[0].slots.lunch.training, 90);
   } finally {
-    Domain.activateMellerRuleSet = previous;
+    Domain.activateGuideRuleSet = previous;
   }
 });
 
@@ -175,60 +175,60 @@ test('switch ON: engineRulesFor v2 + attivazione motore adattano le porzioni del
   const engine = saas.engineRulesFor(v2Profile(OVERRIDES));
   assert.equal(engine.rules[0].slots.lunch.training, 120);
   assert.equal(engine.rules[0].slots.lunch.rest, 70);
-  const previousActivate = Domain.activateMellerRuleSet;
+  const previousActivate = Domain.activateGuideRuleSet;
   try {
-    assert.equal(Domain.activateMellerRuleSet(engine.rules, engine.freeAliases), true, 'motore installato');
+    assert.equal(Domain.activateGuideRuleSet(engine.rules, engine.freeAliases), true, 'motore installato');
     const recipe = {
       name: 'Pranzo tipo', slot: 'lunch',
       ingredients: [{ name: 'Pasta', portions: { ipo: '500 g', man: '500 g' } }]
     };
-    const onTraining = Domain.resolveRecipeForPlan(recipe, 'lunch', Domain.MELLER_MODE_MELLER, 'training');
-    assert.equal(onTraining.mode, 'meller');
+    const onTraining = Domain.resolveRecipeForPlan(recipe, 'lunch', Domain.GUIDE_MODE_GUIDE, 'training');
+    assert.equal(onTraining.mode, 'guide');
     assert.equal(onTraining.applied, true, 'dosi personalizzate applicate');
     assert.equal(onTraining.recipe.ingredients[0].portions.ipo, '120 g', 'override allenamento');
     assert.equal(onTraining.recipe.ingredients[0].portions.man, '120 g');
-    const onRest = Domain.resolveRecipeForPlan(recipe, 'lunch', Domain.MELLER_MODE_MELLER, 'rest');
+    const onRest = Domain.resolveRecipeForPlan(recipe, 'lunch', Domain.GUIDE_MODE_GUIDE, 'rest');
     assert.equal(onRest.applied, true);
     assert.equal(onRest.recipe.ingredients[0].portions.ipo, '70 g', 'dose riposo della struttura (non coperta dall’override)');
     assert.equal(recipe.ingredients[0].portions.ipo, '500 g', 'ricetta originale mai mutata');
   } finally {
-    Domain.activateMellerRuleSet = previousActivate;
+    Domain.activateGuideRuleSet = previousActivate;
   }
 });
 
 test('switch OFF: stessa struttura assegnata ma le quantità restano originali', () => {
   const engine = saas.engineRulesFor(v2Profile(OVERRIDES));
-  const previousActivate = Domain.activateMellerRuleSet;
+  const previousActivate = Domain.activateGuideRuleSet;
   try {
-    Domain.activateMellerRuleSet(engine.rules, engine.freeAliases);
+    Domain.activateGuideRuleSet(engine.rules, engine.freeAliases);
     const recipe = {
       name: 'Pranzo tipo', slot: 'lunch',
       ingredients: [{ name: 'Pasta', portions: { ipo: '500 g', man: '500 g' } }]
     };
-    const off = Domain.resolveRecipeForPlan(recipe, 'lunch', Domain.MELLER_MODE_ORIGINAL, 'training');
+    const off = Domain.resolveRecipeForPlan(recipe, 'lunch', Domain.GUIDE_MODE_ORIGINAL, 'training');
     assert.equal(off.mode, 'original');
     assert.equal(off.applied, false, 'nessuna adattazione in modalità originale');
     assert.equal(off.recipe.ingredients[0].portions.ipo, '500 g', 'porzioni intatte');
     assert.equal(recipe.ingredients[0].portions.ipo, '500 g', 'sorgente immutata');
   } finally {
-    Domain.activateMellerRuleSet = previousActivate;
+    Domain.activateGuideRuleSet = previousActivate;
   }
 });
 
 test('switch ON senza override: valgono le dosi dello studio dalla revisione v2', () => {
   const engine = saas.engineRulesFor(v2Profile());
   assert.equal(engine.rules[0].slots.lunch.training, 90, 'nessun override: dosi studio');
-  const previousActivate = Domain.activateMellerRuleSet;
+  const previousActivate = Domain.activateGuideRuleSet;
   try {
-    Domain.activateMellerRuleSet(engine.rules, engine.freeAliases);
+    Domain.activateGuideRuleSet(engine.rules, engine.freeAliases);
     const recipe = {
       name: 'Pranzo tipo', slot: 'lunch',
       ingredients: [{ name: 'Pasta', portions: { ipo: '500 g', man: '500 g' } }]
     };
-    const on = Domain.resolveRecipeForPlan(recipe, 'lunch', Domain.MELLER_MODE_MELLER, 'training');
+    const on = Domain.resolveRecipeForPlan(recipe, 'lunch', Domain.GUIDE_MODE_GUIDE, 'training');
     assert.equal(on.applied, true);
     assert.equal(on.recipe.ingredients[0].portions.ipo, '90 g', 'dose studio applicata');
   } finally {
-    Domain.activateMellerRuleSet = previousActivate;
+    Domain.activateGuideRuleSet = previousActivate;
   }
 });

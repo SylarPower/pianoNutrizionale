@@ -5,7 +5,7 @@
  * e vengono trasformati da questi servizi in modo idempotente.
  *
  * È inoltre la FONTE UNICA delle grammature di riferimento del manuale del
- * dott. Meller (MELLER_GRAMMATURE, frequenze proteiche, massimi per porzione):
+ * della tabella di riferimento (GUIDE_GRAMMATURE, frequenze proteiche, massimi per porzione):
  * da qui derivano i vincoli del generatore, il riferimento carboidrati e la
  * guida mostrata nella webapp. Sono
  * valori di riferimento del manuale, mai dosaggi di ricette personali.
@@ -24,10 +24,10 @@
   const SINGLE_ORGANIZATION_ID = 'pianoNutrizionale';
   const DAYS = ['monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday', 'sunday'];
   const SLOTS = ['breakfast', 'snack1', 'lunch', 'snack2', 'dinner'];
-  const MELLER_MAIN_SLOTS = ['lunch', 'dinner'];
-  const MELLER_MODE_MELLER = 'meller';
-  const MELLER_MODE_ORIGINAL = 'original';
-  const MELLER_ADAPTATION_SCHEMA_VERSION = 1;
+  const GUIDE_MAIN_SLOTS = ['lunch', 'dinner'];
+  const GUIDE_MODE_GUIDE = 'guide';
+  const GUIDE_MODE_ORIGINAL = 'original';
+  const GUIDE_ADAPTATION_SCHEMA_VERSION = 1;
   const EMPTY_PORTION = '—';
 
   const DAY_LABELS = {
@@ -76,15 +76,15 @@
   };
 
   // =====================================================================
-  // Manuale del dott. Meller — FONTE UNICA
+  // Manuale delle linee guida — FONTE UNICA
   //
   // Tutti i valori alimentari del manuale vivono qui: famiglie, grammature per
   // pasto e giorno A/R, frequenze proteiche settimanali e massimi per
   // porzione. Da questa tabella derivano:
   //   - i vincoli del generatore (DEFAULT_CONSTRAINTS);
   //   - il riferimento carboidrati del travaso pranzo <-> cena (CARB_REFERENCE);
-  //   - le tabelle di alternative dei popup e delle Impostazioni (MELLER_GUIDE);
-  //   - il riconoscimento carboidrati/proteine degli ingredienti (isMeller*).
+  //   - le tabelle di alternative dei popup e delle Impostazioni (GUIDE_MANUAL);
+  //   - il riconoscimento carboidrati/proteine degli ingredienti (isGuide*).
   // Modifica SOLO qui: gli altri file leggono da PianoDomain.
   //
   // L'ordine delle regole conta: la prima che combacia con il nome
@@ -95,7 +95,7 @@
   // delle alternative e nei popup. Nessuna classificazione è duplicata altrove.
   // =====================================================================
 
-  const MELLER_GROUP = {
+  const GUIDE_GROUP = {
     CARB: 'carb',
     PROTEIN: 'protein',
     VEGETABLE: 'vegetable',
@@ -106,8 +106,8 @@
     FREE: 'free'
   };
 
-  const MELLER_GRAMMATURE = [
-  // === GENERATO DA docs/meller-source-v3.json — NON MODIFICARE A MANO ===
+  const GUIDE_GRAMMATURE = [
+  // === GENERATO DA docs/guide-source-v3.json — NON MODIFICARE A MANO ===
   // Ordine = priorità discendente (prima regex che matcha vince)
   // Dosi esplicite Pranzo A/R e Cena A/R (cena esplicita, non derivata 2/3)
     { family: 'patateDolci', group: 'carb', label: 'Patate dolci / Batata', match: /patata americana|patate dolci|patata dolce|sweet potato|batata/, slots: { lunch: { training: 300, rest: 220 }, dinner: { training: 160, rest: 160 } } },
@@ -118,32 +118,32 @@
     { family: 'gallette', group: 'carb', label: 'Gallette di riso / mais', match: /gallette di riso|gallette di mais|galletta|gallette/, slots: { lunch: { training: 65, rest: 45 }, dinner: { training: 35, rest: 35 } } },
     { family: 'crackers', group: 'carb', label: 'Crackers / Grissini / Crostini', match: /crackers|grissino|grissini|crostino|crostini|cracker/, slots: { lunch: { training: 60, rest: 45 }, dinner: { training: 30, rest: 30 } } },
     { family: 'piadina', group: 'carb', label: 'Piadina / Tortilla / Wrap', match: /tortillas|tortilla|piadina|piadine|wraps|wrap/, slots: { lunch: { training: 80, rest: 55 }, dinner: { training: 40, rest: 40 } } },
-    { family: 'cerealiColazione', group: 'carb', label: 'Cereali da colazione (cornflakes, muesli)', match: /cereali integrali colazione|cereali da colazione|cereali soffiati|fiocchi di mais|corn flakes|cornflakes|granola|muesli/, slots: { lunch: { training: 70, rest: 50 }, dinner: { training: 40, rest: 40 } } },
-    { family: 'cereali', group: 'carb', label: 'Cereali e derivati (pasta, riso, farro, orzo, ecc.)', match: /pasta di lenticchie|pasta integrale|pasta di legumi|riso integrale|grano saraceno|mezze maniche|pasta di ceci|tagliatelle|orecchiette|tortiglioni|riso venere|conchiglie|maccheroni|riso rosso|spaghetti|spaghetto|carnaroli|riso nero|cous cous|rigatoni|linguine|farfalle|pennette|paccheri|couscous|saraceno|amaranto|semolino|fusilli|lasagne|risotto|basmati|arborio|burghul|trofie|quinoa|miglio|bulgur|semola|pasta|penne|farro|kamut|riso|orzo/, slots: { lunch: { training: 70, rest: 50 }, dinner: { training: 40, rest: 40 } } },
+    { family: 'cerealiColazione', group: 'carb', label: 'Cereali da colazione (cornflakes, muesli)', match: /cereali integrali colazione|cereali da colazione|cereali colazione|cereali soffiati|fiocchi di mais|corn flakes|cornflakes|granola|muesli/, slots: { lunch: { training: 70, rest: 50 }, dinner: { training: 40, rest: 40 } } },
+    { family: 'cereali', group: 'carb', label: 'Cereali e derivati (pasta, riso, farro, orzo, ecc.)', match: /pasta di lenticchie|pasta integrale|pasta di legumi|riso integrale|grano saraceno|mezze maniche|pasta di ceci|tagliatelle|orecchiette|tortiglioni|riso venere|conchiglie|maccheroni|riso rosso|spaghetti|spaghetto|carnaroli|riso nero|cous cous|rigatoni|linguine|farfalle|pennette|paccheri|couscous|saraceno|amaranto|semolino|fusilli|lasagne|risotto|basmati|arborio|burghul|cereali|trofie|quinoa|miglio|bulgur|semola|pasta|penne|farro|kamut|riso|orzo/, slots: { lunch: { training: 70, rest: 50 }, dinner: { training: 40, rest: 40 } } },
     { family: 'pane', group: 'carb', label: 'Pane e affini', match: /fette biscottate|fetta biscottata|pane integrale|pane di segale|pane di farro|pane carasau|cracotte|focaccia|focacce|pane|wasa/, slots: { lunch: { training: 100, rest: 70 }, dinner: { training: 50, rest: 50 } } },
     { family: 'patate', group: 'carb', label: 'Patate', match: /patata|patate/, slots: { lunch: { training: 340, rest: 240 }, dinner: { training: 170, rest: 170 } } },
     { family: 'salmoneAffumicato', group: 'protein', label: 'Salmone affumicato', match: /salmone affumicato/, slots: { lunch: { training: 150, rest: 150 }, dinner: { training: 150, rest: 150 } } },
     { family: 'pesceScatolaNaturale', group: 'protein', label: 'Pesce in scatola al naturale', match: /pesce in scatola al naturale|sgombro al naturale|salmone al naturale|tonno al naturale|pesce al naturale/, slots: { lunch: { training: 220, rest: 220 }, dinner: { training: 220, rest: 220 } } },
     { family: 'pesceSottOlio', group: 'protein', label: 'Pesce conservato sott\'olio (sgocciolato)', match: /sgombro in scatola|sgombro sott olio|sardine sott olio|sardina sott olio|salmone sott olio|tonno in scatola|tonno sott olio|pesce sott olio/, slots: { lunch: { training: 110, rest: 110 }, dinner: { training: 110, rest: 110 } } },
-    { family: 'pesceAzzurro', group: 'protein', label: 'Pesce azzurro (ricco di omega-3)', match: /tonno fresco|acciughe|salmone|sgombro|sardina|sardine|acciuga|aringhe|aringa|alice|alici/, slots: { lunch: { training: 130, rest: 130 }, dinner: { training: 130, rest: 130 } } },
-    { family: 'pesceBiancoMagro', group: 'protein', label: 'Pesce bianco magro', match: /stoccafisso|pesce spada|merluzzo|sogliola|sogliole|platessa|branzino|nasello|spigola|baccala|orata|orate|trota|trote/, slots: { lunch: { training: 260, rest: 260 }, dinner: { training: 260, rest: 260 } } },
-    { family: 'crostaceiMolluschi', group: 'protein', label: 'Crostacei e Molluschi', match: /gamberetti|gamberoni|calamaro|calamari|aragosta|granchio|gambero|gamberi|vongole|granchi|totano|totani|seppia|seppie|polipo|mitili|scampi|astice|polpo|cozze/, slots: { lunch: { training: 310, rest: 310 }, dinner: { training: 310, rest: 310 } } },
+    { family: 'pesceAzzurro', group: 'protein', label: 'Pesce azzurro (ricco di omega-3)', match: /pesce azzurro|tonno fresco|acciughe|salmone|sgombro|sardina|sardine|acciuga|aringhe|aringa|alice|alici|tonno/, slots: { lunch: { training: 130, rest: 130 }, dinner: { training: 130, rest: 130 } } },
+    { family: 'pesceBiancoMagro', group: 'protein', label: 'Pesce bianco magro', match: /pesce bianco|stoccafisso|pesce spada|merluzzo|sogliola|sogliole|platessa|branzino|nasello|spigola|baccala|orata|orate|trota|trote/, slots: { lunch: { training: 260, rest: 260 }, dinner: { training: 260, rest: 260 } } },
+    { family: 'crostaceiMolluschi', group: 'protein', label: 'Crostacei e Molluschi', match: /crostacei e molluschi|gamberetti|gamberoni|crostacei|molluschi|calamaro|calamari|aragosta|granchio|gambero|gamberi|vongole|granchi|totano|totani|seppia|seppie|polipo|mitili|scampi|astice|polpo|cozze/, slots: { lunch: { training: 310, rest: 310 }, dinner: { training: 310, rest: 310 } } },
     { family: 'maiale', group: 'protein', label: 'Maiale (tagli magri)', match: /filetto di maiale|coscia di maiale|maiale|lonza|pork/, slots: { lunch: { training: 200, rest: 200 }, dinner: { training: 200, rest: 200 } } },
     { family: 'polloTacchino', group: 'protein', label: 'Pollo e Tacchino', match: /sovracoscia di pollo|petto di tacchino|fesa di tacchino|coscia di pollo|petto di pollo|sovracoscia|tacchino|faraona|pollo/, slots: { lunch: { training: 200, rest: 200 }, dinner: { training: 200, rest: 200 } } },
     { family: 'manzo', group: 'protein', label: 'Manzo (tagli magri) / Vitello', match: /hamburger di manzo|filetto di manzo|fesa di manzo|noce di manzo|roastbeef|sottofesa|girello|scamone|filetto|vitello|vitella|manzo/, slots: { lunch: { training: 190, rest: 190 }, dinner: { training: 190, rest: 190 } } },
-    { family: 'affettatiMagri', group: 'protein', label: 'Affettati magri', match: /prosciutto crudo|prosciutto cotto|prosciutto|bresaola|speck|fesa/, slots: { lunch: { training: 150, rest: 150 }, dinner: { training: 150, rest: 150 } } },
+    { family: 'affettatiMagri', group: 'protein', label: 'Affettati magri', match: /prosciutto crudo|prosciutto cotto|prosciutto|affettati|bresaola|salumi|speck|fesa/, slots: { lunch: { training: 150, rest: 150 }, dinner: { training: 150, rest: 150 } } },
     { family: 'mozzarellaLight', group: 'protein', label: 'Mozzarella Light', match: /santa lucia light|mozzarella light/, slots: { lunch: { training: 140, rest: 140 }, dinner: { training: 140, rest: 140 } } },
-    { family: 'formaggiFreschiMolli', group: 'protein', label: 'Formaggi freschi e molli', match: /formaggio fresco spalmabile|formaggio spalmabile|fior di latte|philadelphia|mozzarella|stracchino|crescenza|robiola|caprino/, slots: { lunch: { training: 80, rest: 80 }, dinner: { training: 80, rest: 80 } } },
+    { family: 'formaggiFreschiMolli', group: 'protein', label: 'Formaggi freschi e molli', match: /formaggio fresco spalmabile|formaggio spalmabile|formaggi freschi|fior di latte|philadelphia|mozzarella|stracchino|crescenza|robiola|caprino/, slots: { lunch: { training: 80, rest: 80 }, dinner: { training: 80, rest: 80 } } },
     { family: 'yogurtGreco', group: 'protein', label: 'Yogurt greco / Skyr', match: /yoghurt greco|yogurt greco|skyr/, slots: { lunch: { training: 400, rest: 400 }, dinner: { training: 400, rest: 400 } } },
     { family: 'fiocchiLatte', group: 'protein', label: 'Fiocchi di latte', match: /fiocchi di latte|cottage cheese/, slots: { lunch: { training: 200, rest: 200 }, dinner: { training: 200, rest: 200 } } },
     { family: 'montasio', group: 'protein', label: 'Montasio', match: /montasio/, slots: { lunch: { training: 60, rest: 60 }, dinner: { training: 60, rest: 60 } } },
     { family: 'grana', group: 'protein', label: 'Grana Padano', match: /grana padano|grana/, slots: { lunch: { training: 55, rest: 55 }, dinner: { training: 55, rest: 55 } } },
-    { family: 'formaggiStagionati', group: 'protein', label: 'Formaggi stagionati', match: /parmigiano reggiano|parmigiano|emmenthal|provolone|pecorino|emmental|scamorza|asiago/, slots: { lunch: { training: 55, rest: 55 }, dinner: { training: 55, rest: 55 } } },
+    { family: 'formaggiStagionati', group: 'protein', label: 'Formaggi stagionati', match: /parmigiano reggiano|formaggi stagionati|parmigiano|emmenthal|provolone|pecorino|emmental|scamorza|asiago/, slots: { lunch: { training: 55, rest: 55 }, dinner: { training: 55, rest: 55 } } },
     { family: 'feta', group: 'protein', label: 'Feta', match: /feta/, slots: { lunch: { training: 85, rest: 85 }, dinner: { training: 85, rest: 85 } } },
     { family: 'ricotta', group: 'protein', label: 'Ricotta', match: /ricotta/, slots: { lunch: { training: 150, rest: 150 }, dinner: { training: 150, rest: 150 } } },
     { family: 'uova', group: 'protein', label: 'Uova di gallina', match: /albume|albumi|tuorlo|tuorli|uovo|uova/, slots: { lunch: { training: 180, rest: 180 }, dinner: { training: 180, rest: 180 } } },
     { family: 'legumotti', group: 'protein', label: 'Legumotti (peso a crudo)', match: /legumotti|legumotto/, slots: { lunch: { training: 70, rest: 70 }, dinner: { training: 70, rest: 70 } } },
-    { family: 'legumiScatola', group: 'protein', label: 'Legumi cotti / in scatola (sgocciolati)', match: /fagioli di soia|cannellini|lenticchia|lenticchie|borlotti|fagiolo|fagioli|pisello|piselli|edamame|tempeh|azuki|ceci|fava|fave|tofu/, slots: { lunch: { training: 240, rest: 240 }, dinner: { training: 240, rest: 240 } } },
+    { family: 'legumiScatola', group: 'protein', label: 'Legumi cotti / in scatola (sgocciolati)', match: /fagioli di soia|cannellini|lenticchia|lenticchie|borlotti|fagiolo|fagioli|pisello|piselli|edamame|tempeh|legumi|azuki|ceci|fava|fave|tofu/, slots: { lunch: { training: 240, rest: 240 }, dinner: { training: 240, rest: 240 } } },
     { family: 'lupini', group: 'protein', label: 'Lupini', match: /lupino|lupini/, slots: { lunch: { training: 200, rest: 200 }, dinner: { training: 200, rest: 200 } } },
     { family: 'seitan', group: 'protein', label: 'Seitan', match: /seitan/, slots: { lunch: { training: 180, rest: 180 }, dinner: { training: 180, rest: 180 } } },
     { family: 'burgerVegetali', group: 'protein', label: 'Burger vegetali', match: /hamburger vegetale|burger vegetale|burger vegetali|veggie burger/, slots: { lunch: { training: 100, rest: 100 }, dinner: { training: 100, rest: 100 } } },
@@ -154,12 +154,12 @@
 
 
 
-  // Ingredienti che nel contesto pranzo/cena non hanno una grammatura Meller
+  // Ingredienti che nel contesto pranzo/cena non hanno una grammatura Guide
   // da adattare: verdure, aromi, spezie e condimenti privi di dose. L'elenco
   // è intenzionalmente esplicito: un ingrediente sconosciuto non viene mai
   // considerato libero per deduzione, altrimenti un errore di mapping potrebbe
   // passare inosservato.
-  const MELLER_FREE_INGREDIENT_PATTERNS = [
+  const GUIDE_FREE_INGREDIENT_PATTERNS = [
     /latte parzialmente scremato/, /bevanda di mandorla/, /burro chiarificato/, /lievito alimentare/, /lievito in scaglie/, /burro di arachidi/,
     /burro di mandorle/, /latte di mandorla/, /olio di girasole/, /olio di arachidi/, /semi di girasole/, /bevanda di avena/,
     /bevanda di cocco/, /frutti di bosco/, /crema di sesamo/, /yogurt naturale/, /bevanda di soia/, /bevanda di riso/,
@@ -190,32 +190,48 @@
 
 
 
-  let activeMellerFreeIngredientPatterns = [];
+  let activeGuideFreeIngredientPatterns = [];
 
-  function mellerGrammatureFor(family) {
-    return MELLER_GRAMMATURE.find(rule => rule.family === family) || null;
+  function guideGrammatureFor(family) {
+    return GUIDE_GRAMMATURE.find(rule => rule.family === family) || null;
   }
 
-  function isMellerFreeIngredient(name) {
+  function isGuideFreeIngredient(name) {
     const value = aliasKey(name);
-    return Boolean(value && MELLER_FREE_INGREDIENT_PATTERNS.concat(activeMellerFreeIngredientPatterns).some(pattern => pattern.test(value)));
+    return Boolean(value && GUIDE_FREE_INGREDIENT_PATTERNS.concat(activeGuideFreeIngredientPatterns).some(pattern => pattern.test(value)));
   }
 
-  function mellerMappingForIngredient(name) {
+  // Nome che COINCIDE ESATTAMENTE con un alimento libero del catalogo
+  // (es. "bevanda di riso", "olio di semi"): vince sulla famiglia generica
+  // che altrimenti lo assorbe via sottostringa ("riso", "olio").
+  function isExactGuideFreeIngredient(name) {
+    const value = aliasKey(name);
+    return Boolean(value && GUIDE_FREE_INGREDIENT_PATTERNS.concat(activeGuideFreeIngredientPatterns).some(pattern => pattern.source === value));
+  }
+
+  function guideLabelFamilyFor(name) {
+    return GUIDE_LABEL_FAMILY.get(aliasKey(name)) || null;
+  }
+
+  function guideMappingForIngredient(name) {
     // Ordine: guidate prima (39 famiglie con dosi esplicite), poi libere.
     // Verdura è ora guidata (200g), quindi fagiolini → verdura (guided), non
     // legumi. Yogurt greco → guidato, non libero generico "yogurt".
-    const rule = mellerRuleForIngredient(name);
-    if (rule) return { kind: 'guided', rule };
-    if (isMellerFreeIngredient(name)) return { kind: 'free', rule: null };
+    // Eccezioni: il nome identico all'etichetta della tabella è sempre
+    // guidato; il nome libero ESATTO non viene mai assorbito da una famiglia
+    // che combacia solo per sottostringa.
+    const labelFamily = guideLabelFamilyFor(name);
+    const rule = labelFamily ? guideGrammatureFor(labelFamily) : guideRuleForIngredient(name);
+    if (rule && (labelFamily || !isExactGuideFreeIngredient(name))) return { kind: 'guided', rule };
+    if (isGuideFreeIngredient(name)) return { kind: 'free', rule: null };
     return { kind: 'unknown', rule: null };
   }
 
   // Famiglie canoniche di un gruppo. `withLunchAndDinner` limita l'elenco alle
   // famiglie che hanno sia la dose di pranzo sia quella di cena: sono quelle
   // che entrano nelle tabelle delle alternative.
-  function mellerFamiliesForGroup(group, { withLunchAndDinner = false } = {}) {
-    return MELLER_GRAMMATURE
+  function guideFamiliesForGroup(group, { withLunchAndDinner = false } = {}) {
+    return GUIDE_GRAMMATURE
       .filter(rule => rule.group === group)
       .filter(rule => !withLunchAndDinner || (rule.slots.lunch && rule.slots.dinner))
       .map(rule => rule.family);
@@ -223,22 +239,22 @@
 
   // Etichetta canonica (minuscola) di una famiglia: i testi derivati dalla
   // tabella la usano per mantenere nomi coerenti in tutta la guida.
-  function mellerFamilyToken(family) {
-    return String(mellerGrammatureFor(family)?.label || family).toLowerCase();
+  function guideFamilyToken(family) {
+    return String(guideGrammatureFor(family)?.label || family).toLowerCase();
   }
 
   // Dose massima della famiglia in qualunque pasto/giorno (A o R).
-  function mellerMaxAmount(family) {
-    const slots = mellerGrammatureFor(family)?.slots || {};
+  function guideMaxAmount(family) {
+    const slots = guideGrammatureFor(family)?.slots || {};
     const values = Object.values(slots)
       .flatMap(byDayType => [byDayType?.training, byDayType?.rest])
       .filter(value => Number.isFinite(value));
     return values.length ? Math.max(...values) : null;
   }
 
-  // Frequenze settimanali delle fonti proteiche (manuale Meller). `max: 14`
+  // Frequenze settimanali delle fonti proteiche (manuale delle linee guida). `max: 14`
   // significa "almeno min volte"; `min: 0` significa "massimo max volte".
-  const MELLER_PROTEIN_FREQUENCIES = [
+  const GUIDE_PROTEIN_FREQUENCIES = [
     { key: 'poultry', label: 'Pollame', min: 1, max: 2 },
     { key: 'beef', label: 'Manzo e maiale', min: 0, max: 1 },
     { key: 'curedMeats', label: 'Affettati e carni miste', min: 0, max: 1 },
@@ -262,7 +278,7 @@
   // Puro: non tocca i default, che restano la base per household e ospiti.
   function frequencyConstraintsFor(overrides) {
     const constraints = {};
-    MELLER_PROTEIN_FREQUENCIES.forEach(item => {
+    GUIDE_PROTEIN_FREQUENCIES.forEach(item => {
       const patch = overrides?.[item.key] || {};
       constraints[`${item.key}Min`] = Number.isFinite(Number(patch.min)) ? Number(patch.min) : item.min;
       constraints[`${item.key}Max`] = Number.isFinite(Number(patch.max)) ? Number(patch.max) : item.max;
@@ -280,7 +296,7 @@
   // `label` e `match` qui sono SOLO eccezioni: si scrivono quando serve
   // un'etichetta più specifica del manuale o un riconoscimento più stretto per
   // il travaso, altrimenti si derivano dalla famiglia canonica. Le grammature
-  // non compaiono mai in questo elenco: arrivano da MELLER_GRAMMATURE.
+  // non compaiono mai in questo elenco: arrivano da GUIDE_GRAMMATURE.
   const CARB_FAMILIES = [
     { key: 'patateDolci', family: 'patateDolci', label: 'Patate dolci', match: /patata americana|patate dolci|patata dolce|sweet potato|batata/ },
     { key: 'gnocchi', family: 'gnocchi', label: 'Gnocchi', match: /gnocchi|gnocco/ },
@@ -301,7 +317,7 @@
 
   function buildCarbReference() {
     return CARB_FAMILIES.map(item => {
-      const rule = mellerGrammatureFor(item.family);
+      const rule = guideGrammatureFor(item.family);
       const lunch = rule?.slots?.lunch || null;
       const dinner = rule?.slots?.dinner || null;
       return {
@@ -318,11 +334,11 @@
   const CARB_REFERENCE = buildCarbReference();
 
   // ---------------------------------------------------------------------
-  // Guida Meller mostrata nella webapp (js/data.js legge da qui).
+  // Guida Guide mostrata nella webapp (js/data.js legge da qui).
   //
   // I testi di struttura, giornata tipo e FAQ sono contenuti narrativi del
   // manuale; le tabelle delle alternative e le frequenze proteiche sono
-  // DERIVATI da MELLER_GRAMMATURE e MELLER_PROTEIN_FREQUENCIES.
+  // DERIVATI da GUIDE_GRAMMATURE e GUIDE_PROTEIN_FREQUENCIES.
   //
   // NOTA: nelle giornate tipo le righe di pranzo e cena (dose di riferimento ed
   // elenco delle alternative) sono DERIVATE dalla tabella. Restano scritti a
@@ -334,7 +350,7 @@
   // Etichette di presentazione agganciate alla fonte canonica: `label` è il
   // nome del manuale, `family` (più l'eventuale `also`) sceglie i valori in
   // tabella. Nessuna grammatura è scritta qui dentro.
-  const MELLER_CARB_ALTERNATIVES = [
+  const GUIDE_CARB_ALTERNATIVES = [
     { label: 'Patate dolci', family: 'patateDolci' },
     { label: 'Gnocchi', family: 'gnocchi' },
     { label: 'Polenta', family: 'polenta' },
@@ -352,7 +368,7 @@
 
 
 
-  const MELLER_PROTEIN_ALTERNATIVES = [
+  const GUIDE_PROTEIN_ALTERNATIVES = [
     { label: 'Salmone affumicato', family: 'salmoneAffumicato' },
     { label: 'Pesce al naturale', family: 'pesceScatolaNaturale' },
     { label: 'Pesce sott\'olio', family: 'pesceSottOlio' },
@@ -385,7 +401,7 @@
 
   // Riferimento della tabella proteine: nei popup sta nel titolo e nei testi
   // narrativi resta la riga guida per il pollame con la sua grammatura.
-  const MELLER_PROTEIN_REFERENCE = { label: 'Pollo e tacchino', family: 'polloTacchino' };
+  const GUIDE_PROTEIN_REFERENCE = { label: 'Pollo e tacchino', family: 'polloTacchino' };
 
 
 
@@ -396,28 +412,42 @@
   // una dose sola, identica a pranzo e a cena (scelta del manuale).
   function describeAlternative(entry) {
     const families = [entry.family, ...(entry.also || [])];
-    const rule = mellerGrammatureFor(entry.family);
+    const rule = guideGrammatureFor(entry.family);
     return {
       label: entry.label,
       families,
       // Chiave testuale condivisa dai testi derivati dalla guida: usa le
       // etichette canoniche delle famiglie (es. "pasta/riso", "farro/orzo").
-      token: families.map(mellerFamilyToken).join('/'),
+      token: families.map(guideFamilyToken).join('/'),
       lunchTraining: rule?.slots?.lunch?.training ?? null,
       lunchRest: rule?.slots?.lunch?.rest ?? null,
       dinner: rule?.slots?.dinner?.rest ?? null
     };
   }
 
-  // Rappresentazione strutturata e completa delle alternative Meller.
-  function buildMellerAlternatives() {
+  // Rappresentazione strutturata e completa delle alternative Guide.
+  function buildGuideAlternatives() {
     return {
-      carbohydrates: MELLER_CARB_ALTERNATIVES.map(describeAlternative),
-      proteins: [MELLER_PROTEIN_REFERENCE, ...MELLER_PROTEIN_ALTERNATIVES].map(describeAlternative)
+      carbohydrates: GUIDE_CARB_ALTERNATIVES.map(describeAlternative),
+      proteins: [GUIDE_PROTEIN_REFERENCE, ...GUIDE_PROTEIN_ALTERNATIVES].map(describeAlternative)
     };
   }
 
-  const MELLER_ALTERNATIVES = buildMellerAlternatives();
+  const GUIDE_ALTERNATIVES = buildGuideAlternatives();
+
+  // Etichetta della tabella → famiglia: il nome scritto ESATTAMENTE come la
+  // riga della tabella (es. "Avena", "Affettati", "Pesce azzurro") è la
+  // famiglia stessa, anche quando la regex di famiglia non contiene la parola
+  // generica. Si ricostruisce in activateGuideRuleSet dopo un import.
+  const GUIDE_LABEL_FAMILY = new Map();
+  const rebuildGuideLabelFamily = () => {
+    GUIDE_LABEL_FAMILY.clear();
+    [GUIDE_PROTEIN_REFERENCE, ...GUIDE_CARB_ALTERNATIVES, ...GUIDE_PROTEIN_ALTERNATIVES].forEach(entry => {
+      const key = aliasKey(entry.label);
+      if (key && !GUIDE_LABEL_FAMILY.has(key)) GUIDE_LABEL_FAMILY.set(key, entry.family);
+    });
+  };
+  rebuildGuideLabelFamily();
 
 
   // Righe delle tabelle delle alternative. `dayType` sceglie la colonna del
@@ -437,9 +467,9 @@
   }
 
   // Etichette del giorno usate nei titoli delle tabelle.
-  const MELLER_DAY_LABELS = { training: 'giorno di allenamento', rest: 'giorno di riposo' };
+  const GUIDE_DAY_LABELS = { training: 'giorno di allenamento', rest: 'giorno di riposo' };
 
-  function normalizeMellerDayType(dayType) {
+  function normalizeGuideDayType(dayType) {
     return dayType === 'rest' ? 'rest' : (dayType === 'both' ? 'both' : 'training');
   }
 
@@ -449,23 +479,27 @@
   // sempre quelle di riposo. La cena e tutte le proteine restano invariate.
   // Con `dayType: 'both'` (Impostazioni, nessuna giornata di contesto) la
   // tabella dei carboidrati mostra entrambe le colonne di pranzo.
-  // Pasti in cui le equivalenze Meller hanno senso. Il manuale costruisce le
+  // Pasti in cui le equivalenze Guide hanno senso. Il manuale costruisce le
   // alternative sul rapporto pranzo/cena: negli spuntini e nelle merende le
   // dosi sono fisse e non intercambiabili (crackers 30g nello spuntino non
   // diventano 90g di pasta), quindi lì il popup non si apre.
-  const MELLER_ALTERNATIVE_SLOTS = ['lunch', 'dinner'];
+  const GUIDE_ALTERNATIVE_SLOTS = ['lunch', 'dinner'];
 
-  function mellerSlotHasAlternatives(slot) {
-    return MELLER_ALTERNATIVE_SLOTS.includes(String(slot || ''));
+  function guideSlotHasAlternatives(slot) {
+    return GUIDE_ALTERNATIVE_SLOTS.includes(String(slot || ''));
   }
 
-  function mellerAlternativeGroups(dayType) {
-    const day = normalizeMellerDayType(dayType);
+  function guideAlternativeGroups(dayType) {
+    const day = normalizeGuideDayType(dayType);
     const both = day === 'both';
-    const carbReference = MELLER_ALTERNATIVES.carbohydrates[0];
-    const proteinReference = MELLER_ALTERNATIVES.proteins[0];
+    // Il riferimento è Pasta/Riso (cereali), non la prima riga della tabella:
+    // l'ordine v3 è di priorità di riconoscimento (patate dolci prima di
+    // patate) e la prima voce non è più quella di riferimento.
+    const carbReference = GUIDE_ALTERNATIVES.carbohydrates.find(item => item.families.includes('cereali'))
+      || GUIDE_ALTERNATIVES.carbohydrates[0];
+    const proteinReference = GUIDE_ALTERNATIVES.proteins[0];
     const carbLunch = day === 'rest' ? carbReference.lunchRest : carbReference.lunchTraining;
-    const dayNote = both ? '' : ` · ${MELLER_DAY_LABELS[day]}`;
+    const dayNote = both ? '' : ` · ${GUIDE_DAY_LABELS[day]}`;
     const carbReferenceText = both
       ? `Pasta/Riso ${carbReference.lunchTraining}g a pranzo A, ${carbReference.lunchRest}g a pranzo R, ${carbReference.dinner}g a cena`
       : `Pasta/Riso ${carbLunch}g a pranzo, ${carbReference.dinner}g a cena`;
@@ -479,7 +513,7 @@
         subtitle: `Carboidrati equivalenti${dayNote} · riferimento ${carbReferenceText}`,
         note: 'A cena è ammesso qualsiasi carboidrato di questa tabella, con la dose cena indicata.',
         reference: { label: 'Pasta/Riso', families: carbReference.families },
-        rows: alternativeRows(MELLER_CARB_ALTERNATIVES, { dayType: day, includeDinner: true })
+        rows: alternativeRows(GUIDE_CARB_ALTERNATIVES, { dayType: day, includeDinner: true })
       },
       proteins: {
         kind: 'proteins',
@@ -490,7 +524,7 @@
         note: 'Le proteine mantengono la stessa dose a pranzo e a cena, nel giorno di allenamento e in quello di riposo.',
         reference: { label: proteinReference.label, families: proteinReference.families },
         // Le dosi proteiche non cambiano mai: una sola colonna, identica in A e R.
-        rows: alternativeRows(MELLER_PROTEIN_ALTERNATIVES, { dayType: 'training' })
+        rows: alternativeRows(GUIDE_PROTEIN_ALTERNATIVES, { dayType: 'training' })
       }
     };
   }
@@ -501,17 +535,21 @@
     return `${item.min}-${item.max} volte a settimana`;
   }
 
-  function buildMellerGuide() {
-    const carbReference = MELLER_ALTERNATIVES.carbohydrates[0];
-    const proteinReference = MELLER_ALTERNATIVES.proteins[0];
+  function buildGuideManual() {
+    // Il riferimento della tabella carboidrati è la voce Pasta/Riso (cereali):
+    // NON la prima riga, perché l'ordine della tabella è di priorità di
+    // riconoscimento (v3: patate dolci prima di patate) e non di riferimento.
+    const carbReference = GUIDE_ALTERNATIVES.carbohydrates.find(item => item.families.includes('cereali'))
+      || GUIDE_ALTERNATIVES.carbohydrates[0];
+    const proteinReference = GUIDE_ALTERNATIVES.proteins[0];
     // Alternative in forma compatta per i testi narrativi della guida: stesse
     // famiglie e stesse grammature delle tabelle, DERIVATE dalla fonte unica
     // (nessun elenco parziale scritto a mano).
     const inline = (items, dose) => items.map(item => `${item.token} ${dose(item)}g`).join(', ');
-    const carbsExcept = family => MELLER_ALTERNATIVES.carbohydrates.filter(item => !item.families.includes(family));
+    const carbsExcept = family => GUIDE_ALTERNATIVES.carbohydrates.filter(item => !item.families.includes(family));
     const carbAlternatives = dose => inline(carbsExcept(carbReference.families[0]), dose);
-    const proteinAlternatives = dose => inline(MELLER_ALTERNATIVES.proteins.slice(1), dose);
-    const paneDinner = mellerGrammatureFor('pane')?.slots?.dinner?.rest;
+    const proteinAlternatives = dose => inline(GUIDE_ALTERNATIVES.proteins.slice(1), dose);
+    const paneDinner = guideGrammatureFor('pane')?.slots?.dinner?.rest;
     const carbDinnerLine = `Pane ${paneDinner}g (alternative: a cena è ammesso qualsiasi carboidrato della tabella, con la dose cena → ${inline(carbsExcept('pane'), item => item.dinner)})`;
     const proteinLunchLine = withNote => `Pollame ${proteinReference.lunchTraining}g (alternative${withNote ? ', stessa dose del pranzo' : ''}: ${proteinAlternatives(item => item.lunchTraining)})`;
     return {
@@ -546,9 +584,9 @@
       },
       // Impostazioni: nessuna giornata di contesto, quindi la tabella dei
       // carboidrati mostra entrambe le colonne di pranzo (A e R). I popup
-      // aperti da una giornata usano invece mellerAlternativeGroups(dayType).
-      alternatives: mellerAlternativeGroups('both'),
-      proteinFrequencies: MELLER_PROTEIN_FREQUENCIES.map(item => [item.label, proteinFrequencyText(item)]),
+      // aperti da una giornata usano invece guideAlternativeGroups(dayType).
+      alternatives: guideAlternativeGroups('both'),
+      proteinFrequencies: GUIDE_PROTEIN_FREQUENCIES.map(item => [item.label, proteinFrequencyText(item)]),
       faq: [
         'Punta a un consumo di almeno 2-2,5 litri di acqua al giorno.',
         'Usa solo sale iodato. Spezie, limone e aceto sono liberi.',
@@ -564,7 +602,7 @@
     };
   }
 
-  const MELLER_GUIDE = buildMellerGuide();
+  const GUIDE_MANUAL = buildGuideManual();
 
 
 
@@ -696,12 +734,12 @@
       batchRules: plan.batchRules || {},
       batchTemplates: templates,
       // Nuova informazione di contesto: la ricetta originale resta intatta,
-      // mentre il piano memorizza se il pasto usa le dosi Meller oppure quelle
+      // mentre il piano memorizza se il pasto usa le dosi Guide oppure quelle
       // originali. I piani precedenti allo schema contestuale partono con
-      // Meller attivo nei soli pasti principali.
-      mellerModes: normalizeMellerModes(plan.mellerModes || {}),
-      mellerAdaptations: plan.mellerAdaptations && typeof plan.mellerAdaptations === 'object'
-        ? plan.mellerAdaptations
+      // Guide attivo nei soli pasti principali.
+      guideModes: normalizeGuideModes(planGuideModes(plan) || {}),
+      guideAdaptations: plan.guideAdaptations && typeof plan.guideAdaptations === 'object'
+        ? plan.guideAdaptations
         : {},
       // Controllo «Ricette con quantità adattate alle linee guida»: modalità
       // del piano, non quantità derivate nelle ricette. Default attivo per
@@ -720,10 +758,20 @@
   // dati derivati (spesa, batch cooking) usano le dosi delle linee guida.
   // L'app passa `override` con il valore EFFETTIVO, che tiene conto anche del
   // profilo SaaS non ancora confermato: se manca, vale il flag del piano.
-  function planUsesMellerDoses(plan, override) {
-    if (!Object.prototype.hasOwnProperty.call(plan || {}, 'mellerModes')) return false;
+  function planUsesGuideDoses(plan, override) {
+    if (planGuideModes(plan) === undefined) return false;
     if (typeof override === 'boolean') return override;
     return normalizeAdaptedQuantitiesEnabled(plan);
+  }
+
+  // Compatibilità piani legacy: la mappa delle modalità si chiamava
+  // `mellerModes` con valore 'meller' (oggi 'guide'). In lettura accettiamo
+  // il campo storico; in scrittura si usa sempre il nome attuale.
+  function planGuideModes(plan) {
+    const source = plan || {};
+    if (Object.prototype.hasOwnProperty.call(source, 'guideModes')) return source.guideModes;
+    if (Object.prototype.hasOwnProperty.call(source, 'mellerModes')) return source.mellerModes;
+    return undefined;
   }
 
   function setAdaptedQuantitiesEnabled(plan, enabled) {
@@ -742,46 +790,48 @@
     return days;
   }
 
-  function emptyMellerModes() {
+  function emptyGuideModes() {
     const modes = {};
     DAYS.forEach(day => {
       modes[day] = {};
       SLOTS.forEach(slot => {
-        modes[day][slot] = MELLER_MAIN_SLOTS.includes(slot)
-          ? MELLER_MODE_MELLER
-          : MELLER_MODE_ORIGINAL;
+        modes[day][slot] = GUIDE_MAIN_SLOTS.includes(slot)
+          ? GUIDE_MODE_GUIDE
+          : GUIDE_MODE_ORIGINAL;
       });
     });
     return modes;
   }
 
-  function normalizeMellerMode(mode, slot) {
-    if (!MELLER_MAIN_SLOTS.includes(slot)) return MELLER_MODE_ORIGINAL;
-    return mode === MELLER_MODE_ORIGINAL ? MELLER_MODE_ORIGINAL : MELLER_MODE_MELLER;
+  function normalizeGuideMode(mode, slot) {
+    if (!GUIDE_MAIN_SLOTS.includes(slot)) return GUIDE_MODE_ORIGINAL;
+    return mode === GUIDE_MODE_ORIGINAL ? GUIDE_MODE_ORIGINAL : GUIDE_MODE_GUIDE;
   }
 
-  function normalizeMellerModes(rawModes = {}) {
-    const modes = emptyMellerModes();
+  function normalizeGuideModes(rawModes = {}) {
+    const modes = emptyGuideModes();
     DAYS.forEach(day => {
       SLOTS.forEach(slot => {
-        modes[day][slot] = normalizeMellerMode(rawModes?.[day]?.[slot], slot);
+        modes[day][slot] = normalizeGuideMode(rawModes?.[day]?.[slot], slot);
       });
     });
     return modes;
   }
 
-  // Restituisce null per i piani legacy privi di mellerModes: le funzioni pure
+  // Restituisce null per i piani legacy privi di guideModes: le funzioni pure
   // che li ricevono direttamente mantengono il comportamento storico. I piani
   // passati da migratePlan hanno invece sempre una modalità esplicita.
-  function mellerModeForPlan(plan, day, slot) {
-    if (!Object.prototype.hasOwnProperty.call(plan || {}, 'mellerModes')) return null;
-    return normalizeMellerMode(plan?.mellerModes?.[day]?.[slot], slot);
+  function guideModeForPlan(plan, day, slot) {
+    const modes = planGuideModes(plan);
+    if (modes === undefined) return null;
+    return normalizeGuideMode(modes?.[day]?.[slot], slot);
   }
 
-  function setMellerModeForPlan(plan, day, slot, mode) {
+  function setGuideModeForPlan(plan, day, slot, mode) {
     const next = deepClone(plan || emptyPlan());
-    next.mellerModes = normalizeMellerModes(next.mellerModes || {});
-    if (next.mellerModes[day]) next.mellerModes[day][slot] = normalizeMellerMode(mode, slot);
+    next.guideModes = normalizeGuideModes(planGuideModes(next) || {});
+    delete next.mellerModes; // non accumulare la chiave storica accanto alla nuova
+    if (next.guideModes[day]) next.guideModes[day][slot] = normalizeGuideMode(mode, slot);
     return next;
   }
 
@@ -792,8 +842,8 @@
       defaultDays: emptyDays(),
       batchRules: {},
       batchTemplates: [],
-      mellerModes: emptyMellerModes(),
-      mellerAdaptations: {},
+      guideModes: emptyGuideModes(),
+      guideAdaptations: {},
       adaptedQuantitiesEnabled: true
     };
   }
@@ -869,9 +919,9 @@ function portionFor(ingredient, profile, dayType, slot, recipeSlot) {
     if (!src?.ingredientId) return '';
     const recipe = recipesById?.[src.recipeId];
     if (!recipe) return '';
-    const contextualPlan = planUsesMellerDoses(plan, options.applyMeller);
+    const contextualPlan = planUsesGuideDoses(plan, options.applyGuide);
     const mode = contextualPlan
-      ? (mellerModeForPlan(plan, targetDay, targetSlot) || (MELLER_MAIN_SLOTS.includes(targetSlot) ? MELLER_MODE_MELLER : MELLER_MODE_ORIGINAL))
+      ? (guideModeForPlan(plan, targetDay, targetSlot) || (GUIDE_MAIN_SLOTS.includes(targetSlot) ? GUIDE_MODE_GUIDE : GUIDE_MODE_ORIGINAL))
       : null;
     const dayType = plan?.days?.[targetDay]?.type || 'rest';
     const effectiveRecipe = contextualPlan ? resolveRecipeForPlan(recipe, targetSlot, mode, dayType).recipe : recipe;
@@ -975,12 +1025,12 @@ function portionFor(ingredient, profile, dayType, slot, recipeSlot) {
     const dinnerDayType = plan?.days?.[anchorDay]?.type || 'rest';
     const lunchDayType = plan?.days?.[target.day]?.type || 'rest';
     const storageMaxDays = 1;
-    const contextualPlan = planUsesMellerDoses(plan, options.applyMeller);
+    const contextualPlan = planUsesGuideDoses(plan, options.applyGuide);
     const dinnerMode = contextualPlan
-      ? (mellerModeForPlan(plan, anchorDay, 'dinner') || MELLER_MODE_MELLER)
+      ? (guideModeForPlan(plan, anchorDay, 'dinner') || GUIDE_MODE_GUIDE)
       : null;
     const lunchMode = contextualPlan
-      ? (mellerModeForPlan(plan, target.day, 'lunch') || MELLER_MODE_MELLER)
+      ? (guideModeForPlan(plan, target.day, 'lunch') || GUIDE_MODE_GUIDE)
       : null;
     const dinnerRecipe = contextualPlan ? resolveRecipeForPlan(recipe, 'dinner', dinnerMode, dinnerDayType).recipe : recipe;
     const lunchRecipe = contextualPlan ? resolveRecipeForPlan(recipe, 'lunch', lunchMode, lunchDayType).recipe : recipe;
@@ -1008,9 +1058,9 @@ function portionFor(ingredient, profile, dayType, slot, recipeSlot) {
       const cenaPortion = portionFor(dinnerEffective, profile, dinnerDayType);
       const pranzoPortion = portionFor(lunchEffective, profile, lunchDayType);
       // Con il travaso il carboidrato resta lo stesso ingrediente (es. pasta a
-      // pranzo -> dose cena Meller): le dosi di cena e pranzo si sommano senza
+      // pranzo -> dose cena Guide): le dosi di cena e pranzo si sommano senza
       // creare voci parallele. Nei piani nuovi la stessa regola vale anche per
-      // proteine e condimenti: il contesto Meller viene applicato all'intera
+      // proteine e condimenti: il contesto Guide viene applicato all'intera
       // ricetta, non soltanto al carboidrato.
       const sameIngredient = cenaId === pranzoId;
       let quantityStr;
@@ -1133,7 +1183,7 @@ function portionFor(ingredient, profile, dayType, slot, recipeSlot) {
     return { value, unit };
   }
 
-  // Parser stretto delle quantità, usato dall'adattamento Meller e
+  // Parser stretto delle quantità, usato dall'adattamento Guide e
   // dall'editor ricette. A differenza di parseSimpleAmount (pensato per la
   // spesa, con intervalli→max e numeri nudi→pz), qui ogni forma non
   // rappresentabile resta esplicita e non viene mai reinterpretata:
@@ -1225,7 +1275,7 @@ function portionFor(ingredient, profile, dayType, slot, recipeSlot) {
   }
 
   // Trasforma le porzioni di un carboidrato tra pranzo e cena. La cena usa
-  // sempre la dose esplicita in MELLER_GRAMMATURE e il ritorno rilegge pranzo
+  // sempre la dose esplicita in GUIDE_GRAMMATURE e il ritorno rilegge pranzo
   // A/R dalla stessa tabella (il floor dei 2/3 non è invertibile); il fallback
   // per un alimento non ancora censito conserva le proporzioni storiche (2/3
   // del pranzo R, oppure 200%/150% per il ritorno), arrotondate alla decina per
@@ -1272,11 +1322,11 @@ function portionFor(ingredient, profile, dayType, slot, recipeSlot) {
 
   // Aggrega la lista della spesa per ingredientId. Le dosi "—" vengono saltate.
   // Nei pasti incrociati i carboidrati vengono travasati da
-  // adaptIngredientForSlot con le dosi Meller della tabella (pranzo -> cena:
+  // adaptIngredientForSlot con le dosi Guide della tabella (pranzo -> cena:
   // dose cena; cena -> pranzo: pranzo A/R).
   function aggregateShopping(plan, recipesById, selectedMeals, profile = 'man', canonicalLabels = {}, options = {}) {
     const out = {};
-    const contextualPlan = planUsesMellerDoses(plan, options.applyMeller);
+    const contextualPlan = planUsesGuideDoses(plan, options.applyGuide);
     DAYS.forEach(day => {
       const dayType = plan?.days?.[day]?.type || 'rest';
       (selectedMeals?.[day] || []).forEach(slot => {
@@ -1284,13 +1334,13 @@ function portionFor(ingredient, profile, dayType, slot, recipeSlot) {
         if (!recipe) return;
         let effectiveRecipe = recipe;
         if (contextualPlan) {
-          const mode = mellerModeForPlan(plan, day, slot) || (MELLER_MAIN_SLOTS.includes(slot) ? MELLER_MODE_MELLER : MELLER_MODE_ORIGINAL);
+          const mode = guideModeForPlan(plan, day, slot) || (GUIDE_MAIN_SLOTS.includes(slot) ? GUIDE_MODE_GUIDE : GUIDE_MODE_ORIGINAL);
           effectiveRecipe = resolveRecipeForPlan(recipe, slot, mode, dayType).recipe;
         }
         (effectiveRecipe.ingredients || []).forEach(ingredient => {
-          // I piani nuovi applicano Meller a tutti gli ingredienti regolati,
+          // I piani nuovi applicano Guide a tutti gli ingredienti regolati,
           // compresi proteine, grassi e carboidrati quando una ricetta viene
-          // spostata pranzo ↔ cena. I piani legacy privi di mellerModes
+          // spostata pranzo ↔ cena. I piani legacy privi di guideModes
           // conservano invece il solo travaso carboidrati storico.
           const adapted = contextualPlan ? null : adaptIngredientForSlot(ingredient, recipe.slot, slot, dayType);
           const effective = adapted
@@ -1336,9 +1386,9 @@ function portionFor(ingredient, profile, dayType, slot, recipeSlot) {
     if (!plan?.days?.[dayA] || !plan?.days?.[dayB]) throw new Error('Giorno non valido');
     const next = deepClone(plan);
     [next.days[dayA][slotA], next.days[dayB][slotB]] = [next.days[dayB][slotB], next.days[dayA][slotA]];
-    if (Object.prototype.hasOwnProperty.call(plan, 'mellerModes')) {
-      next.mellerModes = normalizeMellerModes(plan.mellerModes || {});
-      [next.mellerModes[dayA][slotA], next.mellerModes[dayB][slotB]] = [next.mellerModes[dayB][slotB], next.mellerModes[dayA][slotA]];
+    if (Object.prototype.hasOwnProperty.call(plan, 'guideModes')) {
+      next.guideModes = normalizeGuideModes(plan.guideModes || {});
+      [next.guideModes[dayA][slotA], next.guideModes[dayB][slotB]] = [next.guideModes[dayB][slotB], next.guideModes[dayA][slotA]];
     }
     return next;
   }
@@ -1347,9 +1397,9 @@ function portionFor(ingredient, profile, dayType, slot, recipeSlot) {
     if (!plan?.days?.[fromDay] || !plan?.days?.[toDay]) throw new Error('Giorno non valido');
     const next = deepClone(plan);
     next.days[toDay][slot] = next.days[fromDay][slot];
-    if (Object.prototype.hasOwnProperty.call(plan, 'mellerModes')) {
-      next.mellerModes = normalizeMellerModes(plan.mellerModes || {});
-      next.mellerModes[toDay][slot] = next.mellerModes[fromDay][slot];
+    if (Object.prototype.hasOwnProperty.call(plan, 'guideModes')) {
+      next.guideModes = normalizeGuideModes(plan.guideModes || {});
+      next.guideModes[toDay][slot] = next.guideModes[fromDay][slot];
     }
     return next;
   }
@@ -1358,9 +1408,9 @@ function portionFor(ingredient, profile, dayType, slot, recipeSlot) {
     if (!plan?.days?.[day]) throw new Error('Giorno non valido');
     const next = deepClone(plan);
     next.days[day][slot] = next.defaultDays?.[day]?.[slot] ?? null;
-    if (Object.prototype.hasOwnProperty.call(plan, 'mellerModes')) {
-      next.mellerModes = normalizeMellerModes(plan.mellerModes || {});
-      next.mellerModes[day][slot] = normalizeMellerMode(MELLER_MODE_MELLER, slot);
+    if (Object.prototype.hasOwnProperty.call(plan, 'guideModes')) {
+      next.guideModes = normalizeGuideModes(plan.guideModes || {});
+      next.guideModes[day][slot] = normalizeGuideMode(GUIDE_MODE_GUIDE, slot);
     }
     return next;
   }
@@ -1401,10 +1451,10 @@ function portionFor(ingredient, profile, dayType, slot, recipeSlot) {
       });
     });
     next.schemaVersion = VERSION;
-    if (Object.prototype.hasOwnProperty.call(source, 'mellerModes') || Object.prototype.hasOwnProperty.call(next, 'mellerModes')) {
-      next.mellerModes = normalizeMellerModes(next.mellerModes || {});
-      next.mellerAdaptations = next.mellerAdaptations && typeof next.mellerAdaptations === 'object'
-        ? next.mellerAdaptations
+    if (Object.prototype.hasOwnProperty.call(source, 'guideModes') || Object.prototype.hasOwnProperty.call(next, 'guideModes')) {
+      next.guideModes = normalizeGuideModes(next.guideModes || {});
+      next.guideAdaptations = next.guideAdaptations && typeof next.guideAdaptations === 'object'
+        ? next.guideAdaptations
         : {};
       next.adaptedQuantitiesEnabled = normalizeAdaptedQuantitiesEnabled(next);
     }
@@ -2076,9 +2126,9 @@ const PROTEIN_CATEGORY_LABELS = {
       batchRules: deepClone(currentPlan.batchRules || {}),
       batchTemplates: templates
     };
-    if (Object.prototype.hasOwnProperty.call(currentPlan, 'mellerModes')) {
-      nextPlan.mellerModes = normalizeMellerModes(currentPlan.mellerModes || {});
-      nextPlan.mellerAdaptations = deepClone(currentPlan.mellerAdaptations || {});
+    if (Object.prototype.hasOwnProperty.call(currentPlan, 'guideModes')) {
+      nextPlan.guideModes = normalizeGuideModes(currentPlan.guideModes || {});
+      nextPlan.guideAdaptations = deepClone(currentPlan.guideAdaptations || {});
     }
 
     // Avvisi finali sulle frequenze: calcolati sul piano COMPLETO (generati +
@@ -2134,31 +2184,34 @@ const PROTEIN_CATEGORY_LABELS = {
     return { plan: nextPlan, counts, warnings, seed: seedUsed, pairs };
   }
 
-  // Riferimento Meller per un ingrediente (prima regola che combacia), oppure
+  // Riferimento Guide per un ingrediente (prima regola che combacia), oppure
   // null quando l'alimento non ha una grammatura definita (verdura, spezie,
   // q.b., ecc.). Verdura e alimenti liberi non vengono mai segnalati.
-  function mellerRuleForIngredient(name) {
+  function guideRuleForIngredient(name) {
     const value = aliasKey(name);
     if (!value) return null;
-    return MELLER_GRAMMATURE.find(rule => rule.match.test(value)) || null;
+    // Nome identico all'etichetta della tabella → famiglia certa.
+    const labelFamily = GUIDE_LABEL_FAMILY.get(value);
+    if (labelFamily) return guideGrammatureFor(labelFamily);
+    return GUIDE_GRAMMATURE.find(rule => rule.match.test(value)) || null;
   }
 
   // Installa una versione server-side già autenticata e verificata dalla
   // callable. Aggiorna in-place i derivati per conservare i riferimenti usati
   // dal client vanilla e non modifica mai le ricette originali.
-  function activateMellerRuleSet(rules, freeAliases = []) {
+  function activateGuideRuleSet(rules, freeAliases = []) {
     if (!Array.isArray(rules) || !rules.length) return false;
     const escapeRegex = value => String(value).replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-    activeMellerFreeIngredientPatterns = (Array.isArray(freeAliases) ? freeAliases : [])
+    activeGuideFreeIngredientPatterns = (Array.isArray(freeAliases) ? freeAliases : [])
       .map(alias => aliasKey(alias)).filter(Boolean).map(alias => new RegExp(`^${escapeRegex(alias)}$`, 'i'));
     const compiled = rules.map(rule => {
       if (!rule?.family || !rule?.group || !rule?.label || !Array.isArray(rule.aliases) || !rule.aliases.length) {
-        throw new Error('Rule set Meller non compatibile');
+        throw new Error('Rule set Guide non compatibile');
       }
       const slots = deepClone(rule.slots || {});
       Object.values(slots).forEach(byDay => ['training', 'rest'].forEach(dayType => {
         const amount = Number(byDay?.[dayType]);
-        if (!Number.isFinite(amount) || amount <= 0) throw new Error('Grammatura Meller non valida');
+        if (!Number.isFinite(amount) || amount <= 0) throw new Error('Grammatura Guide non valida');
       }));
       return {
         family: String(rule.family), group: String(rule.group), label: String(rule.label),
@@ -2166,42 +2219,54 @@ const PROTEIN_CATEGORY_LABELS = {
         slots
       };
     });
-    MELLER_GRAMMATURE.splice(0, MELLER_GRAMMATURE.length, ...compiled);
+    GUIDE_GRAMMATURE.splice(0, GUIDE_GRAMMATURE.length, ...compiled);
     CARB_REFERENCE.splice(0, CARB_REFERENCE.length, ...buildCarbReference());
-    const nextAlternatives = buildMellerAlternatives();
-    Object.assign(MELLER_ALTERNATIVES, nextAlternatives);
+    const nextAlternatives = buildGuideAlternatives();
+    Object.assign(GUIDE_ALTERNATIVES, nextAlternatives);
     Object.assign(DEFAULT_CONSTRAINTS, buildDefaultConstraints());
-    Object.assign(MELLER_GUIDE, buildMellerGuide());
+    Object.assign(GUIDE_MANUAL, buildGuideManual());
+    rebuildGuideLabelFamily();
     return true;
   }
 
   // Gruppo canonico di un ingrediente ('carb', 'protein', 'dairy', …) oppure
-  // null quando non ha una grammatura Meller (verdura, spezie, q.b.).
-  function mellerGroupForIngredient(name) {
-    return mellerRuleForIngredient(name)?.group || null;
+  // null quando non ha una grammatura Guide (verdura, spezie, q.b.).
+  function guideGroupForIngredient(name) {
+    return guideRuleForIngredient(name)?.group || null;
   }
+
+  // Le etichette delle tabelle alternative sono riconoscibili da sole: toccare
+  // un ingrediente scritto come la riga della tabella (es. "Affettati",
+  // "Pesce azzurro", "Cereali") deve aprire il popup anche quando la regex di
+  // famiglia non contiene la parola generica dell'etichetta.
+  const GUIDE_CARB_LABEL_KEYS = new Set(GUIDE_CARB_ALTERNATIVES.map(entry => aliasKey(entry.label)).filter(Boolean));
+  const GUIDE_PROTEIN_LABEL_KEYS = new Set([GUIDE_PROTEIN_REFERENCE, ...GUIDE_PROTEIN_ALTERNATIVES].map(entry => aliasKey(entry.label)).filter(Boolean));
 
   // Riconoscimento carboidrati/proteine usato dai popup delle equivalenze.
   // Legge le `match` e i `group` della fonte canonica: popup, tabelle e guida
   // classificano un ingrediente nello stesso identico modo.
-  function isMellerCarbIngredient(name) {
-    return mellerGroupForIngredient(name) === MELLER_GROUP.CARB;
+  function isGuideCarbIngredient(name) {
+    const key = aliasKey(name);
+    if (key && GUIDE_CARB_LABEL_KEYS.has(key)) return true;
+    return guideGroupForIngredient(name) === GUIDE_GROUP.CARB;
   }
 
-  function isMellerProteinIngredient(name) {
-    const group = mellerGroupForIngredient(name);
+  function isGuideProteinIngredient(name) {
+    const key = aliasKey(name);
+    if (key && GUIDE_PROTEIN_LABEL_KEYS.has(key)) return true;
+    const group = guideGroupForIngredient(name);
     // Latte e yogurt sono fonti proteiche leggere di colazione e merenda: nei
     // popup mostrano le alternative proteiche pur non avendo una riga propria.
-    return group === MELLER_GROUP.PROTEIN || group === MELLER_GROUP.DAIRY;
+    return group === GUIDE_GROUP.PROTEIN || group === GUIDE_GROUP.DAIRY;
   }
 
   // Famiglia canonica di un ingrediente (es. 'gnocchi'), oppure null.
-  function mellerFamilyForIngredient(name) {
-    return mellerRuleForIngredient(name)?.family || null;
+  function guideFamilyForIngredient(name) {
+    return guideRuleForIngredient(name)?.family || null;
   }
 
   // Grammatura di riferimento per pasto + giorno A/R (training/rest).
-  function mellerReferenceAmount(rule, slot, dayType) {
+  function guideReferenceAmount(rule, slot, dayType) {
     const bySlot = rule?.slots?.[slot];
     if (!bySlot) return null;
     const amount = bySlot[dayType];
@@ -2212,7 +2277,7 @@ const PROTEIN_CATEGORY_LABELS = {
   // espliciti ("60 g", "60g"). Millilitri, pezzi, cucchiai, numeri senza
   // unità, q.b. e valori opachi non sono confrontabili: restituiscono null
   // e l'ingrediente resta testuale, senza adattamenti inventati.
-  function mellerComparableAmount(raw) {
+  function guideComparableAmount(raw) {
     const parsed = parseQuantity(raw);
     if (!parsed || parsed.kind !== 'amount' || parsed.unit !== 'g') return null;
     if (!Number.isFinite(parsed.value) || parsed.value <= 0) return null;
@@ -2221,11 +2286,11 @@ const PROTEIN_CATEGORY_LABELS = {
 
   // Chiavi logiche del confronto contestuale: profili persona e giorni A/R.
   // Le porzioni v2 hanno un solo valore per profilo; il confronto con il
-  // riferimento Meller avviene per ogni giorno A/R sullo stesso originale.
-  const MELLER_PROFILE_KEYS = ['man', 'ipo'];
-  const MELLER_DAY_TYPES = ['training', 'rest'];
+  // riferimento Guide avviene per ogni giorno A/R sullo stesso originale.
+  const GUIDE_PROFILE_KEYS = ['man', 'ipo'];
+  const GUIDE_DAY_TYPES = ['training', 'rest'];
 
-  function mellerSourceFingerprint(recipe) {
+  function guideSourceFingerprint(recipe) {
     const source = {
       slot: recipe?.slot || '',
       ingredients: (recipe?.ingredients || []).map(ingredient => ({
@@ -2237,16 +2302,16 @@ const PROTEIN_CATEGORY_LABELS = {
     return String(hashString(JSON.stringify(source)));
   }
 
-  function mellerContextSlot(slot) {
-    return MELLER_MAIN_SLOTS.includes(slot) ? slot : null;
+  function guideContextSlot(slot) {
+    return GUIDE_MAIN_SLOTS.includes(slot) ? slot : null;
   }
 
-  // Controllo contestuale e STRICT: quando l'utente attiva Meller non basta
+  // Controllo contestuale e STRICT: quando l'utente attiva Guide non basta
   // stare sotto un massimo, ogni ingrediente regolato deve coincidere con la
   // dose esatta del pasto e del giorno A/R. Gli ingredienti liberi sono
   // esplicitamente esclusi; quelli sconosciuti bloccano l'applicazione.
-  function checkMellerContext(recipe, assignedSlot = recipe?.slot) {
-    const slot = mellerContextSlot(assignedSlot || recipe?.slot);
+  function checkGuideContext(recipe, assignedSlot = recipe?.slot) {
+    const slot = guideContextSlot(assignedSlot || recipe?.slot);
     if (!slot) {
       return {
         status: 'not-applicable',
@@ -2265,7 +2330,7 @@ const PROTEIN_CATEGORY_LABELS = {
       ingredient,
       index,
       id: ingredient.ingredientId || ingredientIdFor(ingredient.name),
-      mapping: mellerMappingForIngredient(ingredient.name)
+      mapping: guideMappingForIngredient(ingredient.name)
     }));
     const guided = mapped.filter(item => item.mapping.kind === 'guided');
     const unknown = mapped
@@ -2293,12 +2358,12 @@ const PROTEIN_CATEGORY_LABELS = {
       const original = normalizePortions(item.ingredient?.portions || {});
       // Se i due profili hanno la stessa quantità il confronto produce una
       // sola segnalazione (niente duplicati uomo/donna).
-      const profiles = String(original.ipo) === String(original.man) ? ['man'] : MELLER_PROFILE_KEYS;
+      const profiles = String(original.ipo) === String(original.man) ? ['man'] : GUIDE_PROFILE_KEYS;
       profiles.forEach(profileKey => {
         ['training'].forEach(dayType => {
-          const expected = mellerReferenceAmount(rule, slot, dayType);
+          const expected = guideReferenceAmount(rule, slot, dayType);
           if (expected == null) return;
-          const amount = mellerComparableAmount(original[profileKey]);
+          const amount = guideComparableAmount(original[profileKey]);
           if (!amount || amount.unit !== 'g' || amount.value !== expected) {
             issues.push({
               ingredient: item.ingredient.name,
@@ -2358,20 +2423,20 @@ const PROTEIN_CATEGORY_LABELS = {
       unknown,
       ambiguous,
       free,
-      sourceFingerprint: mellerSourceFingerprint(recipe)
+      sourceFingerprint: guideSourceFingerprint(recipe)
     };
   }
 
-  function mellerAmountText(value) {
+  function guideAmountText(value) {
     return `${value} g`;
   }
 
-  function buildMellerContextAdaptation(recipe, assignedSlot) {
-    const report = checkMellerContext(recipe, assignedSlot);
+  function buildGuideContextAdaptation(recipe, assignedSlot) {
+    const report = checkGuideContext(recipe, assignedSlot);
     const context = {
-      schemaVersion: MELLER_ADAPTATION_SCHEMA_VERSION,
+      schemaVersion: GUIDE_ADAPTATION_SCHEMA_VERSION,
       slot: report.slot,
-      sourceFingerprint: mellerSourceFingerprint(recipe),
+      sourceFingerprint: guideSourceFingerprint(recipe),
       status: report.status,
       unknown: deepClone(report.unknown),
       ambiguous: deepClone(report.ambiguous),
@@ -2380,7 +2445,7 @@ const PROTEIN_CATEGORY_LABELS = {
     if (!report.readyToApply) return { context, report, changed: false };
 
     const guided = (recipe?.ingredients || [])
-      .map((ingredient, index) => ({ ingredient, index, id: ingredient.ingredientId || ingredientIdFor(ingredient.name), mapping: mellerMappingForIngredient(ingredient.name) }))
+      .map((ingredient, index) => ({ ingredient, index, id: ingredient.ingredientId || ingredientIdFor(ingredient.name), mapping: guideMappingForIngredient(ingredient.name) }))
       .filter(item => item.mapping.kind === 'guided');
     const groupCounts = {};
     guided.forEach(item => {
@@ -2393,12 +2458,12 @@ const PROTEIN_CATEGORY_LABELS = {
       // leggibile, l'ingrediente resta testuale e non entra nel contesto
       // (niente dosi inventate su pz, cucchiai, ml, numeri nudi, q.b., note).
       const original = normalizePortions(item.ingredient?.portions || {});
-      if (!mellerComparableAmount(original.man) && !mellerComparableAmount(original.ipo)) return;
+      if (!guideComparableAmount(original.man) && !guideComparableAmount(original.ipo)) return;
       const divisor = groupCounts[rule.group] || 1;
       const portions = {};
-      MELLER_DAY_TYPES.forEach(dayType => {
-        const expected = mellerReferenceAmount(rule, report.slot, dayType);
-        if (expected != null) portions[dayType] = mellerAmountText(expected / divisor);
+      GUIDE_DAY_TYPES.forEach(dayType => {
+        const expected = guideReferenceAmount(rule, report.slot, dayType);
+        if (expected != null) portions[dayType] = guideAmountText(expected / divisor);
       });
       context.portions[item.id] = portions;
     });
@@ -2408,26 +2473,26 @@ const PROTEIN_CATEGORY_LABELS = {
     return { context, report, changed: report.issues.some(issue => issue.kind === 'above' || issue.kind === 'below') };
   }
 
-  function buildMellerAdaptationMetadata(recipe) {
-    const sourceFingerprint = mellerSourceFingerprint(recipe);
+  function buildGuideAdaptationMetadata(recipe) {
+    const sourceFingerprint = guideSourceFingerprint(recipe);
     const contexts = {};
-    MELLER_MAIN_SLOTS.forEach(slot => {
-      contexts[slot] = buildMellerContextAdaptation(recipe, slot).context;
+    GUIDE_MAIN_SLOTS.forEach(slot => {
+      contexts[slot] = buildGuideContextAdaptation(recipe, slot).context;
     });
     return {
-      schemaVersion: MELLER_ADAPTATION_SCHEMA_VERSION,
+      schemaVersion: GUIDE_ADAPTATION_SCHEMA_VERSION,
       sourceFingerprint,
       contexts
     };
   }
 
   // Applica la matrice contestuale per il giorno A/R richiesto: la dose
-  // adattata è una quantità singola per profilo (le dosi Meller non sono
+  // adattata è una quantità singola per profilo (le dosi Guide non sono
   // distinte per uomo/donna) e non riscrive mai la ricetta originale.
-  function applyMellerContextAdaptation(recipe, context, dayType = 'training') {
+  function applyGuideContextAdaptation(recipe, context, dayType = 'training') {
     const next = deepClone(recipe);
     const portionsById = context?.portions || {};
-    const day = MELLER_DAY_TYPES.includes(dayType) ? dayType : 'training';
+    const day = GUIDE_DAY_TYPES.includes(dayType) ? dayType : 'training';
     next.ingredients = (next.ingredients || []).map(ingredient => {
       const id = ingredient.ingredientId || ingredientIdFor(ingredient.name);
       const adapted = portionsById[id];
@@ -2439,29 +2504,29 @@ const PROTEIN_CATEGORY_LABELS = {
     return next;
   }
 
-  function resolveRecipeForPlan(recipe, assignedSlot, mode = MELLER_MODE_MELLER, dayType = 'training') {
-    const slot = mellerContextSlot(assignedSlot || recipe?.slot);
-    if (!recipe || mode !== MELLER_MODE_MELLER || !slot) {
-      return { recipe: deepClone(recipe), mode: mode === MELLER_MODE_ORIGINAL ? mode : MELLER_MODE_ORIGINAL, applied: false, blocked: false, report: null, context: null };
+  function resolveRecipeForPlan(recipe, assignedSlot, mode = GUIDE_MODE_GUIDE, dayType = 'training') {
+    const slot = guideContextSlot(assignedSlot || recipe?.slot);
+    if (!recipe || mode !== GUIDE_MODE_GUIDE || !slot) {
+      return { recipe: deepClone(recipe), mode: mode === GUIDE_MODE_ORIGINAL ? mode : GUIDE_MODE_ORIGINAL, applied: false, blocked: false, report: null, context: null };
     }
 
-    const fingerprint = mellerSourceFingerprint(recipe);
-    const stored = recipe.mellerAdaptations;
+    const fingerprint = guideSourceFingerprint(recipe);
+    const stored = recipe.guideAdaptations;
     let context = stored?.sourceFingerprint === fingerprint ? stored.contexts?.[slot] : null;
     let report;
     if (!context || context.sourceFingerprint !== fingerprint) {
-      const built = buildMellerContextAdaptation(recipe, slot);
+      const built = buildGuideContextAdaptation(recipe, slot);
       context = built.context;
       report = built.report;
     } else {
-      report = checkMellerContext(recipe, slot);
+      report = checkGuideContext(recipe, slot);
     }
     if (context.status === 'blocked' || !report.readyToApply) {
-      return { recipe: deepClone(recipe), mode: MELLER_MODE_MELLER, applied: false, blocked: true, report, context };
+      return { recipe: deepClone(recipe), mode: GUIDE_MODE_GUIDE, applied: false, blocked: true, report, context };
     }
     return {
-      recipe: applyMellerContextAdaptation(recipe, context, dayType),
-      mode: MELLER_MODE_MELLER,
+      recipe: applyGuideContextAdaptation(recipe, context, dayType),
+      mode: GUIDE_MODE_GUIDE,
       applied: true,
       blocked: false,
       report,
@@ -2469,24 +2534,24 @@ const PROTEIN_CATEGORY_LABELS = {
     };
   }
 
-  // Verifica se una ricetta rispetta le grammature Meller del proprio pasto.
+  // Verifica se una ricetta rispetta le grammature Guide del proprio pasto.
   // Restituisce { adapted, issues, summary }: `adapted` è true quando nessuna
   // dose supera il riferimento; `summary` aggrega le segnalazioni per
   // ingrediente (pronta per la UI).
-  function checkMellerAdaptation(recipe) {
+  function checkGuideAdaptation(recipe) {
     const slot = recipe?.slot && SLOTS.includes(recipe.slot) ? recipe.slot : 'lunch';
     const issues = [];
     (recipe?.ingredients || []).forEach(ingredient => {
-      const rule = mellerRuleForIngredient(ingredient?.name);
+      const rule = guideRuleForIngredient(ingredient?.name);
       if (!rule) return;
       const portions = normalizePortions(ingredient?.portions || {});
-      const profiles = String(portions.ipo) === String(portions.man) ? ['man'] : MELLER_PROFILE_KEYS;
+      const profiles = String(portions.ipo) === String(portions.man) ? ['man'] : GUIDE_PROFILE_KEYS;
       // Massimale sul contesto canonico (allenamento): il riposo è derivato.
       profiles.forEach(profileKey => {
         ['training'].forEach(dayType => {
-          const expected = mellerReferenceAmount(rule, slot, dayType);
+          const expected = guideReferenceAmount(rule, slot, dayType);
           if (expected == null) return;
-          const amount = mellerComparableAmount(portions[profileKey]);
+          const amount = guideComparableAmount(portions[profileKey]);
           if (!amount || amount.value <= expected) return;
           issues.push({
             ingredient: ingredient.name,
@@ -2534,20 +2599,20 @@ const PROTEIN_CATEGORY_LABELS = {
   // giorno di allenamento (contesto canonico della quantità originale); le
   // dosi di riposo restano derivate dal piano. Le dosi già corrette o non
   // numeriche restano invariate. Restituisce una copia della ricetta.
-  function adaptRecipeToMeller(recipe) {
+  function adaptRecipeToGuide(recipe) {
     const next = deepClone(recipe);
     const report = [];
     (next.ingredients || []).forEach(ingredient => {
-      const rule = mellerRuleForIngredient(ingredient.name);
+      const rule = guideRuleForIngredient(ingredient.name);
       if (!rule) return;
       const portions = normalizePortions(ingredient.portions || {});
-      const expected = mellerReferenceAmount(rule, next.slot && SLOTS.includes(next.slot) ? next.slot : 'lunch', 'training');
+      const expected = guideReferenceAmount(rule, next.slot && SLOTS.includes(next.slot) ? next.slot : 'lunch', 'training');
       if (expected == null) return;
-      MELLER_PROFILE_KEYS.forEach(profileKey => {
+      GUIDE_PROFILE_KEYS.forEach(profileKey => {
         const raw = String(portions[profileKey] ?? '');
-        const amount = mellerComparableAmount(raw);
+        const amount = guideComparableAmount(raw);
         if (!amount || amount.value <= expected) return;
-        // mellerComparableAmount accetta solo grammi: la correzione è in grammi.
+        // guideComparableAmount accetta solo grammi: la correzione è in grammi.
         const nextAmount = `${expected} g`;
         report.push({ ingredient: ingredient.name, portion: profileKey, from: raw, to: nextAmount });
         portions[profileKey] = nextAmount;
@@ -2562,7 +2627,7 @@ const PROTEIN_CATEGORY_LABELS = {
   //
   // Tre concetti separati (ADR 0002):
   //   1. catalogo globale: identità, alias e categorie; MAI quantità;
-  //   2. famiglie/motore di dosaggio Meller: quantità adattate per ID;
+  //   2. famiglie/motore di dosaggio Guide: quantità adattate per ID;
   //   3. Strutture dieta: revisioni organization-scoped private per ownerUid.
   // Il catalogo è un dato esterno/versionato: queste funzioni lavorano su
   // qualunque documento pubblicato, senza dati incorporati nella UI.
@@ -2582,7 +2647,7 @@ const PROTEIN_CATEGORY_LABELS = {
   }
 
   // Indice in memoria del catalogo pubblicato, per autocomplete e per la
-  // risoluzione ingrediente → famiglia Meller tramite ID stabili.
+  // risoluzione ingrediente → famiglia Guide tramite ID stabili.
   function buildCatalogIndex(catalogDoc = {}) {
     const categories = Array.isArray(catalogDoc.categories) ? catalogDoc.categories : [];
     const ingredients = Array.isArray(catalogDoc.ingredients) ? catalogDoc.ingredients : [];
@@ -2643,7 +2708,7 @@ const PROTEIN_CATEGORY_LABELS = {
           categoryId: entry.ingredient.categoryId || null,
           categoryLabel: entry.category?.displayName || null,
           mappingKind: entry.ingredient.mappingKind || 'guided',
-          mellerFamilyId: entry.ingredient.mellerFamilyId || null,
+          guideFamilyId: entry.ingredient.guideFamilyId || null,
           matchedAlias,
           score
         });
@@ -2659,14 +2724,15 @@ const PROTEIN_CATEGORY_LABELS = {
   // globale. Le etichette/pattern legacy embedded restano come fallback di
   // migrazione controllato per famiglie prive di ingredienti in catalogo; mai
   // quantità inventate per ingredienti sconosciuti.
-  function structureRevisionToMellerRules(revision, index) {
+  function structureRevisionToGuideRules(revision, index) {
     const byId = index?.byId || new Map();
-    const fallbackFamilies = new Map(MELLER_GRAMMATURE.map(rule => [rule.family, rule]));
+    const fallbackFamilies = new Map(GUIDE_GRAMMATURE.map(rule => [rule.family, rule]));
     const freeAliases = [];
     const rules = [];
     (revision?.rules || []).forEach(rule => {
       if (!rule || rule.enabled === false) return;
-      const family = String(rule.mellerFamilyId || rule.ruleId || '');
+      // Le revisioni legacy usano la chiave storica mellerFamilyId.
+      const family = String(rule.guideFamilyId || rule.mellerFamilyId || rule.ruleId || '');
       if (!family) return;
       const fallback = fallbackFamilies.get(family) || null;
       const ingredients = (Array.isArray(rule.ingredientIds) ? rule.ingredientIds : [])
@@ -2691,10 +2757,10 @@ const PROTEIN_CATEGORY_LABELS = {
   }
 
   // Nomi di visualizzazione editoriali per gli alimenti liberi del seed
-  // (verdura, aromi, spezie): completano gli stem del manuale Meller, non
+  // (verdura, aromi, spezie): completano gli stem del manuale delle linee guida, non
   // contengono quantità né dosi e saranno sostituiti dal catalogo approvato
-  // dal dott. Meller tramite il flusso di import versionato.
-  const MELLER_FREE_DISPLAY_LABELS = {
+  // dal professionista tramite il flusso di import versionato.
+  const GUIDE_FREE_DISPLAY_LABELS = {
     'zucchin': 'Zucchine', 'pomodor': 'Pomodori', 'melanzan': 'Melanzane',
     'peperon': 'Peperoni', 'broccol': 'Broccoli', 'cavolfior': 'Cavolfiore',
     'cavol': 'Cavolo', 'asparag': 'Asparagi', 'bietol': 'Bietole',
@@ -2714,14 +2780,14 @@ const PROTEIN_CATEGORY_LABELS = {
     'passata di pomodoro': 'Passata di pomodoro', 'passata': 'Passata'
   };
 
-  // Divide il JSON monolitico estratto da MELLER_GRAMMATURE nei tre concetti:
+  // Divide il JSON monolitico estratto da GUIDE_GRAMMATURE nei tre concetti:
   // catalogo globale (ingredienti/categorie, senza quantità), famiglie del
   // motore di dosaggio (con quantità e pattern legacy) e seed della Struttura
   // dieta base. Funzione pura usata da migrazione e test: NON importa il 58
   // ingredienti del lotto provvisorio né inventa quantità mancanti.
-  function splitMellerSeed(extract = {}) {
-    // Supporto nuovo formato: catalogo-ingredienti-meller.json v3 con categories[] e ingredients[]
-    // Se presente ingredients[], usa direttamente quel catalogo e deriva famiglie/regole da MELLER_GRAMMATURE
+  function splitGuideSeed(extract = {}) {
+    // Supporto nuovo formato: catalogo-ingredienti.json v3 con categories[] e ingredients[]
+    // Se presente ingredients[], usa direttamente quel catalogo e deriva famiglie/regole da GUIDE_GRAMMATURE
     if (Array.isArray(extract.ingredients) && extract.ingredients.length) {
       const rawCategories = Array.isArray(extract.categories) ? extract.categories : [];
       const categories = rawCategories.map((cat, idx) => ({
@@ -2750,12 +2816,12 @@ const PROTEIN_CATEGORY_LABELS = {
         categoryId: String(item.categoryId || 'free'),
         aliases: Array.isArray(item.aliases) ? item.aliases.slice() : [String(item.displayName)],
         searchTokens: searchTokensFor(item.displayName, item.aliases || []),
-        mappingKind: String(item.mappingKind || (item.mellerFamilyId ? 'guided' : 'free')),
-        mellerFamilyId: item.mellerFamilyId || null,
+        mappingKind: String(item.mappingKind || (item.guideFamilyId ? 'guided' : 'free')),
+        guideFamilyId: item.guideFamilyId || null,
         status: 'active'
       }));
-      // Famiglie da MELLER_GRAMMATURE (fonte unica)
-      const families = (typeof MELLER_GRAMMATURE !== 'undefined' ? MELLER_GRAMMATURE : []).map(rule => {
+      // Famiglie da GUIDE_GRAMMATURE (fonte unica)
+      const families = (typeof GUIDE_GRAMMATURE !== 'undefined' ? GUIDE_GRAMMATURE : []).map(rule => {
         const qty = {
           lunch: rule.slots?.lunch ? { training: rule.slots.lunch.training, rest: rule.slots.lunch.rest } : null,
           dinner: rule.slots?.dinner ? { training: rule.slots.dinner.training, rest: rule.slots.dinner.rest } : null
@@ -2780,13 +2846,13 @@ const PROTEIN_CATEGORY_LABELS = {
       });
       const rules = families.map(fam => ({
         ruleId: `rule-${fam.familyId}`,
-        mellerFamilyId: fam.familyId,
-        ingredientIds: ingredients.filter(ing => ing.mellerFamilyId === fam.familyId).map(ing => ing.ingredientId),
+        guideFamilyId: fam.familyId,
+        ingredientIds: ingredients.filter(ing => ing.guideFamilyId === fam.familyId).map(ing => ing.ingredientId),
         categoryId: fam.categoryId,
         quantityGrams: deepClone(fam.quantityGrams),
         enabled: true
       }));
-      // Alternative groups derivati da MELLER_ALTERNATIVES se disponibili
+      // Alternative groups derivati da GUIDE_ALTERNATIVES se disponibili
       const alternativeGroups = [];
       try {
         const toItems = list => (Array.isArray(list) ? list : []).map(entry => {
@@ -2794,10 +2860,10 @@ const PROTEIN_CATEGORY_LABELS = {
           const qty = families.find(f => f.familyId === famId)?.quantityGrams;
           return qty ? { ingredientId: String(famId), quantityGrams: deepClone(qty) } : null;
         }).filter(Boolean);
-        if (typeof MELLER_ALTERNATIVES !== 'undefined') {
-          const carbItems = toItems(MELLER_ALTERNATIVES.carbohydrates || []);
+        if (typeof GUIDE_ALTERNATIVES !== 'undefined') {
+          const carbItems = toItems(GUIDE_ALTERNATIVES.carbohydrates || []);
           if (carbItems.length) alternativeGroups.push({ alternativeGroupId: 'carboidrati', displayName: 'Alternative carboidrati', items: carbItems });
-          const proteinItems = toItems(MELLER_ALTERNATIVES.proteins || []);
+          const proteinItems = toItems(GUIDE_ALTERNATIVES.proteins || []);
           if (proteinItems.length) alternativeGroups.push({ alternativeGroupId: 'proteine', displayName: 'Alternative proteiche', items: proteinItems });
         }
       } catch {}
@@ -2862,7 +2928,7 @@ const PROTEIN_CATEGORY_LABELS = {
         aliases,
         searchTokens: searchTokensFor(label, aliases),
         mappingKind: 'guided',
-        mellerFamilyId: family,
+        guideFamilyId: family,
         status: 'active'
       });
       families.push({
@@ -2875,7 +2941,7 @@ const PROTEIN_CATEGORY_LABELS = {
       });
       rules.push({
         ruleId: `rule-${family}`,
-        mellerFamilyId: family,
+        guideFamilyId: family,
         ingredientIds: [family],
         categoryId: String(rule.category || 'carb'),
         quantityGrams: deepClone(quantities),
@@ -2888,7 +2954,7 @@ const PROTEIN_CATEGORY_LABELS = {
       if (!key) return;
       const ingredientId = `free-${slug(key) || 'ingrediente'}`;
       if (ingredients.some(item => item.ingredientId === ingredientId)) return;
-      const displayName = MELLER_FREE_DISPLAY_LABELS[key] || key.charAt(0).toUpperCase() + key.slice(1);
+      const displayName = GUIDE_FREE_DISPLAY_LABELS[key] || key.charAt(0).toUpperCase() + key.slice(1);
       ingredients.push({
         ingredientId,
         displayName,
@@ -2897,7 +2963,7 @@ const PROTEIN_CATEGORY_LABELS = {
         aliases: [key],
         searchTokens: searchTokensFor(displayName, [key]),
         mappingKind: 'free',
-        mellerFamilyId: null,
+        guideFamilyId: null,
         status: 'active'
       });
     });
@@ -3055,15 +3121,24 @@ const PROTEIN_CATEGORY_LABELS = {
     { id: 'porzioni', label: 'porzioni' }, { id: 'scatolette', label: 'scatolette' },
     { id: 'misurini', label: 'misurini' }, { id: 'qb', label: 'q.b.' }
   ];
-  const DIET_PLAN_QUANTITY_STATES = [
-    { id: 'crudo', label: 'Peso a crudo' },
-    { id: 'cotto', label: 'Peso a cotto' }
+  // Due tipi di opzione mutuamente esclusivi: una lista di alimenti liberi
+  // oppure una ricetta del ricettario professionale (con moltiplicatore).
+  const DIET_PLAN_OPTION_TYPES = [
+    { id: 'free-foods', label: 'Alimenti liberi' },
+    { id: 'recipe', label: 'Ricetta' }
   ];
   const DIET_PLAN_OPTION_LABELS = ['A', 'B', 'C', 'D'];
   const DIET_PLAN_LIMITS = {
     days: 14, mealsPerDay: 10, optionsPerMeal: 4, itemsPerOption: 20,
+    choiceGroupsPerOption: 3, alternativesPerChoiceGroup: 30,
+    recipeMultiplierMin: 0.1, recipeMultiplierMax: 10,
+    choiceGroupTitle: 200,
     label: 80, description: 200, note: 1000, quantity: 5000
   };
+  // Pesi sempre al netto degli scarti e a crudo: non esistono più i campi
+  // quantityState (crudo/cotto), netOfWaste e alternative («oppure»).
+  // Le revisioni salvate prima dell'evoluzione del contratto restano leggibili:
+  // la normalizzazione (createDietPlanItem/Option) ignora i campi rimossi.
 
   function dietPlanDayLabel(dayType) {
     return DIET_PLAN_DAY_TYPE_LABELS[dayType] || 'Giornata';
@@ -3086,24 +3161,54 @@ const PROTEIN_CATEGORY_LABELS = {
 
   function createDietPlanItem(detail) {
     const source = detail || {};
+    // Migrazione silenziosa: quantityState/netOfWaste/alternative delle
+    // revisioni precedenti vengono ignorati (pesi sempre al netto e a crudo).
     return {
       foodGroup: typeof source.foodGroup === 'string' ? source.foodGroup : 'altro',
       description: typeof source.description === 'string' ? source.description : '',
       quantity: source.quantity == null || source.quantity === '' ? null : Number(source.quantity),
-      unit: typeof source.unit === 'string' ? source.unit : 'g',
-      quantityState: source.quantityState === 'cotto' || source.quantityState === 'crudo' ? source.quantityState : null,
-      netOfWaste: source.netOfWaste === true,
-      alternative: typeof source.alternative === 'string' ? source.alternative : ''
+      unit: typeof source.unit === 'string' ? source.unit : 'g'
     };
+  }
+
+  function createDietPlanChoiceGroup(detail) {
+    const source = detail || {};
+    const alternatives = Array.isArray(source.alternatives) && source.alternatives.length
+      ? source.alternatives.map(item => createDietPlanItem(item))
+      : [createDietPlanItem()];
+    return {
+      title: typeof source.title === 'string' ? source.title : '',
+      optional: source.optional !== false,
+      alternatives
+    };
+  }
+
+  function dietPlanOptionType(source) {
+    if (source.type === 'recipe' || source.type === 'free-foods') return source.type;
+    return source.recipeId ? 'recipe' : 'free-foods';
   }
 
   function createDietPlanOption(label, detail) {
     const source = detail || {};
+    const type = dietPlanOptionType(source);
+    const multiplier = Number(source.recipeMultiplier);
     return {
       label: DIET_PLAN_OPTION_LABELS.includes(source.label) ? source.label : (label || 'A'),
-      items: Array.isArray(source.items) && source.items.length
-        ? source.items.map(item => createDietPlanItem(item))
-        : [createDietPlanItem()],
+      type,
+      recipeId: type === 'recipe' && typeof source.recipeId === 'string' && source.recipeId ? source.recipeId : null,
+      recipeMultiplier: type === 'recipe'
+        ? (Number.isFinite(multiplier)
+          ? Math.min(DIET_PLAN_LIMITS.recipeMultiplierMax, Math.max(DIET_PLAN_LIMITS.recipeMultiplierMin, multiplier))
+          : 1)
+        : null,
+      items: type === 'free-foods'
+        ? (Array.isArray(source.items) && source.items.length
+          ? source.items.map(item => createDietPlanItem(item))
+          : [createDietPlanItem()])
+        : [],
+      choiceGroups: type === 'free-foods' && Array.isArray(source.choiceGroups)
+        ? source.choiceGroups.map(group => createDietPlanChoiceGroup(group))
+        : [],
       note: typeof source.note === 'string' ? source.note : ''
     };
   }
@@ -3121,6 +3226,22 @@ const PROTEIN_CATEGORY_LABELS = {
     };
   }
 
+  // Ordine fisso dei pasti (colazione → spuntino mattina → pranzo → merenda →
+  // cena → spuntino serale). L'editor non consente di riordinare i pasti né di
+  // aggiungere due volte lo stesso tipo: il sort qui sotto resta comunque
+  // stabile, quindi eventuali dati legacy con tipi ripetuti non si mescolano.
+  function dietPlanMealOrder(mealId) {
+    const index = DIET_PLAN_MEALS.findIndex(item => item.id === mealId);
+    return index >= 0 ? index : DIET_PLAN_MEALS.length;
+  }
+
+  function sortDietPlanMeals(meals) {
+    return (Array.isArray(meals) ? meals : [])
+      .map((meal, index) => ({ meal, index }))
+      .sort((a, b) => dietPlanMealOrder(a.meal?.mealId) - dietPlanMealOrder(b.meal?.mealId) || a.index - b.index)
+      .map(entry => entry.meal);
+  }
+
   function createDietPlanDay(dayType, detail) {
     const source = detail || {};
     const target = source.target || {};
@@ -3133,9 +3254,9 @@ const PROTEIN_CATEGORY_LABELS = {
         kcal: readTarget('kcal'), proteinG: readTarget('proteinG'),
         carbsG: readTarget('carbsG'), fatG: readTarget('fatG'), waterMl: readTarget('waterMl')
       },
-      meals: Array.isArray(source.meals) && source.meals.length
+      meals: sortDietPlanMeals(Array.isArray(source.meals) && source.meals.length
         ? source.meals.map(meal => createDietPlanMeal(meal?.mealId, meal))
-        : [createDietPlanMeal('breakfast'), createDietPlanMeal('lunch'), createDietPlanMeal('dinner')],
+        : [createDietPlanMeal('breakfast'), createDietPlanMeal('lunch'), createDietPlanMeal('dinner')]),
       supplements: typeof source.supplements === 'string' ? source.supplements : '',
       hydration: typeof source.hydration === 'string' ? source.hydration : '',
       note: typeof source.note === 'string' ? source.note : ''
@@ -3204,26 +3325,44 @@ const PROTEIN_CATEGORY_LABELS = {
             if (seenOptions.has(option.label)) errors.push(`${mealWhere}: opzione ${option.label} duplicata.`);
             seenOptions.add(option.label);
           }
+          const type = dietPlanOptionType(option);
+          if (option.type != null && option.type !== '' && !DIET_PLAN_OPTION_TYPES.some(item => item.id === option.type)) {
+            errors.push(`${optionWhere}: tipo opzione non valido (ricetta o alimenti liberi).`);
+          }
+          if (type === 'recipe') {
+            if (!String(option.recipeId || '').trim()) errors.push(`${optionWhere}: Seleziona la ricetta.`);
+            const multiplier = Number(option.recipeMultiplier);
+            if (option.recipeMultiplier != null && option.recipeMultiplier !== '' && (!Number.isFinite(multiplier) || multiplier < limits.recipeMultiplierMin || multiplier > limits.recipeMultiplierMax)) {
+              errors.push(`${optionWhere}: Moltiplicatore ricetta non valido (tra ${String(limits.recipeMultiplierMin).replace('.', ',')} e ${String(limits.recipeMultiplierMax).replace('.', ',')}).`);
+            }
+            return;
+          }
           const items = Array.isArray(option.items) ? option.items : [];
-          if (!items.length || items.length > limits.itemsPerOption) {
-            errors.push(`${optionWhere}: servono da 1 a ${limits.itemsPerOption} alimenti.`);
+          const choiceGroups = Array.isArray(option.choiceGroups) ? option.choiceGroups : [];
+          if (items.length > limits.itemsPerOption) {
+            errors.push(`${optionWhere}: massimo ${limits.itemsPerOption} alimenti per opzione.`);
+          }
+          if (!items.length && !choiceGroups.length) {
+            errors.push(`${optionWhere}: aggiungi almeno un alimento o un gruppo scelta.`);
           }
           items.forEach((item, itemIndex) => {
-            const itemWhere = `${optionWhere}, alimento ${itemIndex + 1}`;
-            if (!item || typeof item !== 'object') { errors.push(`${itemWhere}: dati mancanti.`); return; }
-            if (!DIET_PLAN_FOOD_GROUPS.some(group => group.id === item.foodGroup)) errors.push(`${itemWhere}: gruppo alimentare non valido.`);
-            if (!String(item.description || '').trim()) errors.push(`${itemWhere}: descrivi l’alimento.`);
-            if (String(item.description || '').length > limits.description) errors.push(`${itemWhere}: descrizione troppo lunga.`);
-            if (item.quantity != null && item.quantity !== '') {
-              if (!Number.isFinite(Number(item.quantity)) || Number(item.quantity) < 0 || Number(item.quantity) > limits.quantity) {
-                errors.push(`${itemWhere}: quantità non valida.`);
-              }
-              if (!DIET_PLAN_UNITS.some(unit => unit.id === item.unit)) errors.push(`${itemWhere}: unità di misura non valida.`);
-              if (item.quantityState != null && !DIET_PLAN_QUANTITY_STATES.some(state => state.id === item.quantityState)) {
-                errors.push(`${itemWhere}: indica peso a crudo o a cotto.`);
-              }
+            validateDietPlanItemSoft(item, `${optionWhere}, alimento ${itemIndex + 1}`, errors);
+          });
+          if (choiceGroups.length > limits.choiceGroupsPerOption) {
+            errors.push(`${optionWhere}: massimo ${limits.choiceGroupsPerOption} gruppi scelta per opzione.`);
+          }
+          choiceGroups.forEach((group, groupIndex) => {
+            const groupWhere = `${optionWhere}, gruppo scelta ${groupIndex + 1}`;
+            if (!group || typeof group !== 'object') { errors.push(`${groupWhere}: dati mancanti.`); return; }
+            if (!String(group.title || '').trim()) errors.push(`${groupWhere}: dai un titolo al gruppo (es. «Scegli 1 carboidrato tra:»).`);
+            if (String(group.title || '').length > limits.choiceGroupTitle) errors.push(`${groupWhere}: titolo troppo lungo.`);
+            const alternatives = Array.isArray(group.alternatives) ? group.alternatives : [];
+            if (!alternatives.length || alternatives.length > limits.alternativesPerChoiceGroup) {
+              errors.push(`${groupWhere}: da 1 a ${limits.alternativesPerChoiceGroup} alternative.`);
             }
-            if (String(item.alternative || '').length > limits.description) errors.push(`${itemWhere}: alternativa troppo lunga.`);
+            alternatives.forEach((alternative, alternativeIndex) => {
+              validateDietPlanItemSoft(alternative, `${groupWhere}, alternativa ${alternativeIndex + 1}`, errors);
+            });
           });
           if (String(option.note || '').length > limits.note) errors.push(`${optionWhere}: nota troppo lunga.`);
         });
@@ -3237,31 +3376,122 @@ const PROTEIN_CATEGORY_LABELS = {
     return { valid: errors.length === 0, errors };
   }
 
+  function validateDietPlanItemSoft(item, itemWhere, errors) {
+    const limits = DIET_PLAN_LIMITS;
+    if (!item || typeof item !== 'object') { errors.push(`${itemWhere}: dati mancanti.`); return; }
+    if (!DIET_PLAN_FOOD_GROUPS.some(group => group.id === item.foodGroup)) errors.push(`${itemWhere}: gruppo alimentare non valido.`);
+    if (!String(item.description || '').trim()) errors.push(`${itemWhere}: descrivi l’alimento.`);
+    if (String(item.description || '').length > limits.description) errors.push(`${itemWhere}: descrizione troppo lunga.`);
+    if (item.quantity != null && item.quantity !== '') {
+      if (!Number.isFinite(Number(item.quantity)) || Number(item.quantity) < 0 || Number(item.quantity) > limits.quantity) {
+        errors.push(`${itemWhere}: quantità non valida.`);
+      }
+      if (!DIET_PLAN_UNITS.some(unit => unit.id === item.unit)) errors.push(`${itemWhere}: unità di misura non valida.`);
+    }
+  }
+
   function dietPlanSummary(plan) {
     const days = Array.isArray(plan?.days) ? plan.days : [];
     let meals = 0;
     let options = 0;
     let items = 0;
+    let choiceGroups = 0;
     days.forEach(day => {
       (Array.isArray(day?.meals) ? day.meals : []).forEach(meal => {
         meals += 1;
         (Array.isArray(meal?.options) ? meal.options : []).forEach(option => {
           options += 1;
           items += Array.isArray(option?.items) ? option.items.length : 0;
+          choiceGroups += Array.isArray(option?.choiceGroups) ? option.choiceGroups.length : 0;
         });
       });
     });
-    return { dayCount: days.length, mealCount: meals, optionCount: options, itemCount: items };
+    return { dayCount: days.length, mealCount: meals, optionCount: options, itemCount: items, choiceGroupCount: choiceGroups };
+  }
+
+  // Moltiplica i numeri presenti in un testo di dose ("80 g", "1/2 panino",
+  // "q.b.") per il moltiplicatore ricetta. I numeri interi restano tali, le
+  // frazioni decimali si arrotondano a una cifra con virgola; i testi senza
+  // numeri (q.b., quanto basta) non cambiano.
+  function scalePortionText(text, multiplier) {
+    const source = String(text || '');
+    const factor = Number(multiplier);
+    if (!Number.isFinite(factor) || factor === 1 || factor <= 0) return source;
+    if (!/\d/.test(source)) return source;
+    const format = value => {
+      const rounded = Math.round(value * 100) / 100;
+      return Number.isInteger(rounded) ? String(rounded) : String(rounded).replace('.', ',');
+    };
+    // Numeri semplici ("80 g") e frazioni ("1/2 panino") si moltiplicano per
+    // il fattore come valore: 1/2 × 2 = 1, non "2/4".
+    return source.replace(/\d+(?:[.,]\d+)?(?:\/\d+(?:[.,]\d+)?)?/g, raw => {
+      if (raw.includes('/')) {
+        const [numRaw, denRaw] = raw.split('/');
+        const num = Number(numRaw.replace(',', '.'));
+        const den = Number(denRaw.replace(',', '.'));
+        if (!Number.isFinite(num) || !Number.isFinite(den) || den === 0) return raw;
+        return format((num / den) * factor);
+      }
+      const value = Number(raw.replace(',', '.')) * factor;
+      return Number.isFinite(value) ? format(value) : raw;
+    });
+  }
+
+  // Alternative di un gruppo scelta precompilate dalla tabella di riferimento
+  // (le tabelle carboidrati/proteine della guida). kind: 'carb' | 'protein';
+  // la dose segue il pasto (pranzo: colonna A/R della giornata, cena: dose
+  // serale) e le alternative restano tutte editabili dopo il precompilamento.
+  const DIET_PLAN_REFERENCE_FOOD_GROUPS = {
+    carb: 'cereali',
+    protein: 'altro',
+    vegetable: 'verdura',
+    fat: 'grassi'
+  };
+  const DIET_PLAN_REFERENCE_FOOD_GROUP_OVERRIDES = {
+    uova: 'uova', legumotti: 'legumi', legumiScatola: 'legumi', lupini: 'legumi',
+    salmoneAffumicato: 'pesce', pesceScatolaNaturale: 'pesce', pesceSottOlio: 'pesce',
+    pesceAzzurro: 'pesce', pesceBiancoMagro: 'pesce', crostaceiMolluschi: 'pesce',
+    mozzarellaLight: 'latticini', formaggiFreschiMolli: 'latticini', yogurtGreco: 'latticini',
+    fiocchiLatte: 'latticini', montasio: 'latticini', grana: 'latticini',
+    formaggiStagionati: 'latticini', feta: 'latticini', ricotta: 'latticini',
+    maiale: 'carne', polloTacchino: 'carne', manzo: 'carne', affettatiMagri: 'carne',
+    seitan: 'carne', burgerVegetali: 'carne'
+  };
+
+  function dietPlanReferenceAlternatives(kind, mealId, dayType) {
+    const entries = kind === 'protein'
+      ? [GUIDE_PROTEIN_REFERENCE, ...GUIDE_PROTEIN_ALTERNATIVES]
+      : GUIDE_CARB_ALTERNATIVES;
+    return entries.map(entry => {
+      const item = describeAlternative(entry);
+      const isDinner = mealId === 'dinner';
+      const quantity = isDinner
+        ? (item.dinner ?? item.lunchTraining ?? item.lunchRest)
+        : (dayType === 'rest' ? (item.lunchRest ?? item.lunchTraining) : (item.lunchTraining ?? item.lunchRest));
+      if (!Number.isFinite(quantity)) return null;
+      const family = entry.family;
+      return createDietPlanItem({
+        foodGroup: DIET_PLAN_REFERENCE_FOOD_GROUP_OVERRIDES[family] || DIET_PLAN_REFERENCE_FOOD_GROUPS[kind] || 'altro',
+        description: entry.label,
+        quantity,
+        unit: 'g'
+      });
+    }).filter(Boolean);
+  }
+
+  // Titolo suggerito per un gruppo scelta precompilato dalla tabella.
+  function dietPlanReferenceGroupTitle(kind) {
+    return kind === 'protein' ? 'Scegli 1 fonte proteica tra:' : 'Scegli 1 carboidrato tra:';
   }
 
   return {
     VERSION,
     DAYS,
     SLOTS,
-    MELLER_MAIN_SLOTS,
-    MELLER_MODE_MELLER,
-    MELLER_MODE_ORIGINAL,
-    MELLER_ADAPTATION_SCHEMA_VERSION,
+    GUIDE_MAIN_SLOTS,
+    GUIDE_MODE_GUIDE,
+    GUIDE_MODE_ORIGINAL,
+    GUIDE_ADAPTATION_SCHEMA_VERSION,
     DAY_LABELS,
     DAY_SHORT,
     SLOT_LABELS,
@@ -3270,7 +3500,7 @@ const PROTEIN_CATEGORY_LABELS = {
     INGREDIENT_ALIASES,
     CANONICAL_INGREDIENTS,
     DEFAULT_CONSTRAINTS,
-    MELLER_PROTEIN_FREQUENCIES,
+    GUIDE_PROTEIN_FREQUENCIES,
     frequencyConstraintsFor,
     deepClone,
     aliasKey,
@@ -3283,11 +3513,12 @@ const PROTEIN_CATEGORY_LABELS = {
     migratePlan,
     emptyDay,
     emptyDays,
-    emptyMellerModes,
-    normalizeMellerMode,
-    normalizeMellerModes,
-    mellerModeForPlan,
-    setMellerModeForPlan,
+    emptyGuideModes,
+    normalizeGuideMode,
+    normalizeGuideModes,
+    guideModeForPlan,
+    planUsesGuideDoses,
+    setGuideModeForPlan,
     emptyPlan,
     dayDistance,
     futureTarget,
@@ -3336,39 +3567,39 @@ const PROTEIN_CATEGORY_LABELS = {
     inferProteinCategoryFromIngredients,
     catalogHasLegacyFrequency,
     isFishRecipe,
-    MELLER_GRAMMATURE,
-    MELLER_GROUP,
-    MELLER_GUIDE,
-    MELLER_PROTEIN_FREQUENCIES,
-    MELLER_CARB_ALTERNATIVES,
-    MELLER_PROTEIN_ALTERNATIVES,
-    MELLER_PROTEIN_REFERENCE,
-    MELLER_ALTERNATIVES,
-    mellerGrammatureFor,
-    mellerFamiliesForGroup,
-    mellerFamilyToken,
-    mellerMaxAmount,
-    mellerAlternativeGroups,
-    mellerSlotHasAlternatives,
-    MELLER_ALTERNATIVE_SLOTS,
-    mellerRuleForIngredient,
-    activateMellerRuleSet,
-    mellerGroupForIngredient,
-    mellerFamilyForIngredient,
-    isMellerFreeIngredient,
-    mellerMappingForIngredient,
-    mellerSourceFingerprint,
-    checkMellerContext,
-    buildMellerContextAdaptation,
-    buildMellerAdaptationMetadata,
-    applyMellerContextAdaptation,
+    GUIDE_GRAMMATURE,
+    GUIDE_GROUP,
+    GUIDE_MANUAL,
+    GUIDE_PROTEIN_FREQUENCIES,
+    GUIDE_CARB_ALTERNATIVES,
+    GUIDE_PROTEIN_ALTERNATIVES,
+    GUIDE_PROTEIN_REFERENCE,
+    GUIDE_ALTERNATIVES,
+    guideGrammatureFor,
+    guideFamiliesForGroup,
+    guideFamilyToken,
+    guideMaxAmount,
+    guideAlternativeGroups,
+    guideSlotHasAlternatives,
+    GUIDE_ALTERNATIVE_SLOTS,
+    guideRuleForIngredient,
+    activateGuideRuleSet,
+    guideGroupForIngredient,
+    guideFamilyForIngredient,
+    isGuideFreeIngredient,
+    guideMappingForIngredient,
+    guideSourceFingerprint,
+    checkGuideContext,
+    buildGuideContextAdaptation,
+    buildGuideAdaptationMetadata,
+    applyGuideContextAdaptation,
     resolveRecipeForPlan,
-    isMellerCarbIngredient,
-    isMellerProteinIngredient,
-    mellerReferenceAmount,
-    mellerComparableAmount,
-    checkMellerAdaptation,
-    adaptRecipeToMeller,
+    isGuideCarbIngredient,
+    isGuideProteinIngredient,
+    guideReferenceAmount,
+    guideComparableAmount,
+    checkGuideAdaptation,
+    adaptRecipeToGuide,
     mulberry32,
     hashString,
     generateWeek,
@@ -3379,9 +3610,9 @@ const PROTEIN_CATEGORY_LABELS = {
     searchTokensFor,
     buildCatalogIndex,
     searchCatalog,
-    structureRevisionToMellerRules,
-    MELLER_FREE_DISPLAY_LABELS,
-    splitMellerSeed,
+    structureRevisionToGuideRules,
+    GUIDE_FREE_DISPLAY_LABELS,
+    splitGuideSeed,
     SINGLE_ORGANIZATION_ID,
     // Console professionisti — stati operativi dei clienti
     CLIENT_OPERATIONAL_STATUSES,
@@ -3399,19 +3630,25 @@ const PROTEIN_CATEGORY_LABELS = {
     DIET_PLAN_MEALS,
     DIET_PLAN_FOOD_GROUPS,
     DIET_PLAN_UNITS,
-    DIET_PLAN_QUANTITY_STATES,
+    DIET_PLAN_OPTION_TYPES,
     DIET_PLAN_OPTION_LABELS,
     DIET_PLAN_LIMITS,
     dietPlanDayLabel,
     dietPlanMealLabel,
     dietPlanFoodGroupLabel,
     dietPlanUnitLabel,
+    dietPlanMealOrder,
+    sortDietPlanMeals,
     createDietPlanItem,
+    createDietPlanChoiceGroup,
     createDietPlanOption,
     createDietPlanMeal,
     createDietPlanDay,
     createEmptyDietPlan,
     validateDietPlanSoft,
-    dietPlanSummary
+    dietPlanSummary,
+    scalePortionText,
+    dietPlanReferenceAlternatives,
+    dietPlanReferenceGroupTitle
   };
 });

@@ -31,7 +31,7 @@ before(async () => {
     await db.doc('globalRuleSets/base/versions/3').set({ status: 'published' });
     // Fase 2: strutture, inviti, link, catalogo.
     await db.doc(`organizations/${orgId}/dietStructures/struttura-a`).set({ schemaVersion: 1, name: 'Base', status: 'active', ownerUid: 'nutri-a', currentRevisionId: '1' });
-    await db.doc(`organizations/${orgId}/dietStructures/struttura-a/revisions/1`).set({ schemaVersion: 2, status: 'published', rules: [{ mellerFamilyId: 'riso' }] });
+    await db.doc(`organizations/${orgId}/dietStructures/struttura-a/revisions/1`).set({ schemaVersion: 2, status: 'published', rules: [{ guideFamilyId: 'riso' }] });
     await db.doc(`organizations/${orgId}/invitations/invite-a`).set({ schemaVersion: 1, type: 'client', targetUsername: 'cliente-x', tokenHash: 'h', status: 'pending', createdBy: 'nutri-a' });
     await db.doc(`organizations/${orgId}/clientLinkRequests/req-a`).set({ schemaVersion: 1, clientId: 'client-a', targetUid: 'patient-a', nutritionistUid: 'nutri-a', status: 'pending' });
     await db.doc('globalIngredientCatalog/current/ingredients/riso').set({ schemaVersion: 2, displayName: 'Riso', status: 'active' });

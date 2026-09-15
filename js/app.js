@@ -19,37 +19,37 @@ const RECIPE_LIBRARY_SECTION_DEFAULTS = Object.fromEntries(MEAL_SLOTS.map(slot =
 const PRICES_FEATURE_ENABLED = false;
 
 // ---- Catalogo globale ingredienti (autocomplete editor) ----
-// Il catalogo definitivo del dott. Meller arriverà via import versionato; fino
-// ad allora il seed autorevole deriva da MELLER_GRAMMATURE (famiglie guidate)
+// Il catalogo definitivo arriverà via import versionato; fino
+// ad allora il seed autorevole deriva da GUIDE_GRAMMATURE (famiglie guidate)
 // e dai libri d'ortaggi/aromi liberi, senza inventare quantità. Un nome non
 // riconosciuto resta ammesso ma viene marcato "mapping mancante".
 let ingredientCatalogIndexCache = null;
 function buildLocalCatalogIndex() {
   if (ingredientCatalogIndexCache) return ingredientCatalogIndexCache;
   const catalog = { ingredients: [], categories: [] };
-  if (window.PianoDomain?.MELLER_GRAMMATURE) {
+  if (window.PianoDomain?.GUIDE_GRAMMATURE) {
     catalog.categories = [
       { categoryId: "carb", displayName: "Carboidrati" },
       { categoryId: "protein", displayName: "Proteine" },
       { categoryId: "fat", displayName: "Grassi" },
       { categoryId: "free", displayName: "Alimenti liberi" }
     ];
-    catalog.ingredients = PianoDomain.MELLER_GRAMMATURE.map(rule => ({
+    catalog.ingredients = PianoDomain.GUIDE_GRAMMATURE.map(rule => ({
       ingredientId: String(rule.family),
       displayName: String(rule.label || rule.family),
       categoryId: rule.group === "carb" ? "carb" : rule.group === "fat" ? "fat" : "protein",
       aliases: Array.isArray(rule.aliases) ? rule.aliases : [],
       mappingKind: "guided",
-      mellerFamilyId: String(rule.family)
+      guideFamilyId: String(rule.family)
     }));
-    Object.entries(PianoDomain.MELLER_FREE_DISPLAY_LABELS || {}).forEach(([stem, label]) => {
+    Object.entries(PianoDomain.GUIDE_FREE_DISPLAY_LABELS || {}).forEach(([stem, label]) => {
       catalog.ingredients.push({
         ingredientId: `free-${stem.replace(/\s+/g, "-")}`,
         displayName: label,
         categoryId: "free",
         aliases: [stem],
         mappingKind: "free",
-        mellerFamilyId: null
+        guideFamilyId: null
       });
     });
   }
@@ -64,7 +64,7 @@ function ingredientCatalogMatches(query) {
 }
 function editorIngredientMeta(recipe) {
   if (!Array.isArray(recipe._ingredientMeta) || recipe._ingredientMeta.length !== recipe.ingredients.length) {
-    const mappingFor = name => window.PianoDomain?.mellerMappingForIngredient?.(name) || null;
+    const mappingFor = name => window.PianoDomain?.guideMappingForIngredient?.(name) || null;
     recipe._ingredientMeta = recipe.ingredients.map(ingredient => {
       const name = String(ingredient.name || "").trim();
       const mapping = name ? mappingFor(name) : null;
@@ -137,7 +137,7 @@ window.selectEditorSuggestion = function(index, i) {
   meta.ingredientId = item.dataset.id;
   meta.mappingMissing = false;
   hideEditorSuggest(index);
-  updateMellerEditorNotice();
+  updateGuideEditorNotice();
   input?.focus();
 };
 window.editorIngredientInput = function(index, input) {
@@ -163,7 +163,7 @@ window.editorIngredientInput = function(index, input) {
     meta.mappingMissing = false;
   }
   renderEditorSuggestions(index);
-  updateMellerEditorNotice();
+  updateGuideEditorNotice();
 };
 window.editorIngredientBlur = function(index) {
   setTimeout(() => hideEditorSuggest(index), 180);
@@ -263,33 +263,41 @@ function getPlannedRecipe(dayKey, slot) {
   return getRecipe(recipeId);
 }
 
-function getPlanMellerMode(dayKey, slot) {
+function getPlanGuideMode(dayKey, slot) {
   if (!window.PianoDomain) return "original";
-  const explicit = PianoDomain.mellerModeForPlan(appState.plan, dayKey, slot);
+  const explicit = PianoDomain.guideModeForPlan(appState.plan, dayKey, slot);
   if (explicit) return explicit;
-  return PianoDomain.MELLER_MAIN_SLOTS.includes(slot)
-    ? PianoDomain.MELLER_MODE_MELLER
-    : PianoDomain.MELLER_MODE_ORIGINAL;
+  return PianoDomain.GUIDE_MAIN_SLOTS.includes(slot)
+    ? PianoDomain.GUIDE_MODE_GUIDE
+    : PianoDomain.GUIDE_MODE_ORIGINAL;
 }
 
-function ensurePlanMellerContext() {
-  if (!window.PianoDomain || Object.prototype.hasOwnProperty.call(appState.plan || {}, "mellerModes")) return;
+function ensurePlanGuideContext() {
+  if (!window.PianoDomain || planHasGuideContext(appState.plan)) return;
   appState.plan = PianoDomain.migratePlan(appState.plan);
+}
+
+// Il contesto esiste anche con il nome storico `mellerModes` (piani legacy):
+// in quel caso migratePlan normalizza al campo attuale senza ripartire da zero.
+function planHasGuideContext(plan) {
+  const source = plan || {};
+  return Object.prototype.hasOwnProperty.call(source, "guideModes")
+    || Object.prototype.hasOwnProperty.call(source, "mellerModes");
 }
 
 function resolvePlannedRecipe(recipe, dayKey, slot) {
   if (!recipe || !window.PianoDomain) return { recipe, mode: "original", applied: false, blocked: false, report: null, context: null };
-  const mode = planAdaptedQuantitiesEffective() ? getPlanMellerMode(dayKey, slot) : PianoDomain.MELLER_MODE_ORIGINAL;
-  // Il tipo giorno guida le dosi Meller: riposo e allenamento hanno
+  const mode = planAdaptedQuantitiesEffective() ? getPlanGuideMode(dayKey, slot) : PianoDomain.GUIDE_MODE_ORIGINAL;
+  // Il tipo giorno guida le dosi Guide: riposo e allenamento hanno
   // grammature diverse e il cambio Allenamento ↔ Riposo deve riflettersi
   // subito in settimana, modale e batch (la spesa usa già il dayType).
   const dayType = dayKey ? getDayType(dayKey) : (currentModal?.dayType || getRecipePreviewDayType());
   return PianoDomain.resolveRecipeForPlan(recipe, slot, mode, dayType);
 }
 
-function mellerReportForRecipe(recipe, slot = recipe?.slot) {
-  return window.PianoDomain?.checkMellerContext
-    ? PianoDomain.checkMellerContext(recipe, slot)
+function guideReportForRecipe(recipe, slot = recipe?.slot) {
+  return window.PianoDomain?.checkGuideContext
+    ? PianoDomain.checkGuideContext(recipe, slot)
     : null;
 }
 
@@ -390,10 +398,10 @@ function recipeIsCrossSlot(recipe, assignedSlot) {
   return Boolean(recipe && window.PianoDomain && assignedSlot && PianoDomain.isPranzoCenaCross(recipe.slot, assignedSlot));
 }
 
-function recipeUsesMellerInPlan(dayKey, slot) {
+function recipeUsesGuideInPlan(dayKey, slot) {
   return Boolean(window.PianoDomain
-    && PianoDomain.MELLER_MAIN_SLOTS.includes(slot)
-    && getPlanMellerMode(dayKey, slot) === PianoDomain.MELLER_MODE_MELLER);
+    && PianoDomain.GUIDE_MAIN_SLOTS.includes(slot)
+    && getPlanGuideMode(dayKey, slot) === PianoDomain.GUIDE_MODE_GUIDE);
 }
 
 function normalizeRecipeSchema(recipe) {
@@ -423,12 +431,12 @@ function getActiveBatch(dayKey) {
     templates,
     appState.recipesById,
     getPortionProfile(),
-    { applyMeller: planAdaptedQuantitiesEffective() }
+    { applyGuide: planAdaptedQuantitiesEffective() }
   );
   // Batch automatico "doppia porzione": stessa ricetta a cena e al pranzo
   // successivo (anche via cross-slot). Le dosi sono la somma cena + pranzo.
   const dinnerId = appState.plan.days[dayKey]?.dinner;
-  const common = PianoDomain.commonRecipeBatch(dayKey, appState.plan, appState.recipesById, getPortionProfile(), { applyMeller: planAdaptedQuantitiesEffective() });
+  const common = PianoDomain.commonRecipeBatch(dayKey, appState.plan, appState.recipesById, getPortionProfile(), { applyGuide: planAdaptedQuantitiesEffective() });
   if (common && dinnerId) {
     const alreadyCovered = batches.some(batch => batch.targetDay === common.targetDay && batch.template?.target?.recipeId === dinnerId);
     if (!alreadyCovered) batches.push(common);
@@ -1211,8 +1219,8 @@ function applyState(recipes, plan, shopping) {
   // per rimuoverlo definitivamente dai dati persistiti.
   const needsCatalogMigration = window.PianoDomain && PianoDomain.catalogHasLegacyFrequency(recipes);
   setRecipes(recipes);
-  const needsMellerPlanMigration = window.PianoDomain
-    && !Object.prototype.hasOwnProperty.call(plan || {}, "mellerModes");
+  const needsGuidePlanMigration = window.PianoDomain
+    && !planHasGuideContext(plan);
   const migratedPlan = window.PianoDomain ? PianoDomain.migratePlan(plan) : plan;
   appState.saasPolicy = window.PianoSaas
     ? PianoSaas.applyPolicy(migratedPlan, appState.saasContext)
@@ -1223,7 +1231,7 @@ function applyState(recipes, plan, shopping) {
   if (needsCatalogMigration) {
     saveRecipeCatalog(appState.recipes).catch(error => console.warn("Migrazione schema 5: salvataggio catalogo non riuscito", error));
   }
-  if (needsMellerPlanMigration) {
+  if (needsGuidePlanMigration) {
     saveWeeklyPlan(appState.plan).catch(error => console.warn("Migrazione contesto linee guida del piano non riuscita", error));
   }
 
@@ -1239,7 +1247,7 @@ function applyState(recipes, plan, shopping) {
     setupMealOperations();
     setupTransferModals();
     setupGeneratorModal();
-    setupMellerModal();
+    setupGuideModal();
     setupPriceModals();
     appStarted = true;
   }
@@ -1548,10 +1556,10 @@ function batchRecipeIngredients(recipe, dayKey, slot, batch) {
   }
 
   let effectiveRecipe = recipe;
-  if (window.PianoDomain && Object.prototype.hasOwnProperty.call(appState.plan || {}, "mellerModes")) {
+  if (window.PianoDomain && planHasGuideContext(appState.plan)) {
     effectiveRecipe = resolvePlannedRecipe(recipe, dayKey, slot).recipe || recipe;
   } else {
-    // Compatibilità con piani legacy non ancora migrati al contesto Meller.
+    // Compatibilità con piani legacy non ancora migrati al contesto Guide.
     effectiveRecipe = {
       ...recipe,
       ingredients: (recipe.ingredients || []).map(ingredient => {
@@ -1825,21 +1833,21 @@ function renderWeek() {
             ${MEAL_SLOTS.map(slot => {
               const recipe = getRecipe(planDay[slot.id]);
               const planned = recipe ? resolvePlannedRecipe(recipe, day, slot.id) : null;
-              const mainSlot = window.PianoDomain?.MELLER_MAIN_SLOTS?.includes(slot.id);
-              const mode = mainSlot ? getPlanMellerMode(day, slot.id) : null;
-              const modeBadge = mainSlot && mode === "meller"
-                ? `<span class="meller-plan-badge" title="Dosi delle linee guida applicate al piano">L</span>`
+              const mainSlot = window.PianoDomain?.GUIDE_MAIN_SLOTS?.includes(slot.id);
+              const mode = mainSlot ? getPlanGuideMode(day, slot.id) : null;
+              const modeBadge = mainSlot && mode === "guide"
+                ? `<span class="guide-plan-badge" title="Dosi delle linee guida applicate al piano">L</span>`
                 : mainSlot && mode === "original"
-                  ? `<span class="meller-plan-badge original" title="Quantità originali: adattamento alle linee guida non applicato">O</span>`
+                  ? `<span class="guide-plan-badge original" title="Quantità originali: adattamento alle linee guida non applicato">O</span>`
                   : "";
               const blockedBadge = planned?.blocked
-                ? `<span class="meller-blocked-badge" title="Adattamento alle linee guida bloccato: mapping ingrediente mancante">⚠</span>`
+                ? `<span class="guide-blocked-badge" title="Adattamento alle linee guida bloccato: mapping ingrediente mancante">⚠</span>`
                 : "";
               const dosesLine = weekMealDosesHtml(planned, planDay.type);
               return `<div class="week-meal">
                 <small>${escapeHtml(slot.shortLabel)}</small>
                 <div class="week-meal-main">
-                  <button class="week-meal-name" onclick="openRecipeModal('${escapeAttr(recipe?.id || "")}', '${day}', '${slot.id}')">${escapeHtml(recipe?.emoji || "")} ${escapeHtml(recipe ? getRecipeDisplayName(recipe, planDay.type) : "Non disponibile")}${recipe && recipeIsCrossSlot(recipe, slot.id) && mode === "meller" ? ` <span class="cross-slot-badge" title="Ingredienti adattati alla dose prevista per questo pasto">↻</span>` : ""} ${modeBadge}${blockedBadge}</button>
+                  <button class="week-meal-name" onclick="openRecipeModal('${escapeAttr(recipe?.id || "")}', '${day}', '${slot.id}')">${escapeHtml(recipe?.emoji || "")} ${escapeHtml(recipe ? getRecipeDisplayName(recipe, planDay.type) : "Non disponibile")}${recipe && recipeIsCrossSlot(recipe, slot.id) && mode === "guide" ? ` <span class="cross-slot-badge" title="Ingredienti adattati alla dose prevista per questo pasto">↻</span>` : ""} ${modeBadge}${blockedBadge}</button>
                   ${dosesLine}
                 </div>
                 <button class="btn-icon btn-swap" onclick="openMealActions('${day}', '${slot.id}')" title="Operazioni sul pasto" aria-label="Operazioni sul pasto">⋯</button>
@@ -1946,24 +1954,24 @@ window.closeSwapModal = function() {
   document.getElementById("swap-modal")?.classList.add("hidden");
 };
 
-window.toggleCurrentPlanMellerMode = async function() {
+window.toggleCurrentPlanGuideMode = async function() {
   const dayKey = currentModal?.dayKey;
   const slot = currentModal?.planSlot;
   const recipe = dayKey && slot ? getPlannedRecipe(dayKey, slot) : null;
-  if (!dayKey || !slot || !recipe || !window.PianoDomain?.MELLER_MAIN_SLOTS?.includes(slot)) return;
-  ensurePlanMellerContext();
-  const current = getPlanMellerMode(dayKey, slot);
-  const next = current === PianoDomain.MELLER_MODE_MELLER
-    ? PianoDomain.MELLER_MODE_ORIGINAL
-    : PianoDomain.MELLER_MODE_MELLER;
-  if (next === PianoDomain.MELLER_MODE_MELLER) {
-    const check = PianoDomain.checkMellerContext(recipe, slot);
+  if (!dayKey || !slot || !recipe || !window.PianoDomain?.GUIDE_MAIN_SLOTS?.includes(slot)) return;
+  ensurePlanGuideContext();
+  const current = getPlanGuideMode(dayKey, slot);
+  const next = current === PianoDomain.GUIDE_MODE_GUIDE
+    ? PianoDomain.GUIDE_MODE_ORIGINAL
+    : PianoDomain.GUIDE_MODE_GUIDE;
+  if (next === PianoDomain.GUIDE_MODE_GUIDE) {
+    const check = PianoDomain.checkGuideContext(recipe, slot);
     if (check.status === "blocked") {
       showToast(`Adattamento alle linee guida non applicabile: ${check.unknown.map(item => item.ingredient).join(", ") || "la ricetta"} non ha un mapping nel catalogo attuale. Usa le quantità originali.`, true);
       return;
     }
   }
-  appState.plan.mellerModes[dayKey][slot] = next;
+  appState.plan.guideModes[dayKey][slot] = next;
   try {
     await saveWeeklyPlan(appState.plan);
     handleRoute();
@@ -1983,22 +1991,22 @@ window.confirmSwap = async function(dayKey, slot, recipeId) {
   const baseMsg = "Sostituire questo pasto con la ricetta scelta? Frequenze e batch cooking potrebbero cambiare.";
   const crossMsg = crossSlot ? "\n\nI carboidrati verranno adattati alle linee guida del pasto di destinazione: a cena si usa la dose cena della tabella (circa 2/3 del pranzo di riposo, arrotondata per difetto alla decina), a pranzo si rileggono le dosi previste per Allenamento o Riposo. Le proteine, le uova e la verdura restano invariate." : "";
   if (!confirm(baseMsg + crossMsg)) return;
-  ensurePlanMellerContext();
-  let selectedMode = PianoDomain?.MELLER_MAIN_SLOTS?.includes(slot)
-    ? PianoDomain.MELLER_MODE_MELLER
-    : PianoDomain.MELLER_MODE_ORIGINAL;
-  if (selectedMode === PianoDomain?.MELLER_MODE_MELLER) {
-    const mellerCheck = PianoDomain.checkMellerContext(recipe, slot);
-    if (mellerCheck.status === "blocked") {
-      const missing = mellerCheck.unknown.map(item => item.ingredient).join(", ");
-      const ambiguous = mellerCheck.ambiguous.map(item => item.group).join(", ");
+  ensurePlanGuideContext();
+  let selectedMode = PianoDomain?.GUIDE_MAIN_SLOTS?.includes(slot)
+    ? PianoDomain.GUIDE_MODE_GUIDE
+    : PianoDomain.GUIDE_MODE_ORIGINAL;
+  if (selectedMode === PianoDomain?.GUIDE_MODE_GUIDE) {
+    const guideCheck = PianoDomain.checkGuideContext(recipe, slot);
+    if (guideCheck.status === "blocked") {
+      const missing = guideCheck.unknown.map(item => item.ingredient).join(", ");
+      const ambiguous = guideCheck.ambiguous.map(item => item.group).join(", ");
       const details = [missing && `ingredienti non mappati: ${missing}`, ambiguous && `combinazioni da verificare: ${ambiguous}`].filter(Boolean).join("; ");
       if (!confirm(`Le linee guida non possono essere applicate a questa ricetta (${details}).\n\nInserirla comunque con le quantità originali?`)) return;
-      selectedMode = PianoDomain.MELLER_MODE_ORIGINAL;
+      selectedMode = PianoDomain.GUIDE_MODE_ORIGINAL;
     }
   }
   appState.plan.days[dayKey][slot] = recipeId;
-  appState.plan.mellerModes[dayKey][slot] = selectedMode;
+  appState.plan.guideModes[dayKey][slot] = selectedMode;
   try {
     await saveWeeklyPlan(appState.plan);
     closeSwapModal();
@@ -2174,11 +2182,11 @@ function recipeSectionHtml(title, recipes, slot) {
       <div id="${sectionId}" class="recipe-section-body ${isOpen ? "" : "hidden"}">
         <div class="recipe-grid">
           ${recipes.map(recipe => {
-            const mellerCheck = window.PianoDomain?.checkMellerContext?.(recipe, recipe.slot);
-            const mellerFlag = mellerCheck && mellerCheck.status !== "not-applicable" && !mellerCheck.aligned
-              ? `<span class="meller-card-flag" title="${mellerCheck.status === "blocked" ? "Mapping delle linee guida incompleto" : "Dosi fuori dalle linee guida"}">⚠</span>`
+            const guideCheck = window.PianoDomain?.checkGuideContext?.(recipe, recipe.slot);
+            const guideFlag = guideCheck && guideCheck.status !== "not-applicable" && !guideCheck.aligned
+              ? `<span class="guide-card-flag" title="${guideCheck.status === "blocked" ? "Mapping delle linee guida incompleto" : "Dosi fuori dalle linee guida"}">⚠</span>`
               : "";
-            return `<button class="recipe-library-card" data-search="${escapeAttr(`${recipe.id} ${recipe.name} ${recipe.namesByDayType?.training || ""} ${recipe.namesByDayType?.rest || ""} ${recipeProteinLabel(recipe)} ${(recipe.ingredients || []).map(i => i.name).join(" ")}`.toLowerCase())}" onclick="openRecipeModal('${escapeAttr(recipe.id)}')"><span class="recipe-code">${escapeHtml(recipe.id)}</span>${recipe.fromProfessional ? '<span class="pro-badge">🩺 Professionista</span>' : ''}${mellerFlag}<span class="recipe-card-emoji">${escapeHtml(recipe.emoji || "🍲")}</span><strong>${escapeHtml(recipe.name)}</strong><small>${escapeHtml(recipeProteinLabel(recipe))}</small></button>`;
+            return `<button class="recipe-library-card" data-search="${escapeAttr(`${recipe.id} ${recipe.name} ${recipe.namesByDayType?.training || ""} ${recipe.namesByDayType?.rest || ""} ${recipeProteinLabel(recipe)} ${(recipe.ingredients || []).map(i => i.name).join(" ")}`.toLowerCase())}" onclick="openRecipeModal('${escapeAttr(recipe.id)}')"><span class="recipe-code">${escapeHtml(recipe.id)}</span>${recipe.fromProfessional ? '<span class="pro-badge">🩺 Professionista</span>' : ''}${guideFlag}<span class="recipe-card-emoji">${escapeHtml(recipe.emoji || "🍲")}</span><strong>${escapeHtml(recipe.name)}</strong><small>${escapeHtml(recipeProteinLabel(recipe))}</small></button>`;
           }).join("")}
         </div>
       </div>
@@ -2347,7 +2355,7 @@ function aggregateShoppingList() {
     getCanonicalIngredientLabels(),
     // Stesso interruttore della Settimana: con lo switch spento la spesa elenca
     // le quantità originali delle ricette, non quelle delle linee guida.
-    { applyMeller: planAdaptedQuantitiesEffective() }
+    { applyGuide: planAdaptedQuantitiesEffective() }
   );
   return entries.map(entry => ({
     ...entry,
@@ -2805,20 +2813,20 @@ window.shareShopWhatsApp = async function() {
   }
 };
 
-// ---- A4: Alternative Meller inline (tap ingrediente -> equivalenze) ----
+// ---- A4: Alternative Guide inline (tap ingrediente -> equivalenze) ----
 // La classificazione carboidrati/proteine arriva dalla fonte unica
 // (js/domain.js): popup, tabelle delle alternative e guida riconoscono le
 // stesse famiglie, senza regex duplicate qui.
-function isMellerCarbIngredient(name) {
-  return window.PianoDomain?.isMellerCarbIngredient?.(name) === true;
+function isGuideCarbIngredient(name) {
+  return window.PianoDomain?.isGuideCarbIngredient?.(name) === true;
 }
-function isMellerProteinIngredient(name) {
-  return window.PianoDomain?.isMellerProteinIngredient?.(name) === true;
+function isGuideProteinIngredient(name) {
+  return window.PianoDomain?.isGuideProteinIngredient?.(name) === true;
 }
-// Giornata di riferimento delle equivalenze Meller: quella della ricetta
+// Giornata di riferimento delle equivalenze Guide: quella della ricetta
 // aperta (giorno del piano oppure A/R scelto nell'anteprima del ricettario).
 // Senza contesto (Impostazioni) restano visibili entrambe le colonne pranzo.
-function getMellerAlternativesDayType() {
+function getGuideAlternativesDayType() {
   const dayType = currentModal?.dayType;
   return ["training", "rest"].includes(dayType) ? dayType : "both";
 }
@@ -2826,27 +2834,27 @@ function getMellerAlternativesDayType() {
 // Pasto di riferimento delle equivalenze: quello di destinazione se la ricetta
 // è mostrata in uno slot diverso dal proprio (cross-slot), altrimenti quello
 // della ricetta. Nel Ricettario, senza contesto di piano, vale recipe.slot.
-function getMellerAlternativesSlot() {
+function getGuideAlternativesSlot() {
   return currentModal?.slot || currentModal?.recipe?.slot || null;
 }
 
-function getMellerAlternativesForIngredient(ingredientName, dayType = getMellerAlternativesDayType(), slot = getMellerAlternativesSlot()) {
+function getGuideAlternativesForIngredient(ingredientName, dayType = getGuideAlternativesDayType(), slot = getGuideAlternativesSlot()) {
   // Le equivalenze esistono solo a pranzo e a cena: negli spuntini e nelle
   // merende le grammature del manuale sono fisse (crackers 30g) e non hanno
   // una tabella di scambio, quindi l'ingrediente non è tappabile.
-  const slotAllowed = window.PianoDomain?.mellerSlotHasAlternatives
-    ? PianoDomain.mellerSlotHasAlternatives(slot)
+  const slotAllowed = window.PianoDomain?.guideSlotHasAlternatives
+    ? PianoDomain.guideSlotHasAlternatives(slot)
     : ["lunch", "dinner"].includes(slot);
   if (!slotAllowed) return null;
   // Le tabelle sono derivate dalla fonte unica per la giornata richiesta: a
   // pranzo le dosi dei carboidrati cambiano tra allenamento e riposo.
-  const guide = window.PianoDomain?.mellerAlternativeGroups
-    ? PianoDomain.mellerAlternativeGroups(dayType)
-    : (typeof MELLER_GUIDE !== "undefined" ? MELLER_GUIDE.alternatives : null);
+  const guide = window.PianoDomain?.guideAlternativeGroups
+    ? PianoDomain.guideAlternativeGroups(dayType)
+    : (typeof GUIDE_MANUAL !== "undefined" ? GUIDE_MANUAL.alternatives : null);
   if (!guide) return null;
-  const isCarb = isMellerCarbIngredient(ingredientName);
-  const isProtein = isMellerProteinIngredient(ingredientName);
-  // Solo carboidrati e proteine hanno equivalenze Meller: verdura, frutta,
+  const isCarb = isGuideCarbIngredient(ingredientName);
+  const isProtein = isGuideProteinIngredient(ingredientName);
+  // Solo carboidrati e proteine hanno equivalenze Guide: verdura, frutta,
   // dispensa e spezie non sono tappabili.
   if (!isCarb && !isProtein) return null;
   let groups = [];
@@ -2855,7 +2863,7 @@ function getMellerAlternativesForIngredient(ingredientName, dayType = getMellerA
   else groups = [guide.carbohydrates, guide.proteins];
   return { groups, isCarb, isProtein, dayType, slot };
 }
-function shouldHighlightMellerRow(rowLabel, ingredientName) {
+function shouldHighlightGuideRow(rowLabel, ingredientName) {
   const rowNorm = normalizeIngredientName(rowLabel);
   const ingNorm = normalizeIngredientName(ingredientName);
   const rowTokens = rowNorm.split(/\W+/).filter(Boolean);
@@ -2866,54 +2874,69 @@ function shouldHighlightMellerRow(rowLabel, ingredientName) {
 }
 // Colonne della tabella equivalenze: la fonte unica le dichiara nel gruppo
 // (`columns`), così il rendering non dipende dalla lunghezza delle righe.
-function mellerTableColumns(group) {
+function guideTableColumns(group) {
   if (Array.isArray(group?.columns) && group.columns.length) return group.columns;
-  return isMellerCarbGroup(group) ? ['Alimento', 'Pranzo', 'Cena'] : ['Alimento', 'Pranzo e cena'];
+  return isGuideCarbGroup(group) ? ['Alimento', 'Pranzo', 'Cena'] : ['Alimento', 'Pranzo e cena'];
 }
-function isMellerCarbGroup(group) {
+function isGuideCarbGroup(group) {
   if (group?.kind) return group.kind === 'carbs';
-  return group === MELLER_GUIDE.alternatives.carbohydrates || (group?.rows || []).some(row => row.length >= 3);
+  return group === GUIDE_MANUAL.alternatives.carbohydrates || (group?.rows || []).some(row => row.length >= 3);
 }
-function mellerTableHtmlWithHighlight(group, ingredientName) {
-  const isCarb = isMellerCarbGroup(group);
-  const headers = mellerTableColumns(group);
+function guideTableHtmlWithHighlight(group, ingredientName, highlightLabel) {
+  const isCarb = isGuideCarbGroup(group);
+  const headers = guideTableColumns(group);
   const rows = group.rows.map(row => {
-    const highlight = shouldHighlightMellerRow(row[0], ingredientName);
-    return `<div class="${highlight ? "meller-highlight" : ""}">${row.map((cell, index) => index === 0 ? `<span>${escapeHtml(cell)}</span>` : `<strong>${escapeHtml(cell)}</strong>`).join("")}</div>`;
+    // Evidenziazione per famiglia (l'etichetta della riga può non condividere
+    // parole con l'ingrediente, es. "Pasta integrale" → riga "Cereali"); se la
+    // famiglia non è nota, fallback sulla somiglianza del nome.
+    const highlight = highlightLabel
+      ? row[0] === highlightLabel
+      : shouldHighlightGuideRow(row[0], ingredientName);
+    return `<div class="${highlight ? "guide-highlight" : ""}">${row.map((cell, index) => index === 0 ? `<span>${escapeHtml(cell)}</span>` : `<strong>${escapeHtml(cell)}</strong>`).join("")}</div>`;
   }).join("");
-  return `<div class="alternative-table${isCarb ? " meller-carbs" : " meller-proteins"} cols-${headers.length}"><h3>${escapeHtml(group.title)}</h3><div class="alternative-head">${headers.map(escapeHtml).map(header => `<strong>${header}</strong>`).join("")}</div>${rows}</div>`;
+  return `<div class="alternative-table${isCarb ? " guide-carbs" : " guide-proteins"} cols-${headers.length}"><h3>${escapeHtml(group.title)}</h3><div class="alternative-head">${headers.map(escapeHtml).map(header => `<strong>${header}</strong>`).join("")}</div>${rows}</div>`;
 }
-function setupMellerModal() {
-  if (document.getElementById("meller-alternatives-modal")) return;
+// Etichetta della riga da evidenziare: la famiglia canonica dell'ingrediente
+// individua la voce delle tabelle alternative con lo stesso family.
+function guideHighlightLabelFor(ingredientName, kind) {
+  const domain = window.PianoDomain;
+  const family = domain?.guideMappingForIngredient?.(ingredientName)?.rule?.family;
+  if (!family) return null;
+  const entries = kind === "carbs" ? domain.GUIDE_CARB_ALTERNATIVES : domain.GUIDE_PROTEIN_ALTERNATIVES;
+  const entry = (entries || []).find(item => item.family === family);
+  return entry ? entry.label : null;
+}
+function setupGuideModal() {
+  if (document.getElementById("guide-alternatives-modal")) return;
   document.body.insertAdjacentHTML("beforeend", `
-    <div id="meller-alternatives-modal" class="modal hidden" role="dialog" aria-modal="true" aria-labelledby="meller-modal-title">
-      <div class="modal-content meller-modal-content">
-        <div class="modal-header"><div><p class="eyebrow">ALTERNATIVE</p><h2 id="meller-modal-title"></h2><p id="meller-modal-subtitle" class="text-muted"></p></div><button class="btn-icon" onclick="closeMellerAlternatives()" aria-label="Chiudi">&times;</button></div>
-        <div id="meller-modal-body"></div>
-        <p class="meller-modal-note text-muted">Equivalenze dalle <strong>linee guida</strong> (pesi a crudo). Verdura sempre libera ~200g, non pesata.</p>
-        <div class="modal-footer"><button class="btn btn-primary full-width" onclick="closeMellerAlternatives()">Chiudi</button></div>
+    <div id="guide-alternatives-modal" class="modal hidden" role="dialog" aria-modal="true" aria-labelledby="guide-modal-title">
+      <div class="modal-content guide-modal-content">
+        <div class="modal-header"><div><p class="eyebrow">ALTERNATIVE</p><h2 id="guide-modal-title"></h2><p id="guide-modal-subtitle" class="text-muted"></p></div><button class="btn-icon" onclick="closeGuideAlternatives()" aria-label="Chiudi">&times;</button></div>
+        <div id="guide-modal-body"></div>
+        <p class="guide-modal-note text-muted">Equivalenze dalle <strong>linee guida</strong> (pesi a crudo). Verdura sempre libera ~200g, non pesata.</p>
+        <div class="modal-footer"><button class="btn btn-primary full-width" onclick="closeGuideAlternatives()">Chiudi</button></div>
       </div>
     </div>`);
-  bindModalOutsideClose("meller-alternatives-modal", () => window.closeMellerAlternatives());
+  bindModalOutsideClose("guide-alternatives-modal", () => window.closeGuideAlternatives());
 }
-window.openMellerAlternatives = function(ingredientName) {
-  const data = getMellerAlternativesForIngredient(ingredientName);
+window.openGuideAlternatives = function(ingredientName) {
+  const data = getGuideAlternativesForIngredient(ingredientName);
   if (!data) return;
   const { groups, isCarb, isProtein } = data;
-  document.getElementById("meller-modal-title").textContent = ingredientName;
+  document.getElementById("guide-modal-title").textContent = ingredientName;
   let subtitle = "";
   // Sottotitoli derivati dalla fonte unica per la giornata aperta: nessun
   // valore e nessuna etichetta di giorno scritti qui.
   if (isCarb && !isProtein) subtitle = groups[0].subtitle;
   else if (!isCarb && isProtein) subtitle = groups[0].subtitle;
   else subtitle = "Equivalenze disponibili per questo ingrediente";
-  document.getElementById("meller-modal-subtitle").textContent = subtitle;
-  const body = document.getElementById("meller-modal-body");
-  body.innerHTML = `<div class="meller-tables">${groups.map(g => mellerTableHtmlWithHighlight(g, ingredientName)).join("")}</div>`;
-  document.getElementById("meller-alternatives-modal").classList.remove("hidden");
+  document.getElementById("guide-modal-subtitle").textContent = subtitle;
+  const body = document.getElementById("guide-modal-body");
+  body.innerHTML = `<div class="guide-tables">${groups.map(g => guideTableHtmlWithHighlight(g, ingredientName, guideHighlightLabelFor(ingredientName, g?.kind))).join("")}</div>`;
+  document.getElementById("guide-alternatives-modal").classList.remove("hidden");
 };
-window.closeMellerAlternatives = function() {
-  document.getElementById("meller-alternatives-modal")?.classList.add("hidden");
+window.closeGuideAlternatives = function() {
+  document.getElementById("guide-alternatives-modal")?.classList.add("hidden");
 };
 
 function guideDayHtml(dayGuide, tone) {
@@ -2926,13 +2949,13 @@ function guideDayHtml(dayGuide, tone) {
 }
 
 function alternativesTableHtml(group) {
-  const isCarb = isMellerCarbGroup(group);
-  const headers = mellerTableColumns(group);
+  const isCarb = isGuideCarbGroup(group);
+  const headers = guideTableColumns(group);
   const rows = group.rows.map(row => `<div>${row.map((cell, index) => index === 0 ? `<span>${escapeHtml(cell)}</span>` : `<strong>${escapeHtml(cell)}</strong>`).join('')}</div>`).join('');
   // `cols-N` allinea la griglia al numero reale di colonne: nelle Impostazioni
   // i carboidrati ne hanno quattro (Alimento | Pranzo A | Pranzo R | Cena),
   // nei popup di una giornata tre.
-  return `<div class="alternative-table${isCarb ? ' meller-carbs' : ' meller-proteins'} cols-${headers.length}"><h3>${escapeHtml(group.title)}</h3><div class="alternative-head">${headers.map(header => `<strong>${escapeHtml(header)}</strong>`).join('')}</div>${rows}</div>`;
+  return `<div class="alternative-table${isCarb ? ' guide-carbs' : ' guide-proteins'} cols-${headers.length}"><h3>${escapeHtml(group.title)}</h3><div class="alternative-head">${headers.map(header => `<strong>${escapeHtml(header)}</strong>`).join('')}</div>${rows}</div>`;
 }
 
 function settingsAccordion(title, content, open = false) {
@@ -3135,7 +3158,7 @@ window.confirmAssignedNutritionProfile = async function() {
   // La conferma è la modale "Aggiornamento disponibile": niente apply silenzioso.
   appState.plan.nutritionSnapshot = PianoSaas.snapshotFor(profile);
   DAY_ORDER.forEach(day => {
-    appState.plan.mellerModes[day] = { ...(appState.plan.mellerModes[day] || {}), lunch: "meller", dinner: "meller" };
+    appState.plan.guideModes[day] = { ...(appState.plan.guideModes[day] || {}), lunch: "guide", dinner: "guide" };
   });
   try {
     await saveWeeklyPlan(appState.plan);
@@ -3169,11 +3192,11 @@ function renderSettings() {
 
     <div class="manual-heading"><p class="eyebrow">LINEE GUIDA</p><h2>Dieta e alternative</h2><p>Le alternative originali restano sempre consultabili nell'app.</p></div>
 
-    ${settingsAccordion("Giorno di allenamento", guideDayHtml(MELLER_GUIDE.trainingDay, "training"))}
-    ${settingsAccordion("Giorno di riposo", guideDayHtml(MELLER_GUIDE.restDay, "rest"))}
-    ${settingsAccordion("Alternative alimentari", `<div class="alternatives-grid">${alternativesTableHtml(MELLER_GUIDE.alternatives.carbohydrates)}${alternativesTableHtml(MELLER_GUIDE.alternatives.proteins)}</div>`)}
-    ${settingsAccordion("Frequenze proteiche", `<div class="alternative-table frequency-table">${MELLER_GUIDE.proteinFrequencies.map(row => `<div><span>${escapeHtml(row[0])}</span><strong>${escapeHtml(row[1])}</strong></div>`).join("")}</div>`)}
-    ${settingsAccordion("Altre informazioni e FAQ", `<h3>Struttura della dieta</h3><ul class="guide-list">${MELLER_GUIDE.structure.map(item => `<li>${escapeHtml(item)}</li>`).join("")}</ul><h3>Altre informazioni</h3><ul class="guide-list">${MELLER_GUIDE.faq.map(item => `<li>${escapeHtml(item)}</li>`).join("")}</ul>`)}
+    ${settingsAccordion("Giorno di allenamento", guideDayHtml(GUIDE_MANUAL.trainingDay, "training"))}
+    ${settingsAccordion("Giorno di riposo", guideDayHtml(GUIDE_MANUAL.restDay, "rest"))}
+    ${settingsAccordion("Alternative alimentari", `<div class="alternatives-grid">${alternativesTableHtml(GUIDE_MANUAL.alternatives.carbohydrates)}${alternativesTableHtml(GUIDE_MANUAL.alternatives.proteins)}</div>`)}
+    ${settingsAccordion("Frequenze proteiche", `<div class="alternative-table frequency-table">${GUIDE_MANUAL.proteinFrequencies.map(row => `<div><span>${escapeHtml(row[0])}</span><strong>${escapeHtml(row[1])}</strong></div>`).join("")}</div>`)}
+    ${settingsAccordion("Altre informazioni e FAQ", `<h3>Struttura della dieta</h3><ul class="guide-list">${GUIDE_MANUAL.structure.map(item => `<li>${escapeHtml(item)}</li>`).join("")}</ul><h3>Altre informazioni</h3><ul class="guide-list">${GUIDE_MANUAL.faq.map(item => `<li>${escapeHtml(item)}</li>`).join("")}</ul>`)}
   `;
 }
 
@@ -3397,21 +3420,21 @@ window.prepareRecipeImport = async function(file) {
     validateRecipeCatalog(imported.recipes);
     if (!imported.recipes.length) throw new Error("Il file non contiene ricette");
     const normalizedImported = imported.recipes.map(cleanRecipeForTransfer);
-    const mellerChecks = window.PianoDomain
-      ? normalizedImported.map(recipe => ({ recipe, check: PianoDomain.checkMellerContext(recipe, recipe.slot) }))
+    const guideChecks = window.PianoDomain
+      ? normalizedImported.map(recipe => ({ recipe, check: PianoDomain.checkGuideContext(recipe, recipe.slot) }))
       : [];
-    pendingRecipeImport = { recipes: normalizedImported, plan: imported.plan, filename: file.name, mellerChecks };
+    pendingRecipeImport = { recipes: normalizedImported, plan: imported.plan, filename: file.name, guideChecks };
     document.getElementById("import-file-name").textContent = file.name;
     document.getElementById("import-recipe-count").textContent = `${imported.recipes.length} ricett${imported.recipes.length === 1 ? "a" : "e"}`;
     document.getElementById("import-plan-note").textContent = imported.plan?.days ? "Il file contiene anche un piano: verrà applicato scegliendo Sostituisci oppure quando il tuo catalogo è vuoto." : "Il piano attuale verrà mantenuto quando possibile.";
-    const importMeller = mellerChecks.filter(item => item.check.status === "needs-adaptation" || item.check.status === "blocked");
-    const importBlocked = mellerChecks.filter(item => item.check.status === "blocked");
-    const importNames = importMeller.slice(0, 4).map(item => item.recipe.name).join(" · ");
-    const importNote = document.getElementById("import-meller-note");
+    const importGuide = guideChecks.filter(item => item.check.status === "needs-adaptation" || item.check.status === "blocked");
+    const importBlocked = guideChecks.filter(item => item.check.status === "blocked");
+    const importNames = importGuide.slice(0, 4).map(item => item.recipe.name).join(" · ");
+    const importNote = document.getElementById("import-guide-note");
     if (importNote) {
-      importNote.innerHTML = importMeller.length
-        ? `<strong>⚠ Verifica dosi:</strong> ${importMeller.length} ricett${importMeller.length === 1 ? "a" : "e"} richiedono attenzione${importBlocked.length ? `, ${importBlocked.length} con mapping mancante` : ""}.<br><small>${escapeHtml(importNames)}${importMeller.length > 4 ? "…" : ""}</small><br><small>Le ricette verranno importate fedelmente; l'adattamento sarà applicato quando entreranno nel piano.</small>`
-        : `<strong class="meller-import-ok">✓ Dosi delle linee guida verificabili</strong><br><small>Il file sarà importato senza modificare le ricette originali.</small>`;
+      importNote.innerHTML = importGuide.length
+        ? `<strong>⚠ Verifica dosi:</strong> ${importGuide.length} ricett${importGuide.length === 1 ? "a" : "e"} richiedono attenzione${importBlocked.length ? `, ${importBlocked.length} con mapping mancante` : ""}.<br><small>${escapeHtml(importNames)}${importGuide.length > 4 ? "…" : ""}</small><br><small>Le ricette verranno importate fedelmente; l'adattamento sarà applicato quando entreranno nel piano.</small>`
+        : `<strong class="guide-import-ok">✓ Dosi delle linee guida verificabili</strong><br><small>Il file sarà importato senza modificare le ricette originali.</small>`;
     }
     document.getElementById("recipe-import-modal").classList.remove("hidden");
   } catch (error) {
@@ -3566,7 +3589,7 @@ function setupTransferModals() {
     <div id="recipe-import-modal" class="modal hidden" role="dialog" aria-modal="true">
       <div class="modal-content transfer-modal-content">
         <div class="modal-header"><div><p class="eyebrow">IMPORTAZIONE</p><h2>Come vuoi importare?</h2></div><button class="btn-icon" onclick="closeRecipeImportModal()">&times;</button></div>
-        <div class="transfer-summary"><strong id="import-file-name"></strong><span id="import-recipe-count"></span><p id="import-plan-note"></p><div id="import-meller-note" class="meller-import-note"></div></div>
+        <div class="transfer-summary"><strong id="import-file-name"></strong><span id="import-recipe-count"></span><p id="import-plan-note"></p><div id="import-guide-note" class="guide-import-note"></div></div>
         <div class="transfer-choice-grid">
           <button class="transfer-choice" onclick="applyRecipeImport('add')"><span>＋</span><strong>Aggiungi</strong><small>Mantiene le ricette esistenti. Gli ID duplicati vengono rinominati.</small></button>
           <button class="transfer-choice danger" onclick="applyRecipeImport('replace')"><span>↻</span><strong>Sostituisci tutte</strong><small>Rimuove il catalogo attuale e mantiene solo le ricette importate.</small></button>
@@ -4670,7 +4693,7 @@ function renderModalContent() {
     : null;
   const displayRecipe = plannedResolution?.recipe || recipe;
   const planMode = currentModal.dayKey && currentModal.planSlot
-    ? getPlanMellerMode(currentModal.dayKey, currentModal.planSlot)
+    ? getPlanGuideMode(currentModal.dayKey, currentModal.planSlot)
     : null;
   const batchTab = document.querySelector('.tab-btn[data-target="tab-batch"]');
   const tabsBar = document.querySelector('.tabs');
@@ -4691,7 +4714,7 @@ function renderModalContent() {
   if (batchButtonActive && (editMode || !batches)) setModalTab("tab-ingredients");
 
   document.getElementById("modal-title").innerHTML = editMode
-    ? `<input id="edit-recipe-name" class="modal-title-input" value="${escapeAttr(recipe.name)}" oninput="updateMellerEditorNotice()">`
+    ? `<input id="edit-recipe-name" class="modal-title-input" value="${escapeAttr(recipe.name)}" oninput="updateGuideEditorNotice()">`
     : `<span class="recipe-code">${escapeHtml(recipe.id)}</span> ${escapeHtml(recipe.emoji || "🍲")} ${escapeHtml(getRecipeDisplayName(recipe, dayType))}`;
   const dayTypeLabel = currentModal.dayKey
     ? `${DAY_NAMES[currentModal.dayKey]} · ${dayType === "training" ? "Allenamento" : "Riposo"}`
@@ -4702,8 +4725,8 @@ function renderModalContent() {
       <button class="type-option training ${dayType === "training" ? "active" : ""}" onclick="setModalDayType('training')" aria-pressed="${dayType === "training"}">Allenamento</button>
       <button class="type-option rest ${dayType === "rest" ? "active" : ""}" onclick="setModalDayType('rest')" aria-pressed="${dayType === "rest"}">Riposo</button>
     </span>` : "";
-  const mellerPlanControl = (!editMode && currentModal.dayKey && currentModal.planSlot && window.PianoDomain?.MELLER_MAIN_SLOTS?.includes(currentModal.planSlot))
-    ? `<span class="meller-plan-control"><button type="button" class="meller-mode-toggle ${planMode === "meller" ? "active" : "original"}" onclick="toggleCurrentPlanMellerMode()">${planMode === "meller" ? "✓ Dosi linee guida" : "↺ Quantità originali"}</button></span>`
+  const guidePlanControl = (!editMode && currentModal.dayKey && currentModal.planSlot && window.PianoDomain?.GUIDE_MAIN_SLOTS?.includes(currentModal.planSlot))
+    ? `<span class="guide-plan-control"><button type="button" class="guide-mode-toggle ${planMode === "guide" ? "active" : "original"}" onclick="toggleCurrentPlanGuideMode()">${planMode === "guide" ? "✓ Dosi linee guida" : "↺ Quantità originali"}</button></span>`
     : "";
   const professionalBadge = recipe.fromProfessional
     ? `<span class="pro-badge" title="Inviata da ${escapeAttr(recipe.fromProfessional.senderUsername || "professionista")}">🩺 Dal tuo professionista · sola lettura</span>`
@@ -4712,8 +4735,8 @@ function renderModalContent() {
     // Il campo "Categoria proteica" non è più mostrato né modificabile:
     // la categoria deriva automaticamente dagli ingredienti tramite
     // PianoDomain.classifyProtein, con il valore salvato come fallback.
-    ? `<div class="edit-meta-grid"><label>Emoji<input id="edit-recipe-emoji" value="${escapeAttr(recipe.emoji || "🍲")}" oninput="updateMellerEditorNotice()"></label><label>Pasto<select id="edit-recipe-slot" onchange="updateMellerEditorNotice()">${MEAL_SLOTS.map(slot => `<option value="${slot.id}" ${recipe.slot === slot.id ? "selected" : ""}>${escapeHtml(slot.label)}</option>`).join("")}</select></label></div>`
-    : `<div class="modal-context-row">${professionalBadge}<span>${escapeHtml(getSlotMeta(currentModal.slot || recipe.slot).label)} · ${escapeHtml(dayTypeLabel)} · ${escapeHtml(getProfileLabel())}</span>${toggleHtml}${mellerPlanControl}</div>${plannedResolution?.applied ? `<div class="modal-adapted-note">↻ Dosi delle linee guida applicate a tutti gli ingredienti regolati per ${escapeHtml(getSlotMeta(currentModal.slot || recipe.slot).label.toLowerCase())}</div>` : plannedResolution?.blocked ? `<div class="modal-adapted-note warning">⚠ Adattamento alle linee guida non applicabile: uno o più ingredienti non hanno un mapping nel catalogo attuale. Vengono usate le quantità originali.</div>` : planMode === "original" && currentModal.dayKey && currentModal.planSlot && window.PianoDomain?.MELLER_MAIN_SLOTS?.includes(currentModal.planSlot) ? `<div class="modal-adapted-note warning">↺ Quantità originali: le dosi delle linee guida non sono applicate a questo pasto.</div>` : ""}`;
+    ? `<div class="edit-meta-grid"><label>Emoji<input id="edit-recipe-emoji" value="${escapeAttr(recipe.emoji || "🍲")}" oninput="updateGuideEditorNotice()"></label><label>Pasto<select id="edit-recipe-slot" onchange="updateGuideEditorNotice()">${MEAL_SLOTS.map(slot => `<option value="${slot.id}" ${recipe.slot === slot.id ? "selected" : ""}>${escapeHtml(slot.label)}</option>`).join("")}</select></label></div>`
+    : `<div class="modal-context-row">${professionalBadge}<span>${escapeHtml(getSlotMeta(currentModal.slot || recipe.slot).label)} · ${escapeHtml(dayTypeLabel)} · ${escapeHtml(getProfileLabel())}</span>${toggleHtml}${guidePlanControl}</div>${plannedResolution?.applied ? `<div class="modal-adapted-note">↻ Dosi delle linee guida applicate a tutti gli ingredienti regolati per ${escapeHtml(getSlotMeta(currentModal.slot || recipe.slot).label.toLowerCase())}</div>` : plannedResolution?.blocked ? `<div class="modal-adapted-note warning">⚠ Adattamento alle linee guida non applicabile: uno o più ingredienti non hanno un mapping nel catalogo attuale. Vengono usate le quantità originali.</div>` : planMode === "original" && currentModal.dayKey && currentModal.planSlot && window.PianoDomain?.GUIDE_MAIN_SLOTS?.includes(currentModal.planSlot) ? `<div class="modal-adapted-note warning">↺ Quantità originali: le dosi delle linee guida non sono applicate a questo pasto.</div>` : ""}`;
 
   const ingredientList = document.getElementById("modal-ingredients-list");
   if (editMode) {
@@ -4733,14 +4756,14 @@ function renderModalContent() {
     }).join("") + `<li><button class="btn btn-outline full-width" onclick="addIngredient()">+ Aggiungi ingrediente</button></li>`;
   } else {
     const items = displayRecipe.ingredients.map(ingredient => ({ ing: ingredient, adapted: Boolean(plannedResolution?.applied) }));
-    const hasMeller = items.some(({ ing }) => !!getMellerAlternativesForIngredient(ing.name));
+    const hasGuide = items.some(({ ing }) => !!getGuideAlternativesForIngredient(ing.name));
     ingredientList.innerHTML = items.map(({ ing, adapted }) => {
       const adaptedMark = adapted ? ` <small class="adapted-mark" title="Dose adattata alle linee guida di questo pasto">↻</small>` : "";
-      if (getMellerAlternativesForIngredient(ing.name)) {
-        return `<li class="meller-ingredient" onclick="openMellerAlternatives('${escapeAttr(ing.name)}')" title="Tocca per alternative"><span>${escapeHtml(ing.name)}${adaptedMark} <small class="meller-hint">⇄</small></span>${getIngredientCoupleHtml(ing, dayType)}</li>`;
+      if (getGuideAlternativesForIngredient(ing.name)) {
+        return `<li class="guide-ingredient" onclick="openGuideAlternatives('${escapeAttr(ing.name)}')" title="Tocca per alternative"><span>${escapeHtml(ing.name)}${adaptedMark} <small class="guide-hint">⇄</small></span>${getIngredientCoupleHtml(ing, dayType)}</li>`;
       }
       return `<li><span>${escapeHtml(ing.name)}${adaptedMark}</span>${getIngredientCoupleHtml(ing, dayType)}</li>`;
-    }).join("") + (hasMeller ? `<li class="meller-footnote"><small>↑ Tocca carboidrati o proteine per le equivalenze</small></li>` : "");
+    }).join("") + (hasGuide ? `<li class="guide-footnote"><small>↑ Tocca carboidrati o proteine per le equivalenze</small></li>` : "");
   }
 
   const prepList = document.getElementById("modal-prep-list");
@@ -4799,35 +4822,35 @@ function renderModalContent() {
   document.getElementById("modal-edit-btn").textContent = "Modifica ricetta";
   document.getElementById("modal-save-btn").textContent = "Salva nel cloud";
 
-  const mellerNotice = document.getElementById("modal-meller-notice");
-  if (mellerNotice) mellerNotice.innerHTML = mellerNoticeHtml();
+  const guideNotice = document.getElementById("modal-guide-notice");
+  if (guideNotice) guideNotice.innerHTML = guideNoticeHtml();
 }
 
-// Banner Meller: distingue ricetta originale, dosi non allineate e mapping
+// Banner Guide: distingue ricetta originale, dosi non allineate e mapping
 // incompleto. In lettura dal piano mostra l'esito effettivo, mentre in
 // modifica/importazione lascia sempre salva la ricetta originale.
-function mellerNoticeHtml() {
-  if (!currentModal || !window.PianoDomain?.checkMellerContext) return "";
+function guideNoticeHtml() {
+  if (!currentModal || !window.PianoDomain?.checkGuideContext) return "";
   const recipe = currentModal.recipe;
   const contextSlot = currentModal.slot || recipe.slot;
-  const check = PianoDomain.checkMellerContext(recipe, contextSlot);
+  const check = PianoDomain.checkGuideContext(recipe, contextSlot);
   if (check.status === "not-applicable") return "";
 
   const planned = !editMode && currentModal.dayKey && currentModal.planSlot
     ? resolvePlannedRecipe(recipe, currentModal.dayKey, currentModal.planSlot)
     : null;
-  if (planned?.applied && planned.mode === "meller") {
-    return `<div class="meller-notice meller-notice-success" role="status">
-      <div class="meller-notice-head"><span aria-hidden="true">✓</span><div><strong>Dosi delle linee guida applicate</strong><small>La ricetta originale resta invariata; questo pasto usa le dosi precise del contesto.</small></div></div>
+  if (planned?.applied && planned.mode === "guide") {
+    return `<div class="guide-notice guide-notice-success" role="status">
+      <div class="guide-notice-head"><span aria-hidden="true">✓</span><div><strong>Dosi delle linee guida applicate</strong><small>La ricetta originale resta invariata; questo pasto usa le dosi precise del contesto.</small></div></div>
     </div>`;
   }
-  if (check.aligned && !currentModal.mellerPreviewActive) return "";
-  if (check.aligned && currentModal.mellerPreviewActive) {
-    return `<div class="meller-notice meller-notice-success" role="status">
-      <div class="meller-notice-head"><span aria-hidden="true">✓</span><div><strong>Anteprima linee guida pronta</strong><small>Le quantità mostrate sono adattate. Salva l'adattamento contestuale oppure conserva l'originale.</small></div></div>
-      <div class="meller-save-actions">
+  if (check.aligned && !currentModal.guidePreviewActive) return "";
+  if (check.aligned && currentModal.guidePreviewActive) {
+    return `<div class="guide-notice guide-notice-success" role="status">
+      <div class="guide-notice-head"><span aria-hidden="true">✓</span><div><strong>Anteprima linee guida pronta</strong><small>Le quantità mostrate sono adattate. Salva l'adattamento contestuale oppure conserva l'originale.</small></div></div>
+      <div class="guide-save-actions">
         <button class="btn btn-outline" type="button" onclick="saveRecipeEdit(true)">Salva comunque</button>
-        <button class="btn btn-primary" type="button" onclick="saveRecipeWithMeller()">Adatta e salva</button>
+        <button class="btn btn-primary" type="button" onclick="saveRecipeWithGuide()">Adatta e salva</button>
       </div>
     </div>`;
   }
@@ -4845,28 +4868,28 @@ function mellerNoticeHtml() {
     `<li><span>${escapeHtml(item.group)}</span><strong>${item.count} ingredienti</strong></li>`
   ).join("");
   const more = check.summary.length > 5
-    ? `<li class="meller-notice-more">…e altre ${check.summary.length - 5} dosi fuori riferimento</li>`
+    ? `<li class="guide-notice-more">…e altre ${check.summary.length - 5} dosi fuori riferimento</li>`
     : "";
   const blocked = check.status === "blocked";
   const list = `${unknownItems}${ambiguousItems}${issueItems}${more}`;
   const canReport = blocked && check.unknown.length > 0 && appState.saasContext?.state === "assigned";
   const actions = editMode
-    ? `<div class="meller-save-actions">
+    ? `<div class="guide-save-actions">
         <button class="btn btn-outline" type="button" onclick="saveRecipeEdit(true)">Salva comunque</button>
-        ${blocked ? `<button class="btn btn-outline" type="button" disabled title="Mapping non disponibile nel catalogo attuale">Adatta e salva</button>` : `<button class="btn btn-primary" type="button" onclick="saveRecipeWithMeller()">Adatta e salva</button>`}
+        ${blocked ? `<button class="btn btn-outline" type="button" disabled title="Mapping non disponibile nel catalogo attuale">Adatta e salva</button>` : `<button class="btn btn-primary" type="button" onclick="saveRecipeWithGuide()">Adatta e salva</button>`}
     </div>`
-    : `<button class="btn btn-outline meller-adapt-btn" type="button" onclick="adaptCurrentRecipeToMeller()">Prepara adattamento alle linee guida</button>`;
+    : `<button class="btn btn-outline guide-adapt-btn" type="button" onclick="adaptCurrentRecipeToGuide()">Prepara adattamento alle linee guida</button>`;
   return `
-    <div class="meller-notice ${blocked ? "meller-notice-blocked" : ""}" role="note">
-      <div class="meller-notice-head"><span aria-hidden="true">${blocked ? "⚠" : "⚠️"}</span><div><strong>${blocked ? "Mapping delle linee guida incompleto" : "Dosi non allineate alle linee guida"}</strong><small>Riferimento per ${escapeHtml(getSlotMeta(contextSlot || "lunch").label.toLowerCase())} · pesi a crudo</small></div></div>
-      ${blocked ? `<p class="meller-notice-explanation">L'adattamento non è disponibile perché uno o più ingredienti non hanno un mapping nel catalogo attuale. Non puoi creare il mapping da questa app; la ricetta originale può comunque essere conservata e usata.</p>` : ""}
-      <ul class="meller-notice-list">${list}</ul>
+    <div class="guide-notice ${blocked ? "guide-notice-blocked" : ""}" role="note">
+      <div class="guide-notice-head"><span aria-hidden="true">${blocked ? "⚠" : "⚠️"}</span><div><strong>${blocked ? "Mapping delle linee guida incompleto" : "Dosi non allineate alle linee guida"}</strong><small>Riferimento per ${escapeHtml(getSlotMeta(contextSlot || "lunch").label.toLowerCase())} · pesi a crudo</small></div></div>
+      ${blocked ? `<p class="guide-notice-explanation">L'adattamento non è disponibile perché uno o più ingredienti non hanno un mapping nel catalogo attuale. Non puoi creare il mapping da questa app; la ricetta originale può comunque essere conservata e usata.</p>` : ""}
+      <ul class="guide-notice-list">${list}</ul>
       ${actions}
-      ${canReport ? `<button class="btn btn-outline meller-report-btn" type="button" onclick="reportCurrentMissingMappings()">Segnala ingredienti non riconosciuti</button>` : ""}
+      ${canReport ? `<button class="btn btn-outline guide-report-btn" type="button" onclick="reportCurrentMissingMappings()">Segnala ingredienti non riconosciuti</button>` : ""}
     </div>`;
 }
 
-// ---- Report automatici per mapping Meller sconosciuti ----
+// ---- Report automatici per mapping Guide sconosciuti ----
 // Fingerprint dei report già inviati (deduplica "una tantum") + ultimo
 // esito osservabile ("sent"/"failed") per diagnosi senza toast invasivi.
 const MAPPING_REPORT_SENT_KEY = "mapping_reports_sent_v1";
@@ -4897,13 +4920,13 @@ function setMappingReportStatus(status) {
 // testo ingrediente, pasto e riferimenti del profilo/struttura assegnati.
 function collectNewMappingUnknowns(entries) {
   const profile = appState.saasContext?.state === "assigned" ? appState.saasContext.profile : null;
-  if (!profile?.clientProfileId || !window.PianoDomain?.checkMellerContext) return [];
+  if (!profile?.clientProfileId || !window.PianoDomain?.checkGuideContext) return [];
   const sent = new Set(getSentMappingFingerprints());
   const payloads = [];
   (entries || []).forEach(({ recipe, slot }) => {
     if (!recipe) return;
     let check;
-    try { check = PianoDomain.checkMellerContext(recipe, slot || recipe.slot); }
+    try { check = PianoDomain.checkGuideContext(recipe, slot || recipe.slot); }
     catch (_) { return; }
     (check.unknown || []).forEach(item => {
       const fingerprint = `${check.sourceFingerprint}:${item.ingredientId}`;
@@ -4936,7 +4959,7 @@ async function sendNewMappingReports(entries, { manual = false } = {}) {
     const payloads = collectNewMappingUnknowns(entries);
     if (!payloads.length) {
       if (manual && (entries || []).some(({ recipe, slot }) => {
-        try { return (PianoDomain.checkMellerContext(recipe, slot || recipe.slot).unknown || []).length > 0; }
+        try { return (PianoDomain.checkGuideContext(recipe, slot || recipe.slot).unknown || []).length > 0; }
         catch (_) { return false; }
       })) showToast("Segnalazione già inviata in precedenza");
       return { sent: 0, failed: false };
@@ -4989,8 +5012,8 @@ window.afterWeeklyPlanSaved = async function(plan) {
 
 // Adatta con un click le dosi alle linee guida. In lettura
 // passa prima alla modifica (senza salvare nulla finché l'utente non conferma).
-window.adaptCurrentRecipeToMeller = function() {
-  if (!currentModal || !window.PianoDomain?.buildMellerContextAdaptation) return;
+window.adaptCurrentRecipeToGuide = function() {
+  if (!currentModal || !window.PianoDomain?.buildGuideContextAdaptation) return;
   const wasEditing = editMode;
   if (!wasEditing) {
     editMode = true;
@@ -4999,31 +5022,31 @@ window.adaptCurrentRecipeToMeller = function() {
     captureEditState();
   }
   const contextSlot = currentModal.slot || currentModal.recipe.slot;
-  const built = PianoDomain.buildMellerContextAdaptation(currentModal.recipe, contextSlot);
+  const built = PianoDomain.buildGuideContextAdaptation(currentModal.recipe, contextSlot);
   if (built.report.status === "blocked") {
     showToast("Adattamento alle linee guida non applicabile: il mapping degli ingredienti non riconosciuti non è disponibile nel catalogo attuale. Usa le quantità originali.", true);
     renderModalContent();
     return;
   }
-  currentModal.mellerPreviewOriginal = currentModal.mellerPreviewOriginal || clone(currentModal.recipe);
-  currentModal.mellerPreviewActive = true;
-  currentModal.recipe = PianoDomain.applyMellerContextAdaptation(currentModal.recipe, built.context);
+  currentModal.guidePreviewOriginal = currentModal.guidePreviewOriginal || clone(currentModal.recipe);
+  currentModal.guidePreviewActive = true;
+  currentModal.recipe = PianoDomain.applyGuideContextAdaptation(currentModal.recipe, built.context);
   if (!built.changed) showToast("Le dosi rispettano già le linee guida");
   else showToast("Dosi adattate alle linee guida ✅ Rivedi e salva");
   renderModalContent();
 };
 
-window.updateMellerEditorNotice = function() {
+window.updateGuideEditorNotice = function() {
   if (!editMode || !currentModal) return;
   captureEditState();
-  const notice = document.getElementById("modal-meller-notice");
-  if (notice) notice.innerHTML = mellerNoticeHtml();
+  const notice = document.getElementById("modal-guide-notice");
+  if (notice) notice.innerHTML = guideNoticeHtml();
 };
 
-function restoreMellerPreviewSource() {
-  if (!currentModal?.mellerPreviewActive || !currentModal.mellerPreviewOriginal) return false;
+function restoreGuidePreviewSource() {
+  if (!currentModal?.guidePreviewActive || !currentModal.guidePreviewOriginal) return false;
   const edited = currentModal.recipe;
-  const source = clone(currentModal.mellerPreviewOriginal);
+  const source = clone(currentModal.guidePreviewOriginal);
   ["name", "emoji", "slot", "proteinCategory", "steps", "notes", "namesByDayType"].forEach(key => {
     if (edited[key] !== undefined) source[key] = clone(edited[key]);
   });
@@ -5035,33 +5058,33 @@ function restoreMellerPreviewSource() {
     });
   }
   currentModal.recipe = source;
-  currentModal.mellerPreviewActive = false;
-  currentModal.mellerPreviewOriginal = null;
+  currentModal.guidePreviewActive = false;
+  currentModal.guidePreviewOriginal = null;
   return true;
 }
 
-window.saveRecipeWithMeller = async function() {
-  if (!currentModal || !window.PianoDomain?.buildMellerAdaptationMetadata) return;
+window.saveRecipeWithGuide = async function() {
+  if (!currentModal || !window.PianoDomain?.buildGuideAdaptationMetadata) return;
   captureEditState();
   const edited = clone(currentModal.recipe);
-  const source = currentModal.mellerPreviewActive && currentModal.mellerPreviewOriginal
-    ? clone(currentModal.mellerPreviewOriginal)
+  const source = currentModal.guidePreviewActive && currentModal.guidePreviewOriginal
+    ? clone(currentModal.guidePreviewOriginal)
     : edited;
   // Il comando salva l'originale dell'utente e persiste soltanto la matrice
-  // contestuale delle dosi Meller. Non sostituisce le quantità del ricettario.
+  // contestuale delle dosi Guide. Non sostituisce le quantità del ricettario.
   ["name", "emoji", "slot", "proteinCategory", "steps", "notes", "namesByDayType"].forEach(key => {
     if (edited[key] !== undefined) source[key] = clone(edited[key]);
   });
-  if (currentModal.mellerPreviewActive && Array.isArray(edited.ingredients) && Array.isArray(source.ingredients)) {
+  if (currentModal.guidePreviewActive && Array.isArray(edited.ingredients) && Array.isArray(source.ingredients)) {
     edited.ingredients.forEach((ingredient, index) => {
       if (source.ingredients[index] && ingredient.name !== undefined) source.ingredients[index].name = ingredient.name;
     });
   }
-  source.mellerAdaptations = PianoDomain.buildMellerAdaptationMetadata(source);
+  source.guideAdaptations = PianoDomain.buildGuideAdaptationMetadata(source);
   currentModal.recipe = source;
-  currentModal.mellerSaveWithAdaptation = true;
-  currentModal.mellerPreviewActive = false;
-  currentModal.mellerPreviewOriginal = null;
+  currentModal.guideSaveWithAdaptation = true;
+  currentModal.guidePreviewActive = false;
+  currentModal.guidePreviewOriginal = null;
   await saveRecipeEdit(true);
 };
 
@@ -5101,8 +5124,8 @@ function quantityEditorField(baseId, label, raw) {
   const options = (state.unit === "" ? `<option value="" selected disabled>—</option>` : "")
     + QUANTITY_UNIT_OPTIONS.map(option => `<option value="${option.value}"${option.value === state.unit ? " selected" : ""}>${escapeHtml(option.label)}</option>`).join("");
   return `<label>${escapeHtml(label)}<span class="qty-input-row">`
-    + `<input id="${baseId}" type="number" min="0" step="any" inputmode="decimal" placeholder="0" value="${escapeAttr(state.num)}" data-num="${escapeAttr(state.num)}" data-unit="${escapeAttr(state.unit)}" aria-label="${escapeAttr(label)}: quantità numerica"${state.qb ? " disabled hidden" : ""} oninput="updateMellerEditorNotice()">`
-    + `<select id="${baseId}-unit" aria-label="${escapeAttr(label)}: unità di misura" onchange="onQuantityUnitChange('${baseId}');updateMellerEditorNotice()">${options}</select>`
+    + `<input id="${baseId}" type="number" min="0" step="any" inputmode="decimal" placeholder="0" value="${escapeAttr(state.num)}" data-num="${escapeAttr(state.num)}" data-unit="${escapeAttr(state.unit)}" aria-label="${escapeAttr(label)}: quantità numerica"${state.qb ? " disabled hidden" : ""} oninput="updateGuideEditorNotice()">`
+    + `<select id="${baseId}-unit" aria-label="${escapeAttr(label)}: unità di misura" onchange="onQuantityUnitChange('${baseId}');updateGuideEditorNotice()">${options}</select>`
     + `</span></label>`;
 }
 
@@ -5164,7 +5187,7 @@ function captureEditState() {
   recipe.notes = (document.getElementById("edit-recipe-notes")?.value || "").split("\n").map(note => note.trim()).filter(Boolean);
   // Qualunque modifica manuale invalida le dosi contestuali precedenti; il
   // comando “Adatta e salva” le rigenera esplicitamente.
-  delete recipe.mellerAdaptations;
+  delete recipe.guideAdaptations;
 }
 
 window.addIngredient = function() {
@@ -5203,17 +5226,17 @@ window.moveStep = function(index, direction) {
   renderModalContent();
 };
 
-async function saveRecipeEdit(forceMellerDecision = false) {
+async function saveRecipeEdit(forceGuideDecision = false) {
   captureEditState();
   let recipe = currentModal.recipe;
   // Lo scratch dell'editor (suggerimenti catalogo) non viene mai persistito.
   delete recipe._ingredientMeta;
   // Il pulsante generico di salvataggio e “Salva comunque” salvano sempre la
   // sorgente originale quando l'editor sta mostrando un preview adattato.
-  if (currentModal.mellerPreviewActive && currentModal.mellerPreviewOriginal && !currentModal.mellerSaveWithAdaptation) {
-    restoreMellerPreviewSource();
+  if (currentModal.guidePreviewActive && currentModal.guidePreviewOriginal && !currentModal.guideSaveWithAdaptation) {
+    restoreGuidePreviewSource();
     recipe = currentModal.recipe;
-    forceMellerDecision = true;
+    forceGuideDecision = true;
   }
   // Preparazione opzionale: una ricetta può essere salvata anche senza
   // passaggi (utile per cibi già pronti o schede in lavorazione).
@@ -5221,15 +5244,15 @@ async function saveRecipeEdit(forceMellerDecision = false) {
     showToast("Aggiungi almeno un ingrediente", true);
     return;
   }
-  const mellerCheck = window.PianoDomain?.checkMellerContext?.(recipe, recipe.slot);
-  if (currentModal.mellerSaveWithAdaptation && window.PianoDomain?.buildMellerAdaptationMetadata) {
-    recipe.mellerAdaptations = PianoDomain.buildMellerAdaptationMetadata(recipe);
+  const guideCheck = window.PianoDomain?.checkGuideContext?.(recipe, recipe.slot);
+  if (currentModal.guideSaveWithAdaptation && window.PianoDomain?.buildGuideAdaptationMetadata) {
+    recipe.guideAdaptations = PianoDomain.buildGuideAdaptationMetadata(recipe);
     currentModal.recipe = recipe;
-    currentModal.mellerSaveWithAdaptation = false;
+    currentModal.guideSaveWithAdaptation = false;
   }
-  if (mellerCheck && mellerCheck.status !== "not-applicable" && !mellerCheck.aligned && !forceMellerDecision) {
+  if (guideCheck && guideCheck.status !== "not-applicable" && !guideCheck.aligned && !forceGuideDecision) {
     // Il ricettario resta libero: prima del salvataggio chiediamo soltanto se
-    // conservare l'originale o preparare l'adattamento Meller contestuale.
+    // conservare l'originale o preparare l'adattamento Guide contestuale.
     renderModalContent();
     showToast("Controlla il riquadro delle linee guida e scegli come salvare la ricetta", true);
     return;
@@ -5251,15 +5274,15 @@ async function saveRecipeEdit(forceMellerDecision = false) {
     setRecipes(appState.recipes);
     if (currentModal.assignAfterSave) {
       const { day, slot } = currentModal.assignAfterSave;
-      ensurePlanMellerContext();
-      const checkForPlan = PianoDomain?.checkMellerContext?.(recipe, slot);
-      const blockedForPlan = checkForPlan?.status === "blocked" && PianoDomain?.MELLER_MAIN_SLOTS?.includes(slot);
+      ensurePlanGuideContext();
+      const checkForPlan = PianoDomain?.checkGuideContext?.(recipe, slot);
+      const blockedForPlan = checkForPlan?.status === "blocked" && PianoDomain?.GUIDE_MAIN_SLOTS?.includes(slot);
       appState.plan.days[day][slot] = recipe.id;
-      appState.plan.mellerModes[day][slot] = blockedForPlan
-        ? PianoDomain.MELLER_MODE_ORIGINAL
-        : PianoDomain?.MELLER_MAIN_SLOTS?.includes(slot)
-          ? PianoDomain.MELLER_MODE_MELLER
-          : PianoDomain.MELLER_MODE_ORIGINAL;
+      appState.plan.guideModes[day][slot] = blockedForPlan
+        ? PianoDomain.GUIDE_MODE_ORIGINAL
+        : PianoDomain?.GUIDE_MAIN_SLOTS?.includes(slot)
+          ? PianoDomain.GUIDE_MODE_GUIDE
+          : PianoDomain.GUIDE_MODE_ORIGINAL;
       await saveWeeklyPlan(appState.plan);
       currentModal.assignAfterSave = null;
       if (blockedForPlan) planAssignmentWarning = true;

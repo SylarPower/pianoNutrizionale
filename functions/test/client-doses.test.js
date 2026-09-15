@@ -111,8 +111,8 @@ const plain = value => JSON.parse(JSON.stringify(value));
 // ---- Fixture org con struttura, revisione e assegnazione ----
 
 const RULES = [
-  { mellerFamilyId: 'pasta', ingredientIds: ['pasta-semola'], quantityGrams: { lunch: { training: 90, rest: 70 }, dinner: { training: 40, rest: 40 } }, enabled: true, categoryId: null },
-  { mellerFamilyId: 'pollame', ingredientIds: ['petto-pollo'], quantityGrams: { lunch: { training: 150, rest: 150 }, dinner: { training: 150, rest: 150 } }, enabled: true, categoryId: null }
+  { guideFamilyId: 'pasta', ingredientIds: ['pasta-semola'], quantityGrams: { lunch: { training: 90, rest: 70 }, dinner: { training: 40, rest: 40 } }, enabled: true, categoryId: null },
+  { guideFamilyId: 'pollame', ingredientIds: ['petto-pollo'], quantityGrams: { lunch: { training: 150, rest: 150 }, dinner: { training: 150, rest: 150 } }, enabled: true, categoryId: null }
 ];
 const REVISION_CHECKSUM = domain.structureRevisionChecksum({ schemaVersion: 1, rules: RULES, alternativeGroups: [] });
 

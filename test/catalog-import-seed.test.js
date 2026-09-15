@@ -1,6 +1,6 @@
 'use strict';
 /* Il catalogo di import spedito con l'app deve restare valido e allineato
- * all'estratto Meller: è il file che il platform admin carica dalla sezione
+ * all'estratto Guide: è il file che il platform admin carica dalla sezione
  * Catalogo della console per popolare `globalIngredientCatalog/current`.
  * Se questo test fallisce, il file è da rigenerare con
  * `node functions/scripts/generate-catalog-import.js`. */
@@ -11,7 +11,7 @@ const path = require('node:path');
 const domain = require('../functions/src/domain.js');
 
 const root = path.join(__dirname, '..');
-const seedPath = path.join(root, 'docs', 'catalogo-import-meller.json');
+const seedPath = path.join(root, 'docs', 'catalogo-import.json');
 const text = fs.readFileSync(seedPath, 'utf8');
 
 test('il catalogo di import è JSON con le sole chiavi ammesse dal parser', () => {
@@ -34,16 +34,16 @@ test('il catalogo di import passa la validazione server senza errori', () => {
   assert.equal(report.counts.create, report.normalized.ingredients.length + report.normalized.categories.length);
   // 39 famiglie guidate del motore (v3) con 154 ingredienti guidati + liberi, mai quantità.
   const guided = report.normalized.ingredients.filter(item => item.mappingKind === 'guided');
-  const uniqueFamilies = [...new Set(guided.map(item => item.mellerFamilyId))];
+  const uniqueFamilies = [...new Set(guided.map(item => item.guideFamilyId))];
   assert.equal(uniqueFamilies.length, 39, 'tutte le famiglie guidate del motore v3');
   assert.ok(guided.length >= 39, 'almeno una per famiglia');
-  guided.forEach(item => assert.ok(domain.MELLER_FAMILY_IDS.has(item.mellerFamilyId), `${item.ingredientId} → famiglia del motore`));
+  guided.forEach(item => assert.ok(domain.GUIDE_FAMILY_IDS.has(item.guideFamilyId), `${item.ingredientId} → famiglia del motore`));
   const serialized = JSON.stringify(report.normalized);
   assert.doesNotMatch(serialized, /quantity|quantit|dose|grams|slots/i, 'nessuna quantità nel catalogo');
 });
 
-test('il catalogo di import resta allineato all\'estratto Meller', () => {
+test('il catalogo di import resta allineato all\'estratto Guide', () => {
   const { buildImportPayload } = require('../functions/scripts/generate-catalog-import.js');
   assert.equal(`${JSON.stringify(buildImportPayload(), null, 2)}\n`, text,
-    'docs/catalogo-import-meller.json non è aggiornato: rigeneralo con functions/scripts/generate-catalog-import.js');
+    'docs/catalogo-import.json non è aggiornato: rigeneralo con functions/scripts/generate-catalog-import.js');
 });

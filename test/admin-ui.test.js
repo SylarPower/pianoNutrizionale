@@ -216,7 +216,7 @@ test('strutture dieta: picker catalogo multi-selezione e raggruppamento con dosi
   assert.match(js, /numeri interi tra 1 e 2000/);
   assert.match(js, /almeno una dose per pranzo o cena/);
   // Il raggruppamento crea righe normali riusando i builder esistenti (server-validati al salvataggio).
-  assert.match(js, /addStructureRuleRow\(\{ mellerFamilyId, ingredientIds, quantityGrams, enabled: true \}\)/);
+  assert.match(js, /addStructureRuleRow\(\{ guideFamilyId, ingredientIds, quantityGrams, enabled: true \}\)/);
   assert.match(js, /groupItemRow\(\{ ingredientId, quantityGrams \}\)/);
   assert.match(js, /resetCatalogPicker\(\)/);
   // Reset del picker a ogni apertura del dialog struttura.

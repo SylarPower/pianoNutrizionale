@@ -14,7 +14,7 @@ Documento di contratto per l'import del catalogo ingredienti globale v2 (`global
     "aliases": ["risotto", "riso in bianco"],
     "categoryId": "altri-cereali",
     "mappingKind": "guided",
-    "mellerFamilyId": "riso"
+    "guideFamilyId": "riso"
   },
   {
     "ingredientId": "free-broccol",
@@ -22,7 +22,7 @@ Documento di contratto per l'import del catalogo ingredienti globale v2 (`global
     "aliases": ["broccol"],
     "categoryId": "free",
     "mappingKind": "free",
-    "mellerFamilyId": null
+    "guideFamilyId": null
   }
 ]
 ```
@@ -30,17 +30,17 @@ Documento di contratto per l'import del catalogo ingredienti globale v2 (`global
 ### CSV (separatore `;` o `,`, intestazione obbligatoria)
 
 ```
-ingredientId;displayName;aliases;categoryId;mappingKind;mellerFamilyId
+ingredientId;displayName;aliases;categoryId;mappingKind;guideFamilyId
 riso;Riso;risotto|riso in bianco;altri-cereali;guided;riso
 free-broccol;Broccoli (categoria libera);broccol;free;free;
 ```
 
-Gli `aliases` sono separati da `|` (CSV) o array di stringhe (JSON). `mellerFamilyId` è opzionale: solo gli ingredienti guidati Meller ce l'hanno; un `free` con `mellerFamilyId` valorizzato è errore bloccante.
+Gli `aliases` sono separati da `|` (CSV) o array di stringhe (JSON). `guideFamilyId` è opzionale: solo gli ingredienti guidati Guide ce l'hanno; un `free` con `guideFamilyId` valorizzato è errore bloccante. Compatibilità: i file di import salvati prima del cambio nome usano la chiave storica `mellerFamilyId` — viene accettata in ingresso (errore se presente insieme a `guideFamilyId`) e riscritta con il nome attuale.
 
 ## Regole di validazione (bloccanti, tutte lato server)
 
 1. **Zero quantità**: qualsiasi colonna o chiave che somigli a una dose (`quantity*`, `grams`, `dose*`, `slots`) rifiuta l'intero file — le dosi appartengono alle strutture/famiglie, non al catalogo.
-2. **Niente ingredienti provvisori**: gli ID del lotto provvisorio (i 58 ingredienti non approvati dal dott. Meller) sono nella denylist e rifiutano l'import.
+2. **Niente ingredienti provvisori**: gli ID del lotto provvisorio (i 58 ingredienti non approvati dal nutrizionista) sono nella denylist e rifiutano l'import.
 3. **Deduplica**: `ingredientId` duplicato nel file → errore; `displayName`/`alias` normalizzato che collida con un ingrediente esistente *diverso* → errore di collisione alias con elenco dei conflitti nel report.
 4. **Riferimenti**: `categoryId` deve esistere nel set categorie dell'import o del catalogo corrente + la categoria riservata `free`.
 5. Alias normalizzati: trim, lowercase, rimozione accenti; alias vuoti rimossi; `searchTokens` rigenerati dai dati (`displayName + aliases`), mai accettati tali quali dal file.
@@ -59,4 +59,4 @@ Le versioni del catalogo **non collassano** con le revisioni delle strutture: og
 - `functions/test/fixtures/catalog-import-alias-collision.json` — alias che collideva con un ingrediente esistente → dry-run con conflitto.
 - `functions/test/fixtures/catalog-import-provisional-denied.json` — ID provvisorio in denylist → rifiuto bloccante.
 
-> **Stato (Fase 2)**: il callable `importGlobalIngredientCatalog` e le fixture (`functions/test/fixtures/`) sono implementati; il commit/restore in produzione resta dietro `CATALOG_IMPORT_ENABLED=false` finché il catalogo definitivo del dott. Meller non sarà approvato (il dry-run è sempre disponibile al platform admin). In attesa, il seed deriva **solo** da `MELLER_GRAMMATURE`/estratto autorevole (`splitMellerSeed`). La denylist dei 58 ID provvisori vive solo nella configurazione server-side (`globalIngredientCatalog/config/docs/denylist`) e non entra mai nel repository: la fixture `…-provisional-denied.json` usa un ID segnaposto per dimostrare il meccanismo.
+> **Stato (Fase 2)**: il callable `importGlobalIngredientCatalog` e le fixture (`functions/test/fixtures/`) sono implementati; il commit/restore in produzione resta dietro `CATALOG_IMPORT_ENABLED=false` finché il catalogo definitivo del nutrizionista non sarà approvato (il dry-run è sempre disponibile al platform admin). In attesa, il seed deriva **solo** da `GUIDE_GRAMMATURE`/estratto autorevole (`splitGuideSeed`). La denylist dei 58 ID provvisori vive solo nella configurazione server-side (`globalIngredientCatalog/config/docs/denylist`) e non entra mai nel repository: la fixture `…-provisional-denied.json` usa un ID segnaposto per dimostrare il meccanismo.

@@ -194,7 +194,7 @@ function handleCallable(name, data) {
     if (invite.status === 'revoked') return { status: 'revoked' };
     return {
       status: 'valid', email: invite.email, firstName: invite.firstName, lastName: invite.lastName,
-      nutritionistName: 'Dott. Meller', organizationName: 'Studio Meller'
+      nutritionistName: 'Dott. Guide', organizationName: 'Studio Guide'
     };
   }
   if (name === 'getMyAssignedProfile') return { state: 'unassigned' };
@@ -229,7 +229,7 @@ function handleCallable(name, data) {
     invite.status = 'accepted';
     invite.redeemedBy = uid;
     serverState.links.set(uid, {
-      organizationId: 'pianoNutrizionale', organizationName: 'Studio Meller', clientId: invite.clientId
+      organizationId: 'pianoNutrizionale', organizationName: 'Studio Guide', clientId: invite.clientId
     });
     return {
       status: 'link-active', organizationId: 'pianoNutrizionale', clientId: invite.clientId, email: authEmail
@@ -374,7 +374,7 @@ test('registrazione da invito → verifica email → attivazione del collegament
   assert.ok(idTokenRequests.some(item => item.force === true), 'ID token rinnovato a forza: getIdToken(true)');
   assert.equal(serverState.invites.get(token).status, 'accepted', 'invito riscattato');
   assert.equal(serverState.invites.get(token).redeemedBy, fakeAuth.currentUser.uid);
-  assert.equal(appState.clientLink?.link?.organizationName, 'Studio Meller', 'collegamento attivo nello stato dell’app');
+  assert.equal(appState.clientLink?.link?.organizationName, 'Studio Guide', 'collegamento attivo nello stato dell’app');
   assert.equal(appState.user.emailVerified, true, 'stato di verifica aggiornato nello stato dell’app');
   assert.equal(sessionStorage.getItem(PENDING_KEY), null, 'token cancellato SOLO a collegamento attivo');
   assert.equal(sessionStorage.getItem(AWAITING_KEY), null, 'nessun invito in attesa residuo');
@@ -415,7 +415,7 @@ test('pulsante "Ho verificato: attiva il collegamento": attivazione immediata do
   );
   assert.ok(idTokenRequests.some(item => item.force === true), 'ID token rinnovato prima del riscatto');
   assert.equal(serverState.invites.get(token).status, 'accepted');
-  assert.equal(appState.clientLink?.link?.organizationName, 'Studio Meller', 'collegamento attivo');
+  assert.equal(appState.clientLink?.link?.organizationName, 'Studio Guide', 'collegamento attivo');
   assert.equal(sessionStorage.getItem(PENDING_KEY), null, 'token cancellato a collegamento attivo');
   assert.match(document.getElementById('app-toast').textContent, /attivato/i);
   assert.equal(document.getElementById('email-verification-confirm').disabled, false, 'pulsante riabilitato');
@@ -497,5 +497,5 @@ test('contratto server invariato: senza token risponde `link-active`/`no-pending
   assert.match(indexJs, /if \(snap\.empty\) return \{ status: 'no-pending-invite' \};/);
   assert.match(indexJs, /status: 'email-verification-required'/);
   // Versione della shell PWA aggiornata per servire il nuovo client.
-  assert.match(read('sw.js'), /const CACHE_VERSION = 81;/);
+  assert.match(read('sw.js'), /const CACHE_VERSION = 83;/);
 });

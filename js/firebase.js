@@ -1172,8 +1172,11 @@ async function getWeeklyPlan() {
     // Migrazione una tantum del piano: schema 4 + batchTemplates strutturati
     // derivati dalle vecchie batchRules. Salvata una sola volta.
     const hasLegacyRules = plan.batchRules && Object.keys(plan.batchRules).length > 0;
-    const needsMellerContext = !Object.prototype.hasOwnProperty.call(plan, "mellerModes");
-    const needsMigration = Number(plan.schemaVersion || 1) < CATALOG_SCHEMA_VERSION || hasLegacyRules || needsMellerContext;
+    // Compatibilità: i piani salvati prima del cambio nome hanno `mellerModes`
+    // — il contesto esiste già, nessuna migrazione forzata.
+    const needsGuideContext = !Object.prototype.hasOwnProperty.call(plan, "guideModes")
+      && !Object.prototype.hasOwnProperty.call(plan, "mellerModes");
+    const needsMigration = Number(plan.schemaVersion || 1) < CATALOG_SCHEMA_VERSION || hasLegacyRules || needsGuideContext;
     if (needsMigration && typeof PianoDomain !== "undefined") {
       const migrated = PianoDomain.migratePlan(plan);
       writeLocalJson("weekly_plan", migrated);
@@ -1195,7 +1198,7 @@ async function saveWeeklyPlan(plan) {
   const clean = cloneData(plan);
   writeLocalJson("weekly_plan", clean);
   await setDoc(weeklyPlanRef(), clean);
-  // Gancio post-salvataggio (auto-report mapping Meller nuovi): il
+  // Gancio post-salvataggio (auto-report mapping Guide nuovi): il
   // salvataggio è già riuscito, quindi errori qui sono solo avvisi.
   try {
     if (typeof window !== "undefined" && typeof window.afterWeeklyPlanSaved === "function") {
