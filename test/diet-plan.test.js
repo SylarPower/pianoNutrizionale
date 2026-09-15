@@ -297,11 +297,16 @@ test('precompilazione gruppi scelta dalla tabella di riferimento', () => {
 });
 
 test('editor console: dialog guidato, anteprima, operazioni strutturali', () => {
-  for (const id of ['new-diet-plan', 'diet-plan-dialog', 'diet-plan-title', 'diet-plan-form', 'diet-plan-id', 'diet-plan-name', 'diet-plan-days', 'diet-plan-add-day', 'diet-plan-general-notes', 'diet-plan-preview-toggle', 'diet-plan-preview', 'diet-plan-error', 'diet-plan-submit', 'diet-plan-classic-note']) {
+  for (const id of ['new-diet-plan', 'diet-plan-dialog', 'diet-plan-title', 'diet-plan-form', 'diet-plan-id', 'diet-plan-name', 'diet-plan-days', 'diet-plan-add-day', 'diet-plan-general-notes', 'diet-plan-preview-toggle', 'diet-plan-preview', 'diet-plan-error', 'diet-plan-submit', 'diet-plan-classic-note', 'diet-catalog-options']) {
     assert.match(html, new RegExp(`id="${id}"`), `manca #${id}`);
   }
   assert.match(html, /aria-labelledby="diet-plan-title"/);
-  assert.match(html, /nessun calcolo automatico/);
+  assert.match(html, /dal catalogo/);
+  assert.doesNotMatch(html, /Valori della giornata|nessun calcolo automatico/);
+  assert.doesNotMatch(js, /Valori della giornata/);
+  assert.match(js, /list="diet-catalog-options"/);
+  assert.match(js, /data-act="item-del"/);
+  assert.match(js, /if \(option && itemIndex >= 0\) option\.items\.splice/);
   for (const fn of ['openDietPlanDialog', 'closeDietPlanDialog', 'collectDietPlan', 'submitDietPlan', 'renderDietPlanDays', 'renderDietPlanPreview', 'handleDietPlanStructure', 'updateDietRecipePreview']) {
     assert.match(js, new RegExp(`function ${fn}\\b`), `manca ${fn}`);
   }

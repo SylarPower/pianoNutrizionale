@@ -464,6 +464,10 @@ function showToast(message, isError = false) {
 }
 
 function setLoading(message = "Caricamento…") {
+  if (window.PianoLoading) {
+    window.PianoLoading.start(message);
+    return;
+  }
   const overlay = document.getElementById("loading-overlay");
   const text = document.getElementById("loading-message");
   if (text) text.textContent = message;
@@ -471,6 +475,10 @@ function setLoading(message = "Caricamento…") {
 }
 
 function clearLoading() {
+  if (window.PianoLoading) {
+    window.PianoLoading.stop();
+    return;
+  }
   document.getElementById("loading-overlay")?.classList.add("hidden");
 }
 
@@ -535,43 +543,15 @@ function applyTheme(isDark) {
 // molto prima dell'auth): evita il lampo di tema chiaro al riavvio della PWA.
 applyTheme(readBootTheme());
 
-// --- Invito cliente: registrazione pubblica da link `#/invite/<token>` ---
-// Il token monouso (64 hex, scadenza 7 giorni) viene consegnato fuori
-// piattaforma dalla console professionisti. Qui si crea l'account con lo
-// username concordato e si riscatta l'invito via callable dedicata: nessun
-// dato del cliente viene toccato direttamente da Firestore.
-const PENDING_INVITE_STORAGE = "pn_pending_invite_token";
-const INVITE_NICKNAME_RE = /^[a-z0-9._-]{3,20}$/;
-let pendingInviteToken = null;
-let inviteFlowActive = false;
-
-function readInviteTokenFromHash() {
-  const match = window.location.hash.match(/^#\/invite\/([a-f0-9]{64})$/i);
-  return match ? match[1].toLowerCase() : null;
-}
-
-function loadPendingInviteToken() {
-  const fromHash = readInviteTokenFromHash();
-  if (fromHash) {
-    try { sessionStorage.setItem(PENDING_INVITE_STORAGE, fromHash); } catch (_) {}
-    return fromHash;
-  }
-  try { return sessionStorage.getItem(PENDING_INVITE_STORAGE) || null; } catch (_) { return null; }
-}
-
-function clearPendingInviteToken() {
-  pendingInviteToken = null;
-  try { sessionStorage.removeItem(PENDING_INVITE_STORAGE); } catch (_) {}
-  try { history.replaceState(history.state, document.title, window.location.pathname + window.location.search); } catch (_) {}
-}
-
 // --- Invito con EMAIL REALE: link `#/invito/<token>` (ADR 0004) ---
-// Percorso separato dal legacy `#/invite/<token>`: l'email, il nome e il
-// cognome arrivano dal nutrizionista e non si modificano qui; il cliente
-// sceglie solo la password. Il collegamento si attiva dopo la verifica email.
+// L'email, il nome e il cognome arrivano dal nutrizionista e non si modificano
+// qui; il cliente sceglie solo la password. Il collegamento si attiva dopo la
+// verifica email. I vecchi account vengono mantenuti solo lato server per la
+// migrazione, ma non hanno più un percorso pubblico nella piattaforma.
 const PENDING_EMAIL_INVITE_STORAGE = "pn_pending_email_invite_token";
 let pendingEmailInviteToken = null;
 let emailInvitePreview = null;
+let inviteFlowActive = false;
 
 function readEmailInviteTokenFromHash() {
   const match = window.location.hash.match(/^#\/invito\/([a-f0-9]{64})$/i);
@@ -647,15 +627,14 @@ function awaitingLinkInviteTokenFor(email) {
   return target && awaiting.email === target ? awaiting.token : null;
 }
 
-function showEmailInviteScreen() {
+function showEmailInviteScreen({ clear = true } = {}) {
   document.body.classList.add("auth-locked");
   document.getElementById("login-screen")?.classList.add("hidden");
-  document.getElementById("invite-screen")?.classList.add("hidden");
   document.getElementById("email-invite-screen")?.classList.remove("hidden");
   document.getElementById("app-container")?.classList.add("hidden");
   document.querySelector(".bottom-nav")?.classList.add("hidden");
   document.getElementById("global-header-container")?.remove();
-  clearLoading();
+  if (clear) clearLoading();
   setTimeout(() => document.getElementById("email-invite-password")?.focus(), 50);
 }
 
@@ -672,7 +651,8 @@ function renderEmailInvitePreview() {
       used: "Questo invito è già stato utilizzato: accedi con la tua email oppure chiedi un nuovo invito.",
       revoked: "Questo invito è stato annullato: chiedi un nuovo link al tuo nutrizionista.",
       superseded: "Questo link è stato sostituito da uno più recente: usa l'ultimo link ricevuto.",
-      "not-found": "Link invito non valido: chiedi un nuovo link al tuo nutrizionista."
+      "not-found": "Link invito non valido: chiedi un nuovo link al tuo nutrizionista.",
+      "preview-error": "Non riusciamo a caricare i dati dell’invito. Controlla la connessione e riapri il link tra poco."
     };
     if (stateEl) {
       stateEl.textContent = messaggi[preview?.status] || messaggi["not-found"];
@@ -770,80 +750,9 @@ function setupEmailInviteForm() {
   });
 }
 
-function showInviteScreen() {
-  document.body.classList.add("auth-locked");
-  document.getElementById("login-screen")?.classList.add("hidden");
-  document.getElementById("invite-screen")?.classList.remove("hidden");
-  document.getElementById("app-container")?.classList.add("hidden");
-  document.querySelector(".bottom-nav")?.classList.add("hidden");
-  document.getElementById("global-header-container")?.remove();
-  clearLoading();
-  setTimeout(() => document.getElementById("invite-username")?.focus(), 50);
-}
-
-function mapInviteError(error) {
-  const code = String(error?.code || "");
-  if (code === "auth/invalid-username" || code === "auth/weak-password") return error.message;
-  if (code === "auth/email-already-in-use") return "Esiste già un account con questo username: chiedi al tuo nutrizionista un nuovo invito per un altro username.";
-  if (code === "auth/network-request-failed" || code.endsWith("unavailable")) return "Connessione assente: la registrazione richiede internet.";
-  if (code.endsWith("not-found")) return "Invito non valido o già utilizzato: chiedi un nuovo link al tuo nutrizionista.";
-  // failed-precondition: username non concordato o invito scaduto. Il messaggio
-  // del server è già in italiano e pronto per l'utente.
-  if (code.endsWith("failed-precondition") && error?.message) return `${error.message}. Se il problema continua, chiedi un nuovo link al tuo nutrizionista.`;
-  return "Registrazione non riuscita. Riprova tra poco o chiedi un nuovo link al tuo nutrizionista.";
-}
-
-function setupInviteForm() {
-  const form = document.getElementById("invite-form");
-  if (!form || form.dataset.ready) return;
-  form.dataset.ready = "true";
-  form.addEventListener("submit", async event => {
-    event.preventDefault();
-    const username = document.getElementById("invite-username").value;
-    const password = document.getElementById("invite-password").value;
-    const button = document.getElementById("invite-submit");
-    const errorEl = document.getElementById("invite-error");
-    errorEl.textContent = "";
-    if (!INVITE_NICKNAME_RE.test(String(username).trim().toLowerCase())) {
-      errorEl.textContent = "Username non valido: 3-20 caratteri tra lettere minuscole, numeri, punto, trattino o underscore. Niente spazi.";
-      return;
-    }
-    if (String(password).length < 8) {
-      errorEl.textContent = "La password deve avere almeno 8 caratteri.";
-      return;
-    }
-    if (!pendingInviteToken) {
-      errorEl.textContent = "Link invito non valido: chiedi un nuovo link al tuo nutrizionista.";
-      return;
-    }
-    button.disabled = true;
-    button.textContent = "Creazione account…";
-    // Finché il riscatto non è concluso l'observer dell'auth non deve trattare
-    // il token come un invito dimenticato.
-    inviteFlowActive = true;
-    try {
-      await signUpWithUsername(username, password);
-      await ensureUsernameDirectory();
-      await callSaasFunction("acceptOrganizationInvite", { token: pendingInviteToken });
-      clearPendingInviteToken();
-      document.getElementById("invite-screen")?.classList.add("hidden");
-      showToast("Account collegato al tuo nutrizionista ✅");
-    } catch (error) {
-      errorEl.textContent = mapInviteError(error);
-      // L'account potrebbe essere stato creato senza riscatto riuscito: si
-      // resta disconnessi così il link può essere riprovato con un nuovo invito.
-      try { await signOutUser(); } catch (_) {}
-    } finally {
-      inviteFlowActive = false;
-      button.disabled = false;
-      button.textContent = "Crea account e collega";
-    }
-  });
-}
-
 function showLogin() {
   document.body.classList.add("auth-locked");
-  document.getElementById("invite-screen")?.classList.add("hidden");
+  document.getElementById("email-invite-screen")?.classList.add("hidden");
   document.getElementById("login-screen")?.classList.remove("hidden");
   document.getElementById("app-container")?.classList.add("hidden");
   document.querySelector(".bottom-nav")?.classList.add("hidden");
@@ -1035,7 +944,6 @@ async function activateClientLinkAfterVerification({
 function showApp() {
   document.body.classList.remove("auth-locked");
   document.getElementById("login-screen")?.classList.add("hidden");
-  document.getElementById("invite-screen")?.classList.add("hidden");
   document.getElementById("email-invite-screen")?.classList.add("hidden");
   document.getElementById("app-container")?.classList.remove("hidden");
   renderEmailVerificationBanner(appState.user);
@@ -1055,13 +963,11 @@ function mapLoginError(error) {
   return "Accesso non riuscito. Riprova tra poco.";
 }
 
-// L'email reale è la credenziale dei clienti nuovi; lo username resta per gli
-// account tecnici legacy. La scelta è esplicita (presenza della "@") e non
-// converte mai un account da un modello all'altro.
+// L'email reale è l'unica credenziale mostrata nel percorso live. Gli account
+// tecnici già presenti restano gestibili solo dagli strumenti di migrazione
+// lato server e non hanno più un percorso pubblico nella piattaforma.
 async function performLogin(identifier, password) {
-  const value = String(identifier || "").trim();
-  if (value.includes("@")) return signInWithEmailAddress(value, password);
-  return signInWithUsername(value, password);
+  return signInWithEmailAddress(String(identifier || "").trim(), password);
 }
 
 function setupLoginForm() {
@@ -1195,7 +1101,11 @@ async function loadUserData(user, { silent = false } = {}) {
       email: user.email,
       householdId: appState.household?.id || null
     });
-    ensureUsernameDirectory().catch(error => console.warn("Directory username non disponibile", error));
+    // La directory username è compatibilità per dati storici; gli account live
+    // usano esclusivamente l'email e non la scrivono più.
+    if (typeof isLegacyTestEmailAddress === "function" && isLegacyTestEmailAddress(user.email)) {
+      ensureUsernameDirectory().catch(error => console.warn("Directory storica non disponibile", error));
+    }
     if (appStarted) handleRoute();
   } catch (error) {
     console.error(error);
@@ -1301,30 +1211,34 @@ function startAccountRealtimeSync() {
 }
 
 async function initApp() {
-  pendingInviteToken = loadPendingInviteToken();
   pendingEmailInviteToken = loadPendingEmailInviteToken();
   setupLoginForm();
   setupResetPasswordForm();
-  setupInviteForm();
   setupEmailInviteForm();
   setupVerificationBanner();
+  // Firebase deve essere pronto PRIMA dell'anteprima pubblica dell'invito. In
+  // precedenza l'anteprima veniva richiesta mentre `firebaseReady` era ancora
+  // in attesa dell'inizializzazione: email, nome e cognome restavano quindi
+  // sui trattini e il form della password non diventava mai disponibile.
+  if (!initFirebase()) {
+    document.getElementById("login-error").textContent = "Il servizio non è configurato correttamente.";
+    showLogin();
+    return;
+  }
   // Invito con email reale: l'anteprima arriva dal server e il form resta
   // nascosto finché i dati non sono disponibili (email/nome non modificabili).
   // Un invito già usato per registrarsi (in attesa di attivazione) NON è più un
   // link da aprire: il token resta in sessione, ma la schermata non ricompare.
   if (pendingEmailInviteToken && !isEmailInviteAwaitingLink(pendingEmailInviteToken)) {
-    showEmailInviteScreen();
+    showEmailInviteScreen({ clear: false });
     try {
       emailInvitePreview = await previewClientInvite(pendingEmailInviteToken);
-    } catch (_) {
-      emailInvitePreview = { status: "not-found" };
+    } catch (error) {
+      console.warn("Anteprima invito non disponibile", error);
+      emailInvitePreview = { status: "preview-error" };
     }
     renderEmailInvitePreview();
-  }
-  if (!initFirebase()) {
-    document.getElementById("login-error").textContent = "Il servizio non è configurato correttamente.";
-    showLogin();
-    return;
+    clearLoading();
   }
 
   // Avvio veloce: se la sessione è in cache locale, mostra subito l'app
@@ -1359,15 +1273,13 @@ async function initApp() {
       setLocalDataOwner(null);
       appState.user = null;
       appState.household = null;
-      // Link invito in sospeso: la registrazione pubblica ha la precedenza
-      // sulla schermata di accesso standard. Un invito già registrato e in
-      // attesa di attivazione non è più un link da aprire: si va all'accesso.
-      if (pendingInviteToken) showInviteScreen();
-      else if (pendingEmailInviteToken && !isEmailInviteAwaitingLink(pendingEmailInviteToken)) showEmailInviteScreen();
+      // Un invito già registrato e in attesa di attivazione non è più un link
+      // da aprire: si va all'accesso standard.
+      if (pendingEmailInviteToken && !isEmailInviteAwaitingLink(pendingEmailInviteToken)) showEmailInviteScreen();
       else showLogin();
       return;
     }
-    if ((pendingInviteToken || (pendingEmailInviteToken && !isEmailInviteAwaitingLink(pendingEmailInviteToken))) && !inviteFlowActive) {
+    if (pendingEmailInviteToken && !isEmailInviteAwaitingLink(pendingEmailInviteToken) && !inviteFlowActive) {
       // Account già autenticato che apre un link invito: il token resta
       // parcheggiato finché non esce e riapre il link.
       showToast("Per usare un invito cliente esci dall'account attuale e riapri il link");

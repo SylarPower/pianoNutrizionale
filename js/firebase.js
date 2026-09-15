@@ -167,16 +167,21 @@ async function ensureFirebaseReady() {
 }
 
 async function callSaasFunction(name, data = {}) {
-  await ensureFirebaseReady();
-  if (!functionsService) throw new Error("Servizio SaaS non disponibile");
-  // Il serializer Firebase rifiuta `undefined`: i form opzionali lo omettono.
-  const cleanData = JSON.parse(JSON.stringify(data));
-  if (hasCompatFirebase()) {
-    const response = await functionsService.httpsCallable(name)(cleanData);
+  window.PianoLoading?.start("Aggiornamento in corso…");
+  try {
+    await ensureFirebaseReady();
+    if (!functionsService) throw new Error("Servizio SaaS non disponibile");
+    // Il serializer Firebase rifiuta `undefined`: i form opzionali lo omettono.
+    const cleanData = JSON.parse(JSON.stringify(data));
+    if (hasCompatFirebase()) {
+      const response = await functionsService.httpsCallable(name)(cleanData);
+      return response.data;
+    }
+    const response = await fb.httpsCallable(functionsService, name)(cleanData);
     return response.data;
+  } finally {
+    window.PianoLoading?.stop();
   }
-  const response = await fb.httpsCallable(functionsService, name)(cleanData);
-  return response.data;
 }
 
 function serverTimestamp() {
@@ -340,7 +345,7 @@ async function signUpWithRealEmail(email, password) {
 // Accesso con email reale (clienti nuovi). Lo username resta per gli account
 // tecnici legacy: le due strade non si mescolano mai.
 async function signInWithEmailAddress(email, password) {
-  const check = validateEmailAddress(email, { allowLegacy: true });
+  const check = validateEmailAddress(email, { allowLegacy: false });
   if (!check.ok) {
     const error = new Error(check.message);
     error.code = "auth/invalid-email";
@@ -597,11 +602,16 @@ function compatAppCheckAvailable(compat) {
 // Login della console: stessa validazione di input, ma sull'Auth separato.
 async function adminSignInWithUsername(username, password) {
   const normalized = validateSignInInput(username, password);
-  await ensureAdminServices();
-  if (hasCompatFirebase()) {
-    return adminAuth.signInWithEmailAndPassword(usernameToInternalEmail(normalized), password);
+  window.PianoLoading?.start("Verifica accesso…");
+  try {
+    await ensureAdminServices();
+    if (hasCompatFirebase()) {
+      return adminAuth.signInWithEmailAndPassword(usernameToInternalEmail(normalized), password);
+    }
+    return fb.signInWithEmailAndPassword(adminAuth, usernameToInternalEmail(normalized), password);
+  } finally {
+    window.PianoLoading?.stop();
   }
-  return fb.signInWithEmailAndPassword(adminAuth, usernameToInternalEmail(normalized), password);
 }
 
 // Logout SOLO della console: opera sull'Auth dell'app nominata, quindi la
@@ -624,6 +634,7 @@ function getAdminCurrentUser() {
 // nell'app cliente non viene mai rilevata qui.
 function observeAdminAuthState(callback) {
   let unsubscribe = () => {};
+  window.PianoLoading?.start("Verifica accesso…");
   ensureAdminServices().then(() => {
     if (!adminAuth) { callback(null); return; }
     const handler = user => {
@@ -635,7 +646,7 @@ function observeAdminAuthState(callback) {
   }).catch(error => {
     console.error("Servizi della console non disponibili", error);
     callback(null);
-  });
+  }).finally(() => window.PianoLoading?.stop());
   return () => unsubscribe && unsubscribe();
 }
 
@@ -643,15 +654,20 @@ function observeAdminAuthState(callback) {
 // provengono dall'app nominata, quindi il server autorizza l'account
 // professionale e NON l'eventuale sessione dell'app cliente.
 async function callAdminSaasFunction(name, data = {}) {
-  await ensureAdminServices();
-  if (!adminFunctionsService) throw new Error("Servizio SaaS non disponibile");
-  const cleanData = JSON.parse(JSON.stringify(data));
-  if (hasCompatFirebase()) {
-    const response = await adminFunctionsService.httpsCallable(name)(cleanData);
+  window.PianoLoading?.start("Aggiornamento in corso…");
+  try {
+    await ensureAdminServices();
+    if (!adminFunctionsService) throw new Error("Servizio SaaS non disponibile");
+    const cleanData = JSON.parse(JSON.stringify(data));
+    if (hasCompatFirebase()) {
+      const response = await adminFunctionsService.httpsCallable(name)(cleanData);
+      return response.data;
+    }
+    const response = await fb.httpsCallable(adminFunctionsService, name)(cleanData);
     return response.data;
+  } finally {
+    window.PianoLoading?.stop();
   }
-  const response = await fb.httpsCallable(adminFunctionsService, name)(cleanData);
-  return response.data;
 }
 
 // ---- Letture Firestore della console (es. autocomplete catalogo globale) ----
@@ -667,16 +683,26 @@ function adminQueryLimit(collectionRef, limit) {
 }
 
 async function adminGetDocsQuery(query) {
-  if (hasCompatFirebase()) return query.get();
-  await ensureAdminServices();
-  return fb.getDocs(query);
+  window.PianoLoading?.start("Lettura catalogo…");
+  try {
+    if (hasCompatFirebase()) return query.get();
+    await ensureAdminServices();
+    return fb.getDocs(query);
+  } finally {
+    window.PianoLoading?.stop();
+  }
 }
 
 // Lettura singola della console (es. riepilogo del catalogo globale).
 async function adminGetDoc(path) {
-  if (hasCompatFirebase()) return adminDb.doc(path).get();
-  await ensureAdminServices();
-  return fb.getDoc(fb.doc(adminDb, path));
+  window.PianoLoading?.start("Lettura catalogo…");
+  try {
+    if (hasCompatFirebase()) return adminDb.doc(path).get();
+    await ensureAdminServices();
+    return fb.getDoc(fb.doc(adminDb, path));
+  } finally {
+    window.PianoLoading?.stop();
+  }
 }
 
 // ----- Riferimenti Firestore (API modulare a documenti/collezioni) -----
@@ -803,31 +829,51 @@ function docInCollection(collectionRef, id) {
   return fb.doc(collectionRef, id);
 }
 
-async function getDoc(ref) {
-  if (hasCompatFirebase()) return ref.get();
-  await ensureFirebaseReady();
-  return fb.getDoc(ref);
+function withDataLoading(operation, message = "Caricamento dati…") {
+  window.PianoLoading?.start(message);
+  try {
+    return Promise.resolve(operation()).finally(() => window.PianoLoading?.stop());
+  } catch (error) {
+    window.PianoLoading?.stop();
+    return Promise.reject(error);
+  }
+}
+
+function getDoc(ref) {
+  return withDataLoading(async () => {
+    if (hasCompatFirebase()) return ref.get();
+    await ensureFirebaseReady();
+    return fb.getDoc(ref);
+  });
 }
 
 function setDoc(ref, data, options = undefined) {
-  if (hasCompatFirebase()) return ref.set(data, options);
-  // L'SDK modulare usa { merge: true } come opzione di setDoc, stessa forma.
-  return ensureFirebaseReady().then(() => fb.setDoc(ref, data, options));
+  return withDataLoading(() => {
+    if (hasCompatFirebase()) return ref.set(data, options);
+    // L'SDK modulare usa { merge: true } come opzione di setDoc, stessa forma.
+    return ensureFirebaseReady().then(() => fb.setDoc(ref, data, options));
+  }, "Salvataggio dati…");
 }
 
 function updateDoc(ref, data) {
-  if (hasCompatFirebase()) return ref.update(data);
-  return ensureFirebaseReady().then(() => fb.updateDoc(ref, data));
+  return withDataLoading(() => {
+    if (hasCompatFirebase()) return ref.update(data);
+    return ensureFirebaseReady().then(() => fb.updateDoc(ref, data));
+  }, "Salvataggio dati…");
 }
 
 function deleteDocRef(ref) {
-  if (hasCompatFirebase()) return ref.delete();
-  return ensureFirebaseReady().then(() => fb.deleteDoc(ref));
+  return withDataLoading(() => {
+    if (hasCompatFirebase()) return ref.delete();
+    return ensureFirebaseReady().then(() => fb.deleteDoc(ref));
+  }, "Aggiornamento dati…");
 }
 
 function addDocRef(collectionRef, data) {
-  if (hasCompatFirebase()) return collectionRef.add(data);
-  return ensureFirebaseReady().then(() => fb.addDoc(collectionRef, data));
+  return withDataLoading(() => {
+    if (hasCompatFirebase()) return collectionRef.add(data);
+    return ensureFirebaseReady().then(() => fb.addDoc(collectionRef, data));
+  }, "Salvataggio dati…");
 }
 
 function queryWhere(collectionRef, field, op, value) {
@@ -854,10 +900,12 @@ function legacyRecipesQuery() {
   return queryLimit(collectionAt(`users/${requireUser().uid}/recipes`), 100);
 }
 
-async function getDocsQuery(query) {
-  if (hasCompatFirebase()) return query.get();
-  await ensureFirebaseReady();
-  return fb.getDocs(query);
+function getDocsQuery(query) {
+  return withDataLoading(async () => {
+    if (hasCompatFirebase()) return query.get();
+    await ensureFirebaseReady();
+    return fb.getDocs(query);
+  });
 }
 
 function onSnapshotRef(ref, onNext, onError) {
@@ -870,13 +918,15 @@ function onSnapshotRef(ref, onNext, onError) {
 }
 
 function writeBatch() {
-  if (hasCompatFirebase()) return db.batch();
-  const batch = fb.writeBatch(db);
+  const batch = hasCompatFirebase() ? db.batch() : fb.writeBatch(db);
   return {
     set: (ref, data, options) => batch.set(ref, data, options),
     update: (ref, data) => batch.update(ref, data),
     delete: ref => batch.delete(ref),
-    commit: async () => { await ensureFirebaseReady(); return batch.commit(); }
+    commit: () => withDataLoading(async () => {
+      if (!hasCompatFirebase()) await ensureFirebaseReady();
+      return batch.commit();
+    }, "Salvataggio dati…")
   };
 }
 

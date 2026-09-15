@@ -1,27 +1,28 @@
 # Editor dieta guidata — guida operativa
 
 L'editor guidato crea diete **descrittive** (come un piano stampato):
-giornate, pasti, opzioni A/B/C/D, quantità con unità di misura. Non calcola
-nulla: i valori energetici della giornata sono appunti manuali del
-professionista. Contratto dati: `docs/saas-data-contracts.md` (dietPlan v1);
-decisioni: `docs/adr/0005-console-unificata-dieta-guidata.md`.
+giornate, pasti, opzioni A/B/C/D, quantità con unità di misura e alimenti
+scelti dal catalogo condiviso. Non richiede la ricopiatura della tabella:
+comincia a digitare il nome e seleziona l'alimento suggerito. Contratto dati:
+`docs/saas-data-contracts.md` (dietPlan v1); decisioni:
+`docs/adr/0005-console-unificata-dieta-guidata.md`.
 
 ## Quando usare quale editor
 
 | Caso | Editor | Note |
 |---|---|---|
 | Dieta descrittiva da leggere/stampare | Guidata («＋ Nuova dieta guidata») | revisioni schema 3, badge «Dieta guidata» |
-| Famiglie e dosi per il calcolo automatico | Classica («＋ Nuova struttura classica») | revisioni schema 2, come prima |
+| Famiglie e dosi per il calcolo automatico | Classica, disponibile solo per modificare strutture già esistenti | revisioni schema 2, come prima |
 | Struttura esistente con badge «Dieta guidata» | Guidata (si apre da sola in modifica) | conserva le regole classiche |
 | Struttura esistente senza badge | Classica | conserva l'eventuale piano guidato |
 
 ## Passo passo
 
 1. **Nome dieta** (almeno 3 caratteri).
-2. **Giornate**: tipo (allenamento, riposo, altra), titolo facoltativo,
-   valori facoltativi (kcal, proteine, carboidrati, grassi, acqua in ml).
+2. **Giornate**: tipo (allenamento, riposo, altra) e titolo facoltativo.
    Si possono aggiungere (max 14), duplicare (la copia ha titolo «(copia)» e
-   identità nuova), riordinare (↑ ↓) ed eliminare.
+   identità nuova), riordinare (↑ ↓) ed eliminare. Non sono richiesti campi
+   energetici manuali.
 3. **Pasti in ordine fisso** (max 10 per giornata, un solo pasto per tipo):
    colazione → spuntino di metà mattina → pranzo → merenda → cena → spuntino
    serale. «＋ Aggiungi pasto» propone solo i tipi ancora assenti; i pasti non
@@ -29,9 +30,11 @@ decisioni: `docs/adr/0005-console-unificata-dieta-guidata.md`.
    nota facoltativi.
 4. **Opzioni A/B/C/D** (max 4 per pasto): alternative equivalenti dello
    stesso pasto, di due tipi **mutuamente esclusivi**:
-   - **Alimenti liberi**: lista di alimenti con gruppo, descrizione,
-     quantità + unità (g, kg, ml, l, pz, fette, cucchiai, cucchiaini, tazze,
-     bicchieri, porzioni, scatolette, misurini, q.b.), max 20 voci;
+   - **Alimenti dal catalogo**: cerca il nome nella tabella condivisa e
+     selezionalo dal suggerimento; la categoria viene compilata
+     automaticamente. Completa quantità + unità (g, kg, ml, l, pz, fette,
+     cucchiai, cucchiaini, tazze, bicchieri, porzioni, scatolette, misurini,
+     q.b.), max 20 voci;
    - **Ricetta**: una ricetta del ricettario professionale con
      moltiplicatore porzioni (×0,1–10) e anteprima degli ingredienti con dosi
      scalate live (le dosi testuali come «80 g» si moltiplicano; «q.b.» resta
@@ -88,8 +91,9 @@ sempre il modulo prima di ridisegnarlo: **il testo digitato non si perde**.
 
 - Filtri Tutti/Attivi/In attesa/Inattivi con conteggi; titolo sempre Nome
   e Cognome.
-- «Invita nuovo cliente» apre il dialog con email reale (l'unico invito per
-  i clienti veri); gli account di test legacy restano nel pannello
-  richiuso in fondo.
-- La scheda si apre con «Apri scheda →» e contiene anagrafica, collegamento,
-  struttura dieta, dati tecnici e storico. «Rimuovi cliente» esiste solo lì.
+- «Invita nuovo cliente» apre il dialog con email reale, nome e cognome;
+  il link viene consegnato manualmente e i dati compaiono già compilati al
+  cliente.
+- La scheda si apre con «Apri scheda →»: nome ed email sono nell'intestazione,
+  poi seguono collegamento, struttura dieta e attività. Le informazioni interne
+  restano riservate all'admin; «Rimuovi cliente» esiste solo lì.

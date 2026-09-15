@@ -118,17 +118,20 @@ test('vista Clienti unificata: nessuna sezione Utenti separata, funzioni ricollo
   for (const view of ['clients', 'doses', 'structures', 'catalog', 'mapping']) {
     assert.match(html, new RegExp(`data-view="${view}"`), `voce ${view} presente`);
   }
-  // Le funzioni ex-Utenti vivono dentro la vista Clienti: team, inviti
-  // professionista/test, richieste. L'invito con email reale è un dialog.
-  for (const id of ['members-list', 'invite-nutritionist-form', 'invite-client-form', 'links-list', 'users-feedback', 'users-scope', 'invite-client-dialog', 'client-detail-dialog']) {
+  // Le funzioni davvero necessarie restano nella vista Clienti: il team è
+  // riservato all'admin, mentre inviti e richieste del cliente vivono nella
+  // scheda. Nessun percorso legacy o duplicato è esposto.
+  for (const id of ['members-list', 'invite-nutritionist-form', 'users-feedback', 'users-scope', 'invite-client-dialog', 'client-detail-dialog', 'team-panel']) {
     assert.match(html, new RegExp(`id="${id}"`), `manca #${id}`);
   }
   const clientsView = html.match(/<main id="view-clients"[\s\S]*?<\/main>/)[0];
-  for (const id of ['members-list', 'links-list', 'legacy-invite-details', 'invite-nutritionist-form', 'client-filter']) {
+  for (const id of ['members-list', 'invite-nutritionist-form', 'client-filter']) {
     assert.match(clientsView, new RegExp(`id="${id}"`), `#${id} vive nella vista Clienti`);
   }
+  assert.match(clientsView, /class="panel hidden"/, 'il team non è mostrato al nutrizionista');
+  assert.doesNotMatch(html, /Account di test|legacy-invite-details|id="links-list"/, 'nessun percorso test o elenco duplicato');
   assert.doesNotMatch(clientsView, /refresh-users/, 'nessun aggiornamento separato ex-Utenti');
-  for (const callable of ['listOrganizationUsers', 'searchUserByUsername', 'inviteOrganizationUser', 'inviteClientLink', 'setMemberStatus', 'removeClientLink', 'removeNutritionist']) {
+  for (const callable of ['listOrganizationUsers', 'searchUserByUsername', 'inviteOrganizationUser', 'setMemberStatus', 'removeClientLink', 'removeNutritionist']) {
     assert.match(js, new RegExp(`['"]${callable}['"]`), `callable ${callable} usata`);
   }
   // Verifica per username esatto: solo trovato/non trovato, mai PII o liste.

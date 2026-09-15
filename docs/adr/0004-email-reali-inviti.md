@@ -1,7 +1,8 @@
 # ADR 0004 — Inviti e autenticazione con email reali
 
-- **Stato**: accettata (fase di building); **aggiornata il 2026-09-14** — consegna
-  dell'invito solo manuale (Copia link / Condividi link), servizio email eliminato
+- **Stato**: accettata; **aggiornata il 2026-09-15** — consegna dell'invito
+  solo manuale (Copia link / Condividi link), servizio email eliminato e
+  interfaccia live ripulita dai percorsi tecnici
 - **Data**: 2026-09-13
 - **Contesto**: Piano Nutrizionale, organizzazione singola `pianoNutrizionale`
 - **Documenti collegati**: `docs/inviti-email.md` (guida operativa), `docs/saas-data-contracts.md`, `docs/saas-runbook.md`, `docs/ripartenza-firebase.md`, `docs/pulizia-dati-legacy.md`
@@ -155,11 +156,11 @@ Punti rilevanti trovati prima di modificare:
    d'ambiente (`INVITE_EMAIL_*`, `APP_PUBLIC_URL`) e lo stato `delivery-failed`
    sono stati eliminati. Il payload delle callable non ha più il campo
    `delivery`. Verifica email e reset restano sui template Firebase Auth.
-9. **Modello legacy esplicito e controllato**: la creazione di **nuovi**
-   account tecnici è consentita solo con `LEGACY_TEST_INVITES_ENABLED=true` o
-   negli emulatori; in produzione senza flag l'invito legacy viene rifiutato
-   con messaggio che indirizza al flusso email. Gli account tecnici esistenti
-   continuano a funzionare senza modifiche.
+9. **Compatibilità tecnica non esposta**: le funzioni server che riconoscono
+   dati storici restano disponibili solo per migrazioni ed emulatori; la console
+   live, il login cliente e il link pubblico non espongono più account tecnici,
+   moduli di prova o percorsi legacy. L'invito cliente in produzione passa
+   esclusivamente dall'email reale.
 10. **Nessuna conversione automatica**: un account con email fittizia non
     diventa mai un account reale, e un invito reale non diventa mai un invito
     tecnico.
@@ -170,8 +171,9 @@ Punti rilevanti trovati prima di modificare:
   `redeemClientInvite`, `correctClientInvite`, `resendClientInvite`,
   `cancelClientInvite`, `updateClientProfileByStaff`,
   `proposeClientEmailChange`, `respondMyEmailChange`.
-- Nuovo percorso di invito `#/invito/<token>`; il legacy `#/invite/<64hex>`
-  resta attivo per gli account tecnici.
+- Nuovo percorso pubblico di invito `#/invito/<token>`; il percorso
+  `#/invite/<64hex>` è stato rimosso dal client live. Eventuale compatibilità
+  server-side non costituisce un percorso utente.
 - Nuovi campi profilo cliente: `email`, `emailNormalized`, `emailVerified`,
   `firstName`, `lastName` (oltre a `authUid`, `status`; `displayName` rimosso per i clienti, resta solo per i membri come fallback).
 - L'invito dei **professionisti** resta sul flusso attuale (username +

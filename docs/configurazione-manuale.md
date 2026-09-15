@@ -90,8 +90,9 @@ Restano invece attive, perché le gestisce Firebase gratuitamente:
 - l'email di **verifica dell'indirizzo** dopo la registrazione;
 - l'email di **recupero password** ("Password dimenticata?").
 
-Gli **account di test** con email fittizia (`…@utenti.pianonutrizionale.app`)
-restano come sono: servono ai test e non vanno toccati.
+Gli ambienti di sviluppo e i dati storici vengono gestiti separatamente dagli
+strumenti interni: non sono un percorso da mostrare o usare nella piattaforma
+live.
 
 ---
 

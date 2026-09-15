@@ -47,13 +47,12 @@ test('schermata invito email: dati del nutrizionista bloccati e solo password sc
   assert.match(appJs, /emailInvitePreview\.email/);
 });
 
-test('percorso nuovo separato dal legacy: `#/invito/<token>` e `#/invite/<token>`', () => {
+test('il percorso pubblico usa solo l’invito email reale', () => {
   assert.ok(appJs.includes('match(/^#\\/invito\\/([a-f0-9]{64})$/i)'), 'parsing del link email');
-  assert.ok(appJs.includes('match(/^#\\/invite\\/([a-f0-9]{64})$/i)'), 'parsing del link legacy conservato');
+  assert.doesNotMatch(appJs, /#\/invite\//, 'nessun percorso pubblico legacy');
   assert.ok(appJs.includes('PENDING_EMAIL_INVITE_STORAGE'));
-  assert.ok(appJs.includes('await ensureUsernameDirectory();'), 'il legacy continua a creare la directory username');
-  assert.ok(appJs.includes('callSaasFunction("acceptOrganizationInvite", { token: pendingInviteToken })'));
-  assert.match(appJs, /callSaasFunction is not defined|previewClientInvite/);
+  assert.doesNotMatch(appJs, /acceptOrganizationInvite/, 'nessun riscatto del vecchio invito');
+  assert.match(appJs, /previewClientInvite/);
   assert.match(firebaseJs, /async function previewClientInvite\(token\)/);
   assert.match(firebaseJs, /"getClientInvitePreview"/);
   assert.match(firebaseJs, /async function redeemClientInvite\(token, idempotencyKey\)/);
@@ -75,7 +74,9 @@ test('email reale = credenziale: nessuna email tecnica e riconoscimento legacy e
   assert.match(indexJs, /function legacyTestInvitesAllowed\(\)/);
   assert.match(indexJs, /LEGACY_TEST_INVITES_ENABLED/);
   assert.match(indexJs, /client\.invite-blocked-legacy/);
-  assert.match(adminHtml, /LEGACY_TEST_INVITES_ENABLED=true/);
+  assert.doesNotMatch(adminHtml, /LEGACY_TEST_INVITES_ENABLED=true|Account di test|legacy-invite-details/);
+  assert.doesNotMatch(html, /id="invite-screen"/);
+  assert.doesNotMatch(html, /#\/invite\//);
 });
 
 test('recupero password e verifica email nel client', () => {
@@ -84,7 +85,7 @@ test('recupero password e verifica email nel client', () => {
   assert.match(html, /id="reset-form"/);
   assert.match(html, /id="reset-email"[\s\S]*?type="email"/);
   assert.match(appJs, /async function performLogin\(identifier, password\)/);
-  assert.match(appJs, /value\.includes\("@"\)/, 'login con email o username');
+  assert.match(appJs, /return signInWithEmailAddress\(String\(identifier \|\| ""\)\.trim\(\), password\)/, 'login con email reale');
   assert.match(appJs, /sendPasswordResetForEmail/);
   assert.match(firebaseJs, /async function sendPasswordResetForEmail\(email\)/);
   // Messaggio uniforme: non si rivela se l'account esiste.

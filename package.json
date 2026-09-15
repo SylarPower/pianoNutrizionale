@@ -9,7 +9,7 @@
     "test:rules": "firebase emulators:exec --only firestore --project piano-nutrizionale-test \"node --test test/firestore-rules.rules-test.js\"",
     "test:all": "npm test && npm run test:functions && npm run syntax && npm run smoke",
     "smoke": "node test/smoke-app.js",
-    "syntax": "node --check js/domain.js && node --check js/saas-config.js && node --check js/saas.js && node --check js/data.js && node --check js/prices.js && node --check js/firebase.js && node --check js/admin.js && node --check js/app.js && node --check sw.js && npm --prefix functions run syntax"
+    "syntax": "node --check js/loading.js && node --check js/domain.js && node --check js/saas-config.js && node --check js/saas.js && node --check js/data.js && node --check js/prices.js && node --check js/firebase.js && node --check js/admin.js && node --check js/app.js && node --check sw.js && npm --prefix functions run syntax"
   },
   "engines": {
     "node": ">=18"
