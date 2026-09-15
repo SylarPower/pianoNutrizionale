@@ -89,4 +89,4 @@ jobs:
           FIREBASE_TOKEN: ${{ secrets.FIREBASE_TOKEN }}
         run: |
           echo "Pubblicazione in corso: ${DEPLOY_TARGET}"
-          firebase deploy --only "${DEPLOY_TARGET}" --project piano-nutrizionale --non-interactive
+          firebase deploy --only "${DEPLOY_TARGET}" --project piano-nutrizionale --non-interactive --force
