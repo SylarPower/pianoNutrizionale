@@ -308,11 +308,13 @@ function isClientLinkActiveStatus(status) {
 async function forceIdTokenRefresh() {
   const user = currentUser || (auth && auth.currentUser);
   if (!user) throw new Error("Autenticazione richiesta");
-  if (hasCompatFirebase()) return user.getIdToken(true);
-  await ensureFirebaseReady();
-  // Stessa istanza utente dell'Auth: l'SDK modulare riceve l'utente come primo
-  // argomento (`getIdToken(user, forceRefresh)`).
-  return fb.getIdToken(user, true);
+  return withDataLoading(async () => {
+    if (hasCompatFirebase()) return user.getIdToken(true);
+    await ensureFirebaseReady();
+    // Stessa istanza utente dell'Auth: l'SDK modulare riceve l'utente come primo
+    // argomento (`getIdToken(user, forceRefresh)`).
+    return fb.getIdToken(user, true);
+  }, "Verifica email…");
 }
 
 // Riscatto dell'invito SENZA token, con ID token rinnovato: è il percorso che
@@ -337,9 +339,11 @@ async function signUpWithRealEmail(email, password) {
     error.code = "auth/weak-password";
     throw error;
   }
-  if (hasCompatFirebase()) return auth.createUserWithEmailAndPassword(check.email, password);
-  await ensureFirebaseReady();
-  return fb.createUserWithEmailAndPassword(auth, check.email, password);
+  return withDataLoading(async () => {
+    if (hasCompatFirebase()) return auth.createUserWithEmailAndPassword(check.email, password);
+    await ensureFirebaseReady();
+    return fb.createUserWithEmailAndPassword(auth, check.email, password);
+  }, "Creazione accesso…");
 }
 
 // Accesso con email reale (clienti nuovi). Lo username resta per gli account
@@ -356,9 +360,11 @@ async function signInWithEmailAddress(email, password) {
     error.code = "auth/missing-password";
     throw error;
   }
-  if (hasCompatFirebase()) return auth.signInWithEmailAndPassword(check.email, password);
-  await ensureFirebaseReady();
-  return fb.signInWithEmailAndPassword(auth, check.email, password);
+  return withDataLoading(async () => {
+    if (hasCompatFirebase()) return auth.signInWithEmailAndPassword(check.email, password);
+    await ensureFirebaseReady();
+    return fb.signInWithEmailAndPassword(auth, check.email, password);
+  }, "Verifica accesso…");
 }
 
 // Recupero password: il messaggio è SEMPRE lo stesso, così non si può capire
@@ -370,11 +376,13 @@ async function sendPasswordResetForEmail(email) {
     return { ok: false, message: check.message, uniform: false };
   }
   try {
-    if (hasCompatFirebase()) await auth.sendPasswordResetEmail(check.email);
-    else {
-      await ensureFirebaseReady();
-      await fb.sendPasswordResetEmail(auth, check.email);
-    }
+    await withDataLoading(async () => {
+      if (hasCompatFirebase()) await auth.sendPasswordResetEmail(check.email);
+      else {
+        await ensureFirebaseReady();
+        await fb.sendPasswordResetEmail(auth, check.email);
+      }
+    }, "Invio recupero password…");
   } catch (error) {
     // Errori di rete o limiti anti-abuso: il messaggio resta uniforme.
     console.warn("Invio reset password non riuscito", error?.code || error?.message);
@@ -395,11 +403,13 @@ async function sendVerificationEmailToCurrentUser() {
     return { ok: false, legacy: true, message: "Questo è un account tecnico di test: la verifica email non è prevista." };
   }
   if (user.emailVerified) return { ok: true, alreadyVerified: true, message: "Indirizzo già verificato." };
-  if (hasCompatFirebase()) await user.sendEmailVerification();
-  else {
-    await ensureFirebaseReady();
-    await fb.sendEmailVerification(auth.currentUser);
-  }
+  await withDataLoading(async () => {
+    if (hasCompatFirebase()) await user.sendEmailVerification();
+    else {
+      await ensureFirebaseReady();
+      await fb.sendEmailVerification(auth.currentUser);
+    }
+  }, "Invio verifica email…");
   return { ok: true, message: "Ti abbiamo inviato un'email di verifica: controlla la posta (anche lo spam)." };
 }
 
@@ -407,11 +417,13 @@ async function sendVerificationEmailToCurrentUser() {
 async function reloadCurrentUser() {
   const user = currentUser || (auth && auth.currentUser);
   if (!user) return null;
-  if (hasCompatFirebase()) await user.reload();
-  else {
-    await ensureFirebaseReady();
-    await fb.reload(auth.currentUser);
-  }
+  await withDataLoading(async () => {
+    if (hasCompatFirebase()) await user.reload();
+    else {
+      await ensureFirebaseReady();
+      await fb.reload(auth.currentUser);
+    }
+  }, "Aggiornamento profilo…");
   currentUser = (auth && auth.currentUser) || currentUser;
   return currentUser;
 }
@@ -433,11 +445,11 @@ function validateSignInInput(username, password) {
 
 async function signInWithUsername(username, password) {
   const normalized = validateSignInInput(username, password);
-  if (hasCompatFirebase()) {
-    return auth.signInWithEmailAndPassword(usernameToInternalEmail(normalized), password);
-  }
-  await ensureFirebaseReady();
-  return fb.signInWithEmailAndPassword(auth, usernameToInternalEmail(normalized), password);
+  return withDataLoading(async () => {
+    if (hasCompatFirebase()) return auth.signInWithEmailAndPassword(usernameToInternalEmail(normalized), password);
+    await ensureFirebaseReady();
+    return fb.signInWithEmailAndPassword(auth, usernameToInternalEmail(normalized), password);
+  }, "Verifica accesso…");
 }
 
 // Registrazione pubblica da link invito: username 3-20 caratteri (lettere
@@ -464,21 +476,22 @@ function validateSignUpInput(username, password) {
 
 async function signUpWithUsername(username, password) {
   const normalized = validateSignUpInput(username, password);
-  if (hasCompatFirebase()) {
-    return auth.createUserWithEmailAndPassword(usernameToInternalEmail(normalized), password);
-  }
-  await ensureFirebaseReady();
-  return fb.createUserWithEmailAndPassword(auth, usernameToInternalEmail(normalized), password);
+  return withDataLoading(async () => {
+    if (hasCompatFirebase()) return auth.createUserWithEmailAndPassword(usernameToInternalEmail(normalized), password);
+    await ensureFirebaseReady();
+    return fb.createUserWithEmailAndPassword(auth, usernameToInternalEmail(normalized), password);
+  }, "Creazione accesso…");
 }
 
 async function signOutUser() {
   if (!auth) return;
-  if (hasCompatFirebase()) {
-    await auth.signOut();
-  } else {
-    await ensureFirebaseReady();
-    await fb.signOut(auth);
-  }
+  await withDataLoading(async () => {
+    if (hasCompatFirebase()) await auth.signOut();
+    else {
+      await ensureFirebaseReady();
+      await fb.signOut(auth);
+    }
+  }, "Chiusura sessione…");
 }
 
 function observeAuthState(callback) {
@@ -618,12 +631,14 @@ async function adminSignInWithUsername(username, password) {
 // sessione dell'app cliente (e viceversa) resta intatta.
 async function adminSignOutUser() {
   if (!adminAuth) return;
-  if (hasCompatFirebase()) {
-    await adminAuth.signOut();
-    return;
-  }
-  await ensureAdminServices();
-  await fb.signOut(adminAuth);
+  await withDataLoading(async () => {
+    if (hasCompatFirebase()) {
+      await adminAuth.signOut();
+      return;
+    }
+    await ensureAdminServices();
+    await fb.signOut(adminAuth);
+  }, "Chiusura sessione…");
 }
 
 function getAdminCurrentUser() {

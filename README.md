@@ -720,7 +720,7 @@ Anteprima prima dell'accettazione con: mittente, numero di ricette, ricette nuov
 
 # PWA offline
 
-`sw.js` (cache versionata `piano-nutrizionale-shell-v<CACHE_VERSION>`, attualmente v87):
+`sw.js` (cache versionata `piano-nutrizionale-shell-v<CACHE_VERSION>`, attualmente v88):
 
 - shell dell'app: `index.html`, CSS, JS, manifest, icone, `offline.html`;
 - navigazione **network-first** con fallback in cache (e pagina offline comprensibile);

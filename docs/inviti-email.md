@@ -150,4 +150,4 @@ nuovo invito.
 3. Nessuna variabile d'ambiente da impostare per gli inviti. Prova un invito su
    un indirizzo tuo (Copia link / Condividi link) prima di usarlo con i clienti.
 4. Quando modifichi JavaScript, CSS o HTML, incrementa `CACHE_VERSION` in
-   `sw.js` (la versione attuale è **87**).
+   `sw.js` (la versione attuale è **88**).
