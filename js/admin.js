@@ -939,7 +939,7 @@ function catalogSearch(query, limit = 8) {
 // (es. "pesce omega" → "pesceOmega"). Il server rivalida comunque.
 function engineFamilyId(typed) {
   const normalized = canonicalId(typed).replace(/-/g, '');
-  const found = (window.PianoDomain?.MELLER_GRAMMATURE || [])
+  const found = (window.PianoDomain?.GUIDE_GRAMMATURE || [])
     .find(rule => String(rule.family).toLowerCase() === normalized);
   return found ? found.family : null;
 }
@@ -1074,7 +1074,7 @@ function structureRuleRow(rule = {}) {
   return `
   <div class="structure-rule">
     <div class="rule-head">
-      <input class="rule-family" required placeholder="Famiglia (es. riso)" value="${escapeAdmin(rule.mellerFamilyId || '')}" aria-label="Famiglia">
+      <input class="rule-family" required placeholder="Famiglia (es. riso)" value="${escapeAdmin(rule.guideFamilyId || '')}" aria-label="Famiglia">
       <input class="rule-ings" placeholder="ID ingredienti separati da virgola" value="${escapeAdmin((rule.ingredientIds || []).join(', '))}" aria-label="ID ingredienti">
       <select class="rule-cat" data-value="${escapeAdmin(rule.categoryId || '')}" aria-label="Categoria (opzionale)"><option value="">—</option></select>
       <label><input type="checkbox" class="rule-enabled" ${rule.enabled === false ? '' : 'checked'}>Attiva</label>
@@ -1227,14 +1227,14 @@ function submitGrouping(event) {
     const quantityGrams = collectGroupDoses();
     if ($('group-dest-rule').checked) {
       const typed = $('group-family').value;
-      const mellerFamilyId = engineFamilyId(typed);
-      if (!mellerFamilyId) throw new Error(`La famiglia "${typed.trim() || '?'}" non esiste nel motore delle famiglie.`);
+      const guideFamilyId = engineFamilyId(typed);
+      if (!guideFamilyId) throw new Error(`La famiglia "${typed.trim() || '?'}" non esiste nel motore delle famiglie.`);
       const existing = [...$('structure-rules').querySelectorAll('.rule-family')]
         .map(input => engineFamilyId(input.value)).filter(Boolean);
-      if (existing.includes(mellerFamilyId)) throw new Error(`Famiglia duplicata: ${mellerFamilyId}`);
-      addStructureRuleRow({ mellerFamilyId, ingredientIds, quantityGrams, enabled: true });
+      if (existing.includes(guideFamilyId)) throw new Error(`Famiglia duplicata: ${guideFamilyId}`);
+      addStructureRuleRow({ guideFamilyId, ingredientIds, quantityGrams, enabled: true });
       fillCategorySelects();
-      $('picker-feedback').textContent = `${ingredientIds.length} alimenti raggruppati nella famiglia ${mellerFamilyId}.`;
+      $('picker-feedback').textContent = `${ingredientIds.length} alimenti raggruppati nella famiglia ${guideFamilyId}.`;
     } else {
       const target = $('group-target').value;
       if (target === '__new__') {
@@ -1271,23 +1271,23 @@ function collectStructureRules() {
   const dose = (row, cls) => { const raw = row.querySelector(cls).value; return raw === '' ? null : Number(raw); };
   const rules = rows.map((row, index) => {
     const typedFamily = row.querySelector('.rule-family').value;
-    const mellerFamilyId = engineFamilyId(typedFamily);
-    if (!mellerFamilyId) throw new Error(`Regola ${index + 1}: la famiglia "${typedFamily.trim() || '?'}" non esiste nel motore delle famiglie.`);
+    const guideFamilyId = engineFamilyId(typedFamily);
+    if (!guideFamilyId) throw new Error(`Regola ${index + 1}: la famiglia "${typedFamily.trim() || '?'}" non esiste nel motore delle famiglie.`);
     const quantityGrams = {
       lunch: dose(row, '.rule-la') == null && dose(row, '.rule-lr') == null ? null : { training: dose(row, '.rule-la'), rest: dose(row, '.rule-lr') },
       dinner: dose(row, '.rule-ca') == null && dose(row, '.rule-cr') == null ? null : { training: dose(row, '.rule-ca'), rest: dose(row, '.rule-cr') }
     };
-    if (!quantityGrams.lunch && !quantityGrams.dinner) throw new Error(`Regola ${index + 1} (${mellerFamilyId}): almeno una dose per pranzo o cena.`);
+    if (!quantityGrams.lunch && !quantityGrams.dinner) throw new Error(`Regola ${index + 1} (${guideFamilyId}): almeno una dose per pranzo o cena.`);
     for (const meal of ['lunch', 'dinner']) for (const day of ['training', 'rest']) {
       const value = quantityGrams[meal]?.[day];
-      if (value != null && (!Number.isInteger(value) || value < 1 || value > 2000)) throw new Error(`Regola ${index + 1} (${mellerFamilyId}): le dosi devono essere interi tra 1 e 2000.`);
+      if (value != null && (!Number.isInteger(value) || value < 1 || value > 2000)) throw new Error(`Regola ${index + 1} (${guideFamilyId}): le dosi devono essere interi tra 1 e 2000.`);
     }
     const ingredientIds = [...new Set(row.querySelector('.rule-ings').value.split(',').map(part => canonicalId(part)).filter(Boolean))];
     const categoryId = row.querySelector('.rule-cat')?.value || null;
-    return { mellerFamilyId, ingredientIds, quantityGrams, enabled: row.querySelector('.rule-enabled').checked, categoryId };
+    return { guideFamilyId, ingredientIds, quantityGrams, enabled: row.querySelector('.rule-enabled').checked, categoryId };
   });
   const families = new Set();
-  rules.forEach(rule => { if (families.has(rule.mellerFamilyId)) throw new Error(`Famiglia duplicata: ${rule.mellerFamilyId}`); families.add(rule.mellerFamilyId); });
+  rules.forEach(rule => { if (families.has(rule.guideFamilyId)) throw new Error(`Famiglia duplicata: ${rule.guideFamilyId}`); families.add(rule.guideFamilyId); });
   if (!rules.length) throw new Error('Aggiungi almeno una famiglia.');
   return rules;
 }
@@ -1451,7 +1451,7 @@ function renderCompareMatrix(result) {
   const head = structures.map(item => `<th scope="col">${escapeAdmin(item.name)}<small>${escapeAdmin(item.status === 'archived' ? 'archiviata' : `${item.ruleCount ?? 0} famiglie`)}</small></th>`).join('');
   const familyRows = (result.rows || []).map(row => `
     <tr data-differs="${row.differs ? '1' : '0'}" class="${row.differs ? 'differs' : 'same'}">
-      <th scope="row"><span class="diff-mark" aria-hidden="true">${row.differs ? '≠' : '='}</span> ${escapeAdmin(row.mellerFamilyId)}<small class="diff-word">${row.differs ? 'diverso' : 'uguale'}</small></th>
+      <th scope="row"><span class="diff-mark" aria-hidden="true">${row.differs ? '≠' : '='}</span> ${escapeAdmin(row.guideFamilyId)}<small class="diff-word">${row.differs ? 'diverso' : 'uguale'}</small></th>
       ${structures.map(item => `<td data-label="${escapeAdmin(item.name)}">${escapeAdmin(doseSummary(row.cells?.[item.id] || {}))}</td>`).join('')}
     </tr>`).join('');
   const groupRows = (result.groupRows || []).map(row => `
@@ -2138,7 +2138,7 @@ function handleDietPlanStructure(event) {
 function renderCatalogStatus(summary) {
   const version = Number(summary?.catalogVersion || 0);
   if (!version) {
-    $('catalog-status').innerHTML = '<article class="client-card"><p class="eyebrow">CATALOGO</p><h3>Non ancora importato</h3><p>Finché il catalogo è vuoto la console non può salvare Strutture dieta: importa <span class="mono">docs/catalogo-import-meller.json</span>.</p></article>';
+    $('catalog-status').innerHTML = '<article class="client-card"><p class="eyebrow">CATALOGO</p><h3>Non ancora importato</h3><p>Finché il catalogo è vuoto la console non può salvare Strutture dieta: importa <span class="mono">docs/catalogo-import.json</span>.</p></article>';
     return;
   }
   $('catalog-status').innerHTML = `

@@ -2,7 +2,7 @@
 /* Passo 2 — quantità e unità di misura:
  *  - Riposo/Allenamento: dosi distinte in base al tipo giorno;
  *  - parseQuantity: parser stretto senza reinterpretazioni;
- *  - Meller e carboidrati: solo grammi espliciti, resto testuale;
+ *  - Guide e carboidrati: solo grammi espliciti, resto testuale;
  *  - somme/spesa: cucchiai, pezzi e ml mai convertiti in grammi. */
 const test = require('node:test');
 const assert = require('node:assert/strict');
@@ -58,21 +58,21 @@ test('somme: i cucchiai restano cucchiai, unità diverse non si fondono', () => 
   assert.equal(d.sumPortionStrings('3', '3'), '6 pz');
 });
 
-test('adattamento Meller: solo grammi espliciti, resto invariato', () => {
-  const adapted = d.resolveRecipeForPlan(pastaLunch('120 g', '120 g'), 'lunch', 'meller', 'training').recipe;
+test('adattamento Guide: solo grammi espliciti, resto invariato', () => {
+  const adapted = d.resolveRecipeForPlan(pastaLunch('120 g', '120 g'), 'lunch', 'guide', 'training').recipe;
   assert.equal(adapted.ingredients[0].portions.man, '70 g');
   assert.equal(adapted.ingredients[0].portions.ipo, '70 g');
   for (const dose of ['120', '2 pz', '1 cucchiaio', '250 ml', 'q.b.', '1 mazzetto', '8-10 g', '—']) {
-    const result = d.resolveRecipeForPlan(pastaLunch(dose, dose), 'lunch', 'meller', 'training').recipe;
+    const result = d.resolveRecipeForPlan(pastaLunch(dose, dose), 'lunch', 'guide', 'training').recipe;
     assert.equal(result.ingredients[0].portions.man, dose, `dose "${dose}" invariata`);
   }
 });
 
-test('mellerComparableAmount e parseCarbAmount: g-only, niente naked→grammi', () => {
-  assert.deepEqual(d.mellerComparableAmount('60 g'), { value: 60, unit: 'g' });
-  assert.deepEqual(d.mellerComparableAmount('60g'), { value: 60, unit: 'g' });
+test('guideComparableAmount e parseCarbAmount: g-only, niente naked→grammi', () => {
+  assert.deepEqual(d.guideComparableAmount('60 g'), { value: 60, unit: 'g' });
+  assert.deepEqual(d.guideComparableAmount('60g'), { value: 60, unit: 'g' });
   for (const dose of ['60', '2 pz', '1 cucchiaio', '250 ml', 'q.b.', '1 mazzetto', '8-10 g', '—', '0 g']) {
-    assert.equal(d.mellerComparableAmount(dose), null, `non confrontabile: "${dose}"`);
+    assert.equal(d.guideComparableAmount(dose), null, `non confrontabile: "${dose}"`);
   }
   assert.deepEqual(d.parseCarbAmount('60 g'), { value: 60, unit: 'g' });
   assert.equal(d.parseCarbAmount('250'), null, 'numero nudo non più letto come grammi');
@@ -99,23 +99,23 @@ test('carboidrato cross-slot con unità non-grammi resta testuale', () => {
   assert.equal(crossed, null, 'niente "50 pz" inventati');
 });
 
-test('Riposo/Allenamento: dosi Meller distinte per tipo giorno', () => {
-  const training = d.resolveRecipeForPlan(pastaLunch(), 'lunch', 'meller', 'training').recipe;
-  const rest = d.resolveRecipeForPlan(pastaLunch(), 'lunch', 'meller', 'rest').recipe;
+test('Riposo/Allenamento: dosi Guide distinte per tipo giorno', () => {
+  const training = d.resolveRecipeForPlan(pastaLunch(), 'lunch', 'guide', 'training').recipe;
+  const rest = d.resolveRecipeForPlan(pastaLunch(), 'lunch', 'guide', 'rest').recipe;
   assert.equal(training.ingredients[0].portions.man, '70 g');
   assert.equal(rest.ingredients[0].portions.man, '50 g');
   assert.notEqual(training.ingredients[0].portions.man, rest.ingredients[0].portions.man);
 });
 
 test('spostamento pranzo→cena: dose cena da tabella su grammi nativi', () => {
-  const dinner = d.resolveRecipeForPlan(pastaLunch(), 'dinner', 'meller', 'rest').recipe;
+  const dinner = d.resolveRecipeForPlan(pastaLunch(), 'dinner', 'guide', 'rest').recipe;
   assert.equal(dinner.ingredients[0].portions.man, '40 g');
 });
 
 test('spesa: totali cucchiai separati dai grammi', () => {
   const plan = {
     days: { monday: { type: 'training', lunch: 'L9' } },
-    mellerModes: {},
+    guideModes: {},
     adaptedQuantitiesEnabled: false
   };
   const recipesById = {
@@ -152,7 +152,7 @@ test('batch cooking: somme con cucchiai e unità miste mai fuse', () => {
 test('resolveRecipeForPlan non muta mai la ricetta originale (non-retroattività)', () => {
   const recipe = pastaLunch('120 g', '120 g');
   const before = JSON.stringify(recipe);
-  d.resolveRecipeForPlan(recipe, 'lunch', 'meller', 'training');
-  d.resolveRecipeForPlan(recipe, 'dinner', 'meller', 'rest');
+  d.resolveRecipeForPlan(recipe, 'lunch', 'guide', 'training');
+  d.resolveRecipeForPlan(recipe, 'dinner', 'guide', 'rest');
   assert.equal(JSON.stringify(recipe), before);
 });

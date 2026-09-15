@@ -14,7 +14,7 @@
  *    client vero) e se l'handler lancia, nessuna scrittura viene applicata;
  *  - `process` è esposto nel contesto vm perché catalogImportConfig legge
  *    process.env per la feature flag CATALOG_IMPORT_ENABLED.
- * Casi: dry-run sul file Meller, commit, guardie, file con errori, doppia
+ * Casi: dry-run sul file Guide, commit, guardie, file con errori, doppia
  * conferma, ripristino (restore) e permessi. */
 const test = require('node:test');
 const assert = require('node:assert/strict');
@@ -24,7 +24,7 @@ const vm = require('node:vm');
 const domain = require('../src/domain');
 
 const CREATOR = 'admin-1';
-const seedPayload = fs.readFileSync(path.join(__dirname, '..', '..', 'docs', 'catalogo-import-meller.json'), 'utf8');
+const seedPayload = fs.readFileSync(path.join(__dirname, '..', '..', 'docs', 'catalogo-import.json'), 'utf8');
 
 // ---- Firestore finto fedele alle regole del client vero ----
 
@@ -164,7 +164,7 @@ const keysWith = (store, prefix) => [...store.keys()].filter(key => key.startsWi
 const dryRun = (api, payload = seedPayload) => invoke(api, { format: 'json', mode: 'dry-run', payload });
 const commit = (api, previewId, payload = seedPayload) => invoke(api, { format: 'json', mode: 'commit', payload, previewId, confirm: true });
 
-test('dry-run sul file Meller: 234 creazioni, zero errori, nessuna scrittura', async () => {
+test('dry-run sul file Guide: 234 creazioni, zero errori, nessuna scrittura', async () => {
   const { api, writes } = harness(base());
   const result = await dryRun(api);
   assert.equal(result.mode, 'dry-run');
@@ -224,18 +224,18 @@ test('guardie senza scritture: conferma mancante, previewId sbagliato, flag disa
   assert.deepEqual(off.writes, [], 'flag disabilitato: nessuna scrittura');
 });
 
-test('file con errore (mellerFamilyId inesistente): dry-run lo segnala, commit rifiutato', async () => {
+test('file con errore (guideFamilyId inesistente): dry-run lo segnala, commit rifiutato', async () => {
   const { api, writes } = harness(base());
   const payload = JSON.stringify({
     categories: [],
     ingredients: [{
       ingredientId: 'fantasia', displayName: 'Ingrediente fantasia', categoryId: 'free',
-      mappingKind: 'guided', mellerFamilyId: 'famiglia-inesistente'
+      mappingKind: 'guided', guideFamilyId: 'famiglia-inesistente'
     }]
   });
   const dry = await dryRun(api, payload);
   assert.equal(dry.errors.length, 1);
-  assert.match(dry.errors[0], /mellerFamilyId inesistente/);
+  assert.match(dry.errors[0], /guideFamilyId inesistente/);
   await assert.rejects(
     commit(api, dry.previewId, payload),
     error => error.code === 'failed-precondition' && /Import bloccato/.test(error.message)

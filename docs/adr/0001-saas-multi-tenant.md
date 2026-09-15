@@ -37,7 +37,7 @@ Questa è una deviazione intenzionale dal prompt iniziale, che elencava owner/ed
 
 ### Assenza o invalidità dell'assegnazione
 
-Senza assegnazione, oppure con assegnazione sospesa, revocata o scaduta, il client usa **solo le quantità originali**. Nessun fallback Meller implicito. La Lista della spesa è una capability commerciale distinta: resta bloccata e potrà essere sbloccata per 24 ore dopo una pubblicità rewarded. In questa fase il provider pubblicitario non è scelto: esistono soltanto contratto provider-agnostic, consenso e feature flag disattivato. Nessun dato nutrizionale deve essere inviato a un provider advertising.
+Senza assegnazione, oppure con assegnazione sospesa, revocata o scaduta, il client usa **solo le quantità originali**. Nessun fallback Guide implicito. La Lista della spesa è una capability commerciale distinta: resta bloccata e potrà essere sbloccata per 24 ore dopo una pubblicità rewarded. In questa fase il provider pubblicitario non è scelto: esistono soltanto contratto provider-agnostic, consenso e feature flag disattivato. Nessun dato nutrizionale deve essere inviato a un provider advertising.
 
 ### Pubblicazione e migrazione
 

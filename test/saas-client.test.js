@@ -6,7 +6,7 @@ global.PIANO_SAAS_CONFIG = { enabled: true, shoppingRewardedAds: { enabled: fals
 const Saas = require('../js/saas.js');
 
 function plan() {
-  return { mellerModes: { monday: { lunch: 'meller', dinner: 'meller' } }, days: {} };
+  return { guideModes: { monday: { lunch: 'guide', dinner: 'guide' } }, days: {} };
 }
 const profile = { clientProfileId: 'client-a', assignmentId: 'asg-1', ruleSetId: 'base', ruleSetVersion: '3', ruleSetChecksum: 'a'.repeat(64) };
 
@@ -14,14 +14,14 @@ test('SaaS senza assegnazione forza original-only senza mutare il piano sorgente
   const source = plan();
   const result = Saas.applyPolicy(source, { state: 'unassigned' });
   assert.equal(result.mode, 'original-only');
-  assert.equal(result.plan.mellerModes.monday.lunch, 'original');
-  assert.equal(source.mellerModes.monday.lunch, 'meller');
+  assert.equal(result.plan.guideModes.monday.lunch, 'original');
+  assert.equal(source.guideModes.monday.lunch, 'guide');
 });
 
 test('assegnazione nuova richiede conferma e non ricalcola silenziosamente', () => {
   const result = Saas.applyPolicy(plan(), { state: 'assigned', profile });
   assert.equal(result.migrationRequired, true);
-  assert.equal(result.plan.mellerModes.monday.dinner, 'original');
+  assert.equal(result.plan.guideModes.monday.dinner, 'original');
 });
 
 test('snapshot esatto conserva la modalità del piano', () => {
@@ -30,7 +30,7 @@ test('snapshot esatto conserva la modalità del piano', () => {
   assert.equal(Saas.snapshotMatches(source, profile), true);
   const result = Saas.applyPolicy(source, { state: 'assigned', profile });
   assert.equal(result.mode, 'assigned');
-  assert.equal(result.plan.mellerModes.monday.lunch, 'meller');
+  assert.equal(result.plan.guideModes.monday.lunch, 'guide');
 });
 
 test('nuovo catalogo mapping richiede conferma e non altera lo snapshot', () => {
@@ -78,8 +78,8 @@ test('spesa: cliente con assegnazione attiva accede sempre, senza pubblicità', 
 
 test('snapshot v2: struttura + revisione + versione catalogo', () => {
   const Domain = require('../js/domain.js');
-  const extract = require('fs').readFileSync(require('path').join(__dirname, '..', 'docs', 'catalogo-ingredienti-meller.json'), 'utf8');
-  const seed = Domain.splitMellerSeed(JSON.parse(extract));
+  const extract = require('fs').readFileSync(require('path').join(__dirname, '..', 'docs', 'catalogo-ingredienti.json'), 'utf8');
+  const seed = Domain.splitGuideSeed(JSON.parse(extract));
   const profile = {
     schemaVersion: 2, clientProfileId: 'client-a', assignmentId: 'asg-9',
     structureId: 'struttura-1', structureRevisionId: '3', structureChecksum: 'e'.repeat(64),
@@ -110,8 +110,8 @@ test('snapshot v2: struttura + revisione + versione catalogo', () => {
 test('engineRulesFor: v2 converte revisione+catalogo, v1 passa le regole motore', () => {
   const Domain = require('../js/domain.js');
   globalThis.PianoDomain = Domain;
-  const extract = require('fs').readFileSync(require('path').join(__dirname, '..', 'docs', 'catalogo-ingredienti-meller.json'), 'utf8');
-  const seed = Domain.splitMellerSeed(JSON.parse(extract));
+  const extract = require('fs').readFileSync(require('path').join(__dirname, '..', 'docs', 'catalogo-ingredienti.json'), 'utf8');
+  const seed = Domain.splitGuideSeed(JSON.parse(extract));
   const v2 = {
     schemaVersion: 2,
     structureRevision: { revisionId: '1', rules: seed.structureSeed.rules },

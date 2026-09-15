@@ -18,11 +18,11 @@ function createEmptyWeeklyPlan() {
     defaultDays: JSON.parse(JSON.stringify(days)),
     batchRules: {},
     batchTemplates: [],
-    mellerModes: PianoDomain.emptyMellerModes(),
-    mellerAdaptations: {}
+    guideModes: PianoDomain.emptyGuideModes(),
+    guideAdaptations: {}
   };
 }
 
 // Linee guida e alternative alimentari del nutrizionista. Fonte unica:
-// js/domain.js (MELLER_GRAMMATURE e derivati). Qui c'è solo il riferimento.
-const MELLER_GUIDE = PianoDomain.MELLER_GUIDE;
+// js/domain.js (GUIDE_GRAMMATURE e derivati). Qui c'è solo il riferimento.
+const GUIDE_MANUAL = PianoDomain.GUIDE_MANUAL;

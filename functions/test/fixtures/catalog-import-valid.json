@@ -17,7 +17,7 @@
       ],
       "categoryId": "cereali-minori",
       "mappingKind": "guided",
-      "mellerFamilyId": "cereali"
+      "guideFamilyId": "cereali"
     },
     {
       "ingredientId": "free-finocchio-selvatico",
@@ -27,7 +27,7 @@
       ],
       "categoryId": "free",
       "mappingKind": "free",
-      "mellerFamilyId": null
+      "guideFamilyId": null
     }
   ]
 }

@@ -3,13 +3,13 @@
 - Stato: accettato
 - Data: 2026-09-10
 - Decisione di prodotto: owner
-- Allegati normativi: `docs/schema-catalogo-strutture-v2.json`, `docs/catalogo-ingredienti-meller.json`, `docs/prompt-sessione-ux-saas-2.md`
+- Allegati normativi: `docs/schema-catalogo-strutture-v2.json`, `docs/catalogo-ingredienti.json`, `docs/prompt-sessione-ux-saas-2.md`
 
 ## Contesto
 
 Fino allo schema 5 una ricetta conservava **quattro quantità** per ingrediente (uomo/donna × allenamento/riposo). Le dosi di riposo erano quindi duplicate in ogni ricetta, la migrazione delle ricette a ogni variazione delle linee guida era rischiosa e il ricettario "originale" — che deve restare immutabile — conteneva di fatto dati derivati dalle linee guida.
 
-In parallelo, `MELLER_GRAMMATURE` mescolava: identità degli ingredienti (nomi, categorie, alias), regole di dosaggio (quantità per pranzo/cena e giorno A/R) e struttura della dieta. Il prompt-sessione impone la separazione in tre concetti con governance diversa.
+In parallelo, `GUIDE_GRAMMATURE` mescolava: identità degli ingredienti (nomi, categorie, alias), regole di dosaggio (quantità per pranzo/cena e giorno A/R) e struttura della dieta. Il prompt-sessione impone la separazione in tre concetti con governance diversa.
 
 ## Decisioni
 
@@ -17,16 +17,16 @@ In parallelo, `MELLER_GRAMMATURE` mescolava: identità degli ingredienti (nomi, 
    - La quantità originale è **una sola per profilo** ed è il riferimento del giorno di **allenamento** del pasto canonico della ricetta (il contesto canonico).
    - La dose di riposo (e il travaso pranzo/cena) **deriva a tempo di piano** dalla struttura assegnata (`resolveRecipeForPlan(recipe, slot, mode, dayType)` + `adaptIngredientForSlot(..., dayType)`), mai memorizzata nella ricetta.
    - Le porzioni legacy a 4 campi vengono migrare allo schema 6 preservando i valori di **allenamento**. La migrazione è idempotente.
-   - `checkMellerAdaptation`/`checkMellerContext` confrontano l'originale con il **riferimento di allenamento del pasto** (canonico); il riposo non è un difetto dell'originale.
+   - `checkGuideAdaptation`/`checkGuideContext` confrontano l'originale con il **riferimento di allenamento del pasto** (canonico); il riposo non è un difetto dell'originale.
    - **UI editor**: i campi sono nell'ordine **Uomo → Donna** (etichetta senza "IPO"), con placeholder **"g"** come unità suggerita e hint esplicito *"Se compili un solo campo, il valore vale per entrambi"*. L'etichetta "Donna IPO" sparisce da tutte le viste (chiave dati `ipo` invariata).
 
 2. **Tre concetti separati** (vedi schema allegato):
-   - **Catalogo globale ingredienti** (`globalIngredientCatalog/current/...`): nomi canonici, alias, categorie, `searchTokens`, `mappingKind` (`guided`/`free`), `mellerFamilyId` opzionale. **Zero quantità.** Governance da platform admin. Fonte dell'autocomplete dell'editor. Le Rules ne consentono la **lettura a ogni account autenticato**, scritture solo da callable/Admin SDK.
-   - **Motore famiglie Meller**: quantità lunch/dinner × training/rest per famiglia, ordinate per ID (`mellerFamilyId`); le regex legacy restano solo come fallback di migrazione controllato.
+   - **Catalogo globale ingredienti** (`globalIngredientCatalog/current/...`): nomi canonici, alias, categorie, `searchTokens`, `mappingKind` (`guided`/`free`), `guideFamilyId` opzionale. **Zero quantità.** Governance da platform admin. Fonte dell'autocomplete dell'editor. Le Rules ne consentono la **lettura a ogni account autenticato**, scritture solo da callable/Admin SDK.
+   - **Motore famiglie Guide**: quantità lunch/dinner × training/rest per famiglia, ordinate per ID (`guideFamilyId`); le regex legacy restano solo come fallback di migrazione controllato.
    - **Strutture dieta org-scoped**: aggregate mutabile + revisioni immutabili con `ownerUid`; il nutritionist vede solo le proprie strutture, l'admin org tutte. Niente campo "Versione" in UI; `revisionId`/`checksum` sono dettagli interni. "Ripristina" crea una nuova revisione.
    - **Sezione console "Strutture dieta"** (voce di menu dopo "Clienti"): callable `listDietStructures`, `getDietStructureRevision` (checksum solo se admin), `createDietStructure`, `updateDietStructureRevision` (sempre nuova revisione, niente edit in place), `archiveDietStructure` (soft-delete + riattivazione). Validatore condiviso `validateDietStructureRules` (dosi intere 1–2000 g, pasto null consentito ma non entrambi, niente famiglie duplicate). Privacy `ownerUid` applicata lato callable; accesso diretto da Firestore Rules **negato** ai documenti (aggregate + revisioni).
 
-3. **`splitMellerSeed(extract)`** (`js/domain.js`): trasforma il JSON authoritative (`catalogo-ingredienti-meller.json`) nelle tre collezioni seed (catalogo, famiglie, struttura base) **senza importare i 58 ingredienti provvisori né inventare quantità**. `structureRevisionToMellerRules` converte una revisione pubblicata nella lista di regole motore (alias dal catalogo; fallback legacy solo per famiglie senza ingredienti in catalogo).
+3. **`splitGuideSeed(extract)`** (`js/domain.js`): trasforma il JSON authoritative (`catalogo-ingredienti.json`) nelle tre collezioni seed (catalogo, famiglie, struttura base) **senza importare i 58 ingredienti provvisori né inventare quantità**. `structureRevisionToGuideRules` converte una revisione pubblicata nella lista di regole motore (alias dal catalogo; fallback legacy solo per famiglie senza ingredienti in catalogo).
 
 4. **Autocomplete editor**: field di ricerca `buildCatalogIndex` + `searchCatalog` (accents/case tolerant, alias evidenziati, prefisso > substring, ordinamento deterministico italiano, zero risultati per ignoto). L'ignoto è **consentito** ma marcato "mapping mancante": niente mapping né quantità inventate; `ingredientId` stabile se scelto dal catalogo.
 
@@ -38,9 +38,9 @@ In parallelo, `MELLER_GRAMMATURE` mescolava: identità degli ingredienti (nomi, 
 
 8. **Font self-hosted** (OFL 1.1, `assets/fonts/`), fallback Verdana; nessuna chiamata Google Fonts a runtime. _(Storicamente Inter; sostituito da **Author** con il restyle del 2026-09: vedi `css/style.css`.)_
 
-9. **Import batch del catalogo globale**: gli ingredienti del catalogo si importano solo da **platform admin** via job applicativo (JSON/CSV) con validazione, deduplica e controllo collisioni alias; anteprima con diff, **dry-run** di default e commit atomico versionato ai numeri di catalogo (`catalogVersion`). La funzione è **reversibile con feature flag** (`CATALOG_IMPORT_ENABLED`, default disattivo in produzione finché il catalogo definitivo del dott. Meller non è pronto). Il formato esatto e le fixture vedi `docs/catalog-import-format.md`.
+9. **Import batch del catalogo globale**: gli ingredienti del catalogo si importano solo da **platform admin** via job applicativo (JSON/CSV) con validazione, deduplica e controllo collisioni alias; anteprima con diff, **dry-run** di default e commit atomico versionato ai numeri di catalogo (`catalogVersion`). La funzione è **reversibile con feature flag** (`CATALOG_IMPORT_ENABLED`, default disattivo in produzione finché il catalogo definitivo del nutrizionista non è pronto). Il formato esatto e le fixture vedi `docs/catalog-import-format.md`.
 
-10. **Migrazione JSON Meller → split**: `splitMellerSeed(extract)` divide l'estratto canonico `docs/catalogo-ingredienti-meller.json` (25 famiglie guidate + 50 pattern liberi) in tre collezioni: `categories` (6 categorie del manuale + `free`), `ingredients` (25 guided + 50 free, **zero quantità**), `families` (motore quantità per nome), più `structureSeed.rules` (25) e `alternativeGroups` (carboidrati 10 / proteine 13). Il seed dell'emulatore lo applica tramite lo script `functions/scripts/seed-emulator.js` — nessuna modifica manuale del sorgente tra gli ambienti (App Check off solo in emulator).
+10. **Migrazione JSON Guide → split**: `splitGuideSeed(extract)` divide l'estratto canonico `docs/catalogo-ingredienti.json` (25 famiglie guidate + 50 pattern liberi) in tre collezioni: `categories` (6 categorie del manuale + `free`), `ingredients` (25 guided + 50 free, **zero quantità**), `families` (motore quantità per nome), più `structureSeed.rules` (25) e `alternativeGroups` (carboidrati 10 / proteine 13). Il seed dell'emulatore lo applica tramite lo script `functions/scripts/seed-emulator.js` — nessuna modifica manuale del sorgente tra gli ambienti (App Check off solo in emulator).
 
 ## Conseguenze
 

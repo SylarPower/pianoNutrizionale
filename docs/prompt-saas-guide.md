@@ -1,4 +1,4 @@
-# Prompt autonomo — SaaS/admin Meller per Piano Nutrizionale
+# Prompt autonomo — SaaS/admin Guide per Piano Nutrizionale
 
 Sei un agente di sviluppo che lavora in una nuova sessione sul repository `SylarPower/pianoNutrizionale`.
 
@@ -7,7 +7,7 @@ Sei un agente di sviluppo che lavora in una nuova sessione sul repository `Sylar
 L’app attuale è una PWA vanilla HTML/CSS/JavaScript, senza framework, bundler o dipendenze runtime aggiuntive. Il client contiene già:
 
 - ricettario personale fedele alle dosi originali;
-- piano settimanale e contesto Meller per slot pranzo/cena;
+- piano settimanale e contesto Guide per slot pranzo/cena;
 - adattamento contestuale non distruttivo, con dosi Uomo/Donna × Allenamento/Riposo a crudo;
 - gestione di ingredienti liberi, mapping mancanti e blocco dell’applicazione quando il mapping non è affidabile;
 - import/export, household/account link, generatore, batch cooking, lista spesa, registro prezzi e tema dark AMOLED;
@@ -16,14 +16,14 @@ L’app attuale è una PWA vanilla HTML/CSS/JavaScript, senza framework, bundler
 
 La fase precedente **non** ha implementato il SaaS. Ha soltanto lasciato nel client le segnalazioni locali e i metadati necessari per poter raccogliere in futuro i casi di mapping mancanti.
 
-Decisione di prodotto già presa: le linee guida Meller **non sono universali per tutti i clienti**. Il `ruleSet` nutrizionale deve essere assegnato esplicitamente al singolo cliente da un nutrizionista o da un admin autorizzato. Household e account non sostituiscono questa assegnazione.
+Decisione di prodotto già presa: le linee guida Guide **non sono universali per tutti i clienti**. Il `ruleSet` nutrizionale deve essere assegnato esplicitamente al singolo cliente da un nutrizionista o da un admin autorizzato. Household e account non sostituiscono questa assegnazione.
 
 ## Obiettivo della sessione
 
 Progettare e implementare il livello SaaS/admin multi-tenant che permetta di governare in modo sicuro e versionato:
 
 1. segnalazioni di ingredienti non riconosciuti o ambigui;
-2. mapping Meller approvati e loro alias;
+2. mapping Guide approvati e loro alias;
 3. versioni delle regole e delle grammature pubblicate;
 4. profili nutrizionali individuali e assegnazione di un `ruleSet` al singolo cliente da parte di nutrizionista/admin;
 5. ruoli, organizzazioni, household, inviti e permessi;
@@ -31,7 +31,7 @@ Progettare e implementare il livello SaaS/admin multi-tenant che permetta di gov
 7. audit, privacy, consenso e gestione GDPR;
 8. strumenti admin senza esporre segreti o privilegi nel client.
 
-Non riscrivere il ricettario e non trasformare automaticamente le ricette originali nel database utente. L’originale deve restare la sorgente immutabile dell’utente; il contesto Meller deve rimanere una risoluzione/versione applicata al piano.
+Non riscrivere il ricettario e non trasformare automaticamente le ricette originali nel database utente. L’originale deve restare la sorgente immutabile dell’utente; il contesto Guide deve rimanere una risoluzione/versione applicata al piano.
 
 ## Vincoli non negoziabili
 
@@ -57,7 +57,7 @@ Definisci chiaramente questi livelli:
 - **Organization/tenant**: spazio SaaS per admin/editor, policy, configurazioni, contenuti e segnalazioni.
 - **Cliente/paziente**: identità applicativa distinta dall’account tecnico e dalla household, con consenso, stato, nutrizionista responsabile e assegnazione attiva del profilo nutrizionale.
 - **Profilo nutrizionale individuale**: assegnazione del `ruleSetId` e della `ruleSetVersion` al singolo cliente, con chi ha assegnato il profilo, data di efficacia, scadenza eventuale e audit. Non usare la household come sostituto del cliente.
-- **Cataloghi globali versionati**: ingredienti, alias, mapping Meller, regole e contenuti pubblicabili.
+- **Cataloghi globali versionati**: ingredienti, alias, mapping Guide, regole e contenuti pubblicabili.
 - **Rule set personalizzato**: se un cliente necessita di dosi diverse, non modificare il rule set globale: crea un profilo/rule set tenant-scoped derivato da una base pubblicata, con override espliciti, motivazione, revisione e propria versione.
 - **Snapshot applicativi**: il piano utente deve conservare `clientProfileId`, `ruleSetId`, `ruleSetVersion` e il checksum usato per una risoluzione, così una pubblicazione o una nuova assegnazione non cambia retroattivamente la storia.
 
@@ -88,7 +88,7 @@ Progetta almeno:
 
 Usa custom claims soltanto per informazioni coarse-grained e non come unica fonte di verità. La fonte autorevole deve essere il documento di membership verificato server-side. Definisci matrice permessi, revoca, inviti con scadenza, accettazione idempotente e protezione contro escalation.
 
-### 3. Mapping Meller e segnalazioni
+### 3. Mapping Guide e segnalazioni
 
 Progetta un flusso completo:
 
@@ -116,7 +116,7 @@ Prevedi distinzione tra:
 
 ### 4. Versionamento delle regole
 
-Disegna un formato per `mellerRuleSet` immutabile dopo la pubblicazione, con:
+Disegna un formato per `guideRuleSet` immutabile dopo la pubblicazione, con:
 
 - `ruleSetId`, semver o versione monotona, stato draft/review/published/retired;
 - checksum;
@@ -132,7 +132,7 @@ Il client deve poter risolvere un piano con la versione fissata nello snapshot o
 Definisci anche il comportamento per questi casi:
 
 - cliente senza assegnazione: fallback esplicito e configurabile, mai implicito;
-- cliente con assegnazione scaduta o sospesa: bloccare l’applicazione Meller oppure usare solo le quantità originali, secondo policy dichiarata;
+- cliente con assegnazione scaduta o sospesa: bloccare l’applicazione Guide oppure usare solo le quantità originali, secondo policy dichiarata;
 - assegnazione nuova: non sovrascrivere le ricette originali e non rigenerare silenziosamente la lista della spesa;
 - override individuale: deve includere motivazione, autore, revisore, validità e checksum;
 - modifica del profilo: deve produrre una nuova versione, non una mutazione in-place.
@@ -202,7 +202,7 @@ Definisci e implementa almeno:
 - schema dati, matrice permessi e modello di assegnazione cliente → profilo/versione;
 - Security Rules e test emulatori, inclusi accessi cross-client negati;
 - Cloud Functions/server handlers idempotenti;
-- contratto/versioning del catalogo Meller;
+- contratto/versioning del catalogo Guide;
 - admin UI funzionante per la coda mapping;
 - client integrato con feature flag e fallback;
 - migrazione dati documentata e reversibile;

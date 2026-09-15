@@ -29,6 +29,12 @@
       "displayName": "Grassi",
       "description": null,
       "sortOrder": 4
+    },
+    {
+      "categoryId": "free",
+      "displayName": "Alimenti liberi",
+      "description": null,
+      "sortOrder": 5
     }
   ],
   "ingredients": [
@@ -38,25 +44,25 @@
       "aliases": [
         "acciuga",
         "acciughe",
-        "Acciughe / Alici",
         "alice",
-        "alici"
+        "alici",
+        "Acciughe / Alici"
       ],
       "categoryId": "protein",
       "mappingKind": "guided",
-      "mellerFamilyId": "pesceAzzurro"
+      "guideFamilyId": "pesceAzzurro"
     },
     {
       "ingredientId": "albume",
       "displayName": "Albume",
       "aliases": [
         "albume",
-        "Albume",
-        "albumi"
+        "albumi",
+        "Albume"
       ],
       "categoryId": "protein",
       "mappingKind": "guided",
-      "mellerFamilyId": "uova"
+      "guideFamilyId": "uova"
     },
     {
       "ingredientId": "amaranto",
@@ -67,19 +73,19 @@
       ],
       "categoryId": "carb",
       "mappingKind": "guided",
-      "mellerFamilyId": "cereali"
+      "guideFamilyId": "cereali"
     },
     {
       "ingredientId": "aringa",
       "displayName": "Aringa",
       "aliases": [
         "aringa",
-        "Aringa",
-        "aringhe"
+        "aringhe",
+        "Aringa"
       ],
       "categoryId": "protein",
       "mappingKind": "guided",
-      "mellerFamilyId": "pesceAzzurro"
+      "guideFamilyId": "pesceAzzurro"
     },
     {
       "ingredientId": "asiago",
@@ -90,34 +96,34 @@
       ],
       "categoryId": "protein",
       "mappingKind": "guided",
-      "mellerFamilyId": "formaggiStagionati"
+      "guideFamilyId": "formaggiStagionati"
     },
     {
       "ingredientId": "astice",
       "displayName": "Astice / Aragosta",
       "aliases": [
-        "aragosta",
         "astice",
+        "aragosta",
         "Astice / Aragosta"
       ],
       "categoryId": "protein",
       "mappingKind": "guided",
-      "mellerFamilyId": "crostaceiMolluschi"
+      "guideFamilyId": "crostaceiMolluschi"
     },
     {
       "ingredientId": "avena",
       "displayName": "Fiocchi d'avena / Porridge",
       "aliases": [
         "fiocchi d'avena",
-        "Fiocchi d'avena / Porridge",
         "fiocchi di avena",
+        "porridge",
         "oat",
         "oats",
-        "porridge"
+        "Fiocchi d'avena / Porridge"
       ],
       "categoryId": "carb",
       "mappingKind": "guided",
-      "mellerFamilyId": "fiocchiAvena"
+      "guideFamilyId": "fiocchiAvena"
     },
     {
       "ingredientId": "baccala",
@@ -125,12 +131,12 @@
       "aliases": [
         "baccala",
         "baccalà",
-        "Baccalà / Stoccafisso",
-        "stoccafisso"
+        "stoccafisso",
+        "Baccalà / Stoccafisso"
       ],
       "categoryId": "protein",
       "mappingKind": "guided",
-      "mellerFamilyId": "pesceBiancoMagro"
+      "guideFamilyId": "pesceBiancoMagro"
     },
     {
       "ingredientId": "bresaola",
@@ -141,19 +147,19 @@
       ],
       "categoryId": "protein",
       "mappingKind": "guided",
-      "mellerFamilyId": "affettatiMagri"
+      "guideFamilyId": "affettatiMagri"
     },
     {
       "ingredientId": "bulgur",
       "displayName": "Bulgur",
       "aliases": [
         "bulgur",
-        "Bulgur",
-        "burghul"
+        "burghul",
+        "Bulgur"
       ],
       "categoryId": "carb",
       "mappingKind": "guided",
-      "mellerFamilyId": "cereali"
+      "guideFamilyId": "cereali"
     },
     {
       "ingredientId": "burger-vegetali",
@@ -161,27 +167,27 @@
       "aliases": [
         "burger vegetale",
         "burger vegetali",
-        "Burger vegetali",
+        "veggie burger",
         "hamburger vegetale",
-        "veggie burger"
+        "Burger vegetali"
       ],
       "categoryId": "protein",
       "mappingKind": "guided",
-      "mellerFamilyId": "burgerVegetali"
+      "guideFamilyId": "burgerVegetali"
     },
     {
       "ingredientId": "calamari",
       "displayName": "Calamari / Totani",
       "aliases": [
-        "calamari",
-        "Calamari / Totani",
         "calamaro",
+        "calamari",
+        "totano",
         "totani",
-        "totano"
+        "Calamari / Totani"
       ],
       "categoryId": "protein",
       "mappingKind": "guided",
-      "mellerFamilyId": "crostaceiMolluschi"
+      "guideFamilyId": "crostaceiMolluschi"
     },
     {
       "ingredientId": "caprino",
@@ -192,7 +198,7 @@
       ],
       "categoryId": "protein",
       "mappingKind": "guided",
-      "mellerFamilyId": "formaggiFreschiMolli"
+      "guideFamilyId": "formaggiFreschiMolli"
     },
     {
       "ingredientId": "ceci",
@@ -203,57 +209,57 @@
       ],
       "categoryId": "protein",
       "mappingKind": "guided",
-      "mellerFamilyId": "legumiScatola"
+      "guideFamilyId": "legumiScatola"
     },
     {
       "ingredientId": "cereali-soffiati",
       "displayName": "Cereali soffiati / integrali colazione",
       "aliases": [
-        "cereali da colazione",
-        "cereali integrali colazione",
         "cereali soffiati",
+        "cereali integrali colazione",
+        "cereali da colazione",
         "Cereali soffiati / integrali colazione"
       ],
       "categoryId": "carb",
       "mappingKind": "guided",
-      "mellerFamilyId": "cerealiColazione"
+      "guideFamilyId": "cerealiColazione"
     },
     {
       "ingredientId": "cornflakes",
       "displayName": "Cornflakes",
       "aliases": [
-        "corn flakes",
         "cornflakes",
-        "Cornflakes",
-        "fiocchi di mais"
+        "corn flakes",
+        "fiocchi di mais",
+        "Cornflakes"
       ],
       "categoryId": "carb",
       "mappingKind": "guided",
-      "mellerFamilyId": "cerealiColazione"
+      "guideFamilyId": "cerealiColazione"
     },
     {
       "ingredientId": "couscous",
       "displayName": "Cous cous",
       "aliases": [
         "cous cous",
-        "Cous cous",
-        "couscous"
+        "couscous",
+        "Cous cous"
       ],
       "categoryId": "carb",
       "mappingKind": "guided",
-      "mellerFamilyId": "cereali"
+      "guideFamilyId": "cereali"
     },
     {
       "ingredientId": "cozze",
       "displayName": "Cozze",
       "aliases": [
         "cozze",
-        "Cozze",
-        "mitili"
+        "mitili",
+        "Cozze"
       ],
       "categoryId": "protein",
       "mappingKind": "guided",
-      "mellerFamilyId": "crostaceiMolluschi"
+      "guideFamilyId": "crostaceiMolluschi"
     },
     {
       "ingredientId": "crackers",
@@ -265,31 +271,31 @@
       ],
       "categoryId": "carb",
       "mappingKind": "guided",
-      "mellerFamilyId": "crackers"
+      "guideFamilyId": "crackers"
     },
     {
       "ingredientId": "crescenza",
       "displayName": "Crescenza / Stracchino",
       "aliases": [
         "crescenza",
-        "Crescenza / Stracchino",
-        "stracchino"
+        "stracchino",
+        "Crescenza / Stracchino"
       ],
       "categoryId": "protein",
       "mappingKind": "guided",
-      "mellerFamilyId": "formaggiFreschiMolli"
+      "guideFamilyId": "formaggiFreschiMolli"
     },
     {
       "ingredientId": "crostini",
       "displayName": "Crostini",
       "aliases": [
+        "crostino",
         "crostini",
-        "Crostini",
-        "crostino"
+        "Crostini"
       ],
       "categoryId": "carb",
       "mappingKind": "guided",
-      "mellerFamilyId": "crackers"
+      "guideFamilyId": "crackers"
     },
     {
       "ingredientId": "dairy-latte",
@@ -303,88 +309,88 @@
       ],
       "categoryId": "protein",
       "mappingKind": "free",
-      "mellerFamilyId": null
+      "guideFamilyId": null
     },
     {
       "ingredientId": "dairy-yogurt",
       "displayName": "Yogurt classico",
       "aliases": [
-        "yoghurt",
         "yogurt",
+        "yoghurt",
         "yogurt bianco",
-        "Yogurt classico",
+        "yogurt naturale",
         "yogurt magro",
-        "yogurt naturale"
+        "Yogurt classico"
       ],
       "categoryId": "protein",
       "mappingKind": "free",
-      "mellerFamilyId": null
+      "guideFamilyId": null
     },
     {
       "ingredientId": "drink-latte-avena",
       "displayName": "Latte d'avena",
       "aliases": [
-        "bevanda di avena",
-        "latte d'avena",
-        "Latte d'avena",
         "latte di avena",
-        "oat milk"
+        "latte d'avena",
+        "oat milk",
+        "bevanda di avena",
+        "Latte d'avena"
       ],
       "categoryId": "free",
       "mappingKind": "free",
-      "mellerFamilyId": null
+      "guideFamilyId": null
     },
     {
       "ingredientId": "drink-latte-cocco",
       "displayName": "Latte di cocco",
       "aliases": [
-        "bevanda di cocco",
-        "coconut milk",
         "latte di cocco",
+        "coconut milk",
+        "bevanda di cocco",
         "Latte di cocco"
       ],
       "categoryId": "free",
       "mappingKind": "free",
-      "mellerFamilyId": null
+      "guideFamilyId": null
     },
     {
       "ingredientId": "drink-latte-mandorla",
       "displayName": "Latte di mandorla",
       "aliases": [
+        "latte di mandorla",
         "almond milk",
         "bevanda di mandorla",
-        "latte di mandorla",
         "Latte di mandorla"
       ],
       "categoryId": "free",
       "mappingKind": "free",
-      "mellerFamilyId": null
+      "guideFamilyId": null
     },
     {
       "ingredientId": "drink-latte-riso",
       "displayName": "Latte di riso",
       "aliases": [
-        "bevanda di riso",
         "latte di riso",
-        "Latte di riso",
-        "rice milk"
+        "rice milk",
+        "bevanda di riso",
+        "Latte di riso"
       ],
       "categoryId": "free",
       "mappingKind": "free",
-      "mellerFamilyId": null
+      "guideFamilyId": null
     },
     {
       "ingredientId": "drink-latte-soia",
       "displayName": "Latte di soia",
       "aliases": [
-        "bevanda di soia",
         "latte di soia",
-        "Latte di soia",
-        "soy milk"
+        "soy milk",
+        "bevanda di soia",
+        "Latte di soia"
       ],
       "categoryId": "free",
       "mappingKind": "free",
-      "mellerFamilyId": null
+      "guideFamilyId": null
     },
     {
       "ingredientId": "edamame",
@@ -395,34 +401,34 @@
       ],
       "categoryId": "protein",
       "mappingKind": "guided",
-      "mellerFamilyId": "legumiScatola"
+      "guideFamilyId": "legumiScatola"
     },
     {
       "ingredientId": "emmental",
       "displayName": "Emmental",
       "aliases": [
         "emmental",
-        "Emmental",
-        "emmenthal"
+        "emmenthal",
+        "Emmental"
       ],
       "categoryId": "protein",
       "mappingKind": "guided",
-      "mellerFamilyId": "formaggiStagionati"
+      "guideFamilyId": "formaggiStagionati"
     },
     {
       "ingredientId": "fagioli",
       "displayName": "Fagioli",
       "aliases": [
-        "azuki",
+        "fagiolo",
+        "fagioli",
         "borlotti",
         "cannellini",
-        "fagioli",
-        "Fagioli",
-        "fagiolo"
+        "azuki",
+        "Fagioli"
       ],
       "categoryId": "protein",
       "mappingKind": "guided",
-      "mellerFamilyId": "legumiScatola"
+      "guideFamilyId": "legumiScatola"
     },
     {
       "ingredientId": "faraona",
@@ -433,7 +439,7 @@
       ],
       "categoryId": "protein",
       "mappingKind": "guided",
-      "mellerFamilyId": "polloTacchino"
+      "guideFamilyId": "polloTacchino"
     },
     {
       "ingredientId": "farro",
@@ -444,19 +450,19 @@
       ],
       "categoryId": "carb",
       "mappingKind": "guided",
-      "mellerFamilyId": "cereali"
+      "guideFamilyId": "cereali"
     },
     {
       "ingredientId": "fat-anacardi",
       "displayName": "Anacardi",
       "aliases": [
+        "anacardo",
         "anacardi",
-        "Anacardi",
-        "anacardo"
+        "Anacardi"
       ],
       "categoryId": "fat",
       "mappingKind": "free",
-      "mellerFamilyId": null
+      "guideFamilyId": null
     },
     {
       "ingredientId": "fat-arachidi",
@@ -464,12 +470,12 @@
       "aliases": [
         "arachide",
         "arachidi",
-        "Arachidi / Burro di arachidi",
-        "burro di arachidi"
+        "burro di arachidi",
+        "Arachidi / Burro di arachidi"
       ],
       "categoryId": "fat",
       "mappingKind": "free",
-      "mellerFamilyId": null
+      "guideFamilyId": null
     },
     {
       "ingredientId": "fat-avocado",
@@ -480,19 +486,19 @@
       ],
       "categoryId": "fat",
       "mappingKind": "free",
-      "mellerFamilyId": null
+      "guideFamilyId": null
     },
     {
       "ingredientId": "fat-burro",
       "displayName": "Burro",
       "aliases": [
         "burro",
-        "Burro",
-        "butter"
+        "butter",
+        "Burro"
       ],
       "categoryId": "fat",
       "mappingKind": "free",
-      "mellerFamilyId": null
+      "guideFamilyId": null
     },
     {
       "ingredientId": "fat-burro-mandorle",
@@ -503,19 +509,19 @@
       ],
       "categoryId": "fat",
       "mappingKind": "free",
-      "mellerFamilyId": null
+      "guideFamilyId": null
     },
     {
       "ingredientId": "fat-ghee",
       "displayName": "Ghee (burro chiarificato)",
       "aliases": [
-        "burro chiarificato",
         "ghee",
+        "burro chiarificato",
         "Ghee (burro chiarificato)"
       ],
       "categoryId": "fat",
       "mappingKind": "free",
-      "mellerFamilyId": null
+      "guideFamilyId": null
     },
     {
       "ingredientId": "fat-mandorle",
@@ -527,7 +533,7 @@
       ],
       "categoryId": "fat",
       "mappingKind": "free",
-      "mellerFamilyId": null
+      "guideFamilyId": null
     },
     {
       "ingredientId": "fat-nocciole",
@@ -539,7 +545,7 @@
       ],
       "categoryId": "fat",
       "mappingKind": "free",
-      "mellerFamilyId": null
+      "guideFamilyId": null
     },
     {
       "ingredientId": "fat-noci",
@@ -551,33 +557,33 @@
       ],
       "categoryId": "fat",
       "mappingKind": "free",
-      "mellerFamilyId": null
+      "guideFamilyId": null
     },
     {
       "ingredientId": "fat-olio-cocco",
       "displayName": "Olio di cocco",
       "aliases": [
-        "coconut oil",
         "olio di cocco",
+        "coconut oil",
         "Olio di cocco"
       ],
       "categoryId": "fat",
       "mappingKind": "free",
-      "mellerFamilyId": null
+      "guideFamilyId": null
     },
     {
       "ingredientId": "fat-olio-semi",
       "displayName": "Olio di semi",
       "aliases": [
-        "olio di arachidi",
-        "olio di girasole",
-        "olio di mais",
         "olio di semi",
+        "olio di girasole",
+        "olio di arachidi",
+        "olio di mais",
         "Olio di semi"
       ],
       "categoryId": "fat",
       "mappingKind": "free",
-      "mellerFamilyId": null
+      "guideFamilyId": null
     },
     {
       "ingredientId": "fat-olive",
@@ -589,48 +595,48 @@
       ],
       "categoryId": "fat",
       "mappingKind": "free",
-      "mellerFamilyId": null
+      "guideFamilyId": null
     },
     {
       "ingredientId": "fat-pistacchi",
       "displayName": "Pistacchi",
       "aliases": [
+        "pistacchio",
         "pistacchi",
-        "Pistacchi",
-        "pistacchio"
+        "Pistacchi"
       ],
       "categoryId": "fat",
       "mappingKind": "free",
-      "mellerFamilyId": null
+      "guideFamilyId": null
     },
     {
       "ingredientId": "fat-semi",
       "displayName": "Semi",
       "aliases": [
-        "Semi",
         "semi di chia",
-        "semi di girasole",
         "semi di lino",
-        "semi di sesamo",
         "semi di zucca",
-        "sesamo"
+        "semi di girasole",
+        "semi di sesamo",
+        "sesamo",
+        "Semi"
       ],
       "categoryId": "fat",
       "mappingKind": "free",
-      "mellerFamilyId": null
+      "guideFamilyId": null
     },
     {
       "ingredientId": "fat-tahina",
       "displayName": "Tahina",
       "aliases": [
-        "crema di sesamo",
         "tahina",
-        "Tahina",
-        "tahini"
+        "tahini",
+        "crema di sesamo",
+        "Tahina"
       ],
       "categoryId": "fat",
       "mappingKind": "free",
-      "mellerFamilyId": null
+      "guideFamilyId": null
     },
     {
       "ingredientId": "fave",
@@ -642,7 +648,7 @@
       ],
       "categoryId": "protein",
       "mappingKind": "guided",
-      "mellerFamilyId": "legumiScatola"
+      "guideFamilyId": "legumiScatola"
     },
     {
       "ingredientId": "fesa-affettato",
@@ -653,7 +659,7 @@
       ],
       "categoryId": "protein",
       "mappingKind": "guided",
-      "mellerFamilyId": "affettatiMagri"
+      "guideFamilyId": "affettatiMagri"
     },
     {
       "ingredientId": "feta",
@@ -664,57 +670,57 @@
       ],
       "categoryId": "protein",
       "mappingKind": "guided",
-      "mellerFamilyId": "feta"
+      "guideFamilyId": "feta"
     },
     {
       "ingredientId": "fette-biscottate",
       "displayName": "Fette biscottate",
       "aliases": [
-        "fetta biscottata",
         "fette biscottate",
+        "fetta biscottata",
         "Fette biscottate"
       ],
       "categoryId": "carb",
       "mappingKind": "guided",
-      "mellerFamilyId": "pane"
+      "guideFamilyId": "pane"
     },
     {
       "ingredientId": "fiocchi-latte",
       "displayName": "Fiocchi di latte",
       "aliases": [
-        "cottage cheese",
         "fiocchi di latte",
+        "cottage cheese",
         "Fiocchi di latte"
       ],
       "categoryId": "protein",
       "mappingKind": "guided",
-      "mellerFamilyId": "fiocchiLatte"
+      "guideFamilyId": "fiocchiLatte"
     },
     {
       "ingredientId": "focaccia",
       "displayName": "Focaccia",
       "aliases": [
-        "focacce",
         "focaccia",
+        "focacce",
         "Focaccia"
       ],
       "categoryId": "carb",
       "mappingKind": "guided",
-      "mellerFamilyId": "pane"
+      "guideFamilyId": "pane"
     },
     {
       "ingredientId": "free-aceto",
       "displayName": "Aceto",
       "aliases": [
         "aceto",
-        "Aceto",
         "aceto balsamico",
         "aceto di mele",
-        "aceto di vino"
+        "aceto di vino",
+        "Aceto"
       ],
       "categoryId": "free",
       "mappingKind": "free",
-      "mellerFamilyId": null
+      "guideFamilyId": null
     },
     {
       "ingredientId": "free-acqua",
@@ -725,7 +731,7 @@
       ],
       "categoryId": "free",
       "mappingKind": "free",
-      "mellerFamilyId": null
+      "guideFamilyId": null
     },
     {
       "ingredientId": "free-alloro",
@@ -736,7 +742,7 @@
       ],
       "categoryId": "free",
       "mappingKind": "free",
-      "mellerFamilyId": null
+      "guideFamilyId": null
     },
     {
       "ingredientId": "free-avena",
@@ -747,7 +753,7 @@
       ],
       "categoryId": "free",
       "mappingKind": "free",
-      "mellerFamilyId": null
+      "guideFamilyId": null
     },
     {
       "ingredientId": "free-basilico",
@@ -758,21 +764,21 @@
       ],
       "categoryId": "free",
       "mappingKind": "free",
-      "mellerFamilyId": null
+      "guideFamilyId": null
     },
     {
       "ingredientId": "free-brodo",
       "displayName": "Brodo",
       "aliases": [
         "brodo",
-        "Brodo",
-        "brodo di carne",
+        "brodo vegetale",
         "brodo di pollo",
-        "brodo vegetale"
+        "brodo di carne",
+        "Brodo"
       ],
       "categoryId": "free",
       "mappingKind": "free",
-      "mellerFamilyId": null
+      "guideFamilyId": null
     },
     {
       "ingredientId": "free-cannella",
@@ -783,7 +789,7 @@
       ],
       "categoryId": "free",
       "mappingKind": "free",
-      "mellerFamilyId": null
+      "guideFamilyId": null
     },
     {
       "ingredientId": "free-coriandolo",
@@ -794,7 +800,7 @@
       ],
       "categoryId": "free",
       "mappingKind": "free",
-      "mellerFamilyId": null
+      "guideFamilyId": null
     },
     {
       "ingredientId": "free-cumino",
@@ -805,7 +811,7 @@
       ],
       "categoryId": "free",
       "mappingKind": "free",
-      "mellerFamilyId": null
+      "guideFamilyId": null
     },
     {
       "ingredientId": "free-curcuma",
@@ -816,7 +822,7 @@
       ],
       "categoryId": "free",
       "mappingKind": "free",
-      "mellerFamilyId": null
+      "guideFamilyId": null
     },
     {
       "ingredientId": "free-curry",
@@ -827,7 +833,7 @@
       ],
       "categoryId": "free",
       "mappingKind": "free",
-      "mellerFamilyId": null
+      "guideFamilyId": null
     },
     {
       "ingredientId": "free-erbe-aromatiche",
@@ -838,19 +844,19 @@
       ],
       "categoryId": "free",
       "mappingKind": "free",
-      "mellerFamilyId": null
+      "guideFamilyId": null
     },
     {
       "ingredientId": "free-lievito",
       "displayName": "Lievito alimentare",
       "aliases": [
         "lievito alimentare",
-        "Lievito alimentare",
-        "lievito in scaglie"
+        "lievito in scaglie",
+        "Lievito alimentare"
       ],
       "categoryId": "free",
       "mappingKind": "free",
-      "mellerFamilyId": null
+      "guideFamilyId": null
     },
     {
       "ingredientId": "free-lime",
@@ -861,19 +867,19 @@
       ],
       "categoryId": "free",
       "mappingKind": "free",
-      "mellerFamilyId": null
+      "guideFamilyId": null
     },
     {
       "ingredientId": "free-limone",
       "displayName": "Limone",
       "aliases": [
         "limone",
-        "Limone",
-        "limoni"
+        "limoni",
+        "Limone"
       ],
       "categoryId": "free",
       "mappingKind": "free",
-      "mellerFamilyId": null
+      "guideFamilyId": null
     },
     {
       "ingredientId": "free-menta",
@@ -884,7 +890,7 @@
       ],
       "categoryId": "free",
       "mappingKind": "free",
-      "mellerFamilyId": null
+      "guideFamilyId": null
     },
     {
       "ingredientId": "free-noce-moscata",
@@ -895,7 +901,7 @@
       ],
       "categoryId": "free",
       "mappingKind": "free",
-      "mellerFamilyId": null
+      "guideFamilyId": null
     },
     {
       "ingredientId": "free-origano",
@@ -906,7 +912,7 @@
       ],
       "categoryId": "free",
       "mappingKind": "free",
-      "mellerFamilyId": null
+      "guideFamilyId": null
     },
     {
       "ingredientId": "free-paprika",
@@ -917,7 +923,7 @@
       ],
       "categoryId": "free",
       "mappingKind": "free",
-      "mellerFamilyId": null
+      "guideFamilyId": null
     },
     {
       "ingredientId": "free-pepe",
@@ -928,19 +934,19 @@
       ],
       "categoryId": "free",
       "mappingKind": "free",
-      "mellerFamilyId": null
+      "guideFamilyId": null
     },
     {
       "ingredientId": "free-peperoncino",
       "displayName": "Peperoncino",
       "aliases": [
-        "peperoncini",
         "peperoncino",
+        "peperoncini",
         "Peperoncino"
       ],
       "categoryId": "free",
       "mappingKind": "free",
-      "mellerFamilyId": null
+      "guideFamilyId": null
     },
     {
       "ingredientId": "free-prezzemolo",
@@ -951,7 +957,7 @@
       ],
       "categoryId": "free",
       "mappingKind": "free",
-      "mellerFamilyId": null
+      "guideFamilyId": null
     },
     {
       "ingredientId": "free-rosmarino",
@@ -962,7 +968,7 @@
       ],
       "categoryId": "free",
       "mappingKind": "free",
-      "mellerFamilyId": null
+      "guideFamilyId": null
     },
     {
       "ingredientId": "free-sale",
@@ -973,21 +979,21 @@
       ],
       "categoryId": "free",
       "mappingKind": "free",
-      "mellerFamilyId": null
+      "guideFamilyId": null
     },
     {
       "ingredientId": "free-salsa-soia",
       "displayName": "Salsa di soia",
       "aliases": [
         "salsa di soia",
-        "Salsa di soia",
-        "shoyu",
         "soy sauce",
-        "tamari"
+        "shoyu",
+        "tamari",
+        "Salsa di soia"
       ],
       "categoryId": "free",
       "mappingKind": "free",
-      "mellerFamilyId": null
+      "guideFamilyId": null
     },
     {
       "ingredientId": "free-salvia",
@@ -998,31 +1004,31 @@
       ],
       "categoryId": "free",
       "mappingKind": "free",
-      "mellerFamilyId": null
+      "guideFamilyId": null
     },
     {
       "ingredientId": "free-senape",
       "displayName": "Senape",
       "aliases": [
-        "mustard",
         "senape",
+        "mustard",
         "Senape"
       ],
       "categoryId": "free",
       "mappingKind": "free",
-      "mellerFamilyId": null
+      "guideFamilyId": null
     },
     {
       "ingredientId": "free-spezie",
       "displayName": "Spezie (generiche)",
       "aliases": [
-        "spezia",
         "spezie",
+        "spezia",
         "Spezie (generiche)"
       ],
       "categoryId": "free",
       "mappingKind": "free",
-      "mellerFamilyId": null
+      "guideFamilyId": null
     },
     {
       "ingredientId": "free-timo",
@@ -1033,7 +1039,7 @@
       ],
       "categoryId": "free",
       "mappingKind": "free",
-      "mellerFamilyId": null
+      "guideFamilyId": null
     },
     {
       "ingredientId": "free-zafferano",
@@ -1044,31 +1050,31 @@
       ],
       "categoryId": "free",
       "mappingKind": "free",
-      "mellerFamilyId": null
+      "guideFamilyId": null
     },
     {
       "ingredientId": "free-zenzero",
       "displayName": "Zenzero",
       "aliases": [
-        "ginger",
         "zenzero",
+        "ginger",
         "Zenzero"
       ],
       "categoryId": "free",
       "mappingKind": "free",
-      "mellerFamilyId": null
+      "guideFamilyId": null
     },
     {
       "ingredientId": "fruit-albicocca",
       "displayName": "Albicocca",
       "aliases": [
         "albicocca",
-        "Albicocca",
-        "albicocche"
+        "albicocche",
+        "Albicocca"
       ],
       "categoryId": "fruit",
       "mappingKind": "free",
-      "mellerFamilyId": null
+      "guideFamilyId": null
     },
     {
       "ingredientId": "fruit-ananas",
@@ -1079,43 +1085,43 @@
       ],
       "categoryId": "fruit",
       "mappingKind": "free",
-      "mellerFamilyId": null
+      "guideFamilyId": null
     },
     {
       "ingredientId": "fruit-anguria",
       "displayName": "Anguria",
       "aliases": [
         "anguria",
-        "Anguria",
-        "cocomero"
+        "cocomero",
+        "Anguria"
       ],
       "categoryId": "fruit",
       "mappingKind": "free",
-      "mellerFamilyId": null
+      "guideFamilyId": null
     },
     {
       "ingredientId": "fruit-arancia",
       "displayName": "Arancia",
       "aliases": [
-        "arance",
         "arancia",
+        "arance",
         "Arancia"
       ],
       "categoryId": "fruit",
       "mappingKind": "free",
-      "mellerFamilyId": null
+      "guideFamilyId": null
     },
     {
       "ingredientId": "fruit-banana",
       "displayName": "Banana",
       "aliases": [
         "banana",
-        "Banana",
-        "banane"
+        "banane",
+        "Banana"
       ],
       "categoryId": "fruit",
       "mappingKind": "free",
-      "mellerFamilyId": null
+      "guideFamilyId": null
     },
     {
       "ingredientId": "fruit-ciliegia",
@@ -1127,7 +1133,7 @@
       ],
       "categoryId": "fruit",
       "mappingKind": "free",
-      "mellerFamilyId": null
+      "guideFamilyId": null
     },
     {
       "ingredientId": "fruit-cocco",
@@ -1138,31 +1144,31 @@
       ],
       "categoryId": "fruit",
       "mappingKind": "free",
-      "mellerFamilyId": null
+      "guideFamilyId": null
     },
     {
       "ingredientId": "fruit-datteri",
       "displayName": "Datteri",
       "aliases": [
+        "dattero",
         "datteri",
-        "Datteri",
-        "dattero"
+        "Datteri"
       ],
       "categoryId": "fruit",
       "mappingKind": "free",
-      "mellerFamilyId": null
+      "guideFamilyId": null
     },
     {
       "ingredientId": "fruit-fico",
       "displayName": "Fichi",
       "aliases": [
+        "fico",
         "fichi",
-        "Fichi",
-        "fico"
+        "Fichi"
       ],
       "categoryId": "fruit",
       "mappingKind": "free",
-      "mellerFamilyId": null
+      "guideFamilyId": null
     },
     {
       "ingredientId": "fruit-fragole",
@@ -1174,22 +1180,22 @@
       ],
       "categoryId": "fruit",
       "mappingKind": "free",
-      "mellerFamilyId": null
+      "guideFamilyId": null
     },
     {
       "ingredientId": "fruit-frutti-bosco",
       "displayName": "Frutti di bosco",
       "aliases": [
         "frutti di bosco",
-        "Frutti di bosco",
-        "lamponi",
         "mirtilli",
+        "lamponi",
         "more",
-        "ribes"
+        "ribes",
+        "Frutti di bosco"
       ],
       "categoryId": "fruit",
       "mappingKind": "free",
-      "mellerFamilyId": null
+      "guideFamilyId": null
     },
     {
       "ingredientId": "fruit-kiwi",
@@ -1200,21 +1206,21 @@
       ],
       "categoryId": "fruit",
       "mappingKind": "free",
-      "mellerFamilyId": null
+      "guideFamilyId": null
     },
     {
       "ingredientId": "fruit-mandarino",
       "displayName": "Mandarino / Clementina",
       "aliases": [
+        "mandarino",
+        "mandarini",
         "clementina",
         "clementine",
-        "mandarini",
-        "mandarino",
         "Mandarino / Clementina"
       ],
       "categoryId": "fruit",
       "mappingKind": "free",
-      "mellerFamilyId": null
+      "guideFamilyId": null
     },
     {
       "ingredientId": "fruit-mango",
@@ -1225,19 +1231,19 @@
       ],
       "categoryId": "fruit",
       "mappingKind": "free",
-      "mellerFamilyId": null
+      "guideFamilyId": null
     },
     {
       "ingredientId": "fruit-mela",
       "displayName": "Mela",
       "aliases": [
         "mela",
-        "Mela",
-        "mele"
+        "mele",
+        "Mela"
       ],
       "categoryId": "fruit",
       "mappingKind": "free",
-      "mellerFamilyId": null
+      "guideFamilyId": null
     },
     {
       "ingredientId": "fruit-melograno",
@@ -1248,19 +1254,19 @@
       ],
       "categoryId": "fruit",
       "mappingKind": "free",
-      "mellerFamilyId": null
+      "guideFamilyId": null
     },
     {
       "ingredientId": "fruit-melone",
       "displayName": "Melone",
       "aliases": [
         "melone",
-        "Melone",
-        "meloni"
+        "meloni",
+        "Melone"
       ],
       "categoryId": "fruit",
       "mappingKind": "free",
-      "mellerFamilyId": null
+      "guideFamilyId": null
     },
     {
       "ingredientId": "fruit-papaya",
@@ -1271,59 +1277,59 @@
       ],
       "categoryId": "fruit",
       "mappingKind": "free",
-      "mellerFamilyId": null
+      "guideFamilyId": null
     },
     {
       "ingredientId": "fruit-pera",
       "displayName": "Pera",
       "aliases": [
         "pera",
-        "Pera",
-        "pere"
+        "pere",
+        "Pera"
       ],
       "categoryId": "fruit",
       "mappingKind": "free",
-      "mellerFamilyId": null
+      "guideFamilyId": null
     },
     {
       "ingredientId": "fruit-pesca",
       "displayName": "Pesca / Nettarina",
       "aliases": [
+        "pesca",
+        "pesche",
         "nettarina",
         "nettarine",
-        "pesca",
-        "Pesca / Nettarina",
-        "pesche"
+        "Pesca / Nettarina"
       ],
       "categoryId": "fruit",
       "mappingKind": "free",
-      "mellerFamilyId": null
+      "guideFamilyId": null
     },
     {
       "ingredientId": "fruit-pompelmo",
       "displayName": "Pompelmo",
       "aliases": [
-        "pompelmi",
         "pompelmo",
+        "pompelmi",
         "Pompelmo"
       ],
       "categoryId": "fruit",
       "mappingKind": "free",
-      "mellerFamilyId": null
+      "guideFamilyId": null
     },
     {
       "ingredientId": "fruit-prugna",
       "displayName": "Prugna / Susina",
       "aliases": [
         "prugna",
-        "Prugna / Susina",
         "prugne",
         "susina",
-        "susine"
+        "susine",
+        "Prugna / Susina"
       ],
       "categoryId": "fruit",
       "mappingKind": "free",
-      "mellerFamilyId": null
+      "guideFamilyId": null
     },
     {
       "ingredientId": "fruit-uva",
@@ -1334,7 +1340,7 @@
       ],
       "categoryId": "fruit",
       "mappingKind": "free",
-      "mellerFamilyId": null
+      "guideFamilyId": null
     },
     {
       "ingredientId": "gallette",
@@ -1342,39 +1348,39 @@
       "aliases": [
         "galletta",
         "gallette",
-        "Gallette (riso/mais)",
+        "gallette di riso",
         "gallette di mais",
-        "gallette di riso"
+        "Gallette (riso/mais)"
       ],
       "categoryId": "carb",
       "mappingKind": "guided",
-      "mellerFamilyId": "gallette"
+      "guideFamilyId": "gallette"
     },
     {
       "ingredientId": "gamberi",
       "displayName": "Gamberi",
       "aliases": [
-        "gamberetti",
-        "gamberi",
-        "Gamberi",
         "gambero",
-        "gamberoni"
+        "gamberi",
+        "gamberetti",
+        "gamberoni",
+        "Gamberi"
       ],
       "categoryId": "protein",
       "mappingKind": "guided",
-      "mellerFamilyId": "crostaceiMolluschi"
+      "guideFamilyId": "crostaceiMolluschi"
     },
     {
       "ingredientId": "gnocchi",
       "displayName": "Gnocchi di patate",
       "aliases": [
         "gnocchi",
-        "Gnocchi di patate",
-        "gnocco"
+        "gnocco",
+        "Gnocchi di patate"
       ],
       "categoryId": "carb",
       "mappingKind": "guided",
-      "mellerFamilyId": "gnocchi"
+      "guideFamilyId": "gnocchi"
     },
     {
       "ingredientId": "grana",
@@ -1386,31 +1392,31 @@
       ],
       "categoryId": "protein",
       "mappingKind": "guided",
-      "mellerFamilyId": "grana"
+      "guideFamilyId": "grana"
     },
     {
       "ingredientId": "granchio",
       "displayName": "Granchio",
       "aliases": [
-        "granchi",
         "granchio",
+        "granchi",
         "Granchio"
       ],
       "categoryId": "protein",
       "mappingKind": "guided",
-      "mellerFamilyId": "crostaceiMolluschi"
+      "guideFamilyId": "crostaceiMolluschi"
     },
     {
       "ingredientId": "grano-saraceno",
       "displayName": "Grano saraceno",
       "aliases": [
         "grano saraceno",
-        "Grano saraceno",
-        "saraceno"
+        "saraceno",
+        "Grano saraceno"
       ],
       "categoryId": "carb",
       "mappingKind": "guided",
-      "mellerFamilyId": "cereali"
+      "guideFamilyId": "cereali"
     },
     {
       "ingredientId": "granola",
@@ -1421,19 +1427,19 @@
       ],
       "categoryId": "carb",
       "mappingKind": "guided",
-      "mellerFamilyId": "cerealiColazione"
+      "guideFamilyId": "cerealiColazione"
     },
     {
       "ingredientId": "grissini",
       "displayName": "Grissini",
       "aliases": [
+        "grissino",
         "grissini",
-        "Grissini",
-        "grissino"
+        "Grissini"
       ],
       "categoryId": "carb",
       "mappingKind": "guided",
-      "mellerFamilyId": "crackers"
+      "guideFamilyId": "crackers"
     },
     {
       "ingredientId": "kamut",
@@ -1444,19 +1450,19 @@
       ],
       "categoryId": "carb",
       "mappingKind": "guided",
-      "mellerFamilyId": "cereali"
+      "guideFamilyId": "cereali"
     },
     {
       "ingredientId": "legumotti",
       "displayName": "Legumotti",
       "aliases": [
         "legumotti",
-        "Legumotti",
-        "legumotto"
+        "legumotto",
+        "Legumotti"
       ],
       "categoryId": "protein",
       "mappingKind": "guided",
-      "mellerFamilyId": "legumotti"
+      "guideFamilyId": "legumotti"
     },
     {
       "ingredientId": "lenticchie",
@@ -1468,34 +1474,34 @@
       ],
       "categoryId": "protein",
       "mappingKind": "guided",
-      "mellerFamilyId": "legumiScatola"
+      "guideFamilyId": "legumiScatola"
     },
     {
       "ingredientId": "lupini",
       "displayName": "Lupini",
       "aliases": [
+        "lupino",
         "lupini",
-        "Lupini",
-        "lupino"
+        "Lupini"
       ],
       "categoryId": "protein",
       "mappingKind": "guided",
-      "mellerFamilyId": "lupini"
+      "guideFamilyId": "lupini"
     },
     {
       "ingredientId": "maiale",
       "displayName": "Maiale (tagli magri)",
       "aliases": [
-        "coscia di maiale",
-        "filetto di maiale",
-        "lonza",
         "maiale",
-        "Maiale (tagli magri)",
-        "pork"
+        "lonza",
+        "filetto di maiale",
+        "coscia di maiale",
+        "pork",
+        "Maiale (tagli magri)"
       ],
       "categoryId": "protein",
       "mappingKind": "guided",
-      "mellerFamilyId": "maiale"
+      "guideFamilyId": "maiale"
     },
     {
       "ingredientId": "mais",
@@ -1507,27 +1513,27 @@
       ],
       "categoryId": "carb",
       "mappingKind": "guided",
-      "mellerFamilyId": "mais"
+      "guideFamilyId": "mais"
     },
     {
       "ingredientId": "manzo",
       "displayName": "Manzo (tagli magri)",
       "aliases": [
-        "fesa di manzo",
-        "filetto",
-        "filetto di manzo",
-        "girello",
-        "hamburger di manzo",
         "manzo",
-        "Manzo (tagli magri)",
-        "noce di manzo",
+        "hamburger di manzo",
         "roastbeef",
+        "girello",
         "scamone",
-        "sottofesa"
+        "sottofesa",
+        "fesa di manzo",
+        "noce di manzo",
+        "filetto di manzo",
+        "filetto",
+        "Manzo (tagli magri)"
       ],
       "categoryId": "protein",
       "mappingKind": "guided",
-      "mellerFamilyId": "manzo"
+      "guideFamilyId": "manzo"
     },
     {
       "ingredientId": "merluzzo",
@@ -1538,7 +1544,7 @@
       ],
       "categoryId": "protein",
       "mappingKind": "guided",
-      "mellerFamilyId": "pesceBiancoMagro"
+      "guideFamilyId": "pesceBiancoMagro"
     },
     {
       "ingredientId": "miglio",
@@ -1549,7 +1555,7 @@
       ],
       "categoryId": "carb",
       "mappingKind": "guided",
-      "mellerFamilyId": "cereali"
+      "guideFamilyId": "cereali"
     },
     {
       "ingredientId": "montasio",
@@ -1560,31 +1566,31 @@
       ],
       "categoryId": "protein",
       "mappingKind": "guided",
-      "mellerFamilyId": "montasio"
+      "guideFamilyId": "montasio"
     },
     {
       "ingredientId": "mozzarella",
       "displayName": "Mozzarella",
       "aliases": [
-        "fior di latte",
         "mozzarella",
+        "fior di latte",
         "Mozzarella"
       ],
       "categoryId": "protein",
       "mappingKind": "guided",
-      "mellerFamilyId": "formaggiFreschiMolli"
+      "guideFamilyId": "formaggiFreschiMolli"
     },
     {
       "ingredientId": "mozzarella-light",
       "displayName": "Mozzarella Light",
       "aliases": [
         "mozzarella light",
-        "Mozzarella Light",
-        "santa lucia light"
+        "santa lucia light",
+        "Mozzarella Light"
       ],
       "categoryId": "protein",
       "mappingKind": "guided",
-      "mellerFamilyId": "mozzarellaLight"
+      "guideFamilyId": "mozzarellaLight"
     },
     {
       "ingredientId": "muesli",
@@ -1595,7 +1601,7 @@
       ],
       "categoryId": "carb",
       "mappingKind": "guided",
-      "mellerFamilyId": "cerealiColazione"
+      "guideFamilyId": "cerealiColazione"
     },
     {
       "ingredientId": "nasello",
@@ -1606,34 +1612,34 @@
       ],
       "categoryId": "protein",
       "mappingKind": "guided",
-      "mellerFamilyId": "pesceBiancoMagro"
+      "guideFamilyId": "pesceBiancoMagro"
     },
     {
       "ingredientId": "olio",
       "displayName": "Olio EVO",
       "aliases": [
-        "evo",
-        "extravergine",
         "olio",
         "olio evo",
-        "Olio EVO",
-        "olio extravergine"
+        "olio extravergine",
+        "extravergine",
+        "evo",
+        "Olio EVO"
       ],
       "categoryId": "fat",
       "mappingKind": "guided",
-      "mellerFamilyId": "olio"
+      "guideFamilyId": "olio"
     },
     {
       "ingredientId": "orata",
       "displayName": "Orata",
       "aliases": [
         "orata",
-        "Orata",
-        "orate"
+        "orate",
+        "Orata"
       ],
       "categoryId": "protein",
       "mappingKind": "guided",
-      "mellerFamilyId": "pesceBiancoMagro"
+      "guideFamilyId": "pesceBiancoMagro"
     },
     {
       "ingredientId": "orzo",
@@ -1644,22 +1650,22 @@
       ],
       "categoryId": "carb",
       "mappingKind": "guided",
-      "mellerFamilyId": "cereali"
+      "guideFamilyId": "cereali"
     },
     {
       "ingredientId": "pane",
       "displayName": "Pane",
       "aliases": [
         "pane",
-        "Pane",
-        "pane carasau",
-        "pane di farro",
+        "pane integrale",
         "pane di segale",
-        "pane integrale"
+        "pane di farro",
+        "pane carasau",
+        "Pane"
       ],
       "categoryId": "carb",
       "mappingKind": "guided",
-      "mellerFamilyId": "pane"
+      "guideFamilyId": "pane"
     },
     {
       "ingredientId": "parmigiano",
@@ -1671,35 +1677,35 @@
       ],
       "categoryId": "protein",
       "mappingKind": "guided",
-      "mellerFamilyId": "formaggiStagionati"
+      "guideFamilyId": "formaggiStagionati"
     },
     {
       "ingredientId": "pasta",
       "displayName": "Pasta",
       "aliases": [
-        "conchiglie",
-        "farfalle",
-        "fusilli",
-        "lasagne",
-        "linguine",
-        "maccheroni",
-        "mezze maniche",
-        "orecchiette",
-        "paccheri",
         "pasta",
-        "Pasta",
-        "penne",
-        "pennette",
-        "rigatoni",
         "spaghetti",
         "spaghetto",
+        "penne",
+        "rigatoni",
+        "fusilli",
+        "linguine",
         "tagliatelle",
+        "trofie",
+        "lasagne",
+        "farfalle",
+        "mezze maniche",
+        "orecchiette",
+        "pennette",
+        "paccheri",
         "tortiglioni",
-        "trofie"
+        "conchiglie",
+        "maccheroni",
+        "Pasta"
       ],
       "categoryId": "carb",
       "mappingKind": "guided",
-      "mellerFamilyId": "cereali"
+      "guideFamilyId": "cereali"
     },
     {
       "ingredientId": "pasta-integrale",
@@ -1710,20 +1716,20 @@
       ],
       "categoryId": "carb",
       "mappingKind": "guided",
-      "mellerFamilyId": "cereali"
+      "guideFamilyId": "cereali"
     },
     {
       "ingredientId": "pasta-legumi",
       "displayName": "Pasta di legumi",
       "aliases": [
-        "pasta di ceci",
         "pasta di legumi",
-        "Pasta di legumi",
-        "pasta di lenticchie"
+        "pasta di ceci",
+        "pasta di lenticchie",
+        "Pasta di legumi"
       ],
       "categoryId": "carb",
       "mappingKind": "guided",
-      "mellerFamilyId": "cereali"
+      "guideFamilyId": "cereali"
     },
     {
       "ingredientId": "patate",
@@ -1735,22 +1741,22 @@
       ],
       "categoryId": "carb",
       "mappingKind": "guided",
-      "mellerFamilyId": "patate"
+      "guideFamilyId": "patate"
     },
     {
       "ingredientId": "patate-dolci",
       "displayName": "Patate dolci / Batata",
       "aliases": [
-        "batata",
-        "patata americana",
         "patata dolce",
         "patate dolci",
-        "Patate dolci / Batata",
-        "sweet potato"
+        "batata",
+        "sweet potato",
+        "patata americana",
+        "Patate dolci / Batata"
       ],
       "categoryId": "carb",
       "mappingKind": "guided",
-      "mellerFamilyId": "patateDolci"
+      "guideFamilyId": "patateDolci"
     },
     {
       "ingredientId": "pecorino",
@@ -1761,7 +1767,7 @@
       ],
       "categoryId": "protein",
       "mappingKind": "guided",
-      "mellerFamilyId": "formaggiStagionati"
+      "guideFamilyId": "formaggiStagionati"
     },
     {
       "ingredientId": "pesce-scatola-naturale",
@@ -1773,7 +1779,7 @@
       ],
       "categoryId": "protein",
       "mappingKind": "guided",
-      "mellerFamilyId": "pesceScatolaNaturale"
+      "guideFamilyId": "pesceScatolaNaturale"
     },
     {
       "ingredientId": "pesce-spada",
@@ -1784,44 +1790,44 @@
       ],
       "categoryId": "protein",
       "mappingKind": "guided",
-      "mellerFamilyId": "pesceBiancoMagro"
+      "guideFamilyId": "pesceBiancoMagro"
     },
     {
       "ingredientId": "philadelphia",
       "displayName": "Philadelphia / Formaggio spalmabile",
       "aliases": [
-        "formaggio fresco spalmabile",
-        "formaggio spalmabile",
         "philadelphia",
+        "formaggio spalmabile",
+        "formaggio fresco spalmabile",
         "Philadelphia / Formaggio spalmabile"
       ],
       "categoryId": "protein",
       "mappingKind": "guided",
-      "mellerFamilyId": "formaggiFreschiMolli"
+      "guideFamilyId": "formaggiFreschiMolli"
     },
     {
       "ingredientId": "piadina",
       "displayName": "Piadina",
       "aliases": [
         "piadina",
-        "Piadina",
-        "piadine"
+        "piadine",
+        "Piadina"
       ],
       "categoryId": "carb",
       "mappingKind": "guided",
-      "mellerFamilyId": "piadina"
+      "guideFamilyId": "piadina"
     },
     {
       "ingredientId": "piselli",
       "displayName": "Piselli",
       "aliases": [
+        "pisello",
         "piselli",
-        "Piselli",
-        "pisello"
+        "Piselli"
       ],
       "categoryId": "protein",
       "mappingKind": "guided",
-      "mellerFamilyId": "legumiScatola"
+      "guideFamilyId": "legumiScatola"
     },
     {
       "ingredientId": "platessa",
@@ -1832,7 +1838,7 @@
       ],
       "categoryId": "protein",
       "mappingKind": "guided",
-      "mellerFamilyId": "pesceBiancoMagro"
+      "guideFamilyId": "pesceBiancoMagro"
     },
     {
       "ingredientId": "polenta",
@@ -1843,57 +1849,57 @@
       ],
       "categoryId": "carb",
       "mappingKind": "guided",
-      "mellerFamilyId": "polenta"
+      "guideFamilyId": "polenta"
     },
     {
       "ingredientId": "pollo",
       "displayName": "Pollo",
       "aliases": [
-        "coscia di pollo",
-        "petto di pollo",
         "pollo",
-        "Pollo",
-        "sovracoscia"
+        "petto di pollo",
+        "coscia di pollo",
+        "sovracoscia",
+        "Pollo"
       ],
       "categoryId": "protein",
       "mappingKind": "guided",
-      "mellerFamilyId": "polloTacchino"
+      "guideFamilyId": "polloTacchino"
     },
     {
       "ingredientId": "polpo",
       "displayName": "Polpo",
       "aliases": [
-        "polipo",
         "polpo",
+        "polipo",
         "Polpo"
       ],
       "categoryId": "protein",
       "mappingKind": "guided",
-      "mellerFamilyId": "crostaceiMolluschi"
+      "guideFamilyId": "crostaceiMolluschi"
     },
     {
       "ingredientId": "prosciutto-cotto",
       "displayName": "Prosciutto cotto",
       "aliases": [
-        "cotto",
         "prosciutto cotto",
+        "cotto",
         "Prosciutto cotto"
       ],
       "categoryId": "protein",
       "mappingKind": "guided",
-      "mellerFamilyId": "affettatiMagri"
+      "guideFamilyId": "affettatiMagri"
     },
     {
       "ingredientId": "prosciutto-crudo",
       "displayName": "Prosciutto crudo",
       "aliases": [
-        "crudo",
         "prosciutto crudo",
+        "crudo",
         "Prosciutto crudo"
       ],
       "categoryId": "protein",
       "mappingKind": "guided",
-      "mellerFamilyId": "affettatiMagri"
+      "guideFamilyId": "affettatiMagri"
     },
     {
       "ingredientId": "provolone",
@@ -1904,7 +1910,7 @@
       ],
       "categoryId": "protein",
       "mappingKind": "guided",
-      "mellerFamilyId": "formaggiStagionati"
+      "guideFamilyId": "formaggiStagionati"
     },
     {
       "ingredientId": "quinoa",
@@ -1915,49 +1921,49 @@
       ],
       "categoryId": "carb",
       "mappingKind": "guided",
-      "mellerFamilyId": "cereali"
+      "guideFamilyId": "cereali"
     },
     {
       "ingredientId": "ricotta",
       "displayName": "Ricotta",
       "aliases": [
         "ricotta",
-        "Ricotta",
+        "ricotta vaccina",
         "ricotta di pecora",
-        "ricotta vaccina"
+        "Ricotta"
       ],
       "categoryId": "protein",
       "mappingKind": "guided",
-      "mellerFamilyId": "ricotta"
+      "guideFamilyId": "ricotta"
     },
     {
       "ingredientId": "riso",
       "displayName": "Riso",
       "aliases": [
-        "arborio",
+        "riso",
+        "risotto",
         "basmati",
         "carnaroli",
-        "riso",
-        "Riso",
+        "arborio",
         "riso integrale",
-        "risotto"
+        "Riso"
       ],
       "categoryId": "carb",
       "mappingKind": "guided",
-      "mellerFamilyId": "cereali"
+      "guideFamilyId": "cereali"
     },
     {
       "ingredientId": "riso-venere",
       "displayName": "Riso Venere / Riso nero",
       "aliases": [
+        "riso venere",
         "riso nero",
         "riso rosso",
-        "riso venere",
         "Riso Venere / Riso nero"
       ],
       "categoryId": "carb",
       "mappingKind": "guided",
-      "mellerFamilyId": "cereali"
+      "guideFamilyId": "cereali"
     },
     {
       "ingredientId": "robiola",
@@ -1968,7 +1974,7 @@
       ],
       "categoryId": "protein",
       "mappingKind": "guided",
-      "mellerFamilyId": "formaggiFreschiMolli"
+      "guideFamilyId": "formaggiFreschiMolli"
     },
     {
       "ingredientId": "salmone",
@@ -1979,7 +1985,7 @@
       ],
       "categoryId": "protein",
       "mappingKind": "guided",
-      "mellerFamilyId": "pesceAzzurro"
+      "guideFamilyId": "pesceAzzurro"
     },
     {
       "ingredientId": "salmone-affumicato",
@@ -1990,7 +1996,7 @@
       ],
       "categoryId": "protein",
       "mappingKind": "guided",
-      "mellerFamilyId": "salmoneAffumicato"
+      "guideFamilyId": "salmoneAffumicato"
     },
     {
       "ingredientId": "salmone-naturale",
@@ -2001,7 +2007,7 @@
       ],
       "categoryId": "protein",
       "mappingKind": "guided",
-      "mellerFamilyId": "pesceScatolaNaturale"
+      "guideFamilyId": "pesceScatolaNaturale"
     },
     {
       "ingredientId": "salmone-sottolio",
@@ -2012,7 +2018,7 @@
       ],
       "categoryId": "protein",
       "mappingKind": "guided",
-      "mellerFamilyId": "pesceSottOlio"
+      "guideFamilyId": "pesceSottOlio"
     },
     {
       "ingredientId": "sardine",
@@ -2024,19 +2030,19 @@
       ],
       "categoryId": "protein",
       "mappingKind": "guided",
-      "mellerFamilyId": "pesceAzzurro"
+      "guideFamilyId": "pesceAzzurro"
     },
     {
       "ingredientId": "sardine-sottolio",
       "displayName": "Sardine sott'olio",
       "aliases": [
-        "sardina sott'olio",
         "sardine sott'olio",
+        "sardina sott'olio",
         "Sardine sott'olio"
       ],
       "categoryId": "protein",
       "mappingKind": "guided",
-      "mellerFamilyId": "pesceSottOlio"
+      "guideFamilyId": "pesceSottOlio"
     },
     {
       "ingredientId": "scamorza",
@@ -2047,7 +2053,7 @@
       ],
       "categoryId": "protein",
       "mappingKind": "guided",
-      "mellerFamilyId": "formaggiStagionati"
+      "guideFamilyId": "formaggiStagionati"
     },
     {
       "ingredientId": "scampi",
@@ -2058,7 +2064,7 @@
       ],
       "categoryId": "protein",
       "mappingKind": "guided",
-      "mellerFamilyId": "crostaceiMolluschi"
+      "guideFamilyId": "crostaceiMolluschi"
     },
     {
       "ingredientId": "seitan",
@@ -2069,19 +2075,19 @@
       ],
       "categoryId": "protein",
       "mappingKind": "guided",
-      "mellerFamilyId": "seitan"
+      "guideFamilyId": "seitan"
     },
     {
       "ingredientId": "semolino",
       "displayName": "Semolino / Semola",
       "aliases": [
-        "semola",
         "semolino",
+        "semola",
         "Semolino / Semola"
       ],
       "categoryId": "carb",
       "mappingKind": "guided",
-      "mellerFamilyId": "cereali"
+      "guideFamilyId": "cereali"
     },
     {
       "ingredientId": "seppie",
@@ -2093,7 +2099,7 @@
       ],
       "categoryId": "protein",
       "mappingKind": "guided",
-      "mellerFamilyId": "crostaceiMolluschi"
+      "guideFamilyId": "crostaceiMolluschi"
     },
     {
       "ingredientId": "sgombro",
@@ -2104,7 +2110,7 @@
       ],
       "categoryId": "protein",
       "mappingKind": "guided",
-      "mellerFamilyId": "pesceAzzurro"
+      "guideFamilyId": "pesceAzzurro"
     },
     {
       "ingredientId": "sgombro-naturale",
@@ -2115,31 +2121,31 @@
       ],
       "categoryId": "protein",
       "mappingKind": "guided",
-      "mellerFamilyId": "pesceScatolaNaturale"
+      "guideFamilyId": "pesceScatolaNaturale"
     },
     {
       "ingredientId": "sgombro-sottolio",
       "displayName": "Sgombro sott'olio",
       "aliases": [
-        "sgombro in scatola",
         "sgombro sott'olio",
+        "sgombro in scatola",
         "Sgombro sott'olio"
       ],
       "categoryId": "protein",
       "mappingKind": "guided",
-      "mellerFamilyId": "pesceSottOlio"
+      "guideFamilyId": "pesceSottOlio"
     },
     {
       "ingredientId": "sogliola",
       "displayName": "Sogliola",
       "aliases": [
         "sogliola",
-        "Sogliola",
-        "sogliole"
+        "sogliole",
+        "Sogliola"
       ],
       "categoryId": "protein",
       "mappingKind": "guided",
-      "mellerFamilyId": "pesceBiancoMagro"
+      "guideFamilyId": "pesceBiancoMagro"
     },
     {
       "ingredientId": "soia",
@@ -2150,7 +2156,7 @@
       ],
       "categoryId": "protein",
       "mappingKind": "guided",
-      "mellerFamilyId": "legumiScatola"
+      "guideFamilyId": "legumiScatola"
     },
     {
       "ingredientId": "speck",
@@ -2161,32 +2167,32 @@
       ],
       "categoryId": "protein",
       "mappingKind": "guided",
-      "mellerFamilyId": "affettatiMagri"
+      "guideFamilyId": "affettatiMagri"
     },
     {
       "ingredientId": "spigola",
       "displayName": "Spigola / Branzino",
       "aliases": [
-        "branzino",
         "spigola",
+        "branzino",
         "Spigola / Branzino"
       ],
       "categoryId": "protein",
       "mappingKind": "guided",
-      "mellerFamilyId": "pesceBiancoMagro"
+      "guideFamilyId": "pesceBiancoMagro"
     },
     {
       "ingredientId": "tacchino",
       "displayName": "Tacchino",
       "aliases": [
+        "tacchino",
         "fesa di tacchino",
         "petto di tacchino",
-        "tacchino",
         "Tacchino"
       ],
       "categoryId": "protein",
       "mappingKind": "guided",
-      "mellerFamilyId": "polloTacchino"
+      "guideFamilyId": "polloTacchino"
     },
     {
       "ingredientId": "tempeh",
@@ -2197,7 +2203,7 @@
       ],
       "categoryId": "protein",
       "mappingKind": "guided",
-      "mellerFamilyId": "legumiScatola"
+      "guideFamilyId": "legumiScatola"
     },
     {
       "ingredientId": "tofu",
@@ -2208,19 +2214,19 @@
       ],
       "categoryId": "protein",
       "mappingKind": "guided",
-      "mellerFamilyId": "legumiScatola"
+      "guideFamilyId": "legumiScatola"
     },
     {
       "ingredientId": "tonno",
       "displayName": "Tonno sott'olio",
       "aliases": [
-        "tonno in scatola",
         "tonno sott'olio",
+        "tonno in scatola",
         "Tonno sott'olio"
       ],
       "categoryId": "protein",
       "mappingKind": "guided",
-      "mellerFamilyId": "pesceSottOlio"
+      "guideFamilyId": "pesceSottOlio"
     },
     {
       "ingredientId": "tonno-fresco",
@@ -2231,7 +2237,7 @@
       ],
       "categoryId": "protein",
       "mappingKind": "guided",
-      "mellerFamilyId": "pesceAzzurro"
+      "guideFamilyId": "pesceAzzurro"
     },
     {
       "ingredientId": "tonno-naturale",
@@ -2242,57 +2248,57 @@
       ],
       "categoryId": "protein",
       "mappingKind": "guided",
-      "mellerFamilyId": "pesceScatolaNaturale"
+      "guideFamilyId": "pesceScatolaNaturale"
     },
     {
       "ingredientId": "tortilla",
       "displayName": "Tortilla / Wrap",
       "aliases": [
         "tortilla",
-        "Tortilla / Wrap",
         "tortillas",
         "wrap",
-        "wraps"
+        "wraps",
+        "Tortilla / Wrap"
       ],
       "categoryId": "carb",
       "mappingKind": "guided",
-      "mellerFamilyId": "piadina"
+      "guideFamilyId": "piadina"
     },
     {
       "ingredientId": "trota",
       "displayName": "Trota",
       "aliases": [
         "trota",
-        "Trota",
-        "trote"
+        "trote",
+        "Trota"
       ],
       "categoryId": "protein",
       "mappingKind": "guided",
-      "mellerFamilyId": "pesceBiancoMagro"
+      "guideFamilyId": "pesceBiancoMagro"
     },
     {
       "ingredientId": "tuorlo",
       "displayName": "Tuorlo",
       "aliases": [
-        "tuorli",
         "tuorlo",
+        "tuorli",
         "Tuorlo"
       ],
       "categoryId": "protein",
       "mappingKind": "guided",
-      "mellerFamilyId": "uova"
+      "guideFamilyId": "uova"
     },
     {
       "ingredientId": "uova",
       "displayName": "Uova",
       "aliases": [
+        "uovo",
         "uova",
-        "Uova",
-        "uovo"
+        "Uova"
       ],
       "categoryId": "protein",
       "mappingKind": "guided",
-      "mellerFamilyId": "uova"
+      "guideFamilyId": "uova"
     },
     {
       "ingredientId": "veg-aglio",
@@ -2303,43 +2309,43 @@
       ],
       "categoryId": "vegetable",
       "mappingKind": "guided",
-      "mellerFamilyId": "verdura"
+      "guideFamilyId": "verdura"
     },
     {
       "ingredientId": "veg-agretti",
       "displayName": "Agretti",
       "aliases": [
         "agretti",
-        "Agretti",
-        "barba di frate"
+        "barba di frate",
+        "Agretti"
       ],
       "categoryId": "vegetable",
       "mappingKind": "guided",
-      "mellerFamilyId": "verdura"
+      "guideFamilyId": "verdura"
     },
     {
       "ingredientId": "veg-asparagi",
       "displayName": "Asparagi",
       "aliases": [
+        "asparago",
         "asparagi",
-        "Asparagi",
-        "asparago"
+        "Asparagi"
       ],
       "categoryId": "vegetable",
       "mappingKind": "guided",
-      "mellerFamilyId": "verdura"
+      "guideFamilyId": "verdura"
     },
     {
       "ingredientId": "veg-barbabietola",
       "displayName": "Barbabietola",
       "aliases": [
         "barbabietola",
-        "Barbabietola",
-        "barbabietole"
+        "barbabietole",
+        "Barbabietola"
       ],
       "categoryId": "vegetable",
       "mappingKind": "guided",
-      "mellerFamilyId": "verdura"
+      "guideFamilyId": "verdura"
     },
     {
       "ingredientId": "veg-bietole",
@@ -2347,48 +2353,48 @@
       "aliases": [
         "bietola",
         "bietole",
-        "Bietole / Coste",
-        "coste"
+        "coste",
+        "Bietole / Coste"
       ],
       "categoryId": "vegetable",
       "mappingKind": "guided",
-      "mellerFamilyId": "verdura"
+      "guideFamilyId": "verdura"
     },
     {
       "ingredientId": "veg-broccoli",
       "displayName": "Broccoli",
       "aliases": [
+        "broccolo",
         "broccoli",
-        "Broccoli",
-        "broccolo"
+        "Broccoli"
       ],
       "categoryId": "vegetable",
       "mappingKind": "guided",
-      "mellerFamilyId": "verdura"
+      "guideFamilyId": "verdura"
     },
     {
       "ingredientId": "veg-capperi",
       "displayName": "Capperi",
       "aliases": [
+        "cappero",
         "capperi",
-        "Capperi",
-        "cappero"
+        "Capperi"
       ],
       "categoryId": "vegetable",
       "mappingKind": "guided",
-      "mellerFamilyId": "verdura"
+      "guideFamilyId": "verdura"
     },
     {
       "ingredientId": "veg-carciofi",
       "displayName": "Carciofi",
       "aliases": [
+        "carciofo",
         "carciofi",
-        "Carciofi",
-        "carciofo"
+        "Carciofi"
       ],
       "categoryId": "vegetable",
       "mappingKind": "guided",
-      "mellerFamilyId": "verdura"
+      "guideFamilyId": "verdura"
     },
     {
       "ingredientId": "veg-carote",
@@ -2400,45 +2406,45 @@
       ],
       "categoryId": "vegetable",
       "mappingKind": "guided",
-      "mellerFamilyId": "verdura"
+      "guideFamilyId": "verdura"
     },
     {
       "ingredientId": "veg-cavolfiore",
       "displayName": "Cavolfiore",
       "aliases": [
         "cavolfiore",
-        "Cavolfiore",
-        "cavolfiori"
+        "cavolfiori",
+        "Cavolfiore"
       ],
       "categoryId": "vegetable",
       "mappingKind": "guided",
-      "mellerFamilyId": "verdura"
+      "guideFamilyId": "verdura"
     },
     {
       "ingredientId": "veg-cavolo",
       "displayName": "Cavolo",
       "aliases": [
-        "cavoli",
         "cavolo",
-        "Cavolo",
+        "cavoli",
         "cavolo cappuccio",
-        "cavolo nero"
+        "cavolo nero",
+        "Cavolo"
       ],
       "categoryId": "vegetable",
       "mappingKind": "guided",
-      "mellerFamilyId": "verdura"
+      "guideFamilyId": "verdura"
     },
     {
       "ingredientId": "veg-cetriolo",
       "displayName": "Cetriolo",
       "aliases": [
-        "cetrioli",
         "cetriolo",
+        "cetrioli",
         "Cetriolo"
       ],
       "categoryId": "vegetable",
       "mappingKind": "guided",
-      "mellerFamilyId": "verdura"
+      "guideFamilyId": "verdura"
     },
     {
       "ingredientId": "veg-cicoria",
@@ -2449,32 +2455,32 @@
       ],
       "categoryId": "vegetable",
       "mappingKind": "guided",
-      "mellerFamilyId": "verdura"
+      "guideFamilyId": "verdura"
     },
     {
       "ingredientId": "veg-cime-di-rapa",
       "displayName": "Cime di rapa",
       "aliases": [
         "cime di rapa",
-        "Cime di rapa",
         "rapa",
-        "rape"
+        "rape",
+        "Cime di rapa"
       ],
       "categoryId": "vegetable",
       "mappingKind": "guided",
-      "mellerFamilyId": "verdura"
+      "guideFamilyId": "verdura"
     },
     {
       "ingredientId": "veg-cipolla",
       "displayName": "Cipolla",
       "aliases": [
         "cipolla",
-        "Cipolla",
-        "cipolle"
+        "cipolle",
+        "Cipolla"
       ],
       "categoryId": "vegetable",
       "mappingKind": "guided",
-      "mellerFamilyId": "verdura"
+      "guideFamilyId": "verdura"
     },
     {
       "ingredientId": "veg-erba-cipollina",
@@ -2485,60 +2491,60 @@
       ],
       "categoryId": "vegetable",
       "mappingKind": "guided",
-      "mellerFamilyId": "verdura"
+      "guideFamilyId": "verdura"
     },
     {
       "ingredientId": "veg-fagiolini",
       "displayName": "Fagiolini",
       "aliases": [
+        "fagiolino",
         "fagiolini",
-        "Fagiolini",
-        "fagiolino"
+        "Fagiolini"
       ],
       "categoryId": "vegetable",
       "mappingKind": "guided",
-      "mellerFamilyId": "verdura"
+      "guideFamilyId": "verdura"
     },
     {
       "ingredientId": "veg-finocchi",
       "displayName": "Finocchi",
       "aliases": [
+        "finocchio",
         "finocchi",
-        "Finocchi",
-        "finocchio"
+        "Finocchi"
       ],
       "categoryId": "vegetable",
       "mappingKind": "guided",
-      "mellerFamilyId": "verdura"
+      "guideFamilyId": "verdura"
     },
     {
       "ingredientId": "veg-funghi",
       "displayName": "Funghi",
       "aliases": [
-        "champignon",
-        "chiodini",
-        "funghi",
-        "Funghi",
         "fungo",
+        "funghi",
+        "champignon",
+        "porcini",
+        "chiodini",
         "pleurotus",
-        "porcini"
+        "Funghi"
       ],
       "categoryId": "vegetable",
       "mappingKind": "guided",
-      "mellerFamilyId": "verdura"
+      "guideFamilyId": "verdura"
     },
     {
       "ingredientId": "veg-germogli",
       "displayName": "Germogli",
       "aliases": [
+        "germoglio",
         "germogli",
-        "Germogli",
         "germogli di soia",
-        "germoglio"
+        "Germogli"
       ],
       "categoryId": "vegetable",
       "mappingKind": "guided",
-      "mellerFamilyId": "verdura"
+      "guideFamilyId": "verdura"
     },
     {
       "ingredientId": "veg-indivia",
@@ -2549,20 +2555,20 @@
       ],
       "categoryId": "vegetable",
       "mappingKind": "guided",
-      "mellerFamilyId": "verdura"
+      "guideFamilyId": "verdura"
     },
     {
       "ingredientId": "veg-insalata",
       "displayName": "Insalata mista",
       "aliases": [
         "insalata",
-        "Insalata mista",
         "insalate",
-        "mix di insalata"
+        "mix di insalata",
+        "Insalata mista"
       ],
       "categoryId": "vegetable",
       "mappingKind": "guided",
-      "mellerFamilyId": "verdura"
+      "guideFamilyId": "verdura"
     },
     {
       "ingredientId": "veg-lattuga",
@@ -2573,7 +2579,7 @@
       ],
       "categoryId": "vegetable",
       "mappingKind": "guided",
-      "mellerFamilyId": "verdura"
+      "guideFamilyId": "verdura"
     },
     {
       "ingredientId": "veg-melanzane",
@@ -2585,19 +2591,19 @@
       ],
       "categoryId": "vegetable",
       "mappingKind": "guided",
-      "mellerFamilyId": "verdura"
+      "guideFamilyId": "verdura"
     },
     {
       "ingredientId": "veg-pak-choi",
       "displayName": "Pak choi",
       "aliases": [
-        "bok choy",
         "pak choi",
+        "bok choy",
         "Pak choi"
       ],
       "categoryId": "vegetable",
       "mappingKind": "guided",
-      "mellerFamilyId": "verdura"
+      "guideFamilyId": "verdura"
     },
     {
       "ingredientId": "veg-passata",
@@ -2605,13 +2611,13 @@
       "aliases": [
         "passata",
         "passata di pomodoro",
-        "Passata di pomodoro",
+        "polpa di pomodoro",
         "pelati",
-        "polpa di pomodoro"
+        "Passata di pomodoro"
       ],
       "categoryId": "vegetable",
       "mappingKind": "guided",
-      "mellerFamilyId": "verdura"
+      "guideFamilyId": "verdura"
     },
     {
       "ingredientId": "veg-peperoni",
@@ -2623,59 +2629,59 @@
       ],
       "categoryId": "vegetable",
       "mappingKind": "guided",
-      "mellerFamilyId": "verdura"
+      "guideFamilyId": "verdura"
     },
     {
       "ingredientId": "veg-pomodori",
       "displayName": "Pomodori",
       "aliases": [
-        "ciliegini",
-        "ciliegino",
-        "datterini",
+        "pomodoro",
         "pomodori",
-        "Pomodori",
         "pomodorini",
-        "pomodoro"
+        "datterini",
+        "ciliegino",
+        "ciliegini",
+        "Pomodori"
       ],
       "categoryId": "vegetable",
       "mappingKind": "guided",
-      "mellerFamilyId": "verdura"
+      "guideFamilyId": "verdura"
     },
     {
       "ingredientId": "veg-porro",
       "displayName": "Porro",
       "aliases": [
-        "porri",
         "porro",
+        "porri",
         "Porro"
       ],
       "categoryId": "vegetable",
       "mappingKind": "guided",
-      "mellerFamilyId": "verdura"
+      "guideFamilyId": "verdura"
     },
     {
       "ingredientId": "veg-radicchio",
       "displayName": "Radicchio",
       "aliases": [
-        "radicchi",
         "radicchio",
+        "radicchi",
         "Radicchio"
       ],
       "categoryId": "vegetable",
       "mappingKind": "guided",
-      "mellerFamilyId": "verdura"
+      "guideFamilyId": "verdura"
     },
     {
       "ingredientId": "veg-ravanelli",
       "displayName": "Ravanelli",
       "aliases": [
+        "ravanello",
         "ravanelli",
-        "Ravanelli",
-        "ravanello"
+        "Ravanelli"
       ],
       "categoryId": "vegetable",
       "mappingKind": "guided",
-      "mellerFamilyId": "verdura"
+      "guideFamilyId": "verdura"
     },
     {
       "ingredientId": "veg-rucola",
@@ -2686,19 +2692,19 @@
       ],
       "categoryId": "vegetable",
       "mappingKind": "guided",
-      "mellerFamilyId": "verdura"
+      "guideFamilyId": "verdura"
     },
     {
       "ingredientId": "veg-scalogno",
       "displayName": "Scalogno",
       "aliases": [
-        "scalogni",
         "scalogno",
+        "scalogni",
         "Scalogno"
       ],
       "categoryId": "vegetable",
       "mappingKind": "guided",
-      "mellerFamilyId": "verdura"
+      "guideFamilyId": "verdura"
     },
     {
       "ingredientId": "veg-sedano",
@@ -2709,31 +2715,31 @@
       ],
       "categoryId": "vegetable",
       "mappingKind": "guided",
-      "mellerFamilyId": "verdura"
+      "guideFamilyId": "verdura"
     },
     {
       "ingredientId": "veg-songino",
       "displayName": "Songino / Valeriana",
       "aliases": [
         "songino",
-        "Songino / Valeriana",
-        "valeriana"
+        "valeriana",
+        "Songino / Valeriana"
       ],
       "categoryId": "vegetable",
       "mappingKind": "guided",
-      "mellerFamilyId": "verdura"
+      "guideFamilyId": "verdura"
     },
     {
       "ingredientId": "veg-spinaci",
       "displayName": "Spinaci",
       "aliases": [
+        "spinacio",
         "spinaci",
-        "Spinaci",
-        "spinacio"
+        "Spinaci"
       ],
       "categoryId": "vegetable",
       "mappingKind": "guided",
-      "mellerFamilyId": "verdura"
+      "guideFamilyId": "verdura"
     },
     {
       "ingredientId": "veg-topinambur",
@@ -2744,7 +2750,7 @@
       ],
       "categoryId": "vegetable",
       "mappingKind": "guided",
-      "mellerFamilyId": "verdura"
+      "guideFamilyId": "verdura"
     },
     {
       "ingredientId": "veg-verza",
@@ -2755,7 +2761,7 @@
       ],
       "categoryId": "vegetable",
       "mappingKind": "guided",
-      "mellerFamilyId": "verdura"
+      "guideFamilyId": "verdura"
     },
     {
       "ingredientId": "veg-zucca",
@@ -2766,7 +2772,7 @@
       ],
       "categoryId": "vegetable",
       "mappingKind": "guided",
-      "mellerFamilyId": "verdura"
+      "guideFamilyId": "verdura"
     },
     {
       "ingredientId": "veg-zucchine",
@@ -2777,19 +2783,19 @@
       ],
       "categoryId": "vegetable",
       "mappingKind": "guided",
-      "mellerFamilyId": "verdura"
+      "guideFamilyId": "verdura"
     },
     {
       "ingredientId": "vitello",
       "displayName": "Vitello",
       "aliases": [
-        "vitella",
         "vitello",
+        "vitella",
         "Vitello"
       ],
       "categoryId": "protein",
       "mappingKind": "guided",
-      "mellerFamilyId": "manzo"
+      "guideFamilyId": "manzo"
     },
     {
       "ingredientId": "vongole",
@@ -2800,32 +2806,32 @@
       ],
       "categoryId": "protein",
       "mappingKind": "guided",
-      "mellerFamilyId": "crostaceiMolluschi"
+      "guideFamilyId": "crostaceiMolluschi"
     },
     {
       "ingredientId": "wasa",
       "displayName": "Wasa / Cracotte",
       "aliases": [
-        "cracotte",
         "wasa",
+        "cracotte",
         "Wasa / Cracotte"
       ],
       "categoryId": "carb",
       "mappingKind": "guided",
-      "mellerFamilyId": "pane"
+      "guideFamilyId": "pane"
     },
     {
       "ingredientId": "yogurt-greco",
       "displayName": "Yogurt greco / Skyr",
       "aliases": [
-        "skyr",
-        "yoghurt greco",
         "yogurt greco",
+        "yoghurt greco",
+        "skyr",
         "Yogurt greco / Skyr"
       ],
       "categoryId": "protein",
       "mappingKind": "guided",
-      "mellerFamilyId": "yogurtGreco"
+      "guideFamilyId": "yogurtGreco"
     }
   ]
 }

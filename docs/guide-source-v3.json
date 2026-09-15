@@ -4,10 +4,10 @@
   "notes": [
     "family = id stabile usato in js/domain.js e functions/src/domain.js — NON rinominare dopo il primo deploy",
     "Le families sono in ordine di PRIORITÀ DISCENDENTE: la prima regex che matcha vince. Regole più specifiche stanno prima (es. patateDolci prima di patate, salmoneAffumicato prima di pesceAzzurro, pesceScatolaNaturale prima di pesceSottOlio, maiale prima di manzo per catturare 'filetto di maiale', cerealiColazione prima di cereali per non catturare 'avena' generica)",
-    "aliases = stringhe usate da activateMellerRuleSet per costruire la regex. Nei catalogIngredients si usano parole intere (singolare + plurale). Nei freeIngredients si usano prefissi-stem dove morfologicamente sicuri (zucchin→zucchina/zucchine), parole intere dove il prefisso è ambiguo (carota/carote, limone/limoni, fungo/funghi)",
-    "catalogIngredients = voci del picker globale. Ogni entry diventa un documento in globalIngredientCatalog con mellerFamilyId uguale alla family genitore e mappingKind: guided",
-    "freeIngredients = alimenti senza dose guidata: frutta, grassi liberi, aromi, spezie, bevande. Hanno categoryId per il raggruppamento nel picker ma nessuna family guidata. mappingKind: free, mellerFamilyId: null",
-    "verdura = family guidata con dose 200g su tutti gli slot. Le verdure del catalogo hanno mellerFamilyId: verdura. La dose potrà essere differenziata per slot in futuro",
+    "aliases = stringhe usate da activateGuideRuleSet per costruire la regex. Nei catalogIngredients si usano parole intere (singolare + plurale). Nei freeIngredients si usano prefissi-stem dove morfologicamente sicuri (zucchin→zucchina/zucchine), parole intere dove il prefisso è ambiguo (carota/carote, limone/limoni, fungo/funghi)",
+    "catalogIngredients = voci del picker globale. Ogni entry diventa un documento in globalIngredientCatalog con guideFamilyId uguale alla family genitore e mappingKind: guided",
+    "freeIngredients = alimenti senza dose guidata: frutta, grassi liberi, aromi, spezie, bevande. Hanno categoryId per il raggruppamento nel picker ma nessuna family guidata. mappingKind: free, guideFamilyId: null",
+    "verdura = family guidata con dose 200g su tutti gli slot. Le verdure del catalogo hanno guideFamilyId: verdura. La dose potrà essere differenziata per slot in futuro",
     "cerealiColazione = family guidata distinta da cereali e fiocchiAvena. Copre cornflakes, muesli e cereali da prima colazione non-avena. Sta PRIMA di cereali nell'ordine di priorità",
     "doses = grammature in grammi. Cereali e legumi secchi = peso a crudo. Conserve = peso sgocciolato. Patate/polenta = peso indicato nel label",
     "weeklyFrequencyKey sulle protein families non è nel JSON: il collegamento famiglia↔frequenza settimanale è gestito lato codice"
@@ -415,7 +415,8 @@
         "cereali soffiati",
         "cereali integrali colazione",
         "granola",
-        "fiocchi di mais"
+        "fiocchi di mais",
+        "cereali colazione"
       ],
       "doses": {
         "lunch": {
@@ -514,7 +515,8 @@
         "burghul",
         "kamut",
         "semolino",
-        "semola"
+        "semola",
+        "cereali"
       ],
       "doses": {
         "lunch": {
@@ -929,7 +931,9 @@
         "alice",
         "alici",
         "aringa",
-        "aringhe"
+        "aringhe",
+        "pesce azzurro",
+        "tonno"
       ],
       "doses": {
         "lunch": {
@@ -1013,7 +1017,8 @@
         "baccala",
         "baccalà",
         "stoccafisso",
-        "pesce spada"
+        "pesce spada",
+        "pesce bianco"
       ],
       "doses": {
         "lunch": {
@@ -1124,7 +1129,10 @@
         "astice",
         "aragosta",
         "granchio",
-        "granchi"
+        "granchi",
+        "crostacei e molluschi",
+        "crostacei",
+        "molluschi"
       ],
       "doses": {
         "lunch": {
@@ -1379,7 +1387,9 @@
         "prosciutto cotto",
         "prosciutto",
         "speck",
-        "fesa"
+        "fesa",
+        "affettati",
+        "salumi"
       ],
       "doses": {
         "lunch": {
@@ -1479,7 +1489,8 @@
         "caprino",
         "philadelphia",
         "formaggio spalmabile",
-        "formaggio fresco spalmabile"
+        "formaggio fresco spalmabile",
+        "formaggi freschi"
       ],
       "doses": {
         "lunch": {
@@ -1676,7 +1687,8 @@
         "emmenthal",
         "scamorza",
         "asiago",
-        "provolone"
+        "provolone",
+        "formaggi stagionati"
       ],
       "doses": {
         "lunch": {
@@ -1904,7 +1916,8 @@
         "fave",
         "edamame",
         "tempeh",
-        "tofu"
+        "tofu",
+        "legumi"
       ],
       "doses": {
         "lunch": {

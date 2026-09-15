@@ -21,10 +21,12 @@
 
   function originalOnlyPlan(plan) {
     const next = JSON.parse(JSON.stringify(plan || {}));
-    if (!next.mellerModes) next.mellerModes = {};
+    // Piani legacy: la mappa si chiamava mellerModes — le modalità salvate
+    // dall'utente non si perdono quando si forza «solo originali».
+    if (!next.guideModes) next.guideModes = next.mellerModes ? JSON.parse(JSON.stringify(next.mellerModes)) : {};
     const days = ['monday','tuesday','wednesday','thursday','friday','saturday','sunday'];
     days.forEach(day => {
-      next.mellerModes[day] = { ...(next.mellerModes[day] || {}), lunch: 'original', dinner: 'original' };
+      next.guideModes[day] = { ...(next.guideModes[day] || {}), lunch: 'original', dinner: 'original' };
     });
     return next;
   }
@@ -128,8 +130,8 @@
         : null;
     } else {
       const Domain = root.PianoDomain;
-      if (!Domain?.buildCatalogIndex || !Domain?.structureRevisionToMellerRules) return null;
-      const converted = Domain.structureRevisionToMellerRules(
+      if (!Domain?.buildCatalogIndex || !Domain?.structureRevisionToGuideRules) return null;
+      const converted = Domain.structureRevisionToGuideRules(
         profile.structureRevision || {}, Domain.buildCatalogIndex(profile.catalog || {}));
       if (!converted.rules.length) return null;
       engine = converted;
@@ -160,7 +162,7 @@
         // dose via engineRulesFor (il vecchio accesso diretto a profile.rules
         // non copriva i profili v2, privi di quel campo).
         const engine = engineRulesFor(value.profile);
-        if (!engine || !root.PianoDomain?.activateMellerRuleSet?.(engine.rules, engine.freeAliases)) {
+        if (!engine || !root.PianoDomain?.activateGuideRuleSet?.(engine.rules, engine.freeAliases)) {
           throw new Error('Rule set non compatibile');
         }
         localStorage.setItem(cacheKey(uid), JSON.stringify({ ...value, cachedAt: new Date().toISOString() }));
@@ -174,7 +176,7 @@
         if (cached?.state === 'assigned' && (!expires || expires > new Date())) {
           const engine = engineRulesFor(cached.profile);
           if (!engine) throw new Error('Profilo in cache non compatibile');
-          root.PianoDomain?.activateMellerRuleSet?.(engine.rules, engine.freeAliases);
+          root.PianoDomain?.activateGuideRuleSet?.(engine.rules, engine.freeAliases);
           return { ...cached, offline: true };
         }
       } catch (_) {}

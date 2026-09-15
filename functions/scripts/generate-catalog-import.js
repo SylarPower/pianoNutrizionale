@@ -1,8 +1,8 @@
 'use strict';
 /**
  * Genera il file di import del catalogo globale ingredienti a partire
- * dall'estratto autorevole `docs/catalogo-ingredienti-meller.json`
- * (fonte: `MELLER_GRAMMATURE` in `js/domain.js`).
+ * dall'estratto autorevole `docs/catalogo-ingredienti.json`
+ * (fonte: `GUIDE_GRAMMATURE` in `js/domain.js`).
  *
  * Il risultato segue il formato descritto in `docs/catalog-import-format.md`
  * ed è quello che il platform admin carica dalla sezione **Catalogo** della
@@ -21,11 +21,11 @@ const path = require('node:path');
 const Domain = require('../../js/domain');
 
 const ROOT = path.join(__dirname, '..', '..');
-const EXTRACT = path.join(ROOT, 'docs', 'catalogo-ingredienti-meller.json');
-const OUTPUT = path.join(ROOT, 'docs', 'catalogo-import-meller.json');
+const EXTRACT = path.join(ROOT, 'docs', 'catalogo-ingredienti.json');
+const OUTPUT = path.join(ROOT, 'docs', 'catalogo-import.json');
 
-// Il motore Meller usa tre famiglie con lettere maiuscole (`pesceBianco`,
-// `pesceOmega`, `fiocchiLatte`): restano identiche in `mellerFamilyId`, mentre
+// Il motore delle linee guida usa tre famiglie con lettere maiuscole (`pesceBianco`,
+// `pesceOmega`, `fiocchiLatte`): restano identiche in `guideFamilyId`, mentre
 // l'`ingredientId` del catalogo segue il contratto del server
 // (`^[a-z0-9][a-z0-9-]{1,95}$`) → `pesce-bianco`, `pesce-omega`, `fiocchi-latte`.
 // Riconoscimento delle ricette e dosi non dipendono dall'uguaglianza fra i due
@@ -40,7 +40,7 @@ function catalogIngredientId(familyId) {
 
 function buildImportPayload() {
   const extract = JSON.parse(fs.readFileSync(EXTRACT, 'utf8'));
-  const seed = Domain.splitMellerSeed(extract);
+  const seed = Domain.splitGuideSeed(extract);
   const categories = seed.categories
     .filter(category => category.categoryId !== 'free')
     .map(category => ({
@@ -55,7 +55,7 @@ function buildImportPayload() {
     aliases: [...(ingredient.aliases || [])].sort((a, b) => a.localeCompare(b)),
     categoryId: ingredient.categoryId,
     mappingKind: ingredient.mappingKind,
-    mellerFamilyId: ingredient.mappingKind === 'guided' ? ingredient.mellerFamilyId : null
+    guideFamilyId: ingredient.mappingKind === 'guided' ? ingredient.guideFamilyId : null
   })).sort((a, b) => a.ingredientId.localeCompare(b.ingredientId));
   // Il payload accettato da `importGlobalIngredientCatalog` è esattamente
   // `{ ingredients, categories }`: il parser server rifiuta chiavi extra.
@@ -83,14 +83,14 @@ if (require.main === module) {
   if (process.argv.includes('--check')) {
     const current = fs.existsSync(OUTPUT) ? fs.readFileSync(OUTPUT, 'utf8') : '';
     if (current !== next) {
-      console.error('docs/catalogo-import-meller.json non è aggiornato: esegui node functions/scripts/generate-catalog-import.js');
+      console.error('docs/catalogo-import.json non è aggiornato: esegui node functions/scripts/generate-catalog-import.js');
       process.exitCode = 1;
     } else {
       console.log(`Catalogo di import aggiornato: ${payload.ingredients.length} ingredienti, ${payload.categories.length} categorie.`);
     }
   } else {
     fs.writeFileSync(OUTPUT, next);
-    console.log(`Scritto docs/catalogo-import-meller.json: ${payload.ingredients.length} ingredienti, ${payload.categories.length} categorie.`);
+    console.log(`Scritto docs/catalogo-import.json: ${payload.ingredients.length} ingredienti, ${payload.categories.length} categorie.`);
   }
 }
 

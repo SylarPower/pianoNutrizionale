@@ -6,7 +6,7 @@
 - Dati personali sotto `users/{uid}`, dati domestici sotto `households/{id}`.
 - Le vecchie Rules proteggono UID/household ma non esistevano tenant, Functions, indici o test emulatori.
 - Le ricette e i piani sono documenti aggregati; import/export include il piano.
-- Meller viveva interamente in `js/domain.js`; i mapping mancanti erano soltanto locali.
+- Guide viveva interamente in `js/domain.js`; i mapping mancanti erano soltanto locali.
 - Rischi rilevati: confondere household e paziente; selezione autonoma di un protocollo; aggiornamento retroattivo; IDOR cross-client; PII nei report; scritture admin dal browser; cache di una versione revocata; assenza di rate limit/audit.
 
 ## Prerequisiti

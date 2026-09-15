@@ -202,15 +202,17 @@ assert.equal(editMode, false, 'ricetta aperta in lettura');
 assert.deepEqual(currentModal.recipe.notes, ['Non scuocere', 'Usare pepe fresco'], 'nota speciale unificata in notes senza prefisso');
 assert.equal(currentModal.recipe.specialNote, undefined, 'campo specialNote rimosso dalla ricetta normalizzata');
 const beforeReadAdapt = clone(currentModal.recipe);
-adaptCurrentRecipeToMeller();
+adaptCurrentRecipeToGuide();
 assert.equal(editMode, true, 'dopo il click passa in modifica');
 for (const field of ['name', 'emoji', 'slot', 'proteinCategory', 'steps', 'notes']) {
   assert.deepEqual(currentModal.recipe[field], beforeReadAdapt[field], `${field} preservato`);
 }
 assert.equal(currentModal.recipe.ingredients[0].name, beforeReadAdapt.ingredients[0].name);
 assert.deepEqual(currentModal.recipe.ingredients[1], beforeReadAdapt.ingredients[1], 'ingrediente non adattato identico');
-assert.equal(currentModal.recipe.ingredients[0].portions.man, '90 g', 'porzione unica per profilo dopo adattamento (schema 6)');
-assert.equal(currentModal.recipe.ingredients[0].portions.ipo, '90 g', 'profilo donna allineato al riferimento del pranzo');
+// Dosi v3 della tabella di riferimento: cereali al pranzo nel giorno di
+// allenamento = 70 g (la vecchia aspettativa 90 g apparteneva allo schema 5).
+assert.equal(currentModal.recipe.ingredients[0].portions.man, '70 g', 'porzione unica per profilo dopo adattamento (schema 6)');
+assert.equal(currentModal.recipe.ingredients[0].portions.ipo, '70 g', 'profilo donna allineato al riferimento del pranzo');
 setRecipes(recipes);
 
 // ---- Percorsi di rendering ----
@@ -264,7 +266,8 @@ appState.plan.batchTemplates = [];
 appState.plan.days.tuesday.lunch = 'D1';
 openBatchModal('monday');
 assert.match(batchModalList.innerHTML, /Ingredienti · dosi totali/, 'dosi totali integrate nella ricetta completa');
-assert.match(batchModalList.innerHTML, /160g/, 'dose cena e pranzo sommata');
+// Dosi v3: cena 70g + pranzo (giorno di allenamento) 70g = 140g di riso.
+assert.match(batchModalList.innerHTML, /140g/, 'dose cena e pranzo sommata');
 assert.doesNotMatch(batchModalList.innerHTML, /Doppia porzione|Pranzo di Martedì|tra 1 giorno/, 'testi ridondanti assenti per cena e pranzo successivo');
 closeBatchModal();
 appState.plan.batchTemplates = originalTemplates;
@@ -596,84 +599,85 @@ assert.doesNotMatch(document.getElementById('view-settings').innerHTML, /📥 Ri
 assert.doesNotMatch(document.getElementById('view-settings').innerHTML, /aria-controls="guide-struttura-della-dieta"/, 'Struttura della dieta non è più un accordion autonomo');
 assert.match(document.getElementById('view-settings').innerHTML, /aria-controls="guide-altre-informazioni-e-faq"[\s\S]*<h3>Struttura della dieta<\/h3>/, 'la struttura è contenuta in Altre informazioni e FAQ');
 
-// ---- Popup e tabelle delle alternative Meller (fonte unica js/domain.js) ----
+// ---- Popup e tabelle delle alternative Guide (fonte unica js/domain.js) ----
 // Le Impostazioni non hanno una giornata di riferimento, quindi mostrano
 // entrambe le colonne pranzo: Alimento | Pranzo A | Pranzo R | Cena.
 {
   const settingsHtml = document.getElementById('view-settings').innerHTML;
-  assert.match(settingsHtml, /alternative-table meller-carbs cols-4/, 'tabella carboidrati a 4 colonne nelle Impostazioni');
-  assert.match(settingsHtml, /alternative-table meller-proteins cols-2/, 'tabella proteine a 2 colonne nelle Impostazioni');
-  assert.match(settingsHtml, /Carboidrati · riferimento Pasta\/Riso 90g a pranzo A, 70g a pranzo R, 40g a cena/, 'titolo derivato dalla tabella');
+  assert.match(settingsHtml, /alternative-table guide-carbs cols-4/, 'tabella carboidrati a 4 colonne nelle Impostazioni');
+  assert.match(settingsHtml, /alternative-table guide-proteins cols-2/, 'tabella proteine a 2 colonne nelle Impostazioni');
+  assert.match(settingsHtml, /Carboidrati · riferimento Pasta\/Riso 70g a pranzo A, 50g a pranzo R, 40g a cena/, 'titolo derivato dalla tabella');
   assert.match(settingsHtml, /<strong>Alimento<\/strong><strong>Pranzo A<\/strong><strong>Pranzo R<\/strong><strong>Cena<\/strong>/, 'intestazione carboidrati con entrambe le giornate');
   assert.match(settingsHtml, /<strong>Alimento<\/strong><strong>Pranzo e cena<\/strong>/, 'intestazione proteine a colonna unica');
-  assert.match(settingsHtml, /Gnocchi di patate<\/span><strong>250g<\/strong><strong>190g<\/strong><strong>120g<\/strong>/, 'riga gnocchi A + R + cena');
-  assert.match(settingsHtml, /Legumotti Barilla<\/span><strong>80g<\/strong>/, 'riga legumotti dose unica');
-  assert.match(settingsHtml, /Fiocchi di latte \/ Uova intere<\/span><strong>180g<\/strong>/, 'riga fiocchi di latte 180g');
+  assert.match(settingsHtml, /Gnocchi<\/span><strong>150g<\/strong><strong>110g<\/strong><strong>80g<\/strong>/, 'riga gnocchi A + R + cena');
+  assert.match(settingsHtml, /Legumotti<\/span><strong>70g<\/strong>/, 'riga legumotti dose unica');
+  assert.match(settingsHtml, /Fiocchi di latte<\/span><strong>200g<\/strong>/, 'riga fiocchi di latte 200g');
+  assert.match(settingsHtml, /Uova<\/span><strong>180g<\/strong>/, 'riga uova 180g');
   assert.equal((settingsHtml.match(/<strong>Cena<\/strong>/g) || []).length, 1, 'una sola colonna Cena: la tabella proteine ne resta priva');
 }
 
 // Popup al tocco di un ingrediente: la tabella mostrata dipende dalla famiglia
 // canonica e dalla GIORNATA della ricetta aperta.
-setupMellerModal();
+setupGuideModal();
 
-// Giornata di allenamento: a pranzo devono comparire le dosi A (pasta 90g).
+// Giornata di allenamento: a pranzo devono comparire le dosi A (cereali 70g).
 currentModal = { recipe: { id: 'X', slot: 'lunch', ingredients: [], steps: [] }, dayType: 'training' };
-openMellerAlternatives('Pasta integrale');
+openGuideAlternatives('Pasta integrale');
 {
-  const popupHtml = document.getElementById('meller-modal-body')._innerHTML;
-  assert.match(popupHtml, /alternative-table meller-carbs cols-3/, 'popup carboidrati per la pasta');
-  assert.doesNotMatch(popupHtml, /meller-proteins/, 'nessuna tabella proteine per un carboidrato');
+  const popupHtml = document.getElementById('guide-modal-body')._innerHTML;
+  assert.match(popupHtml, /alternative-table guide-carbs cols-3/, 'popup carboidrati per la pasta');
+  assert.doesNotMatch(popupHtml, /guide-proteins/, 'nessuna tabella proteine per un carboidrato');
   assert.match(popupHtml, /<strong>Alimento<\/strong><strong>Pranzo A<\/strong><strong>Cena<\/strong>/, 'colonne Alimento | Pranzo A | Cena');
   assert.doesNotMatch(popupHtml, /Pranzo R/, 'in allenamento non si mostrano le dosi di riposo');
-  assert.match(popupHtml, /meller-highlight/, 'riga della pasta evidenziata');
-  assert.match(popupHtml, /Pasta, Riso<\/span><strong>90g<\/strong><strong>40g<\/strong>/, 'pasta con la dose di allenamento');
-  assert.match(popupHtml, /Cous cous<\/span><strong>80g<\/strong><strong>40g<\/strong>/, 'cous cous con la dose di allenamento');
-  assert.equal(document.getElementById('meller-modal-subtitle').textContent, 'Carboidrati equivalenti · giorno di allenamento · riferimento Pasta/Riso 90g a pranzo, 40g a cena');
+  assert.match(popupHtml, /guide-highlight/, 'riga della pasta evidenziata');
+  assert.match(popupHtml, /Cereali<\/span><strong>70g<\/strong><strong>40g<\/strong>/, 'cereali con la dose di allenamento');
+  assert.match(popupHtml, /Pane<\/span><strong>100g<\/strong><strong>50g<\/strong>/, 'pane con la dose di allenamento');
+  assert.equal(document.getElementById('guide-modal-subtitle').textContent, 'Carboidrati equivalenti · giorno di allenamento · riferimento Pasta/Riso 70g a pranzo, 40g a cena');
 }
 
-// Giornata di riposo: stesse righe, dosi R (pasta 70g).
+// Giornata di riposo: stesse righe, dosi R (cereali 50g).
 currentModal = { recipe: { id: 'X', slot: 'lunch', ingredients: [], steps: [] }, dayType: 'rest' };
-openMellerAlternatives('Pasta integrale');
+openGuideAlternatives('Pasta integrale');
 {
-  const popupHtml = document.getElementById('meller-modal-body')._innerHTML;
+  const popupHtml = document.getElementById('guide-modal-body')._innerHTML;
   assert.match(popupHtml, /<strong>Alimento<\/strong><strong>Pranzo R<\/strong><strong>Cena<\/strong>/, 'colonne Alimento | Pranzo R | Cena');
-  assert.match(popupHtml, /Pasta, Riso<\/span><strong>70g<\/strong><strong>40g<\/strong>/, 'pasta con la dose di riposo');
-  assert.match(popupHtml, /Cous cous<\/span><strong>60g<\/strong><strong>40g<\/strong>/, 'cous cous con la dose di riposo');
-  assert.equal(document.getElementById('meller-modal-subtitle').textContent, 'Carboidrati equivalenti · giorno di riposo · riferimento Pasta/Riso 70g a pranzo, 40g a cena');
+  assert.match(popupHtml, /Cereali<\/span><strong>50g<\/strong><strong>40g<\/strong>/, 'cereali con la dose di riposo');
+  assert.match(popupHtml, /Pane<\/span><strong>70g<\/strong><strong>50g<\/strong>/, 'pane con la dose di riposo');
+  assert.equal(document.getElementById('guide-modal-subtitle').textContent, 'Carboidrati equivalenti · giorno di riposo · riferimento Pasta/Riso 50g a pranzo, 40g a cena');
 }
 
 // Le proteine non cambiano con la giornata: colonna unica in entrambi i casi.
 ['training', 'rest'].forEach(dayType => {
   currentModal = { recipe: { id: 'X', slot: 'lunch', ingredients: [], steps: [] }, dayType };
-  openMellerAlternatives('Petto di pollo');
-  const popupHtml = document.getElementById('meller-modal-body')._innerHTML;
-  assert.match(popupHtml, /alternative-table meller-proteins cols-2/, `popup proteine (${dayType})`);
-  assert.doesNotMatch(popupHtml, /meller-carbs/, 'nessuna tabella carboidrati per una proteina');
+  openGuideAlternatives('Petto di pollo');
+  const popupHtml = document.getElementById('guide-modal-body')._innerHTML;
+  assert.match(popupHtml, /alternative-table guide-proteins cols-2/, `popup proteine (${dayType})`);
+  assert.doesNotMatch(popupHtml, /guide-carbs/, 'nessuna tabella carboidrati per una proteina');
   assert.match(popupHtml, /<strong>Alimento<\/strong><strong>Pranzo e cena<\/strong>/, 'colonna unica per le proteine');
-  assert.match(popupHtml, /Affettati sgrassati \/ Salumi magri<\/span><strong>100g<\/strong>/, 'salumi 100g');
-  assert.match(popupHtml, /Uova intere<\/span><strong>180g<\/strong>/, 'uova 180g');
-  assert.match(popupHtml, /Legumotti Barilla<\/span><strong>80g<\/strong>/, 'legumotti 80g');
-  assert.equal(document.getElementById('meller-modal-subtitle').textContent, 'Proteine equivalenti · riferimento Pollame 200g');
+  assert.match(popupHtml, /Affettati<\/span><strong>150g<\/strong>/, 'affettati 150g');
+  assert.match(popupHtml, /Uova<\/span><strong>180g<\/strong>/, 'uova 180g');
+  assert.match(popupHtml, /Legumotti<\/span><strong>70g<\/strong>/, 'legumotti 70g');
+  assert.equal(document.getElementById('guide-modal-subtitle').textContent, 'Proteine equivalenti · riferimento Pollo e tacchino 200g');
 });
 currentModal = null;
-closeMellerAlternatives();
-assert.equal(document.getElementById('meller-alternatives-modal').classList.contains('hidden'), true, 'popup chiuso');
-openMellerAlternatives('Zucchine');
-assert.equal(document.getElementById('meller-alternatives-modal').classList.contains('hidden'), true, 'la verdura non apre il popup');
+closeGuideAlternatives();
+assert.equal(document.getElementById('guide-alternatives-modal').classList.contains('hidden'), true, 'popup chiuso');
+openGuideAlternatives('Zucchine');
+assert.equal(document.getElementById('guide-alternatives-modal').classList.contains('hidden'), true, 'la verdura non apre il popup');
 
 // Spuntini e merende: nessuna equivalenza. I crackers dello spuntino valgono
-// 30g fissi e non si scambiano con 90g di pasta, quindi non sono tappabili.
+// 30g fissi e non si scambiano con i 70g dei cereali, quindi non sono tappabili.
 ['breakfast', 'snack1', 'snack2'].forEach(slot => {
   currentModal = { recipe: { id: 'S', slot, ingredients: [], steps: [] }, dayType: 'training' };
   ['Crackers', 'Pane', 'Yogurt greco', 'Fiocchi di latte', 'Uova'].forEach(name => {
     assert.equal(
-      getMellerAlternativesForIngredient(name), null,
+      getGuideAlternativesForIngredient(name), null,
       `${name} non ha equivalenze in ${slot}`
     );
   });
-  openMellerAlternatives('Crackers');
+  openGuideAlternatives('Crackers');
   assert.equal(
-    document.getElementById('meller-alternatives-modal').classList.contains('hidden'), true,
+    document.getElementById('guide-alternatives-modal').classList.contains('hidden'), true,
     `il popup non si apre in ${slot}`
   );
 });
@@ -681,16 +685,16 @@ assert.equal(document.getElementById('meller-alternatives-modal').classList.cont
 // Gli stessi ingredienti restano tappabili a pranzo e a cena.
 ['lunch', 'dinner'].forEach(slot => {
   currentModal = { recipe: { id: 'S', slot, ingredients: [], steps: [] }, dayType: 'training' };
-  assert.ok(getMellerAlternativesForIngredient('Crackers'), `crackers tappabili in ${slot}`);
-  assert.ok(getMellerAlternativesForIngredient('Petto di pollo'), `pollo tappabile in ${slot}`);
+  assert.ok(getGuideAlternativesForIngredient('Crackers'), `crackers tappabili in ${slot}`);
+  assert.ok(getGuideAlternativesForIngredient('Petto di pollo'), `pollo tappabile in ${slot}`);
 });
 
 // Cross-slot: conta il pasto di DESTINAZIONE, non quello della ricetta. Una
 // ricetta da pranzo servita come spuntino non mostra le equivalenze.
 currentModal = { recipe: { id: 'S', slot: 'lunch', ingredients: [], steps: [] }, slot: 'dinner', dayType: 'training' };
-assert.ok(getMellerAlternativesForIngredient('Crackers'), 'pranzo → cena: equivalenze attive');
+assert.ok(getGuideAlternativesForIngredient('Crackers'), 'pranzo → cena: equivalenze attive');
 currentModal = { recipe: { id: 'S', slot: 'lunch', ingredients: [], steps: [] }, slot: 'snack1', dayType: 'training' };
-assert.equal(getMellerAlternativesForIngredient('Crackers'), null, 'pranzo → spuntino: nessuna equivalenza');
+assert.equal(getGuideAlternativesForIngredient('Crackers'), null, 'pranzo → spuntino: nessuna equivalenza');
 currentModal = null;
 
 // Riconoscimento degli ingredienti: ogni famiglia delle tabelle alternative è
@@ -699,24 +703,24 @@ currentModal = null;
   const carbNames = ['Pasta', 'Riso', 'Gnocchi', 'Farro', 'Orzo', 'Quinoa', 'Grano saraceno', 'Amaranto',
     'Cous cous', 'Pane', 'Piadina', 'Crackers', 'Grissini', 'Crostini', 'Polenta', 'Patate'];
   carbNames.forEach(name => {
-    assert.equal(isMellerCarbIngredient(name), true, `${name} apre le equivalenze carboidrati`);
-    assert.equal(isMellerProteinIngredient(name), false, `${name} non è una proteina`);
+    assert.equal(isGuideCarbIngredient(name), true, `${name} apre le equivalenze carboidrati`);
+    assert.equal(isGuideProteinIngredient(name), false, `${name} non è una proteina`);
   });
   const proteinNames = ['Maiale', 'Affettati', 'Salumi', 'Fiocchi di latte', 'Uova', 'Legumotti',
     'Petto di pollo', 'Manzo', 'Merluzzo', 'Tonno', 'Salmone', 'Gamberi', 'Montasio', 'Lenticchie'];
   proteinNames.forEach(name => {
-    assert.equal(isMellerProteinIngredient(name), true, `${name} apre le equivalenze proteiche`);
-    assert.equal(isMellerCarbIngredient(name), false, `${name} non è un carboidrato`);
+    assert.equal(isGuideProteinIngredient(name), true, `${name} apre le equivalenze proteiche`);
+    assert.equal(isGuideCarbIngredient(name), false, `${name} non è un carboidrato`);
   });
   ['Zucchine', 'Basilico', 'Olio EVO'].forEach(name => {
-    assert.equal(getMellerAlternativesForIngredient(name), null, `${name} non ha equivalenze Meller`);
+    assert.equal(getGuideAlternativesForIngredient(name), null, `${name} non ha equivalenze Guide`);
   });
   // Le etichette delle tabelle sono riconoscibili dal popup (stessa famiglia).
-  PianoDomain.MELLER_CARB_ALTERNATIVES.forEach(entry => {
-    assert.ok(isMellerCarbIngredient(entry.label), `etichetta tabella riconosciuta: ${entry.label}`);
+  PianoDomain.GUIDE_CARB_ALTERNATIVES.forEach(entry => {
+    assert.ok(isGuideCarbIngredient(entry.label), `etichetta tabella riconosciuta: ${entry.label}`);
   });
-  PianoDomain.MELLER_PROTEIN_ALTERNATIVES.forEach(entry => {
-    assert.ok(isMellerProteinIngredient(entry.label.split(' / ')[0]), `etichetta tabella riconosciuta: ${entry.label}`);
+  PianoDomain.GUIDE_PROTEIN_ALTERNATIVES.forEach(entry => {
+    assert.ok(isGuideProteinIngredient(entry.label.split(' / ')[0]), `etichetta tabella riconosciuta: ${entry.label}`);
   });
 }
 

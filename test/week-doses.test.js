@@ -151,7 +151,7 @@ function scenario({ dayType = 'training', adapted = true, policyMode = 'assigned
     ? { state: 'assigned', profile: { clientProfileId: 'c1', assignmentId: 'a1', structureId: 's1', structureRevisionId: '1' } }
     : { state: 'unassigned' };
   appState.saasPolicy = { mode: policyMode, migrationRequired: policyMode !== 'assigned' };
-  assert.equal(PianoDomain.activateMellerRuleSet(STRUCTURE, []), true, 'motore con le regole del cliente');
+  assert.equal(PianoDomain.activateGuideRuleSet(STRUCTURE, []), true, 'motore con le regole del cliente');
   setRecipes([RECIPE]);
   appState.plan = PianoDomain.migratePlan(createEmptyWeeklyPlan());
   appState.plan = PianoDomain.setAdaptedQuantitiesEnabled(appState.plan, adapted);
@@ -216,10 +216,10 @@ test('batch cooking: le quantità seguono lo stesso interruttore', () => {
   days.tuesday.lunch = 'L1';
   const plan = PianoDomain.migratePlan({ days, defaultDays: JSON.parse(JSON.stringify(days)), batchRules: {}, batchTemplates: templates });
   plan.batchTemplates = templates;
-  PianoDomain.activateMellerRuleSet(STRUCTURE, []);
+  PianoDomain.activateGuideRuleSet(STRUCTURE, []);
   const recipes = { L1: RECIPE };
-  const on = PianoDomain.activeBatch('monday', plan, templates, recipes, 'man', { applyMeller: true });
+  const on = PianoDomain.activeBatch('monday', plan, templates, recipes, 'man', { applyGuide: true });
   assert.equal(on[0].tasks[0].quantity, '120 g', 'batch con dosi del cliente');
-  const off = PianoDomain.activeBatch('monday', plan, templates, recipes, 'man', { applyMeller: false });
+  const off = PianoDomain.activeBatch('monday', plan, templates, recipes, 'man', { applyGuide: false });
   assert.equal(off[0].tasks[0].quantity, '200 g', 'batch con quantità originali');
 });

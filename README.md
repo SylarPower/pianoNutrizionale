@@ -19,20 +19,20 @@ WebApp PWA privata per gestire colazioni, spuntini, pranzi, cene, batch cooking 
 - crackers dello spuntino mattutino aggiunti nei giorni A e rimossi nei giorni R (dinamici, derivati dal piano);
 - vista ricetta completa in una singola schermata (ingredienti, quantità, preparazione, note e batch cooking);
 - operazioni sui pasti: sostituisci con una ricetta, scambia con un altro giorno, copia in un altro giorno, ripristina scelta iniziale;
-- **sostituzione pranzo ↔ cena** con adattamento dei soli carboidrati alle grammature Meller del pasto di destinazione (pranzo → cena: dose cena della tabella, cioè `floor(pranzo riposo × 2/3 / 10) × 10`; cena → pranzo: dosi pranzo A/R rilette dalla tabella);
+- **sostituzione pranzo ↔ cena** con adattamento dei soli carboidrati alle grammature Guide del pasto di destinazione (pranzo → cena: dose cena della tabella, cioè `floor(pranzo riposo × 2/3 / 10) × 10`; cena → pranzo: dosi pranzo A/R rilette dalla tabella);
 - **suggerimento batch cooking nella sostituzione**: cambiando un pranzo viene evidenziata la cena del giorno prima (e cambiando una cena il pranzo del giorno dopo), così un tocco attiva la "doppia porzione";
 - generatore automatico della settimana con parametri strutturali (slot da rigenerare, **accoppiate cena → pranzo per il batch**, tetto ripetizioni, cross-slot pranzo ↔ cena, frequenze proteiche min–max), vincoli nutrizionali, blocchi pasto/giornata che contano nelle frequenze, seed riproducibile, anteprima e diff;
 - batch cooking dinamico basato su `batchTemplates` strutturati (cena di oggi → pranzo futuro): la colonna del giorno nella vista **Settimana** mostra la chip cliccabile "Batch cooking disponibile", che apre direttamente una modale con ingredienti, dosi e preparazione completi delle ricette coinvolte; per la stessa ricetta a cena e pranzo viene mostrato un solo riquadro con dosi totali, senza informazioni ridondanti né note di conservazione;
 - backup precedente (`users/{uid}/backups/previous`) e **Annulla ultima modifica** prima delle operazioni distruttive;
 - lista della spesa aggregata per `ingredientId` con profili Uomo, Donna IPO e Coppia, ordine delle categorie locale e **ordine degli alimenti dentro ogni categoria condiviso nell'household** (salvato nel documento spesa come mappa `itemOrder` categoria → ingredientId, con frecce ↑/↓ e scorciatoie A→Z / Ripristina);
 - PWA offline con shell versionata, aggiornamento one-tap e fallback offline comprensibile;
-- alternative alimentari di Meller sempre consultabili nelle Impostazioni;
-- **manuale Meller single source in `js/domain.js`**: famiglie, grammature per pasto e giorno A/R e frequenze proteiche vivono in un solo file (`MELLER_GRAMMATURE`, `MELLER_PROTEIN_FREQUENCIES`); da lì derivano i vincoli del generatore, il riferimento carboidrati del travaso pranzo ↔ cena, le tabelle delle alternative dei popup e delle Impostazioni (`mellerAlternativeGroups(dayType)`, `MELLER_GUIDE`), il riconoscimento carboidrati/proteine degli ingredienti (`isMellerCarbIngredient` / `isMellerProteinIngredient`) e la verifica delle ricette (`checkMellerAdaptation` / `adaptRecipeToMeller`); le grammature **restano nell'app**, quindi per aggiornare un valore si tocca solo `js/domain.js`;
-- **equivalenze Meller legate alla giornata visualizzata**: il popup di un ingrediente mostra le dosi della giornata della ricetta aperta — in allenamento `Alimento | Pranzo A | Cena` (pasta 90 g), in riposo `Alimento | Pranzo R | Cena` (pasta 70 g); nelle Impostazioni, dove non c'è una giornata di contesto, la tabella mostra entrambe le colonne pranzo; le proteine, uguali in tutti i casi, restano a colonna unica `Pranzo e cena`;
-- **Meller contestuale e non distruttivo**: il ricettario conserva sempre le quantità originali; il piano memorizza per ogni giorno/slot principale la modalità `meller` o `original`, applica le quattro dosi per persona a crudo Uomo/Donna × Allenamento/Riposo e conserva su ogni ricetta l’adattamento riutilizzabile per pranzo/cena;
-- **segnalazioni e blocco mapping**: durante creazione, modifica e importazione le ricette fuori riferimento ricevono un flag senza essere riscritte; verdure, aromi e spezie esplicitamente liberi non vengono segnalati, mentre ingredienti non riconosciuti o gruppi ambigui bloccano l’applicazione Meller e consentono di usare esplicitamente le quantità originali;
-- **propagazione della dose effettiva**: quando il piano usa Meller, lista della spesa e batch cooking lavorano sulla ricetta risolta del contesto, senza mutare quella del catalogo;
-- **equivalenze solo a pranzo e a cena**: il manuale costruisce le alternative sul rapporto pranzo/cena, quindi negli spuntini, nelle merende e a colazione gli ingredienti non sono tappabili — i crackers dello spuntino valgono 30 g fissi e non si scambiano con 90 g di pasta (`mellerSlotHasAlternatives`); nelle ricette cross-slot conta il pasto di **destinazione**;
+- alternative alimentari di Guide sempre consultabili nelle Impostazioni;
+- **manuale Guide single source in `js/domain.js`**: famiglie, grammature per pasto e giorno A/R e frequenze proteiche vivono in un solo file (`GUIDE_GRAMMATURE`, `GUIDE_PROTEIN_FREQUENCIES`); da lì derivano i vincoli del generatore, il riferimento carboidrati del travaso pranzo ↔ cena, le tabelle delle alternative dei popup e delle Impostazioni (`guideAlternativeGroups(dayType)`, `GUIDE_MANUAL`), il riconoscimento carboidrati/proteine degli ingredienti (`isGuideCarbIngredient` / `isGuideProteinIngredient`) e la verifica delle ricette (`checkGuideAdaptation` / `adaptRecipeToGuide`); le grammature **restano nell'app**, quindi per aggiornare un valore si tocca solo `js/domain.js`;
+- **equivalenze Guide legate alla giornata visualizzata**: il popup di un ingrediente mostra le dosi della giornata della ricetta aperta — in allenamento `Alimento | Pranzo A | Cena` (pasta 90 g), in riposo `Alimento | Pranzo R | Cena` (pasta 70 g); nelle Impostazioni, dove non c'è una giornata di contesto, la tabella mostra entrambe le colonne pranzo; le proteine, uguali in tutti i casi, restano a colonna unica `Pranzo e cena`;
+- **Guide contestuale e non distruttivo**: il ricettario conserva sempre le quantità originali; il piano memorizza per ogni giorno/slot principale la modalità `guide` o `original`, applica le quattro dosi per persona a crudo Uomo/Donna × Allenamento/Riposo e conserva su ogni ricetta l’adattamento riutilizzabile per pranzo/cena;
+- **segnalazioni e blocco mapping**: durante creazione, modifica e importazione le ricette fuori riferimento ricevono un flag senza essere riscritte; verdure, aromi e spezie esplicitamente liberi non vengono segnalati, mentre ingredienti non riconosciuti o gruppi ambigui bloccano l’applicazione Guide e consentono di usare esplicitamente le quantità originali;
+- **propagazione della dose effettiva**: quando il piano usa Guide, lista della spesa e batch cooking lavorano sulla ricetta risolta del contesto, senza mutare quella del catalogo;
+- **equivalenze solo a pranzo e a cena**: il manuale costruisce le alternative sul rapporto pranzo/cena, quindi negli spuntini, nelle merende e a colazione gli ingredienti non sono tappabili — i crackers dello spuntino valgono 30 g fissi e non si scambiano con 90 g di pasta (`guideSlotHasAlternatives`); nelle ricette cross-slot conta il pasto di **destinazione**;
 - **operazioni sul pasto dal dettaglio ricetta**: aprendo una ricetta da una casella della Settimana, il foglio "Altro" offre anche "Sostituisci con una ricetta", "Scambia con altro pasto" e "Copia in altro giorno" (gruppo *Questo pasto nel piano*), che riusano lo stesso flusso del menu ⋯ della griglia; dal Ricettario, dove non c'è un pasto a cui applicarle, il gruppo non compare;
 - **registro prezzi condiviso** (scheda Prezzi): un unico database tra tutti gli utenti per registrare i prezzi nei negozi (con barcode Open Food Facts), confrontare il prezzo normalizzato €/kg tra negozi con indicazione del migliore (ricerca prodotto con suggerimenti live mentre si digita, prodotti recenti a un tocco, navigazione da tastiera), giudizio rispetto allo storico (minimo storico / affare / caro), suggerimento del nome prodotto già in archivio quando quello scannerizzato è una variante più lunga ("Cereali di grano duro" → "Cereali"), archivio con modifica delle proprie voci e importazione/esportazione di backup JSON (incluso il vecchio formato "Spesa Smart");
 - **pagina negozio** (Prezzi → Negozi): per ogni negozio l'ultimo prezzo registrato di ogni prodotto, con indicazione di dove quel prodotto costa meno (🏆 miglior prezzo, scostamento % rispetto al migliore, "solo qui");
@@ -52,11 +52,11 @@ Architettura e operatività:
 - [pubblicare su Firebase senza terminale](docs/deploy-online-senza-terminale.md)
 - [ripartenza pulita su Firebase: la struttura nuova](docs/ripartenza-firebase.md)
 - [pulizia dei dati legacy su Firestore](docs/pulizia-dati-legacy.md)
-- [prompt originario](docs/prompt-saas-meller.md)
+- [prompt originario](docs/prompt-saas-guide.md)
 
 ## Dove si trovano i dati
 
-Le ricette non sono hardcoded nel repository GitHub. Il codice contiene soltanto interfaccia, regole di visualizzazione, servizi di dominio puri (`js/domain.js`) e il manuale di Meller, di cui `js/domain.js` è la fonte unica.
+Le ricette non sono hardcoded nel repository GitHub. Il codice contiene soltanto interfaccia, regole di visualizzazione, servizi di dominio puri (`js/domain.js`) e il manuale Guide, di cui `js/domain.js` è la fonte unica.
 
 Finché l'account è indipendente, i dati si trovano nei documenti privati:
 
@@ -458,7 +458,7 @@ Apri l'indirizzo online e controlla, nell'ordine:
 9. accettazione e rifiuto delle richieste;
 10. cambio A/R e presenza/assenza crackers;
 11. lista della spesa;
-12. alternative di Meller nelle Impostazioni.
+12. alternative Guide nelle Impostazioni.
 
 Se la condivisione restituisce “utente non trovato”, fai accedere il destinatario almeno una volta all'ultima versione e riprova.
 
@@ -608,31 +608,31 @@ Ogni operazione chiede conferma, salva il piano una sola volta e aggiorna batch,
 
 ## Trasformazione carboidrati pranzo ↔ cena
 
-Per i piani legacy privi di contesto Meller, quando una ricetta di cena viene collocata a pranzo (o viceversa), **solo il carboidrato** viene ricalcolato con le grammature Meller della tabella; proteine, uova, verdura e condimenti restano invariati. Nei piani contestuali nuovi, invece, l’attivazione Meller risolve tutte le famiglie guidate della ricetta nel pasto di destinazione, lasciando liberi soltanto gli ingredienti esplicitamente non regolati.
+Per i piani legacy privi di contesto Guide, quando una ricetta di cena viene collocata a pranzo (o viceversa), **solo il carboidrato** viene ricalcolato con le grammature Guide della tabella; proteine, uova, verdura e condimenti restano invariati. Nei piani contestuali nuovi, invece, l’attivazione Guide risolve tutte le famiglie guidate della ricetta nel pasto di destinazione, lasciando liberi soltanto gli ingredienti esplicitamente non regolati.
 
-- **pranzo → cena**: si usa la **dose cena Meller** della famiglia, cioè `floor(pranzo riposo × 2/3 / 10) × 10`, identica nei giorni di allenamento e di riposo (es. pane 90g → 60g, pasta/riso 70g → 40g, patate 350g → 230g, gnocchi 190g → 120g, piadina 80g → 50g);
+- **pranzo → cena**: si usa la **dose cena Guide** della famiglia, cioè `floor(pranzo riposo × 2/3 / 10) × 10`, identica nei giorni di allenamento e di riposo (es. pane 90g → 60g, pasta/riso 70g → 40g, patate 350g → 230g, gnocchi 190g → 120g, piadina 80g → 50g);
 - **cena → pranzo**: le dosi pranzo A/R vengono **rilette dalla tabella**, mai calcolate dalla cena: l'arrotondamento per difetto dei 2/3 non è invertibile (es. patate 230g → pranzo A 450g e pranzo R 350g, non 460g).
 
 A cena è ammesso **qualsiasi carboidrato della tabella delle alternative**, non solo pane, crackers e patate: ogni famiglia ha la propria dose cena.
 
-Il carboidrato **resta lo stesso** (pasta, riso, pane, patate…): non viene convertito in altro alimento di default, cambia solo la dose. Solo per un alimento non ancora censito in `MELLER_GRAMMATURE` resta il fallback storico in percentuale (2/3 del pranzo di riposo verso cena, 200%/150% verso pranzo, arrotondato alla decina per eccesso).
+Il carboidrato **resta lo stesso** (pasta, riso, pane, patate…): non viene convertito in altro alimento di default, cambia solo la dose. Solo per un alimento non ancora censito in `GUIDE_GRAMMATURE` resta il fallback storico in percentuale (2/3 del pranzo di riposo verso cena, 200%/150% verso pranzo, arrotondato alla decina per eccesso).
 
 La trasformazione è applicata ovunque le dosi vengono mostrate o sommate: modale ricetta (con avviso e marcatore ↻ sugli ingredienti trasformati), vista **Settimana** (piccolo ↻ sul pasto e modale batch dalla colonna del giorno) e **Lista della spesa** (le quantità tengono conto del pasto in cui la ricetta è collocata). Le funzioni pure sono in `js/domain.js` (`adaptIngredientForSlot`, `carbSourceForName`, `isPranzoCenaCross`).
 
-# Manuale Meller a fonte unica
+# Manuale Guide a fonte unica
 
-`js/domain.js` è l'**unica fonte** delle regole Meller. Una sola tabella
-(`MELLER_GRAMMATURE`) definisce famiglie, classificazione (`group`: carboidrati,
+`js/domain.js` è l'**unica fonte** delle regole Guide. Una sola tabella
+(`GUIDE_GRAMMATURE`) definisce famiglie, classificazione (`group`: carboidrati,
 proteine, latticini, condimenti, dolci, frutta) e grammature per pasto e giorno
 A/R; tutto il resto è **derivato**:
 
 | Superficie | Come deriva dalla fonte |
 | --- | --- |
-| vincoli del generatore | `DEFAULT_CONSTRAINTS` da `MELLER_PROTEIN_FREQUENCIES` |
-| travaso pranzo ↔ cena | `CARB_REFERENCE` (famiglie e dosi lette da `MELLER_GRAMMATURE`) |
-| popup equivalenze e Impostazioni | `mellerAlternativeGroups(dayType)` → `training` / `rest` / `both`; `MELLER_GUIDE.alternatives` usa `both` (`MELLER_CARB_ALTERNATIVES` / `MELLER_PROTEIN_ALTERNATIVES` contengono solo `label` + `family`, nessuna grammatura) |
-| riconoscimento ingredienti | `isMellerCarbIngredient` / `isMellerProteinIngredient` (usano `match` e `group` canonici) |
-| verifica e correzione delle ricette | `checkMellerAdaptation()` / `adaptRecipeToMeller()` per compatibilità, più `checkMellerContext()` / `resolveRecipeForPlan()` per la risoluzione contestuale non distruttiva |
+| vincoli del generatore | `DEFAULT_CONSTRAINTS` da `GUIDE_PROTEIN_FREQUENCIES` |
+| travaso pranzo ↔ cena | `CARB_REFERENCE` (famiglie e dosi lette da `GUIDE_GRAMMATURE`) |
+| popup equivalenze e Impostazioni | `guideAlternativeGroups(dayType)` → `training` / `rest` / `both`; `GUIDE_MANUAL.alternatives` usa `both` (`GUIDE_CARB_ALTERNATIVES` / `GUIDE_PROTEIN_ALTERNATIVES` contengono solo `label` + `family`, nessuna grammatura) |
+| riconoscimento ingredienti | `isGuideCarbIngredient` / `isGuideProteinIngredient` (usano `match` e `group` canonici) |
+| verifica e correzione delle ricette | `checkGuideAdaptation()` / `adaptRecipeToGuide()` per compatibilità, più `checkGuideContext()` / `resolveRecipeForPlan()` per la risoluzione contestuale non distruttiva |
 
 ## Grammaticature carboidrati
 
@@ -798,7 +798,7 @@ npm run smoke
 git diff --check
 ```
 
-I test (`test/domain.test.js`) coprono: migrazioni schema 3→5 e idempotenza (inclusa rimozione `frequency`), alias ingredienti, ingredienti senza ID, porzioni legacy, **Meller contestuale non distruttivo (350 g pollo → riferimento 200 g), ingredienti liberi, mapping bloccati, adattamenti persistenti, modalità piano e propagazione a spesa/batch**, lista spesa per `ingredientId`, profili Uomo/Donna IPO/Coppia, crackers A/R, **travaso carboidrati pranzo↔cena sulle dosi Meller** (riconoscimento carboidrati, pranzo→cena con la dose cena della tabella, cena→pranzo con le dosi A/R rilette dalla tabella, propagazione alla lista spesa), **fonte unica Meller** (grammature e regola dei 2/3, sei valori cena confermati, proteine invariate tra pranzo e cena, righe dei popup per giornata A/R/entrambe), batch indipendente da A/R, batch cena→pranzo futuro, attraversamento domenica→lunedì, batch parziale, `maxDays` diversi, quantità target A/R, copia/scambio pasti, blocchi, generatore e vincoli (frequenze su molti seed, **omega-3 distanziati con eccezione solo per le accoppiate batch richieste**, **accoppiate batch cena → pranzo fino a 7 giorni**, tetto ripetizioni, blocchi che contano nelle frequenze e nel pesce/giorno, slot disabilitati, cross-slot, inferenza della categoria dagli ingredienti, vincoli personalizzati, beef e curedMeats conteggiati separatamente, warning centralizzati), classificazione proteica (ingredienti prevalgono su `proteinCategory`, fallback su chiavi tecniche e testuali legacy), cataloghi vuoto/insufficiente, riferimenti piano mancanti, import Aggiungi/Sostituisci, conflitti condivisione (solo ricette/solo settimana/completa), backup, service worker (shell, cache, fallback offline, aggiornamento).
+I test (`test/domain.test.js`) coprono: migrazioni schema 3→5 e idempotenza (inclusa rimozione `frequency`), alias ingredienti, ingredienti senza ID, porzioni legacy, **Guide contestuale non distruttivo (350 g pollo → riferimento 200 g), ingredienti liberi, mapping bloccati, adattamenti persistenti, modalità piano e propagazione a spesa/batch**, lista spesa per `ingredientId`, profili Uomo/Donna IPO/Coppia, crackers A/R, **travaso carboidrati pranzo↔cena sulle dosi Guide** (riconoscimento carboidrati, pranzo→cena con la dose cena della tabella, cena→pranzo con le dosi A/R rilette dalla tabella, propagazione alla lista spesa), **fonte unica Guide** (grammature e regola dei 2/3, sei valori cena confermati, proteine invariate tra pranzo e cena, righe dei popup per giornata A/R/entrambe), batch indipendente da A/R, batch cena→pranzo futuro, attraversamento domenica→lunedì, batch parziale, `maxDays` diversi, quantità target A/R, copia/scambio pasti, blocchi, generatore e vincoli (frequenze su molti seed, **omega-3 distanziati con eccezione solo per le accoppiate batch richieste**, **accoppiate batch cena → pranzo fino a 7 giorni**, tetto ripetizioni, blocchi che contano nelle frequenze e nel pesce/giorno, slot disabilitati, cross-slot, inferenza della categoria dagli ingredienti, vincoli personalizzati, beef e curedMeats conteggiati separatamente, warning centralizzati), classificazione proteica (ingredienti prevalgono su `proteinCategory`, fallback su chiavi tecniche e testuali legacy), cataloghi vuoto/insufficiente, riferimenti piano mancanti, import Aggiungi/Sostituisci, conflitti condivisione (solo ricette/solo settimana/completa), backup, service worker (shell, cache, fallback offline, aggiornamento).
 
 Smoke test locale:
 

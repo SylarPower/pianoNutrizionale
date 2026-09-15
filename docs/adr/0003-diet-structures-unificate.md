@@ -19,7 +19,7 @@ il cliente non riceveva mai le regole delle strutture.
    della struttura e scrive l'assignment con pointer
    `{structureId, revisionId, checksum}` (schema 2). `getMyAssignedProfile`
    serve revisione + snapshot catalogo; la conversione in regole motore resta
-   nel client (`structureRevisionToMellerRules`), senza fork server-side delle dosi.
+   nel client (`structureRevisionToGuideRules`), senza fork server-side delle dosi.
 2. **Compatibilità.** Il callable legacy `assignClientRuleSet` e i reader v1
    restano per i client già rilasciati; `publishRuleSetVersion`,
    `previewClientRuleSet` e `listRuleSets` sono deprecati lato UI ma mantenuti

@@ -146,7 +146,9 @@ function publicCatalogSnapshot(catalog) {
         aliases: Array.isArray(item.aliases) ? item.aliases : [],
         searchTokens: Array.isArray(item.searchTokens) ? item.searchTokens : [],
         mappingKind: item.mappingKind || 'guided',
-        mellerFamilyId: item.mellerFamilyId || null,
+        // Compatibilità: i documenti importati prima del cambio nome hanno
+        // la famiglia sulla chiave storica mellerFamilyId.
+        guideFamilyId: item.guideFamilyId || item.mellerFamilyId || null,
         status: 'active'
       })),
     categories: catalog.categories
@@ -274,7 +276,7 @@ async function resolveDueAssignment(orgId, clientId) {
 
 // Profilo v2: la revisione della Struttura dieta + uno snapshot del catalogo
 // globale al momento della lettura. La conversione in regole motore avviene
-// nel client via structureRevisionToMellerRules (stesso motore, nessun fork
+// nel client via structureRevisionToGuideRules (stesso motore, nessun fork
 // server-side delle dosi). Note e checksum interni non escono mai: il client
 // riceve solo il checksum di snapshot ereditato dal contratto v1.
 function publicStructureAssignment({ assignment, clientId, structure, revision, catalog }) {
@@ -859,8 +861,8 @@ async function loadClientDoseContext(actor, client, assignmentId) {
     const revision = await doc.ref.collection('revisions').doc(String(assignment.structure.revisionId)).get();
     if (!revision.exists) throw new HttpsError('failed-precondition', 'Revisione della struttura assegnata non trovata');
     families = (revision.data().rules || [])
-      .filter(rule => rule.enabled !== false && rule.mellerFamilyId)
-      .map(rule => ({ family: rule.mellerFamilyId, studio: rule.quantityGrams || null, ingredientIds: rule.ingredientIds || [] }));
+      .filter(rule => rule.enabled !== false && (rule.guideFamilyId || rule.mellerFamilyId))
+      .map(rule => ({ family: rule.guideFamilyId || rule.mellerFamilyId, studio: rule.quantityGrams || null, ingredientIds: rule.ingredientIds || [] }));
   } else if (assignment.ruleSet) {
     const versionRef = await ruleVersionRef(actor.organizationId, assignment.ruleSet);
     const version = await versionRef.get();
@@ -1038,11 +1040,11 @@ function assertCatalogReferences({ rules, alternativeGroups }, lookup) {
   rules.forEach(rule => {
     (rule.ingredientIds || []).forEach(ingredientId => {
       if (!lookup.ingredientIds.has(ingredientId)) {
-        throw new HttpsError('failed-precondition', `Ingrediente "${ingredientId}" inesistente o archiviato in catalogo (famiglia ${rule.mellerFamilyId})`);
+        throw new HttpsError('failed-precondition', `Ingrediente "${ingredientId}" inesistente o archiviato in catalogo (famiglia ${rule.guideFamilyId})`);
       }
     });
     if (rule.categoryId && rule.categoryId !== 'free' && !lookup.categoryIds.has(rule.categoryId)) {
-      throw new HttpsError('failed-precondition', `Categoria "${rule.categoryId}" inesistente in catalogo (famiglia ${rule.mellerFamilyId})`);
+      throw new HttpsError('failed-precondition', `Categoria "${rule.categoryId}" inesistente in catalogo (famiglia ${rule.guideFamilyId})`);
     }
   });
   (alternativeGroups || []).forEach(group => {
@@ -1234,18 +1236,20 @@ exports.compareDietStructures = callable(async (data, uid) => {
   }
   const familyIds = new Set();
   loaded.forEach(({ revision }) => (revision?.rules || []).forEach(rule => {
-    if (rule?.mellerFamilyId) familyIds.add(rule.mellerFamilyId);
+    // Anche le revisioni legacy con la chiave storica entrano nel confronto.
+    const family = rule?.guideFamilyId || rule?.mellerFamilyId;
+    if (family) familyIds.add(family);
   }));
   const rows = [...familyIds].sort((a, b) => String(a).localeCompare(String(b), 'it')).map(family => {
     const cells = {};
     loaded.forEach(({ structure, revision }) => {
-      const rule = (revision?.rules || []).find(item => item?.mellerFamilyId === family);
+      const rule = (revision?.rules || []).find(item => (item?.guideFamilyId || item?.mellerFamilyId) === family);
       cells[structure.id] = rule
         ? { present: true, enabled: rule.enabled !== false, ingredientCount: (rule.ingredientIds || []).length, quantityGrams: rule.quantityGrams || null }
         : { present: false };
     });
     const signatures = new Set(loaded.map(({ structure }) => checksum(cells[structure.id])));
-    return { mellerFamilyId: family, cells, differs: signatures.size > 1 };
+    return { guideFamilyId: family, cells, differs: signatures.size > 1 };
   });
   const groupIds = new Set();
   loaded.forEach(({ revision }) => (revision?.alternativeGroups || []).forEach(group => {
@@ -1278,7 +1282,7 @@ exports.compareDietStructures = callable(async (data, uid) => {
 
 // Feature flag CATALOG_IMPORT_ENABLED: variabile d'ambiente se impostata,
 // altrimenti documento config, altrimenti default sicuro (ON in emulatore per
-// i test, OFF in produzione finché il catalogo Meller non è approvato).
+// i test, OFF in produzione finché il catalogo non è approvato).
 async function catalogImportConfig() {
   const flag = process.env.CATALOG_IMPORT_ENABLED;
   if (flag === 'true') return { enabled: true, source: 'env' };
@@ -1301,7 +1305,10 @@ function canonicalCatalogEntry(item, kind) {
   return {
     ingredientId: item.ingredientId, displayName: item.displayName,
     categoryId: item.categoryId, aliases: [...(item.aliases || [])].sort(),
-    mappingKind: item.mappingKind, mellerFamilyId: item.mellerFamilyId || null,
+    mappingKind: item.mappingKind,
+    // Fallback alla chiave storica: un documento importato prima del cambio
+    // nome non deve generare falsi aggiornamenti nel diff dell'import.
+    guideFamilyId: item.guideFamilyId || item.mellerFamilyId || null,
     status: item.status || 'active'
   };
 }

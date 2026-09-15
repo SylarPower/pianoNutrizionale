@@ -3,7 +3,7 @@
 const fs = require('fs');
 const path = require('path');
 
-const sourcePath = path.join(__dirname, '..', 'docs', 'meller-source-v3.json');
+const sourcePath = path.join(__dirname, '..', 'docs', 'guide-source-v3.json');
 const data = JSON.parse(fs.readFileSync(sourcePath, 'utf8'));
 
 function aliasKey(value) {
@@ -44,9 +44,9 @@ function buildMatchLiteral(aliases) {
   return `/${safe}/`;
 }
 
-// Generate MELLER_GRAMMATURE
+// Generate GUIDE_GRAMMATURE
 let grammatureLines = [];
-grammatureLines.push('  // === GENERATO DA docs/meller-source-v3.json — NON MODIFICARE A MANO ===');
+grammatureLines.push('  // === GENERATO DA docs/guide-source-v3.json — NON MODIFICARE A MANO ===');
 grammatureLines.push('  // Ordine = priorità discendente (prima regex che matcha vince)');
 grammatureLines.push('  // Dosi esplicite Pranzo A/R e Cena A/R (cena esplicita, non derivata 2/3)');
 for (const fam of data.families) {
@@ -62,7 +62,7 @@ for (const fam of data.families) {
   grammatureLines.push(`    { family: '${family}', group: '${group}', label: '${labelEsc}', match: ${matchLit}, slots: { lunch: { training: ${lunchT}, rest: ${lunchR} }, dinner: { training: ${dinnerT}, rest: ${dinnerR} } } },`);
 }
 
-const grammatureCode = `  const MELLER_GROUP = {\n    CARB: 'carb',\n    PROTEIN: 'protein',\n    VEGETABLE: 'vegetable',\n    FAT: 'fat',\n    FRUIT: 'fruit',\n    DAIRY: 'dairy',\n    SWEET: 'sweet',\n    FREE: 'free'\n  };\n\n  const MELLER_GRAMMATURE = [\n${grammatureLines.join('\n')}\n  ];\n`;
+const grammatureCode = `  const GUIDE_GROUP = {\n    CARB: 'carb',\n    PROTEIN: 'protein',\n    VEGETABLE: 'vegetable',\n    FAT: 'fat',\n    FRUIT: 'fruit',\n    DAIRY: 'dairy',\n    SWEET: 'sweet',\n    FREE: 'free'\n  };\n\n  const GUIDE_GRAMMATURE = [\n${grammatureLines.join('\n')}\n  ];\n`;
 
 // Free ingredient patterns from freeIngredients
 let freePatterns = [];
@@ -88,9 +88,9 @@ for (let i=0;i<freeUnique.length;i++) {
     chunk=[];
   }
 }
-const freeCode = `  // Alimenti liberi — generato da freeIngredients (nessuna dose guidata)\n  const MELLER_FREE_INGREDIENT_PATTERNS = [\n${freeLines.join('\n')}\n  ];\n`;
+const freeCode = `  // Alimenti liberi — generato da freeIngredients (nessuna dose guidata)\n  const GUIDE_FREE_INGREDIENT_PATTERNS = [\n${freeLines.join('\n')}\n  ];\n`;
 
-// MELLER_CARB_ALTERNATIVES and PROTEIN alternatives
+// GUIDE_CARB_ALTERNATIVES and PROTEIN alternatives
 const carbFamilies = data.families.filter(f => f.group === 'carb');
 const proteinFamilies = data.families.filter(f => f.group === 'protein');
 const vegFamilies = data.families.filter(f => f.group === 'vegetable');
@@ -112,9 +112,9 @@ for (const fam of proteinFamilies) {
 const carbReference = carbFamilies.find(f => f.family === 'cereali') || carbFamilies[0];
 const proteinReference = proteinFamilies.find(f => f.family === 'polloTacchino') || proteinFamilies[0];
 
-const carbAltCode = `  const MELLER_CARB_ALTERNATIVES = [\n${carbAltLines.join('\n')}\n  ];\n`;
-const proteinAltCode = `  const MELLER_PROTEIN_ALTERNATIVES = [\n${proteinAltLines.join('\n')}\n  ];\n`;
-const proteinRefCode = `  const MELLER_PROTEIN_REFERENCE = { label: '${proteinReference.alternativeTableLabel.replace(/'/g, "\\'")}', family: '${proteinReference.family}' };\n`;
+const carbAltCode = `  const GUIDE_CARB_ALTERNATIVES = [\n${carbAltLines.join('\n')}\n  ];\n`;
+const proteinAltCode = `  const GUIDE_PROTEIN_ALTERNATIVES = [\n${proteinAltLines.join('\n')}\n  ];\n`;
+const proteinRefCode = `  const GUIDE_PROTEIN_REFERENCE = { label: '${proteinReference.alternativeTableLabel.replace(/'/g, "\\'")}', family: '${proteinReference.family}' };\n`;
 
 // CARB_FAMILIES for travaso
 let carbFamiliesCodeLines = [];
@@ -125,12 +125,12 @@ for (const fam of carbFamilies) {
 }
 const carbFamiliesCode = `  const CARB_FAMILIES = [\n${carbFamiliesCodeLines.join('\n')}\n  ];\n`;
 
-// MELLER_PROTEIN_FREQUENCIES from source
+// GUIDE_PROTEIN_FREQUENCIES from source
 let freqLines = [];
 for (const f of data.proteinWeeklyFrequencies) {
   freqLines.push(`    { key: '${f.key}', label: '${f.label.replace(/'/g, "\\'")}', min: ${f.min}, max: ${f.max} },`);
 }
-const freqCode = `  const MELLER_PROTEIN_FREQUENCIES = [\n${freqLines.join('\n')}\n  ];\n`;
+const freqCode = `  const GUIDE_PROTEIN_FREQUENCIES = [\n${freqLines.join('\n')}\n  ];\n`;
 
 // Build catalog files
 // categories from source
@@ -147,7 +147,7 @@ for (const fam of data.families) {
       aliases: aliases,
       categoryId: fam.categoryId,
       mappingKind: 'guided',
-      mellerFamilyId: fam.family
+      guideFamilyId: fam.family
     });
   }
 }
@@ -159,7 +159,7 @@ for (const fi of data.freeIngredients) {
     aliases: aliases,
     categoryId: fi.categoryId,
     mappingKind: 'free',
-    mellerFamilyId: null
+    guideFamilyId: null
   });
 }
 
@@ -190,8 +190,8 @@ const catalogDocImport = {
   ingredients: ingredients
 };
 
-const catalogDocPath = path.join(__dirname, '..', 'docs', 'catalogo-ingredienti-meller.json');
-const catalogImportPath = path.join(__dirname, '..', 'docs', 'catalogo-import-meller.json');
+const catalogDocPath = path.join(__dirname, '..', 'docs', 'catalogo-ingredienti.json');
+const catalogImportPath = path.join(__dirname, '..', 'docs', 'catalogo-import.json');
 
 fs.writeFileSync(catalogDocPath, JSON.stringify(catalogDocFull, null, 2), 'utf8');
 fs.writeFileSync(catalogImportPath, JSON.stringify(catalogDocImport, null, 2), 'utf8');
@@ -200,14 +200,19 @@ console.log(`Generated ${ingredients.length} ingredients, ${categories.length} c
 console.log(`Wrote ${catalogDocPath}`);
 console.log(`Wrote ${catalogImportPath}`);
 
-// Now generate code snippets for js/domain.js
-const outCode = `// === AUTO-GENERATED FROM docs/meller-source-v3.json ===\n${grammatureCode}\n${freeCode}\n${freqCode}\n${carbFamiliesCode}\n${carbAltCode}\n${proteinAltCode}\n${proteinRefCode}\n`;
-
-fs.writeFileSync(path.join(__dirname, '..', 'docs', 'generated-meller-snippet.js'), outCode, 'utf8');
-console.log('Wrote generated snippet');
-
-// Generate functions/src/domain.js MELLER_FAMILY_IDS
-const familyIds = data.families.map(f=>f.family);
-const familyIdsCode = `const MELLER_FAMILY_IDS = new Set([\n  '${familyIds.join("', '")}'\n]);\n`;
-fs.writeFileSync(path.join(__dirname, '..', 'docs', 'generated-family-ids.js'), familyIdsCode, 'utf8');
-console.log('Wrote family ids');
+// Il blocco GUIDE_GRAMMATURE di js/domain.js viene rigenerato dalla stessa
+// fonte unica (docs/guide-source-v3.json): si sostituisce la sezione compresa
+// tra GUIDE_GROUP e la fine della tabella. I vecchi snippet intermedi e i
+// tool di patch sono stati rimossi perché non più usati.
+const domainPath = path.join(__dirname, '..', 'js', 'domain.js');
+let domainSrc = fs.readFileSync(domainPath, 'utf8');
+const startMarker = '  const GUIDE_GROUP = {';
+const endMarker = '  // Ingredienti che nel contesto pranzo/cena non hanno una grammatura Guide';
+const start = domainSrc.indexOf(startMarker);
+const end = domainSrc.indexOf(endMarker);
+if (start < 0 || end < 0 || end < start) {
+  throw new Error('Blocco generato GUIDE_GROUP/GUIDE_GRAMMATURE non trovato in js/domain.js');
+}
+domainSrc = domainSrc.slice(0, start) + grammatureCode + '\n\n\n\n' + domainSrc.slice(end);
+fs.writeFileSync(domainPath, domainSrc, 'utf8');
+console.log('Updated GUIDE_GRAMMATURE block in js/domain.js');

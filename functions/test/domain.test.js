@@ -5,7 +5,7 @@ const fs = require('node:fs');
 const path = require('node:path');
 const {
   canonicalJson, checksum, normalizeIngredient, aliasKey, searchTokensFor, normalizeUsername, hashToken,
-  MELLER_FAMILY_IDS, STRUCTURE_REVISION_SCHEMA_VERSION,
+  GUIDE_FAMILY_IDS, STRUCTURE_REVISION_SCHEMA_VERSION,
   reportKey, validateReport,
   validateMapping, validateRuleSetRules, validateAssignment, validateStructureAssignment, validateDietStructureRules,
   validateAlternativeGroups, structureRevisionChecksum, verifyStructureRevision, effectiveAssignment,
@@ -30,7 +30,7 @@ test('normalizzazione ingrediente è deterministica e minimizza il fingerprint',
 });
 
 test('reportKey deduplica lo stesso caso e separa versioni diverse', () => {
-  const base = { organizationId: 'org-1', fingerprint: 'abc', ruleSetId: 'meller', ruleSetVersion: '3', errorType: 'unknown' };
+  const base = { organizationId: 'org-1', fingerprint: 'abc', ruleSetId: 'guide', ruleSetVersion: '3', errorType: 'unknown' };
   assert.equal(reportKey(base), reportKey({ ...base }));
   assert.notEqual(reportKey(base), reportKey({ ...base, ruleSetVersion: '4' }));
 });
@@ -113,13 +113,19 @@ test('validateStructureAssignment: scadenza obbligatoria o flag esplicito', () =
 
 test('validateDietStructureRules: contratto revisione struttura (schema v2)', () => {
   const base = {
-    mellerFamilyId: 'pane', ingredientIds: ['pane'],
+    guideFamilyId: 'pane', ingredientIds: ['pane'],
     quantityGrams: { lunch: { training: 120, rest: 90 }, dinner: { training: 60, rest: 60 } },
     enabled: true, categoryId: 'pane'
   };
   const parsed = validateDietStructureRules([base])[0];
-  assert.equal(parsed.mellerFamilyId, 'pane');
+  assert.equal(parsed.guideFamilyId, 'pane');
   assert.equal(parsed.quantityGrams.lunch.training, 120);
+  // Compatibilità: le revisioni salvate prima del cambio nome usano la chiave
+  // storica mellerFamilyId — accettata, rivalidata e riscritta col nome nuovo.
+  const legacy = validateDietStructureRules([{ ...base, guideFamilyId: undefined, mellerFamilyId: 'cereali' }])[0];
+  assert.equal(legacy.guideFamilyId, 'cereali');
+  assert.equal('mellerFamilyId' in legacy, false, 'la chiave storica non resta nella revisione nuova');
+  assert.throws(() => validateDietStructureRules([{ ...base, guideFamilyId: 'pane', mellerFamilyId: 'cereali' }]), /Famiglia duplicata|campo non ammesso|mellerFamilyId/);
   // Un pasto può essere null (non gestito dalla struttura), mai entrambi.
   const onlyLunch = validateDietStructureRules([{ ...base, quantityGrams: { lunch: base.quantityGrams.lunch, dinner: null } }])[0];
   assert.equal(onlyLunch.quantityGrams.dinner, null);
@@ -128,14 +134,14 @@ test('validateDietStructureRules: contratto revisione struttura (schema v2)', ()
   assert.throws(() => validateDietStructureRules([{ ...base, quantityGrams: { ...base.quantityGrams, lunch: { training: 2001, rest: 10 } } }]), /1 e 2000/);
   assert.throws(() => validateDietStructureRules([{ ...base, quantityGrams: { ...base.quantityGrams, lunch: { training: 12.5, rest: 10 } } }]), /1 e 2000/);
   // enabled default true; enabled non booleano → errore.
-  assert.equal(validateDietStructureRules([{ mellerFamilyId: 'uova', quantityGrams: { lunch: { training: 10, rest: 10 }, dinner: null } }])[0].enabled, true);
+  assert.equal(validateDietStructureRules([{ guideFamilyId: 'uova', quantityGrams: { lunch: { training: 10, rest: 10 }, dinner: null } }])[0].enabled, true);
   assert.throws(() => validateDietStructureRules([{ ...base, enabled: 'sì' }]), /booleano/);
   // Fase 2: la famiglia deve esistere nel motore (niente regole orfane).
-  assert.throws(() => validateDietStructureRules([{ ...base, mellerFamilyId: 'famiglia-inesistente' }]), /non esiste nel motore/);
+  assert.throws(() => validateDietStructureRules([{ ...base, guideFamilyId: 'famiglia-inesistente' }]), /non esiste nel motore/);
 });
 
 test('validateDietStructureRules: niente famiglie duplicate né campi extra', () => {
-  const rule = id => ({ mellerFamilyId: id, quantityGrams: { lunch: { training: 50, rest: 40 }, dinner: null } });
+  const rule = id => ({ guideFamilyId: id, quantityGrams: { lunch: { training: 50, rest: 40 }, dinner: null } });
   assert.throws(() => validateDietStructureRules([rule('pane'), rule('pane')]), /duplicata/);
   assert.throws(() => validateDietStructureRules([{ ...rule('cereali'), version: '3' }]), /campi non ammessi/);
   assert.throws(() => validateDietStructureRules([]), /tra 1 e 40/);
@@ -161,10 +167,10 @@ test('validateStructureAssignment (Fase 2): structureId operativo, ruleSetId sol
   assert.throws(() => validateStructureAssignment({ ...base, structureId: 'a', expiresAt: null }), /Senza scadenza/);
 });
 
-test('MELLER_FAMILY_IDS: parità esatta con il motore client (solo ID, mai dosi)', () => {
-  const engine = ClientDomain.MELLER_GRAMMATURE.map(rule => rule.family);
-  assert.equal(MELLER_FAMILY_IDS.size, 39);
-  assert.deepEqual([...MELLER_FAMILY_IDS].sort(), [...engine].sort());
+test('GUIDE_FAMILY_IDS: parità esatta con il motore client (solo ID, mai dosi)', () => {
+  const engine = ClientDomain.GUIDE_GRAMMATURE.map(rule => rule.family);
+  assert.equal(GUIDE_FAMILY_IDS.size, 39);
+  assert.deepEqual([...GUIDE_FAMILY_IDS].sort(), [...engine].sort());
 });
 
 test('aliasKey server-side: parità esatta con js/domain.js (accenti, alias, punteggiatura)', () => {
@@ -200,7 +206,7 @@ test('validateAlternativeGroups: CRUD gruppi con voci ingrediente + dosi proprie
 
 test('revisioni struttura: checksum schema 2 e verifica legacy schema 1', () => {
   assert.equal(STRUCTURE_REVISION_SCHEMA_VERSION, 2);
-  const rules = [{ mellerFamilyId: 'pane' }];
+  const rules = [{ guideFamilyId: 'pane' }];
   const groups = [{ alternativeGroupId: 'carboidrati' }];
   const sum = structureRevisionChecksum({ schemaVersion: 2, rules, alternativeGroups: groups });
   assert.equal(sum, checksum({ schemaVersion: 2, rules, alternativeGroups: groups }));
@@ -223,14 +229,26 @@ test('import catalogo: parsing JSON (array e oggetto) e CSV con intestazione', (
   assert.equal(fromObject.categories.length, 1);
   const fromCsv = parseCatalogPayload('csv', fixture('catalog-import-valid.csv'));
   assert.equal(fromCsv.ingredients.length, 2);
-  assert.equal(fromCsv.ingredients[0].mellerFamilyId, 'cereali');
-  assert.equal(fromCsv.ingredients[1].mellerFamilyId, null);
+  assert.equal(fromCsv.ingredients[0].guideFamilyId, 'cereali');
+  assert.equal(fromCsv.ingredients[1].guideFamilyId, null);
   assert.deepEqual(fromCsv.ingredients[0].aliases, ['sorgo bianco', 'sorgo decorticato']);
   assert.throws(() => parseCatalogPayload('xml', 'x'), /format non valido/);
   assert.throws(() => parseCatalogPayload('json', '{malformato'), /JSON non valido/);
   assert.throws(() => parseCatalogPayload('json', JSON.stringify({ ingredients: [] })), /Import vuoto/);
   assert.throws(() => parseCatalogPayload('csv', 'ingredientId;displayName\nsolo;due'), /intestazione obbligatoria/);
   assert.throws(() => parseCatalogPayload('csv', 'ingredientId;displayName;categoryId;mappingKind\nsorgo;Sorgo'), /invece di/);
+});
+
+test('import catalogo: la colonna legacy mellerFamilyId resta accettata', () => {
+  // File di import salvati prima del cambio nome: la colonna storica viene
+  // mappata su guideFamilyId; insieme alla nuova è errore bloccante.
+  const legacyCsv = 'ingredientId;displayName;aliases;categoryId;mappingKind;mellerFamilyId\n'
+    + 'farro;Farro;farro decorticato;cereali-minori;guided;cereali\n';
+  const parsed = parseCatalogPayload('csv', legacyCsv);
+  assert.equal(parsed.ingredients[0].guideFamilyId, 'cereali');
+  const bothCsv = 'ingredientId;displayName;aliases;categoryId;mappingKind;guideFamilyId;mellerFamilyId\n'
+    + 'farro;Farro;farro;cereali-minori;guided;cereali;cereali\n';
+  assert.throws(() => parseCatalogPayload('csv', bothCsv), /insieme non ammesse/);
 });
 
 test('import catalogo: zero quantità — chiavi dose rifiutano l’intero file', () => {
@@ -273,14 +291,14 @@ test('import catalogo: CSV valido produce lo stesso normalizzato del JSON', () =
 
 test('import catalogo: collisione alias con ingrediente esistente diverso → conflitto bloccante', () => {
   const parsed = parseCatalogPayload('json', fixture('catalog-import-alias-collision.json'));
-  const existing = { riso: { displayName: 'Riso', aliases: ['riso', 'riso in bianco'], categoryId: 'carb', mappingKind: 'guided', mellerFamilyId: 'cereali' } };
+  const existing = { riso: { displayName: 'Riso', aliases: ['riso', 'riso in bianco'], categoryId: 'carb', mappingKind: 'guided', guideFamilyId: 'cereali' } };
   const report = validateCatalogImport(parsed, { existingIngredients: existing, existingCategories: ['carb'], denylist: [] });
   assert.equal(report.counts.conflicts, 1);
   assert.match(report.errors.join('\n'), /collisione alias/);
   assert.match(report.errors.join('\n'), /riso/);
   // Stesso ID = aggiornamento lecito, non collisione.
   const selfUpdate = validateCatalogImport(
-    parseCatalogPayload('json', JSON.stringify([{ ingredientId: 'riso', displayName: 'Riso', aliases: ['riso'], categoryId: 'carb', mappingKind: 'guided', mellerFamilyId: 'cereali' }])),
+    parseCatalogPayload('json', JSON.stringify([{ ingredientId: 'riso', displayName: 'Riso', aliases: ['riso'], categoryId: 'carb', mappingKind: 'guided', guideFamilyId: 'cereali' }])),
     { existingIngredients: existing, existingCategories: ['carb'], denylist: [] }
   );
   assert.deepEqual(selfUpdate.errors, []);
@@ -300,33 +318,33 @@ test('import catalogo: denylist provvisoria blocca l’ID (meccanismo, ID demo)'
 
 test('import catalogo: dedup, riferimenti, guided/free e categorie', () => {
   const dup = parseCatalogPayload('json', JSON.stringify([
-    { ingredientId: 'sorgo', displayName: 'Sorgo', aliases: [], categoryId: 'carb', mappingKind: 'guided', mellerFamilyId: 'cereali' },
-    { ingredientId: 'sorgo', displayName: 'Sorgo bis', aliases: [], categoryId: 'carb', mappingKind: 'guided', mellerFamilyId: 'cereali' }
+    { ingredientId: 'sorgo', displayName: 'Sorgo', aliases: [], categoryId: 'carb', mappingKind: 'guided', guideFamilyId: 'cereali' },
+    { ingredientId: 'sorgo', displayName: 'Sorgo bis', aliases: [], categoryId: 'carb', mappingKind: 'guided', guideFamilyId: 'cereali' }
   ]));
   assert.match(validateCatalogImport(dup, { existingIngredients: {}, existingCategories: ['carb'], denylist: [] }).errors.join('\n'), /duplicato/);
   const badCategory = parseCatalogPayload('json', JSON.stringify([
-    { ingredientId: 'sorgo', displayName: 'Sorgo', aliases: [], categoryId: 'inesistente', mappingKind: 'guided', mellerFamilyId: 'cereali' }
+    { ingredientId: 'sorgo', displayName: 'Sorgo', aliases: [], categoryId: 'inesistente', mappingKind: 'guided', guideFamilyId: 'cereali' }
   ]));
   assert.match(validateCatalogImport(badCategory, { existingIngredients: {}, existingCategories: ['carb'], denylist: [] }).errors.join('\n'), /inesistente/);
   // Categoria dichiarata nel file → riferimento valido.
   const withFileCategory = validateCatalogImport(parseCatalogPayload('json', fixture('catalog-import-valid.json')), { existingIngredients: {}, existingCategories: ['carb'], denylist: [] });
   assert.deepEqual(withFileCategory.errors, []);
   const guidedNoFamily = parseCatalogPayload('json', JSON.stringify([
-    { ingredientId: 'sorgo', displayName: 'Sorgo', aliases: [], categoryId: 'carb', mappingKind: 'guided', mellerFamilyId: null }
+    { ingredientId: 'sorgo', displayName: 'Sorgo', aliases: [], categoryId: 'carb', mappingKind: 'guided', guideFamilyId: null }
   ]));
-  assert.match(validateCatalogImport(guidedNoFamily, { existingIngredients: {}, existingCategories: ['carb'], denylist: [] }).errors.join('\n'), /mellerFamilyId/);
+  assert.match(validateCatalogImport(guidedNoFamily, { existingIngredients: {}, existingCategories: ['carb'], denylist: [] }).errors.join('\n'), /guideFamilyId/);
   const freeWithFamily = parseCatalogPayload('json', JSON.stringify([
-    { ingredientId: 'free-x', displayName: 'X libera', aliases: [], categoryId: 'free', mappingKind: 'free', mellerFamilyId: 'cereali' }
+    { ingredientId: 'free-x', displayName: 'X libera', aliases: [], categoryId: 'free', mappingKind: 'free', guideFamilyId: 'cereali' }
   ]));
   assert.match(validateCatalogImport(freeWithFamily, { existingIngredients: {}, existingCategories: [], denylist: [] }).errors.join('\n'), /non ammette/);
   const unknownFamily = parseCatalogPayload('json', JSON.stringify([
-    { ingredientId: 'sorgo', displayName: 'Sorgo', aliases: [], categoryId: 'carb', mappingKind: 'guided', mellerFamilyId: 'famiglia-futura' }
+    { ingredientId: 'sorgo', displayName: 'Sorgo', aliases: [], categoryId: 'carb', mappingKind: 'guided', guideFamilyId: 'famiglia-futura' }
   ]));
   assert.match(validateCatalogImport(unknownFamily, { existingIngredients: {}, existingCategories: ['carb'], denylist: [] }).errors.join('\n'), /inesistente nel motore/);
   // Collisione dentro il file tra ID diversi (stesso alias normalizzato).
   const internal = parseCatalogPayload('json', JSON.stringify([
-    { ingredientId: 'a-ok', displayName: 'Sorgo', aliases: [], categoryId: 'carb', mappingKind: 'guided', mellerFamilyId: 'cereali' },
-    { ingredientId: 'b-ok', displayName: 'SORGO', aliases: [], categoryId: 'carb', mappingKind: 'guided', mellerFamilyId: 'cereali' }
+    { ingredientId: 'a-ok', displayName: 'Sorgo', aliases: [], categoryId: 'carb', mappingKind: 'guided', guideFamilyId: 'cereali' },
+    { ingredientId: 'b-ok', displayName: 'SORGO', aliases: [], categoryId: 'carb', mappingKind: 'guided', guideFamilyId: 'cereali' }
   ]));
   assert.match(validateCatalogImport(internal, { existingIngredients: {}, existingCategories: ['carb'], denylist: [] }).errors.join('\n'), /stesso file/);
 });
@@ -334,7 +352,7 @@ test('import catalogo: dedup, riferimenti, guided/free e categorie', () => {
 test('import catalogo: diff troncato a 200 righe con flag', () => {
   const ingredients = Array.from({ length: 210 }, (_, i) => ({
     ingredientId: `voce-${String(i).padStart(3, '0')}`, displayName: `Voce ${i}`, aliases: [],
-    categoryId: 'carb', mappingKind: 'guided', mellerFamilyId: 'cereali'
+    categoryId: 'carb', mappingKind: 'guided', guideFamilyId: 'cereali'
   }));
   const report = validateCatalogImport(parseCatalogPayload('json', JSON.stringify(ingredients)), { existingIngredients: {}, existingCategories: ['carb'], denylist: [] });
   assert.deepEqual(report.errors, []);

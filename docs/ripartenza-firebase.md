@@ -164,12 +164,12 @@ salvataggio viene rifiutato perché gli alimenti non esistono in catalogo.
 
 ### 6a. Scarica il file pronto
 
-1. Su GitHub apri `docs/catalogo-import-meller.json`.
+1. Su GitHub apri `docs/catalogo-import.json`.
 2. Clicca **Raw** (in alto a destra nel riquadro del file).
-3. Salva la pagina sul computer con nome `catalogo-import-meller.json`
+3. Salva la pagina sul computer con nome `catalogo-import.json`
    (Ctrl+S / Cmd+S, formato "solo testo").
 
-Il file contiene 75 ingredienti e 6 categorie, con gli id del motore Meller. Per
+Il file contiene 75 ingredienti e 6 categorie, con gli id del motore Guide. Per
 rigenerarlo identico in futuro c'è
 `node functions/scripts/generate-catalog-import.js` (con `--check` per la sola
 verifica).
@@ -192,7 +192,7 @@ browser:
 
 1. Apri `admin.html` e accedi con `admin`.
 2. Menu **Catalogo** (lo vedi solo tu, come creatore).
-3. **Scegli file** → seleziona `catalogo-import-meller.json`.
+3. **Scegli file** → seleziona `catalogo-import.json`.
 4. Clicca **Analizza file (dry-run)**: non scrive nulla. Devi vedere
    **0 errori** e i conteggi (nuovi / aggiornati / già identici).
 5. Se l'analisi è pulita, **Conferma import** diventa attivo: cliccalo e
@@ -334,7 +334,7 @@ mancante (Passo 5) e il catalogo non importato (Passo 6).
 4. Metti il tuo UID in `platformMembers` con `role: admin`, `status: active`.
 5. Fai entrare `nutrizionista` in `organizations/pianoNutrizionale/members`.
 6. Accendi `globalIngredientCatalog/config/docs/import = { enabled: true }`.
-7. Console → Catalogo → dry-run → Conferma import del file Meller.
+7. Console → Catalogo → dry-run → Conferma import del file Guide.
 8. Collega i clienti (gabriele, martina, cliente) e assegna loro una struttura.
 9. Re-importa le ricette di gabriele e martina dal Ricettario.
 10. Pulisci le organizzazioni vecchie e verifica tutto.

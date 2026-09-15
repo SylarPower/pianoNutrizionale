@@ -23,7 +23,7 @@ La membership autorevole è `organizations/{orgId}/members/{uid}` con `role`, `s
 ```js
 {
   schemaVersion: 1,
-  ruleSetId: "meller-base",
+  ruleSetId: "guide-base",
   version: "3",                 // monotona nel ruleSet
   status: "draft|published|retired",
   scope: "global|tenant",
@@ -79,7 +79,7 @@ plan.nutritionSnapshot = {
   schemaVersion: 1,
   clientProfileId: "client-id",
   assignmentId: "assignment-id",
-  ruleSetId: "meller-base",
+  ruleSetId: "guide-base",
   ruleSetVersion: "3",
   ruleSetChecksum: "sha256",
   mappingCatalogChecksum: "sha256",
@@ -88,7 +88,7 @@ plan.nutritionSnapshot = {
 }
 ```
 
-Se snapshot e assegnazione non coincidono, il client non ricalcola: imposta i pasti Meller su `original` e mostra una richiesta di conferma. La lista spesa non viene rigenerata silenziosamente.
+Se snapshot e assegnazione non coincidono, il client non ricalcola: imposta i pasti Guide su `original` e mostra una richiesta di conferma. La lista spesa non viene rigenerata silenziosamente.
 
 ## MappingReport
 
@@ -148,7 +148,7 @@ solo all'admin dentro "Dettagli tecnici", mai al nutritionist).
 // organizations/{orgId}/dietStructures/{structureId}
 {
   schemaVersion: 1,
-  name: "Base Meller",
+  name: "Base Guide",
   status: "active|archived",
   ownerUid: "uid-proprietario",
   currentRevisionId: "3",
@@ -165,7 +165,7 @@ solo all'admin dentro "Dettagli tecnici", mai al nutritionist).
   revisionId: "3",
   structureId,
   rules: [{
-    mellerFamilyId: "riso",       // deve esistere nel motore Meller
+    guideFamilyId: "riso",       // deve esistere nel motore Guide
     ingredientIds: ["riso", "riso-venere"],  // devono esistere in catalogo
     quantityGrams: {
       lunch: { training: 80, rest: 60 },
@@ -201,7 +201,7 @@ per gli assignment già creati (non-retroattività).
   schemaVersion: 2,
   assignmentId, clientId,
   structure: { structureId, revisionId, checksum },  // risolti server-side
-  structureName: "Base Meller",     // denormalizzato per la console
+  structureName: "Base Guide",     // denormalizzato per la console
   status: "scheduled|active|suspended|revoked|expired",
   effectiveAt, expiresAt: null,
   withoutExpiration: true,
@@ -214,7 +214,7 @@ per gli assignment già creati (non-retroattività).
 
 Il profilo cliente v2 (`getMyAssignedProfile`) contiene revisione + snapshot
 catalogo; la conversione in regole motore avviene nel client via
-`structureRevisionToMellerRules`. Lo snapshot registra `structureId`,
+`structureRevisionToGuideRules`. Lo snapshot registra `structureId`,
 `structureRevisionId`, `structureChecksum` e `ingredientCatalogVersion`: un
 cambio di catalogo richiede conferma (nudge) senza ricalcoli retroattivi.
 

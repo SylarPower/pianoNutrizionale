@@ -10,14 +10,14 @@ const ASSIGNMENT_STRATEGIES = new Set(['freeze', 'migrate-on-confirmation', 'ori
 const MAPPING_KINDS = new Set(['guided', 'free']);
 const GROUPS = new Set(['carb', 'protein', 'vegetable', 'dairy', 'fat', 'sweet', 'fruit', 'free']);
 
-// ID delle 39 famiglie del motore Meller (js/domain.js → MELLER_GRAMMATURE).
+// ID delle 39 famiglie del motore delle linee guida (js/domain.js → GUIDE_GRAMMATURE).
 // SOLO identificativi: nessuna quantità, nessuna dose, nessuna regola di
 // riconoscimento. Il server li usa per rifiutare strutture/catalogo che
 // puntano a famiglie inesistenti nel motore; la parità con il client è
 // verificata dai test (functions/test/domain.test.js). Se il manuale aggiunge
 // una famiglia, aggiornare qui + engine + catalogo nello stesso deploy.
-// Generato da docs/meller-source-v3.json — ordine priorità motore.
-const MELLER_FAMILY_IDS = new Set([
+// Generato da docs/guide-source-v3.json — ordine priorità motore.
+const GUIDE_FAMILY_IDS = new Set([
   'patateDolci', 'patate', 'gnocchi', 'polenta', 'mais', 'fiocchiAvena', 'gallette', 'crackers', 'piadina', 'cerealiColazione', 'cereali', 'pane',
   'salmoneAffumicato', 'pesceScatolaNaturale', 'pesceSottOlio', 'pesceAzzurro', 'pesceBiancoMagro', 'crostaceiMolluschi', 'maiale', 'polloTacchino', 'manzo',
   'affettatiMagri', 'mozzarellaLight', 'formaggiFreschiMolli', 'yogurtGreco', 'fiocchiLatte', 'montasio', 'grana', 'formaggiStagionati', 'feta', 'ricotta',
@@ -351,7 +351,7 @@ function effectiveAssignment(assignment, now = new Date()) {
   return { valid: assignment.status === 'active', reason: assignment.status === 'active' ? null : assignment.status };
 }
 
-// Regole di una revisione struttura dieta (schema v2): famiglie Meller con
+// Regole di una revisione struttura dieta (schema v2): famiglie Guide con
 // dosi per pasto (pranzo/cena) × giorno (allenamento/riposo). Le quantità sono
 // interi in grammi tra 1 e 2000; un pasto può essere `null` se non gestito,
 // mai entrambi. Schema esatto: docs/schema-catalogo-strutture-v2.json.
@@ -394,15 +394,23 @@ function validateDietStructureRules(rules, { allowEmpty = false } = {}) {
       : 'rules deve contenere tra 1 e 40 famiglie');
   }
   const seen = new Set();
-  return rules.map((rule, index) => {
-    exactObject(rule, ['mellerFamilyId', 'ingredientIds', 'quantityGrams', 'enabled', 'categoryId'], `rules[${index}]`);
-    const mellerFamilyId = id(rule.mellerFamilyId, `rules[${index}].mellerFamilyId`);
-    if (seen.has(mellerFamilyId)) fail('invalid-argument', `Famiglia duplicata: ${mellerFamilyId}`);
-    seen.add(mellerFamilyId);
+  return rules.map((rawRule, index) => {
+    // Compatibilità: le revisioni salvate prima del cambio nome usano la
+    // chiave storica `mellerFamilyId`. Viene accettata in ingresso, rivalidata
+    // e riscritta con il nome attuale nella nuova revisione.
+    let rule = rawRule;
+    if (rule && typeof rule === 'object' && rule.guideFamilyId == null && rule.mellerFamilyId != null) {
+      rule = { ...rule, guideFamilyId: rule.mellerFamilyId };
+      delete rule.mellerFamilyId;
+    }
+    exactObject(rule, ['guideFamilyId', 'ingredientIds', 'quantityGrams', 'enabled', 'categoryId'], `rules[${index}]`);
+    const guideFamilyId = id(rule.guideFamilyId, `rules[${index}].guideFamilyId`);
+    if (seen.has(guideFamilyId)) fail('invalid-argument', `Famiglia duplicata: ${guideFamilyId}`);
+    seen.add(guideFamilyId);
     // La famiglia deve esistere nel motore: niente regole orfane che il
     // client convertirebbe in silenzio in "nessuna dose".
-    if (!MELLER_FAMILY_IDS.has(mellerFamilyId)) {
-      fail('invalid-argument', `rules[${index}].mellerFamilyId non esiste nel motore delle famiglie`);
+    if (!GUIDE_FAMILY_IDS.has(guideFamilyId)) {
+      fail('invalid-argument', `rules[${index}].guideFamilyId non esiste nel motore delle famiglie`);
     }
     const quantityGrams = validateContextQuantity(rule.quantityGrams, `rules[${index}].quantityGrams`);
     const ingredientIds = Array.isArray(rule.ingredientIds)
@@ -413,7 +421,7 @@ function validateDietStructureRules(rules, { allowEmpty = false } = {}) {
       fail('invalid-argument', `rules[${index}].enabled deve essere booleano`);
     }
     return {
-      mellerFamilyId,
+      guideFamilyId,
       ingredientIds,
       quantityGrams,
       enabled: rule.enabled === undefined ? true : rule.enabled,
@@ -679,7 +687,7 @@ function validateDietPlan(plan) {
 
 const CATALOG_IMPORT_FORMATS = new Set(['json', 'csv']);
 const CATALOG_IMPORT_MODES = new Set(['dry-run', 'commit', 'restore']);
-const CATALOG_CSV_COLUMNS = ['ingredientId', 'displayName', 'aliases', 'categoryId', 'mappingKind', 'mellerFamilyId'];
+const CATALOG_CSV_COLUMNS = ['ingredientId', 'displayName', 'aliases', 'categoryId', 'mappingKind', 'guideFamilyId'];
 const CATALOG_INGREDIENT_ID_PATTERN = /^[a-z0-9][a-z0-9-]{1,95}$/;
 const CATALOG_CATEGORY_ID_PATTERN = /^[a-z0-9][a-z0-9-]{1,63}$/;
 // Zero quantità: qualsiasi chiave che somigli a una dose rifiuta il file.
@@ -707,7 +715,14 @@ function parseCatalogCsv(payload) {
   const lines = source.split(/\r?\n/).map(line => line.trim()).filter(line => line.length > 0);
   if (!lines.length) fail('invalid-argument', 'CSV vuoto o senza intestazione');
   const separator = lines[0].includes(';') ? ';' : ',';
-  const header = lines[0].split(separator).map(cell => cell.trim());
+  // Legacy: i file esportati prima dell'evoluzione del contratto intestano
+  // la colonna famiglia "mellerFamilyId": viene accettata e mappata sul
+  // nome attuale. Presenti entrambe, il file è ambiguo e viene rifiutato.
+  const rawHeader = lines[0].split(separator).map(cell => cell.trim());
+  if (rawHeader.includes('mellerFamilyId') && rawHeader.includes('guideFamilyId')) {
+    fail('invalid-argument', 'CSV: colonne guideFamilyId e mellerFamilyId insieme non ammesse');
+  }
+  const header = rawHeader.map(column => (column === 'mellerFamilyId' ? 'guideFamilyId' : column));
   const unknown = header.filter(column => !CATALOG_CSV_COLUMNS.includes(column));
   const doseColumns = unknown.filter(column => CATALOG_DOSE_KEY_PATTERN.test(column));
   if (doseColumns.length) {
@@ -727,7 +742,7 @@ function parseCatalogCsv(payload) {
     const row = {};
     header.forEach((column, position) => { row[column] = cells[position]; });
     row.aliases = String(row.aliases || '').split('|').map(part => part.trim()).filter(Boolean);
-    row.mellerFamilyId = row.mellerFamilyId === '' || row.mellerFamilyId == null ? null : row.mellerFamilyId;
+    row.guideFamilyId = row.guideFamilyId === '' || row.guideFamilyId == null ? null : row.guideFamilyId;
     row.__line = index + 2;
     return row;
   });
@@ -777,8 +792,14 @@ function validateCatalogIngredient(raw, knownCategories, errors, where) {
     return null;
   }
   assertNoDoseKeys(raw, label);
-  const extra = Object.keys(raw).filter(key => !['ingredientId', 'displayName', 'aliases', 'categoryId', 'mappingKind', 'mellerFamilyId', '__line'].includes(key) && !key.startsWith('__'));
+  // Legacy "mellerFamilyId" ammesso come chiave di ingresso e mappato sul
+  // nome attuale; i nuovi file usano solo guideFamilyId.
+  const familyRaw = raw.guideFamilyId != null ? raw.guideFamilyId : raw.mellerFamilyId;
+  const extra = Object.keys(raw).filter(key => !['ingredientId', 'displayName', 'aliases', 'categoryId', 'mappingKind', 'guideFamilyId', 'mellerFamilyId', '__line'].includes(key) && !key.startsWith('__'));
   extra.forEach(key => push(`campo non riconosciuto ("${key}")`));
+  if (raw.guideFamilyId != null && raw.mellerFamilyId != null && String(raw.guideFamilyId).trim() !== String(raw.mellerFamilyId).trim()) {
+    push('guideFamilyId e mellerFamilyId insieme con valori diversi');
+  }
   const ingredientId = String(raw.ingredientId || '').trim();
   if (!CATALOG_INGREDIENT_ID_PATTERN.test(ingredientId)) push('ingredientId non valido (minuscolo, trattini, 2-96 caratteri)');
   const displayName = String(raw.displayName || '').trim();
@@ -800,12 +821,12 @@ function validateCatalogIngredient(raw, knownCategories, errors, where) {
   else if (!knownCategories.has(categoryId)) push(`categoryId inesistente ("${categoryId}")`);
   const mappingKind = String(raw.mappingKind || '').trim();
   if (!MAPPING_KINDS.has(mappingKind)) push('mappingKind non valido (guided|free)');
-  const mellerFamilyId = raw.mellerFamilyId == null || raw.mellerFamilyId === '' ? null : String(raw.mellerFamilyId).trim();
+  const guideFamilyId = familyRaw == null || familyRaw === '' ? null : String(familyRaw).trim();
   if (mappingKind === 'guided') {
-    if (!mellerFamilyId) push('guided richiede mellerFamilyId');
-    else if (!MELLER_FAMILY_IDS.has(mellerFamilyId)) push(`mellerFamilyId inesistente nel motore ("${mellerFamilyId}")`);
+    if (!guideFamilyId) push('guided richiede guideFamilyId');
+    else if (!GUIDE_FAMILY_IDS.has(guideFamilyId)) push(`guideFamilyId inesistente nel motore ("${guideFamilyId}")`);
   }
-  if (mappingKind === 'free' && mellerFamilyId) push('free non ammette mellerFamilyId');
+  if (mappingKind === 'free' && guideFamilyId) push('free non ammette guideFamilyId');
   if (problems.length) {
     errors.push(...problems);
     return null;
@@ -819,7 +840,7 @@ function validateCatalogIngredient(raw, knownCategories, errors, where) {
     // searchTokens SEMPRE rigenerati server-side, mai dal file.
     searchTokens: searchTokensFor(displayName, aliases),
     mappingKind,
-    mellerFamilyId: mappingKind === 'guided' ? mellerFamilyId : null,
+    guideFamilyId: mappingKind === 'guided' ? guideFamilyId : null,
     status: 'active'
   };
 }
@@ -863,10 +884,10 @@ function validateCatalogCategory(raw, errors, where) {
 function sameCatalogEntry(a, b) {
   return canonicalJson({
     displayName: a.displayName, categoryId: a.categoryId, aliases: [...(a.aliases || [])].sort(),
-    mappingKind: a.mappingKind, mellerFamilyId: a.mellerFamilyId || null
+    mappingKind: a.mappingKind, guideFamilyId: a.guideFamilyId || null
   }) === canonicalJson({
     displayName: b.displayName, categoryId: b.categoryId, aliases: [...(b.aliases || [])].sort(),
-    mappingKind: b.mappingKind, mellerFamilyId: b.mellerFamilyId || null
+    mappingKind: b.mappingKind, guideFamilyId: b.guideFamilyId || null
   });
 }
 
@@ -1171,7 +1192,7 @@ function validateTransferStructureOwnership(input) {
 }
 
 // ---- Dosi e frequenze personalizzate per cliente (console) ----
-// Le frequenze sono il mirror server-side di MELLER_PROTEIN_FREQUENCIES in
+// Le frequenze sono il mirror server-side di GUIDE_PROTEIN_FREQUENCIES in
 // js/domain.js (chiavi, etichette e default: allineamento verificato dai test
 // client). Max 14 = 7 giorni × 2 pasti principali (vincolo strutturale).
 const CLIENT_FREQUENCY_KEYS = ['poultry', 'beef', 'curedMeats', 'omega', 'otherFish', 'dairy', 'eggs', 'legumes'];
@@ -1348,7 +1369,7 @@ function validateProfessionalRecipe(recipe) {
 module.exports = {
   SINGLE_ORGANIZATION_ID,
   ROLES, REPORT_STATUSES, ASSIGNMENT_STATUSES, ASSIGNMENT_STRATEGIES, MEMBER_STATUSES,
-  MELLER_FAMILY_IDS, STRUCTURE_REVISION_SCHEMA_VERSION, STRUCTURE_REVISION_SCHEMA_VERSION_WITH_PLAN,
+  GUIDE_FAMILY_IDS, STRUCTURE_REVISION_SCHEMA_VERSION, STRUCTURE_REVISION_SCHEMA_VERSION_WITH_PLAN,
   fail, exactObject, text, optionalText, id, isoDate, canonicalJson, checksum,
   normalizeIngredient, aliasKey, searchTokensFor, normalizeUsername, hashToken,
   reportKey, validateReport, validateMapping, validateRuleSetRules, validateAssignment,

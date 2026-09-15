@@ -1,6 +1,6 @@
 {
   "schemaVersion": 2,
-  "source": "Fonte unica Meller - 38 famiglie con dosi esplicite Pranzo A/R e Cena A/R (cena esplicita, non derivata 2/3)",
+  "source": "Fonte unica Guide - 38 famiglie con dosi esplicite Pranzo A/R e Cena A/R (cena esplicita, non derivata 2/3)",
   "notes": [
     "Compila SOLO i campi aliases e catalogIngredients. Le dosi sono già prese dalla tua tabella.",
     "family = id stabile usato in js/domain.js e functions/src/domain.js (non rinominare dopo approvazione)",
@@ -8,7 +8,7 @@
     "group = raggruppamento tecnico: carb | protein | vegetable | fat | free",
     "categoryId = categoria catalogo: carb | protein | vegetable | fat | free",
     "aliases = lista di stringhe usate per generare la regex di riconoscimento (es. 'patate dolci', 'batata') - metti varianti singolare/plurale, accenti normalizzati",
-    "catalogIngredients = varianti reali che vedrà il picker. Ogni entry diventa un ingrediente nel catalogo globale con mellerFamilyId = family",
+    "catalogIngredients = varianti reali che vedrà il picker. Ogni entry diventa un ingrediente nel catalogo globale con guideFamilyId = family",
     "Se lasci catalogIngredients vuoto, genero 1 ingrediente = family/label automaticamente"
   ],
   "categories": [
