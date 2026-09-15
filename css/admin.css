@@ -69,8 +69,10 @@ h4{font-size:var(--fs-body);font-weight:700}
 /* Caricamento globale: il professionista vede sempre quale operazione è in corso,
    mentre il contenuto resta percepibile ma sfocato sotto l'overlay. */
 .loading-overlay{position:fixed;inset:0;z-index:1000;display:grid;place-content:center;justify-items:center;gap:16px;background:rgba(251,246,240,.78);backdrop-filter:blur(8px);-webkit-backdrop-filter:blur(8px);color:var(--primary-strong);font-weight:800}
-.loading-brand{display:grid;place-items:center;width:64px;height:64px;border-radius:18px;background:var(--primary);box-shadow:0 10px 26px rgba(61,153,112,.2);animation:admin-loading-breathe 1.6s ease-in-out infinite}
-.loading-brand img{width:38px;height:38px}
+/* Logo senza sfondo: l'SVG originale è trasparente e resta tale, niente
+   tessere colorate dietro (coerente con l'app cliente). */
+.loading-brand{display:grid;place-items:center;filter:drop-shadow(0 12px 22px rgba(12,36,24,.16));animation:admin-loading-breathe 1.6s ease-in-out infinite}
+.loading-brand img{width:64px;height:64px;display:block}
 .loading-spinner{width:46px;height:46px;border:3px solid transparent;border-top-color:var(--primary);border-right-color:rgba(61,153,112,.24);border-radius:50%;animation:admin-loading-spin .85s linear infinite;position:relative}
 .loading-spinner::after{content:"";position:absolute;inset:7px;border:2px solid transparent;border-bottom-color:var(--accent);border-left-color:rgba(196,112,75,.24);border-radius:50%;animation:admin-loading-spin-reverse .65s linear infinite}
 .loading-overlay p{font-size:var(--fs-body);margin:0}
@@ -425,12 +427,21 @@ button:focus-visible,input:focus-visible,select:focus-visible,textarea:focus-vis
 .diet-meal-head{display:flex;gap: 8px;flex-wrap:wrap;align-items:center}
 .diet-meal-head select,.diet-meal-head input{width:auto;flex:1 1 140px}
 .diet-meal textarea,.diet-option textarea{min-height:44px;font-size: var(--fs-input)}
+/* Pasti minimizzati all'apertura: la testa fa da riepilogo compatto e il
+   corpo (opzioni, note) resta nel DOM ma nascosto finché non si espande. */
+.diet-meal-body{display:grid;gap:12px}
+.diet-meal:not(.expanded) .diet-meal-body{display:none}
+.diet-meal:not(.expanded){gap:0;background:var(--surface)}
+.diet-meal:not(.expanded) .diet-meal-head input{flex:0 1 120px}
+.diet-meal-summary{flex:1 1 180px;font-size:var(--fs-caption);color:var(--text-muted);overflow-wrap:anywhere}
+.diet-meal-head .diet-option-actions{margin-left:auto}
+.diet-meal.expanded{border-style:solid;border-color:var(--primary-soft,var(--line))}
 .diet-options{display:grid;gap: 12px}
 .diet-option{border:1px solid var(--line);border-radius:12px;padding: 12px;display:grid;gap: 12px;background:var(--surface)}
 .diet-option-head{display:flex;align-items:center;justify-content:space-between;gap: 8px}
 .diet-option-actions{display:flex;gap: 8px}
 .diet-items{display:grid;gap: 12px}
-.diet-item{border:1px solid var(--line);border-radius:11px;padding: 12px;display:grid;gap: 8px;grid-template-columns:1fr 2fr auto;align-items:center;background:var(--surface)}
+.diet-item{border:1px solid var(--line);border-radius:11px;padding: 12px;display:grid;gap: 8px;grid-template-columns:minmax(0,1fr) auto auto;align-items:center;background:var(--surface)}
 .diet-item .diet-qty{display:flex;gap: 8px}
 .diet-item .diet-qty input{width:76px}
 .diet-item .diet-qty select{width:auto}
@@ -468,7 +479,7 @@ button:focus-visible,input:focus-visible,select:focus-visible,textarea:focus-vis
 .diet-choice-body{display:grid;gap:12px}
 .diet-choice-group:not(.expanded) .diet-choice-body{display:none}
 .diet-choice-alternatives{display:grid;gap:12px}
-.diet-choice-alt{display:grid;gap:8px;grid-template-columns:minmax(110px,1fr) minmax(140px,2fr) 76px 84px auto;align-items:center}
+.diet-choice-alt{display:grid;gap:8px;grid-template-columns:minmax(140px,1fr) 76px 84px auto;align-items:center}
 .diet-choice-alt [data-f="alt-qty"]{width:100%}
 .diet-choice-alt .diet-del{position:static;width:32px;height:32px}
 .diet-choice-prefill{display:flex;align-items:end;gap:12px;flex-wrap:wrap}
@@ -492,7 +503,7 @@ button:focus-visible,input:focus-visible,select:focus-visible,textarea:focus-vis
 html.dark-mode{--primary:#4cb98a;--primary-strong:#7cd3a8;--primary-soft:#16281f;--secondary:#7fae76;--secondary-soft:#1a2419;--accent:#d9987a;--accent-soft:#2e2018;--rest:#8fbeda;--rest-soft:#1b2630;--danger:#e8937c;--danger-soft:#2f1f1a;--success:#4cb98a;--warning:#d29a4f;--bg:#0e100e;--surface:#151815;--surface-alt:#1c201c;--text:#ece7dc;--text-muted:#9aa39b;--line:#2a2e29;--shadow:0 2px 8px rgba(0,0,0,.4),0 12px 32px rgba(0,0,0,.35)}
 html.dark-mode .sidebar{background:linear-gradient(180deg,#14231c,#1a2f24 72%)}
 html.dark-mode .loading-overlay{background:rgba(14,16,14,.82);color:var(--primary-strong)}
-html.dark-mode .loading-brand{background:#1a2f24;box-shadow:0 10px 26px rgba(76,185,138,.12)}
+html.dark-mode .loading-brand{filter:drop-shadow(0 12px 22px rgba(0,0,0,.55))}
 html.dark-mode .topbar{background:rgba(21,24,21,.92)}
 html.dark-mode .auth-card{background:rgba(21,24,21,.96)}
 html.dark-mode .status-client-active{color:var(--primary-strong)}
@@ -523,3 +534,18 @@ html.dark-mode .check-row small,html.dark-mode .report-main small,html.dark-mode
 /* Ricettario professionisti (ADR 0006): righe ingrediente dell’editor. */
 .recipe-ingredients{display:grid;gap: 8px}
 .recipe-ingredient-row{display:grid;grid-template-columns:2fr 1fr 1fr auto;gap: 8px;align-items:center}
+
+/* Tabelle grammature: elenco in vista dedicata ed editor a righe. */
+.gram-table-description{color:var(--text-muted);font-size:var(--fs-secondary)}
+.gram-table-meta{margin:0}
+.gram-table-meta small{color:var(--text-muted)}
+.gram-table-actions{margin-top:8px}
+.gram-table-rows{display:grid;gap:8px;margin-bottom:12px}
+.gram-table-row{display:grid;gap:8px;grid-template-columns:minmax(160px,2fr) minmax(110px,1fr) repeat(4,72px) auto;align-items:center}
+.gram-table-row input[type="number"]{width:100%}
+.gram-table-row select{width:auto}
+.gram-table-row .gram-del{position:static;width:32px;height:32px}
+@media(max-width:840px){
+  .gram-table-row{grid-template-columns:1fr 1fr}
+  .gram-table-row [data-g="row-desc"]{grid-column:1/-1}
+}

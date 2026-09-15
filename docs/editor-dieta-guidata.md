@@ -27,18 +27,24 @@ comincia a digitare il nome e seleziona l'alimento suggerito. Contratto dati:
    colazione → spuntino di metà mattina → pranzo → merenda → cena → spuntino
    serale. «＋ Aggiungi pasto» propone solo i tipi ancora assenti; i pasti non
    si riordinano e non si duplicano: l'ordine è quello del modello. Orario e
-   nota facoltativi.
+   nota facoltativi. All'apertura dell'editor i pasti partono **minimizzati**
+   (intestazione + riepilogo compatto); si espandono cliccando
+   sull'intestazione. Un pasto con dati incompleti si espande automaticamente
+   al salvataggio se la validazione segnala un errore al suo interno.
 4. **Opzioni A/B/C/D** (max 4 per pasto): alternative equivalenti dello
    stesso pasto, di due tipi **mutuamente esclusivi**:
-   - **Alimenti dal catalogo**: cerca il nome nella tabella condivisa e
-     selezionalo dal suggerimento; la categoria viene compilata
-     automaticamente. Completa quantità + unità (g, kg, ml, l, pz, fette,
+   - **Alimenti dal catalogo**: comincia a digitare il nome e scegli tra i
+     suggerimenti di ricerca testuale (nessun elenco a categorie); la
+     categoria viene dedotta in automatico dal catalogo e viaggia nascosta.
+     Completa quantità + unità (g, kg, ml, l, pz, fette,
      cucchiai, cucchiaini, tazze, bicchieri, porzioni, scatolette, misurini,
      q.b.), max 20 voci;
-   - **Ricetta**: una ricetta del ricettario professionale con
-     moltiplicatore porzioni (×0,1–10) e anteprima degli ingredienti con dosi
-     scalate live (le dosi testuali come «80 g» si moltiplicano; «q.b.» resta
-     tale). Gli archivi restano selezionabili per non perdere i riferimenti.
+   - **Ricetta**: una ricetta del ricettario professionale, con anteprima
+     degli ingredienti scalata live (le dosi testuali come «80 g» si
+     moltiplicano; «q.b.» resta tale). Il moltiplicatore porzioni non è più
+     un campo della console: il valore salvato resta conservato per
+     round-trip e la logica del moltiplicatore vive nell'app clienti
+     (profilo coppia, vedi sotto).
    Si possono aggiungere, duplicare ed eliminare (ne resta sempre almeno una).
 5. **Pesi sempre al netto degli scarti e a crudo**: non esistono più il
    select crudo/cotto, il flag «al netto degli scarti» né l'alternativa
@@ -49,10 +55,12 @@ comincia a digitare il nome e seleziona l'alimento suggerito. Contratto dati:
    quantità, unità) che il cliente può scegliere. La scelta è facoltativa di
    default (il cliente può saltare il gruppo). Il gruppo si mostra
    **minimizzato** (solo riepilogo) quando è completo e si espande con
-   «Modifica»; «Precompila alternative» riempie il gruppo dalla tabella di
-   riferimento (carboidrati o proteine) con le dosi del pasto corrente
-   (pranzo: colonna A/R della giornata; cena: dose serale) e lo minimizza
-   subito. Le alternative restano tutte editabili dopo il precompilamento.
+   «Modifica»; «Precompila alternative» riempie il gruppo dalla **tabella
+   grammature scelta** nell'intestazione dell'editor (carboidrati o proteine)
+   con le dosi del pasto corrente (pranzo: colonna A/R della giornata; cena:
+   dose serale) e lo minimizza subito. Se la tabella scelta non ha una dose
+   per quel pasto/giorno, si ripiega sulla tabella guida integrata. Le
+   alternative restano tutte editabili dopo il precompilamento.
 7. **Integrazione, idratazione, nota** per giornata + **note generali**.
 8. **Anteprima**: «Mostra anteprima» riepiloga la bozza (conteggi + testo,
    ricette con dosi scalate, gruppi scelta in una riga); resta aggiornata
@@ -62,6 +70,37 @@ comincia a digitare il nome e seleziona l'alimento suggerito. Contratto dati:
 
 Le operazioni strutturali (aggiungi, duplica, sposta, elimina) rileggono
 sempre il modulo prima di ridisegnarlo: **il testo digitato non si perde**.
+
+## Tabelle grammature
+
+Ogni nutrizionista ha le proprie **tabelle grammature** (raccolte personali
+di alternative carboidrati/proteine con dosi pranzo/cena per giorno di
+allenamento e di riposo). Voce di menu a sinistra «Tabelle grammature»:
+crea, modifica, duplica ed elimina le proprie tabelle; quelle degli altri
+membri sono visibili in elenco ma non modificabili.
+
+- **Righe**: descrizione alimento, gruppo (carboidrati/proteine), categoria
+  catalogo facoltativa (dedotta dal suggerimento) e dosi in grammi per
+  pranzo A/R e cena A/R. Almeno una dose per riga; le dosi mancanti restano
+  vuote.
+- **Tabella di esempio**: il profilo demo del nutrizionista viene popolato
+  con la tabella guida di riferimento. Per (ri)caricarla si usa lo script
+  `functions/scripts/seed-grammature-tables.js` (istruzioni nell'intestazione
+  dello script, richieste credenziali Admin di produzione); non è
+  un'operazione della console.
+- **Scelta in compilazione**: nell'intestazione dell'editor della dieta
+  guidata si seleziona la tabella da cui attingere («Tabella guida
+  integrata» è sempre disponibile). La precompilazione dei gruppi scelta usa
+  la tabella selezionata e ripiega sulla guida quando una dose manca.
+
+### Moltiplicatore porzioni (solo app clienti)
+
+Il moltiplicatore porzioni **non è più un campo della console**: nell'app
+clienti, quando è attivo il profilo «Coppia · uomo + donna», compare un
+controllo ×0,5–×3 (passo 0,5) che scala in tempo reale le dosi uomo/donna
+mostrate (settimana, modali e batch cooking) e i totali della lista della
+spesa. La preferenza è salvata nelle impostazioni locali del dispositivo e
+vale solo per il profilo coppia.
 
 ## Regole di compatibilità
 

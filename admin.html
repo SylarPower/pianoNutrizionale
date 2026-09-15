@@ -42,6 +42,7 @@
         <button class="nav-link" data-view="doses"><span>⚖</span>Dosi clienti</button>
         <button class="nav-link" data-view="structures"><span>▦</span>Strutture dieta</button>
         <button class="nav-link" data-view="recipes"><span>🍲</span>Ricette</button>
+        <button class="nav-link" data-view="tables"><span>▤</span>Tabelle grammature</button>
         <button id="nav-catalog" class="nav-link hidden" data-view="catalog"><span>⛁</span>Catalogo</button>
         <button class="nav-link" data-view="mapping"><span>◫</span>Coda ingredienti <b id="nav-open-count" class="badge-zero" aria-label="Coda ingredienti: nessun caso in sospeso">0</b></button>
       </nav>
@@ -102,6 +103,11 @@
         <section class="panel"><div class="panel-head"><div><h2>Invii in attesa</h2><p>Condivisioni professionali non ancora gestite dal cliente: annullabili finché pendenti.</p></div><div class="hero-actions"><button id="refresh-shares" class="secondary">↻ Aggiorna</button></div></div><div id="shares-feedback" class="feedback" role="status"></div><div id="shares-list" class="client-grid"></div></section>
       </main>
 
+      <main id="view-tables" class="console-view hidden">
+        <section class="hero-row"><div><p class="eyebrow">TABELLE GRAMMATURE</p><h1>Le tue tabelle di riferimento,<br>sempre a portata di mano.</h1><p>Definisci le grammature delle alternative di carboidrati e proteine: le ritrovi durante la compilazione della dieta guidata. Puoi modificarle, duplicarle, eliminarle o crearne di nuove.</p></div><div class="hero-actions"><button id="new-gram-table" class="primary small-primary">＋ Nuova tabella</button><button id="refresh-gram-tables" class="secondary">↻ Aggiorna</button></div></section>
+        <section class="panel"><div class="panel-head"><div><h2>Tabelle grammature</h2><p>Ogni tabella è personale: la vedi e la modifichi solo tu. Selezionala poi nell’editor della dieta guidata.</p></div></div><div id="gram-tables-feedback" class="feedback" role="status"></div><div id="gram-tables-list" class="client-grid"></div></section>
+      </main>
+
       <main id="view-catalog" class="console-view hidden">
         <section class="hero-row"><div><p class="eyebrow">CATALOGO GLOBALE</p><h1>Gli alimenti riconosciuti<br>da tutte le strutture.</h1><p>Un’unica base condivisa, versionata a ogni import: le strutture pubblicate non cambiano retroattivamente.</p></div><button id="refresh-catalog" class="secondary">↻ Aggiorna stato</button></section>
         <section class="panel"><div class="panel-head"><div><h2>Stato del catalogo</h2><p>Anteprima del catalogo attivo per tutti i professionisti.</p></div></div><div id="catalog-feedback" class="feedback" role="status"></div><div id="catalog-status" class="client-grid"></div></section>
@@ -130,8 +136,9 @@
 <div id="diet-plan-dialog" class="dialog hidden" role="dialog" aria-modal="true" aria-labelledby="diet-plan-title"><div class="dialog-backdrop" data-close-diet-plan></div><section class="dialog-card wide"><button class="dialog-close" data-close-diet-plan aria-label="Chiudi editor">×</button><p class="eyebrow">DIETA GUIDATA</p><h2 id="diet-plan-title">Nuova dieta guidata</h2><p id="diet-plan-subtitle" class="dialog-lead">Scegli i pasti e aggiungi gli alimenti dal catalogo per comporre una giornata chiara. Le alternative della tabella di riferimento sono già disponibili per velocizzare la compilazione.</p>
     <form id="diet-plan-form"><input id="diet-plan-id" type="hidden">
       <label>Nome dieta<input id="diet-plan-name" required minlength="3" maxlength="80" placeholder="es. Piano iposodico — primavera"></label>
+      <label>Tabella grammature per le alternative<select id="diet-plan-gram-table" aria-label="Tabella grammature per le alternative"></select><small class="field-hint">Scegli da quale delle tue tabelle attingere le grammature quando precompili un gruppo scelta. Le tabelle le gestisci in «Tabelle grammature».</small></label>
       <p id="diet-plan-classic-note" class="callout hidden"></p>
-      <p class="field-hint diet-catalog-hint">Scrivi il nome di un alimento e sceglilo dal catalogo: la categoria viene compilata automaticamente. Puoi sempre correggere dose e unità.</p>
+      <p class="field-hint diet-catalog-hint">Scrivi il nome di un alimento e scegli il suggerimento che compare dal catalogo: la categoria viene dedotta in automatico. Puoi sempre correggere dose e unità.</p>
       <datalist id="diet-catalog-options"></datalist>
       <div id="diet-plan-days" class="diet-days"></div>
       <button type="button" id="diet-plan-add-day" class="secondary full">＋ Aggiungi giornata</button>
@@ -281,6 +288,20 @@
       </fieldset>
       <p id="group-error" class="error" role="alert"></p>
       <div class="dialog-actions"><button type="button" class="secondary" data-close-group>Annulla</button><button class="primary" type="submit">Raggruppa →</button></div>
+    </form>
+  </section></div>
+
+  <div id="gram-table-dialog" class="dialog hidden" role="dialog" aria-modal="true" aria-labelledby="gram-table-title"><div class="dialog-backdrop" data-close-gram-table></div><section class="dialog-card wide"><button class="dialog-close" data-close-gram-table aria-label="Chiudi tabella">×</button><p class="eyebrow">TABELLA GRAMMATURE</p><h2 id="gram-table-title">Nuova tabella grammature</h2><p id="gram-table-subtitle" class="dialog-lead">Raccogli le grammature delle alternative di carboidrati e proteine in grammi a crudo, per pranzo e cena, nei giorni di allenamento (A) e riposo (R). Lascia vuota una dose se il pasto non è gestito.</p>
+    <form id="gram-table-form"><input id="gram-table-id" type="hidden">
+      <label>Nome tabella<input id="gram-table-name" required minlength="3" maxlength="80" placeholder="es. Alternative carboidrati e proteine"></label>
+      <label>Descrizione (facoltativa)<textarea id="gram-table-description" maxlength="500" placeholder="A cosa serve questa tabella?"></textarea></label>
+      <datalist id="gram-table-catalog-options"></datalist>
+      <fieldset><legend>Righe della tabella</legend>
+        <div id="gram-table-rows" class="gram-table-rows"></div>
+        <button type="button" id="gram-table-add-row" class="secondary full">＋ Aggiungi riga</button>
+      </fieldset>
+      <p id="gram-table-error" class="error" role="alert"></p>
+      <div class="dialog-actions"><button type="button" class="secondary" data-close-gram-table>Annulla</button><button id="gram-table-submit" class="primary" type="submit">Salva tabella →</button></div>
     </form>
   </section></div>
 

@@ -23,7 +23,8 @@ const {
   DOSE_EDITABLE_ASSIGNMENT_STATUSES,
   validateClientDoseOverrides, validateGetClientDoses,
   validateUpdateClientDoseOverrides, validateCopyClientDoses,
-  PROFESSIONAL_RECIPE_VISIBILITY, validateProfessionalRecipe
+  PROFESSIONAL_RECIPE_VISIBILITY, validateProfessionalRecipe,
+  GRAMMATURE_TABLE_LIMITS, validateGrammatureTable
 } = require('./domain');
 
 initializeApp();
@@ -3361,4 +3362,113 @@ exports.listProfessionalShares = callable(async (data, uid) => {
     .filter(share => share.senderRole === 'professional' && share.organizationId === actor.organizationId && share.status === 'pending')
     .sort((a, b) => (b.createdAt?.toMillis?.() || 0) - (a.createdAt?.toMillis?.() || 0));
   return { shares };
+});
+
+// ---- Tabelle grammature del nutrizionista ----
+// Raccolta personale organizations/{org}/grammatureTables (rules: catch-all
+// senza accesso diretto, come le ricette professionali). Ogni nutrizionista
+// vede e gestisce solo le proprie tabelle; il creatore le vede tutte.
+// Le tabelle alimentano la precompilazione dei gruppi scelta nell'editor
+// della dieta guidata: il professionista sceglie la tabella in compilazione.
+
+function serializeGrammatureTable(doc) {
+  const data = doc.data();
+  return {
+    id: doc.id, ...data,
+    createdAt: data.createdAt?.toDate?.()?.toISOString() || null,
+    updatedAt: data.updatedAt?.toDate?.()?.toISOString() || null
+  };
+}
+
+async function authorizedGrammatureTable(actor, tableId) {
+  const ref = db.doc(`organizations/${actor.organizationId}/grammatureTables/${id(tableId, 'tableId')}`);
+  const snap = await ref.get();
+  if (!snap.exists) throw new HttpsError('not-found', 'Tabella grammature non trovata');
+  if (snap.data().ownerUid !== actor.uid) {
+    throw new HttpsError('permission-denied', 'Puoi modificare soltanto le tue tabelle');
+  }
+  return { ref, snap };
+}
+
+exports.listMyGrammatureTables = callable(async (data, uid) => {
+  exactObject(data, ['organizationId']);
+  const actor = await actorContext(data.organizationId, uid);
+  const snapshot = await db.collection(`organizations/${actor.organizationId}/grammatureTables`).limit(GRAMMATURE_TABLE_LIMITS.rows * 4).get();
+  const tables = snapshot.docs
+    .map(doc => serializeGrammatureTable(doc))
+    .filter(item => actor.isCreator || item.ownerUid === uid)
+    .sort((a, b) => String(b.updatedAt || '').localeCompare(String(a.updatedAt || '')));
+  return { tables };
+});
+
+exports.saveGrammatureTable = callable(async (data, uid) => {
+  exactObject(data, ['organizationId', 'tableId', 'table', 'idempotencyKey']);
+  const actor = await actorContext(data.organizationId, uid);
+  const table = validateGrammatureTable(data.table);
+  const idem = id(data.idempotencyKey, 'idempotencyKey');
+  if (data.tableId != null && data.tableId !== '') {
+    // Aggiornamento di una tabella esistente: solo il proprietario.
+    const { ref, snap } = await authorizedGrammatureTable(actor, data.tableId);
+    const eventId = checksum(`grammature.updated:${ref.id}:${idem}`).slice(0, 32);
+    await db.runTransaction(async tx => {
+      const audit = await tx.get(auditRef(actor.organizationId, eventId));
+      if (audit.exists) return;
+      tx.update(ref, { ...table, updatedAt: FieldValue.serverTimestamp(), updatedBy: uid });
+      tx.create(auditRef(actor.organizationId, eventId), auditEvent({ orgId: actor.organizationId, eventId, type: 'grammatureTable.updated', actor, subject: { type: 'grammatureTable', id: ref.id }, idempotencyKey: idem, metadata: { name: table.name, rowCount: table.rows.length } }));
+    });
+    return { tableId: ref.id, rowCount: table.rows.length };
+  }
+  // Nuova tabella: id deterministico da contenuto + idempotenza.
+  const tableId = `T${checksum(`${actor.organizationId}:${uid}:${table.name}:${idem}`).slice(0, 12)}`;
+  const ref = db.doc(`organizations/${actor.organizationId}/grammatureTables/${tableId}`);
+  const eventId = checksum(`grammature.created:${tableId}`).slice(0, 32);
+  await db.runTransaction(async tx => {
+    const [existing, audit] = await Promise.all([tx.get(ref), tx.get(auditRef(actor.organizationId, eventId))]);
+    if (existing.exists || audit.exists) return;
+    tx.create(ref, {
+      schemaVersion: 1, ...table, ownerUid: uid, createdBy: uid,
+      createdAt: FieldValue.serverTimestamp(), updatedAt: FieldValue.serverTimestamp()
+    });
+    tx.create(auditRef(actor.organizationId, eventId), auditEvent({ orgId: actor.organizationId, eventId, type: 'grammatureTable.created', actor, subject: { type: 'grammatureTable', id: tableId }, idempotencyKey: idem, metadata: { name: table.name, rowCount: table.rows.length } }));
+  });
+  return { tableId, rowCount: table.rows.length };
+});
+
+exports.duplicateGrammatureTable = callable(async (data, uid) => {
+  exactObject(data, ['organizationId', 'tableId', 'idempotencyKey']);
+  const actor = await actorContext(data.organizationId, uid);
+  const idem = id(data.idempotencyKey, 'idempotencyKey');
+  const { snap } = await authorizedGrammatureTable(actor, data.tableId);
+  const source = snap.data();
+  const name = `${String(source.name || 'Tabella').slice(0, GRAMMATURE_TABLE_LIMITS.name - 8)} (copia)`;
+  const tableId = `T${checksum(`${actor.organizationId}:${uid}:${name}:${idem}`).slice(0, 12)}`;
+  const ref = db.doc(`organizations/${actor.organizationId}/grammatureTables/${tableId}`);
+  const eventId = checksum(`grammature.duplicated:${tableId}`).slice(0, 32);
+  await db.runTransaction(async tx => {
+    const [existing, audit] = await Promise.all([tx.get(ref), tx.get(auditRef(actor.organizationId, eventId))]);
+    if (existing.exists || audit.exists) return;
+    tx.create(ref, {
+      schemaVersion: 1, name, description: source.description || null,
+      rows: JSON.parse(JSON.stringify(source.rows || [])),
+      ownerUid: uid, createdBy: uid,
+      createdAt: FieldValue.serverTimestamp(), updatedAt: FieldValue.serverTimestamp()
+    });
+    tx.create(auditRef(actor.organizationId, eventId), auditEvent({ orgId: actor.organizationId, eventId, type: 'grammatureTable.duplicated', actor, subject: { type: 'grammatureTable', id: tableId }, idempotencyKey: idem, metadata: { sourceId: snap.id, name } }));
+  });
+  return { tableId, sourceId: snap.id };
+});
+
+exports.deleteGrammatureTable = callable(async (data, uid) => {
+  exactObject(data, ['organizationId', 'tableId', 'idempotencyKey']);
+  const actor = await actorContext(data.organizationId, uid);
+  const idem = id(data.idempotencyKey, 'idempotencyKey');
+  const { ref, snap } = await authorizedGrammatureTable(actor, data.tableId);
+  const eventId = checksum(`grammature.deleted:${ref.id}:${idem}`).slice(0, 32);
+  await db.runTransaction(async tx => {
+    const audit = await tx.get(auditRef(actor.organizationId, eventId));
+    if (audit.exists) return;
+    tx.delete(ref);
+    tx.create(auditRef(actor.organizationId, eventId), auditEvent({ orgId: actor.organizationId, eventId, type: 'grammatureTable.deleted', actor, subject: { type: 'grammatureTable', id: ref.id }, idempotencyKey: idem, metadata: { name: snap.data().name } }));
+  });
+  return { tableId: ref.id, deleted: true };
 });

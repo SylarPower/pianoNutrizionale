@@ -1366,6 +1366,74 @@ function validateProfessionalRecipe(recipe) {
   };
 }
 
+// ---------------------------------------------------------------------
+// Tabelle grammature del nutrizionista (console professionisti).
+// Ogni tabella è personale (ownerUid): righe con descrizione, gruppo
+// (carboidrati o proteine) e dosi in grammi per pranzo/cena nei giorni di
+// allenamento e riposo. Le dosi mancanti sono null: la riga resta valida se
+// ha almeno una dose. Nessuna regola clinica: sono appunti di studio.
+// ---------------------------------------------------------------------
+
+const GRAMMATURE_TABLE_GROUPS = new Set(['carb', 'protein']);
+const GRAMMATURE_TABLE_LIMITS = {
+  name: 80, description: 500, rows: 120, rowDescription: 200, quantity: 5000
+};
+
+function grammatureDose(value, name) {
+  if (value == null || value === '') return null;
+  const number = Number(value);
+  if (!Number.isFinite(number) || number <= 0 || number > GRAMMATURE_TABLE_LIMITS.quantity) {
+    fail('invalid-argument', `${name} non valida`);
+  }
+  return number;
+}
+
+function validateGrammatureRow(row, name) {
+  exactObject(row, ['description', 'group', 'foodGroup', 'doses'], name);
+  const description = text(row.description, `${name}.description`, { max: GRAMMATURE_TABLE_LIMITS.rowDescription });
+  if (!GRAMMATURE_TABLE_GROUPS.has(row.group)) fail('invalid-argument', `${name}.group non valido`);
+  const foodGroup = row.foodGroup == null || row.foodGroup === '' ? 'altro' : row.foodGroup;
+  if (!DIET_PLAN_FOOD_GROUPS.has(foodGroup)) fail('invalid-argument', `${name}.foodGroup non valido`);
+  const doses = row.doses && typeof row.doses === 'object' && !Array.isArray(row.doses) ? row.doses : fail('invalid-argument', `${name}.doses non valide`);
+  const lunch = doses.lunch && typeof doses.lunch === 'object' ? doses.lunch : {};
+  const dinner = doses.dinner && typeof doses.dinner === 'object' ? doses.dinner : {};
+  const clean = {
+    description,
+    group: row.group,
+    foodGroup,
+    doses: {
+      lunch: {
+        training: grammatureDose(lunch.training, `${name}.doses.lunch.training`),
+        rest: grammatureDose(lunch.rest, `${name}.doses.lunch.rest`)
+      },
+      dinner: {
+        training: grammatureDose(dinner.training, `${name}.doses.dinner.training`),
+        rest: grammatureDose(dinner.rest, `${name}.doses.dinner.rest`)
+      }
+    }
+  };
+  const hasDose = [
+    clean.doses.lunch.training, clean.doses.lunch.rest,
+    clean.doses.dinner.training, clean.doses.dinner.rest
+  ].some(value => value != null);
+  if (!hasDose) fail('invalid-argument', `${name}: indica almeno una dose`);
+  return clean;
+}
+
+function validateGrammatureTable(table) {
+  exactObject(table, ['name', 'description', 'rows'], 'table');
+  const name = text(table.name, 'table.name', { min: 3, max: GRAMMATURE_TABLE_LIMITS.name });
+  const description = optionalText(table.description, 'table.description', GRAMMATURE_TABLE_LIMITS.description);
+  if (!Array.isArray(table.rows) || !table.rows.length || table.rows.length > GRAMMATURE_TABLE_LIMITS.rows) {
+    fail('invalid-argument', `table.rows deve contenere da 1 a ${GRAMMATURE_TABLE_LIMITS.rows} righe`);
+  }
+  return {
+    name,
+    description,
+    rows: table.rows.map((row, index) => validateGrammatureRow(row, `table.rows[${index}]`))
+  };
+}
+
 module.exports = {
   SINGLE_ORGANIZATION_ID,
   ROLES, REPORT_STATUSES, ASSIGNMENT_STATUSES, ASSIGNMENT_STRATEGIES, MEMBER_STATUSES,
@@ -1395,6 +1463,7 @@ module.exports = {
   frequencyBound, validateClientDoseOverrides, validateGetClientDoses,
   validateExpectedRevision, validateUpdateClientDoseOverrides, validateCopyClientDoses,
   RECIPE_SLOTS, PROFESSIONAL_RECIPE_VISIBILITY, PROFESSIONAL_RECIPE_LIMITS,
-  validateProfessionalRecipePortions, validateProfessionalRecipeIngredient, validateProfessionalRecipe
+  validateProfessionalRecipePortions, validateProfessionalRecipeIngredient, validateProfessionalRecipe,
+  GRAMMATURE_TABLE_GROUPS, GRAMMATURE_TABLE_LIMITS, validateGrammatureTable
 };
 

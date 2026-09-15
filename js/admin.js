@@ -1,6 +1,6 @@
 'use strict';
 
-const adminState = { user: null, reports: [], clients: [], clientInvitations: [], clientRequests: [], clientEmailChanges: [], clientFilter: 'all', detailClientId: null, detailHistory: null, clientDetailReturnFocus: null, ruleSets: [], structures: [], compareSelection: new Set(), users: null, editingStructure: null, editingDietPlan: null, dietPlan: null, dietPlanRules: [], dietPlanGroups: [], dietPlanEditingId: null, cursor: null, selectedReport: null, pickerSelection: new Set(), catalogPreview: null, isCreator: false, professionalRecipes: [], recipeFilter: 'all', editingRecipe: null, professionalShares: [] };
+const adminState = { user: null, reports: [], clients: [], clientInvitations: [], clientRequests: [], clientEmailChanges: [], clientFilter: 'all', detailClientId: null, detailHistory: null, clientDetailReturnFocus: null, ruleSets: [], structures: [], compareSelection: new Set(), users: null, editingStructure: null, editingDietPlan: null, dietPlan: null, dietPlanRules: [], dietPlanGroups: [], dietPlanEditingId: null, cursor: null, selectedReport: null, pickerSelection: new Set(), catalogPreview: null, isCreator: false, professionalRecipes: [], recipeFilter: 'all', editingRecipe: null, professionalShares: [], grammatureTables: [], editingGramTable: null };
 let catalogIndexCache = null;
 let catalogCategoriesCache = [];
 let catalogTruncated = false;
@@ -1489,10 +1489,13 @@ function closeCompare() { $('compare-dialog').classList.add('hidden'); }
 // conserva le eventuali regole classiche per il calcolo delle dosi.
 function dietPlanDomain() { return window.PianoDomain || null; }
 
-// Stato effimero dell'editor: i gruppi scelta attualmente espansi (chiave
-// "giornata:pasto:opzione:gruppo") e l'eventuale lista alimenti messa da
-// parte quando un'opzione viene convertita in «Ricetta» (così un tocco di
-// troppo sul selettore non fa perdere il lavoro).
+// Stato effimero dell'editor: i pasti attualmente espansi (chiave
+// "giornata:pasto") — all'apertura ogni pasto parte minimizzato, così la
+// schermata mostra subito la struttura della giornata senza rumore; i gruppi
+// scelta espansi (chiave "giornata:pasto:opzione:gruppo") e l'eventuale
+// lista alimenti messa da parte quando un'opzione viene convertita in
+// «Ricetta» (così un tocco di troppo sul selettore non fa perdere il lavoro).
+const dietMealsExpanded = new Set();
 const dietChoiceGroupsExpanded = new Set();
 let dietOptionStash = null;
 
@@ -1508,12 +1511,19 @@ async function openDietPlanDialog(structureId = null) {
   if (!adminState.professionalRecipes.length) {
     try { await loadProfessionalRecipes(); } catch (_) { /* elenco ricette vuoto */ }
   }
-  // Il catalogo è la fonte delle categorie e dei nomi: il professionista non
-  // deve ricordare un testo tecnico né ricreare manualmente la tabella.
+  // Il catalogo è la fonte dei nomi suggeriti (e deduce la categoria in
+  // automatico): il professionista non deve ricordare un testo tecnico né
+  // ricreare manualmente la tabella.
   try { await loadCatalogIndex(); } catch (_) { /* editor utilizzabile anche offline */ }
+  // Tabelle grammature personali: il professionista sceglie da quale tabella
+  // attingere le dosi quando precompila i gruppi scelta. Un eventuale errore
+  // non blocca l'editor: resta disponibile la tabella guida integrata.
+  try { await loadGrammatureTables(); } catch (_) { /* riferimento guida sempre disponibile */ }
+  renderDietPlanGramTableSelect('guide');
   adminState.dietPlanEditingId = structureId || null;
   adminState.dietPlanRules = [];
   adminState.dietPlanGroups = [];
+  dietMealsExpanded.clear();
   dietChoiceGroupsExpanded.clear();
   dietOptionStash = null;
   $('diet-plan-id').value = '';
@@ -1657,6 +1667,12 @@ async function submitDietPlan(event) {
   const check = domain.validateDietPlanSoft(plan);
   if (!check.valid) {
     errorEl.textContent = `${check.errors.slice(0, 3).join(' ')}${check.errors.length > 3 ? ` (altri ${check.errors.length - 3} problemi)` : ''}`;
+    // Gli errori restano visibili: ogni pasto si espande così il punto
+    // segnalato non resta nascosto dentro un pasto minimizzato.
+    plan.days.forEach((day, dayIndex) => {
+      (day.meals || []).forEach((meal, mealIndex) => dietMealsExpanded.add(`${dayIndex}:${mealIndex}`));
+    });
+    renderDietPlanDays();
     renderDietPlanPreview();
     return;
   }
@@ -1692,10 +1708,10 @@ function renderDietCatalogOptions() {
   const entries = (catalogIndexCache?.items || [])
     .slice()
     .sort((a, b) => String(a.ingredient?.displayName || '').localeCompare(String(b.ingredient?.displayName || ''), 'it'));
+  // Solo il nome dell'alimento: niente categorie nei suggerimenti.
   datalist.innerHTML = entries.map(entry => {
     const ingredient = entry.ingredient || {};
-    const category = entry.category?.displayName || ingredient.categoryId || '';
-    return `<option value="${escapeAdmin(ingredient.displayName || '')}" label="${escapeAdmin(category)}"></option>`;
+    return `<option value="${escapeAdmin(ingredient.displayName || '')}"></option>`;
   }).join('');
 }
 
@@ -1731,18 +1747,19 @@ function dietFoodGroupFromCatalog(entry) {
 function applyDietCatalogSelection(input) {
   const entry = catalogEntryForDescription(input?.value || '');
   if (!entry) return;
-  const category = input.closest('.diet-item')?.querySelector('[data-f="item-group"]');
+  const row = input.closest('.diet-item, .diet-choice-alt');
+  const category = row?.querySelector('[data-f="item-group"], [data-f="alt-group"]');
   const group = dietFoodGroupFromCatalog(entry);
-  if (category && group) {
-    const known = [...category.options].some(option => option.value === group);
-    if (known) category.value = group;
-  }
+  if (category && group) category.value = group;
 }
 
+// La categoria non si sceglie più a mano: il gruppo alimentare è dedotto in
+// automatico dall'alimento del catalogo (campo nascosto, mai mostrato) e il
+// professionista vede soltanto il nome suggerito mentre digita.
 function dietItemHtml(domain, item, path) {
   return `
   <div class="diet-item" data-day="${path.day}" data-meal="${path.meal}" data-option="${path.option}" data-item="${path.item}">
-    <select data-f="item-group" aria-label="Categoria alimento">${dietPlanOptions(domain.DIET_PLAN_FOOD_GROUPS, item.foodGroup)}</select>
+    <input type="hidden" data-f="item-group" value="${escapeAdmin(item.foodGroup || 'altro')}">
     <input data-f="item-desc" list="diet-catalog-options" placeholder="Cerca nel catalogo (es. riso)" value="${escapeAdmin(item.description || '')}" aria-label="Alimento dal catalogo" maxlength="200">
     <div class="diet-qty">
       <input data-f="item-qty" type="number" min="0" max="5000" step="any" placeholder="Qtà" value="${item.quantity ?? ''}" aria-label="Quantità">
@@ -1807,8 +1824,8 @@ function dietChoiceGroupHtml(domain, group, path, groupIndex) {
     .join(' · ');
   const alternativeRows = alternatives.map((alternative, alternativeIndex) => `
     <div class="diet-choice-alt">
-      <select data-f="alt-group" aria-label="Gruppo alimentare alternativa">${dietPlanOptions(domain.DIET_PLAN_FOOD_GROUPS, alternative.foodGroup)}</select>
-      <input data-f="alt-desc" placeholder="Alternativa (es. Riso basmati)" value="${escapeAdmin(alternative.description || '')}" aria-label="Alternativa" maxlength="200">
+      <input type="hidden" data-f="alt-group" value="${escapeAdmin(alternative.foodGroup || 'altro')}">
+      <input data-f="alt-desc" list="diet-catalog-options" placeholder="Alternativa (es. Riso basmati)" value="${escapeAdmin(alternative.description || '')}" aria-label="Alternativa" maxlength="200">
       <input data-f="alt-qty" type="number" min="0" max="5000" step="any" placeholder="Qtà" value="${alternative.quantity ?? ''}" aria-label="Quantità alternativa">
       <select data-f="alt-unit" aria-label="Unità alternativa">${dietPlanOptions(domain.DIET_PLAN_UNITS, alternative.unit || 'g')}</select>
       <button type="button" class="dialog-close diet-del" data-act="cg-alt-del" data-cg="${groupIndex}" data-alt="${alternativeIndex}" aria-label="Rimuovi alternativa">×</button>
@@ -1846,12 +1863,13 @@ function dietOptionHtml(domain, option, path, label, canDelete) {
     ${option.items.length < domain.DIET_PLAN_LIMITS.itemsPerOption ? '<button type="button" class="secondary diet-add" data-act="item-add">＋ Aggiungi alimento</button>' : ''}
     ${option.choiceGroups.map((group, groupIndex) => dietChoiceGroupHtml(domain, group, { ...path }, groupIndex)).join('')}
     ${option.choiceGroups.length < domain.DIET_PLAN_LIMITS.choiceGroupsPerOption ? '<button type="button" class="secondary diet-add" data-act="cg-add">＋ Gruppo scelta («Scegli 1 tra:»)</button>' : ''}`;
+  // Il moltiplicatore porzioni non si modifica più dalla console (vive solo
+  // nell'app clienti, profilo coppia): il valore salvato però viaggia ancora,
+  // così le diete pubblicate con un moltiplicatore diverso da 1 lo mantengono.
   const recipeBlock = !isRecipe ? '' : `
     <div class="diet-recipe-fields">
+      <input type="hidden" data-f="option-mult" value="${option.recipeMultiplier ?? 1}">
       <select data-f="option-recipe" aria-label="Ricetta">${dietRecipeOptions(option.recipeId)}</select>
-      <label class="diet-mult">× Moltiplicatore porzioni
-        <input data-f="option-mult" type="number" min="${domain.DIET_PLAN_LIMITS.recipeMultiplierMin}" max="${domain.DIET_PLAN_LIMITS.recipeMultiplierMax}" step="0.05" value="${option.recipeMultiplier ?? 1}" aria-label="Moltiplicatore ricetta">
-      </label>
       <div class="diet-recipe-preview" data-f="recipe-preview">${dietRecipePreviewInner(domain, recipe, option.recipeMultiplier ?? 1)}</div>
     </div>`;
   return `
@@ -1885,18 +1903,48 @@ function dietMealAddChips(domain, day) {
     .join('');
 }
 
+// Riepilogo compatto del pasto minimizzato: quante opzioni contiene e cosa
+// c'è dentro (alimenti, ricette, gruppi scelta), così la giornata si legge
+// a colpo d'occhio senza aprire ogni pasto.
+function dietMealSummary(domain, meal) {
+  const options = Array.isArray(meal.options) ? meal.options : [];
+  const itemCount = options.reduce((sum, option) => sum + (option.type === 'recipe' ? 0 : (option.items?.length || 0)), 0);
+  const recipeCount = options.filter(option => option.type === 'recipe').length;
+  const groupCount = options.reduce((sum, option) => sum + (option.choiceGroups?.length || 0), 0);
+  const bits = [`${options.length} ${options.length === 1 ? 'opzione' : 'opzioni'}`];
+  if (itemCount) bits.push(`${itemCount} ${itemCount === 1 ? 'alimento' : 'alimenti'}`);
+  if (recipeCount) bits.push(`${recipeCount} ${recipeCount === 1 ? 'ricetta' : 'ricette'}`);
+  if (groupCount) bits.push(`${groupCount} ${groupCount === 1 ? 'gruppo scelta' : 'gruppi scelta'}`);
+  const note = String(meal.note || '').trim();
+  if (note) bits.push('nota');
+  return bits.join(' · ');
+}
+
+// I pasti partono minimizzati: la testa mostra etichetta, orario e
+// riepilogo; «Modifica» espande il corpo (opzioni, note). Il corpo resta
+// sempre nel DOM (solo nascosto), quindi rileggere il modulo non perde mai
+// il digitato, come per i gruppi scelta.
 function dietMealHtml(domain, meal, path, canDelete) {
   const labels = domain.DIET_PLAN_OPTION_LABELS;
+  const mealKey = `${path.day}:${path.meal}`;
+  const expanded = dietMealsExpanded.has(mealKey);
+  const mealName = escapeAdmin(domain.dietPlanMealLabel(meal.mealId));
   return `
-  <article class="diet-meal" data-day="${path.day}" data-meal="${path.meal}" data-meal-type="${escapeAdmin(meal.mealId)}">
+  <article class="diet-meal ${expanded ? 'expanded' : ''}" data-day="${path.day}" data-meal="${path.meal}" data-meal-type="${escapeAdmin(meal.mealId)}">
     <div class="diet-meal-head">
       <span class="diet-meal-name">${escapeAdmin(domain.dietPlanMealLabel(meal.mealId))}</span>
-      <input data-f="meal-time" placeholder="Orario (es. 12:30)" value="${escapeAdmin(meal.time || '')}" aria-label="Orario" maxlength="20">
-      ${canDelete ? '<button type="button" class="text-button danger-text" data-act="meal-del">Elimina pasto</button>' : ''}
+      <input data-f="meal-time" placeholder="Orario (es. 12:30)" value="${escapeAdmin(meal.time || '')}" aria-label="Orario ${mealName}" maxlength="20">
+      ${expanded ? '' : `<span class="diet-meal-summary" aria-hidden="true">${escapeAdmin(dietMealSummary(domain, meal))}</span>`}
+      <span class="diet-option-actions">
+        <button type="button" class="text-button" data-act="meal-toggle" aria-expanded="${expanded}" aria-label="${expanded ? 'Riduci' : 'Modifica'} ${mealName}">${expanded ? 'Riduci' : 'Modifica'}</button>
+        ${canDelete ? '<button type="button" class="text-button danger-text" data-act="meal-del">Elimina pasto</button>' : ''}
+      </span>
     </div>
-    <div class="diet-options">${meal.options.map((option, optionIndex) => dietOptionHtml(domain, option, { ...path, option: optionIndex }, labels[optionIndex] || 'A', meal.options.length > 1)).join('')}</div>
-    ${meal.options.length < domain.DIET_PLAN_LIMITS.optionsPerMeal ? '<button type="button" class="secondary diet-add" data-act="option-add">＋ Aggiungi opzione</button>' : ''}
-    <textarea data-f="meal-note" placeholder="Nota del pasto (facoltativa)" maxlength="1000">${escapeAdmin(meal.note || '')}</textarea>
+    <div class="diet-meal-body">
+      <div class="diet-options">${meal.options.map((option, optionIndex) => dietOptionHtml(domain, option, { ...path, option: optionIndex }, labels[optionIndex] || 'A', meal.options.length > 1)).join('')}</div>
+      ${meal.options.length < domain.DIET_PLAN_LIMITS.optionsPerMeal ? '<button type="button" class="secondary diet-add" data-act="option-add">＋ Aggiungi opzione</button>' : ''}
+      <textarea data-f="meal-note" placeholder="Nota del pasto (facoltativa)" maxlength="1000">${escapeAdmin(meal.note || '')}</textarea>
+    </div>
   </article>`;
 }
 
@@ -1942,7 +1990,7 @@ function dietPreviewItemHtml(domain, item) {
     bits.push(`${escapeAdmin(String(item.quantity))} ${escapeAdmin(domain.dietPlanUnitLabel(item.unit))}`);
   }
   bits.push(`<strong>${escapeAdmin(item.description || '—')}</strong>`);
-  return `<li>${bits.join(' · ')} <small>(${escapeAdmin(domain.dietPlanFoodGroupLabel(item.foodGroup))})</small></li>`;
+  return `<li>${bits.join(' · ')}</li>`;
 }
 
 function dietPreviewOptionHtml(domain, option, label) {
@@ -2058,13 +2106,24 @@ function handleDietPlanStructure(event) {
     case 'meal-add': {
       // Un solo pasto per tipo: il chip esiste solo per i tipi mancanti e il
       // click aggiunge il tipo indicato dal chip stesso (mai «lunch» fisso).
+      // Il pasto nuovo si apre subito espanso: è il momento di compilarlo.
       const mealType = button.dataset.mealType || '';
       if (day && mealType && !day.meals.some(item => item.mealId === mealType) && day.meals.length < domain.DIET_PLAN_LIMITS.mealsPerDay) {
         day.meals.push(domain.createDietPlanMeal(mealType));
         day.meals = domain.sortDietPlanMeals(day.meals);
+        const addedIndex = day.meals.findIndex(item => item.mealId === mealType);
+        if (addedIndex >= 0) dietMealsExpanded.add(`${dayIndex}:${addedIndex}`);
       }
       break;
     }
+    case 'meal-toggle':
+      // Pasti minimizzati di default: la testa fa da interruttore espandi/riduci.
+      if (meal) {
+        const mealKey = `${dayIndex}:${mealIndex}`;
+        if (dietMealsExpanded.has(mealKey)) dietMealsExpanded.delete(mealKey);
+        else dietMealsExpanded.add(mealKey);
+      }
+      break;
     case 'meal-del':
       if (day && meal && day.meals.length > 1) day.meals.splice(mealIndex, 1);
       break;
@@ -2136,12 +2195,13 @@ function handleDietPlanStructure(event) {
       if (choiceGroup && altIndex >= 0 && choiceGroup.alternatives.length > 1) choiceGroup.alternatives.splice(altIndex, 1);
       break;
     case 'cg-prefill': {
-      // Precompilazione dalla tabella di riferimento: le dosi seguono il pasto
-      // (pranzo con colonna A/R della giornata, cena con dose serale) e il
-      // gruppo si minimizza subito, pronto da leggere.
+      // Precompilazione dalla tabella grammature selezionata (o, di default,
+      // dal riferimento guida): le dosi seguono il pasto (pranzo con colonna
+      // A/R della giornata, cena con dose serale) e il gruppo si minimizza
+      // subito, pronto da leggere.
       if (choiceGroup) {
         const kind = (button.closest('.diet-choice-group')?.querySelector('[data-f="cg-prefill-kind"]')?.value) === 'protein' ? 'protein' : 'carb';
-        const alternatives = domain.dietPlanReferenceAlternatives(kind, meal.mealId, day.dayType);
+        const alternatives = dietPlanPrefillAlternatives(domain, kind, meal.mealId, day.dayType);
         if (alternatives.length) {
           choiceGroup.alternatives = alternatives;
           if (!String(choiceGroup.title || '').trim()) choiceGroup.title = domain.dietPlanReferenceGroupTitle(kind);
@@ -2155,6 +2215,213 @@ function handleDietPlanStructure(event) {
   }
   renderDietPlanDays();
   renderDietPlanPreview();
+}
+
+// ---- Tabelle grammature del nutrizionista ----
+// Tabelle personali con le grammature delle alternative (carboidrati e
+// proteine): il nutrizionista le crea, modifica, duplica ed elimina; poi le
+// sceglie nell'editor della dieta guidata per precompilare i gruppi scelta.
+// Le righe seguono il catalogo per il nome alimento: il gruppo alimentare è
+// dedotto in automatico (campo nascosto), come nell'editor della dieta.
+
+async function loadGrammatureTables() {
+  if (!orgId()) { $('gram-tables-feedback').textContent = ORG_MISSING_MESSAGE; return; }
+  $('gram-tables-feedback').textContent = 'Caricamento delle tabelle…';
+  try {
+    const result = await callAdminSaasFunction('listMyGrammatureTables', { organizationId: orgId() });
+    adminState.grammatureTables = result.tables || [];
+    renderGrammatureTables();
+    $('gram-tables-feedback').textContent = adminState.grammatureTables.length ? '' : 'Non hai ancora tabelle: creane una nuova oppure duplica la tabella di esempio.';
+  } catch (error) {
+    $('gram-tables-feedback').textContent = adminError(error);
+    adminState.grammatureTables = [];
+    renderGrammatureTables();
+  }
+}
+
+function gramTableRowCounts(table) {
+  const rows = Array.isArray(table.rows) ? table.rows : [];
+  const carbs = rows.filter(row => row.group === 'carb').length;
+  const proteins = rows.filter(row => row.group === 'protein').length;
+  const bits = [`${rows.length} ${rows.length === 1 ? 'riga' : 'righe'}`];
+  if (carbs) bits.push(`${carbs} carboidrati`);
+  if (proteins) bits.push(`${proteins} proteine`);
+  return bits.join(' · ');
+}
+
+function renderGrammatureTables() {
+  const list = $('gram-tables-list');
+  if (!list) return;
+  if (!adminState.grammatureTables.length) { list.innerHTML = ''; return; }
+  list.innerHTML = adminState.grammatureTables.map(table => `
+    <article class="client-card">
+      <p class="eyebrow">TABELLA PERSONALE</p>
+      <h3>${escapeAdmin(table.name || '—')}</h3>
+      <p>${escapeAdmin(gramTableRowCounts(table))}</p>
+      ${table.description ? `<p class="gram-table-description">${escapeAdmin(table.description)}</p>` : ''}
+      <p class="gram-table-meta"><small>Aggiornata ${table.updatedAt ? new Date(table.updatedAt).toLocaleDateString('it-IT', { day: 'numeric', month: 'long', year: 'numeric' }) : '—'}</small></p>
+      <div class="hero-actions gram-table-actions">
+        <button class="primary small-primary" data-gram-edit="${escapeAdmin(table.id)}">Modifica →</button>
+        <button class="secondary" data-gram-dup="${escapeAdmin(table.id)}">Duplica</button>
+        <button class="secondary danger-text" data-gram-del="${escapeAdmin(table.id)}">Elimina</button>
+      </div>
+    </article>`).join('');
+}
+
+async function openGramTableDialog(table = null) {
+  adminState.editingGramTable = table;
+  $('gram-table-id').value = table?.id || '';
+  $('gram-table-name').value = table?.name || '';
+  $('gram-table-description').value = table?.description || '';
+  $('gram-table-error').textContent = '';
+  $('gram-table-title').textContent = table ? 'Modifica tabella grammature' : 'Nuova tabella grammature';
+  $('gram-table-subtitle').textContent = table
+    ? 'Le modifiche salvano subito la nuova versione della tabella: le diete già pubblicate non cambiano.'
+    : 'Raccogli le grammature delle alternative di carboidrati e proteine in grammi a crudo, per pranzo e cena, nei giorni di allenamento (A) e riposo (R). Lascia vuota una dose se il pasto non è gestito.';
+  const rows = Array.isArray(table?.rows) && table.rows.length ? table.rows : [null];
+  $('gram-table-rows').innerHTML = rows.map(row => gramTableRowHtml(row)).join('');
+  $('gram-table-dialog').classList.remove('hidden');
+  $('gram-table-name').focus();
+  // Suggerimenti alimenti dal catalogo condiviso (non bloccante offline).
+  renderGramTableCatalogOptions();
+  try { await loadCatalogIndex(); renderGramTableCatalogOptions(); } catch (_) { /* editor utilizzabile anche offline */ }
+}
+
+function closeGramTableDialog() {
+  $('gram-table-dialog').classList.add('hidden');
+  adminState.editingGramTable = null;
+}
+
+function renderGramTableCatalogOptions() {
+  const datalist = $('gram-table-catalog-options');
+  if (!datalist) return;
+  const entries = (catalogIndexCache?.items || [])
+    .slice()
+    .sort((a, b) => String(a.ingredient?.displayName || '').localeCompare(String(b.ingredient?.displayName || ''), 'it'));
+  datalist.innerHTML = entries.map(entry => `<option value="${escapeAdmin(entry.ingredient?.displayName || '')}"></option>`).join('');
+}
+
+function gramTableRowHtml(row) {
+  const doses = row?.doses || {};
+  const value = amount => (amount == null ? '' : amount);
+  return `
+  <div class="gram-table-row">
+    <input type="hidden" data-g="row-group-food" value="${escapeAdmin(row?.foodGroup || 'altro')}">
+    <input data-g="row-desc" list="gram-table-catalog-options" placeholder="Alimento (es. Riso basmati)" value="${escapeAdmin(row?.description || '')}" aria-label="Alimento" maxlength="200">
+    <select data-g="row-group" aria-label="Gruppo della riga">
+      <option value="carb" ${row?.group !== 'protein' ? 'selected' : ''}>Carboidrati</option>
+      <option value="protein" ${row?.group === 'protein' ? 'selected' : ''}>Proteine</option>
+    </select>
+    <input data-g="row-lt" type="number" min="1" max="5000" step="any" placeholder="Pranzo A" value="${value(doses.lunch?.training)}" aria-label="Pranzo allenamento">
+    <input data-g="row-lr" type="number" min="1" max="5000" step="any" placeholder="Pranzo R" value="${value(doses.lunch?.rest)}" aria-label="Pranzo riposo">
+    <input data-g="row-dt" type="number" min="1" max="5000" step="any" placeholder="Cena A" value="${value(doses.dinner?.training)}" aria-label="Cena allenamento">
+    <input data-g="row-dr" type="number" min="1" max="5000" step="any" placeholder="Cena R" value="${value(doses.dinner?.rest)}" aria-label="Cena riposo">
+    <button type="button" class="dialog-close gram-del" data-gram-row-del aria-label="Rimuovi riga">×</button>
+  </div>`;
+}
+
+// Rilegge il modulo senza validare: le operazioni strutturali (aggiungi ed
+// elimina riga) non perdono mai il digitato.
+function collectGramTable() {
+  const rows = [];
+  document.querySelectorAll('#gram-table-rows .gram-table-row').forEach(rowNode => {
+    const value = selector => rowNode.querySelector(selector)?.value ?? '';
+    const number = raw => {
+      const clean = String(raw ?? '').trim().replace(',', '.');
+      return clean === '' ? null : Number(clean);
+    };
+    rows.push({
+      description: value('[data-g="row-desc"]').trim(),
+      group: value('[data-g="row-group"]') === 'protein' ? 'protein' : 'carb',
+      foodGroup: value('[data-g="row-group-food"]') || 'altro',
+      doses: {
+        lunch: { training: number(value('[data-g="row-lt"]')), rest: number(value('[data-g="row-lr"]')) },
+        dinner: { training: number(value('[data-g="row-dt"]')), rest: number(value('[data-g="row-dr"]')) }
+      }
+    });
+  });
+  return {
+    name: $('gram-table-name').value.trim(),
+    description: $('gram-table-description').value.trim(),
+    rows
+  };
+}
+
+function applyGramCatalogSelection(input) {
+  const entry = catalogEntryForDescription(input?.value || '');
+  if (!entry) return;
+  const row = input.closest('.gram-table-row');
+  const hidden = row?.querySelector('[data-g="row-group-food"]');
+  const group = dietFoodGroupFromCatalog(entry);
+  if (hidden && group) hidden.value = group;
+}
+
+async function submitGramTable(event) {
+  event.preventDefault();
+  const errorEl = $('gram-table-error');
+  errorEl.textContent = '';
+  const table = collectGramTable();
+  if (table.name.length < 3) { errorEl.textContent = 'Dai un nome alla tabella (almeno 3 caratteri).'; return; }
+  if (!table.rows.length) { errorEl.textContent = 'Aggiungi almeno una riga.'; return; }
+  const missing = table.rows.findIndex(row => !row.description);
+  if (missing >= 0) { errorEl.textContent = `Riga ${missing + 1}: descrivi l’alimento.`; return; }
+  const empty = table.rows.findIndex(row => !Object.values(row.doses.lunch).concat(Object.values(row.doses.dinner)).some(value => Number.isFinite(Number(value)) && Number(value) > 0));
+  if (empty >= 0) { errorEl.textContent = `Riga ${empty + 1}: indica almeno una dose.`; return; }
+  const tableId = $('gram-table-id').value || null;
+  try {
+    await callAdminSaasFunction('saveGrammatureTable', {
+      organizationId: orgId(), tableId, table, idempotencyKey: idem('gramtable')
+    });
+    closeGramTableDialog();
+    await loadGrammatureTables();
+    $('gram-tables-feedback').textContent = tableId ? 'Tabella aggiornata.' : 'Tabella creata: la trovi anche nell’editor della dieta guidata.';
+  } catch (error) { errorEl.textContent = adminError(error); }
+}
+
+async function duplicateGramTable(tableId) {
+  const table = adminState.grammatureTables.find(item => item.id === tableId);
+  if (!table) return;
+  try {
+    await callAdminSaasFunction('duplicateGrammatureTable', { organizationId: orgId(), tableId, idempotencyKey: idem('gramdup') });
+    await loadGrammatureTables();
+    $('gram-tables-feedback').textContent = `Tabella «${table.name}» duplicata: ora puoi modificarla liberamente.`;
+  } catch (error) { $('gram-tables-feedback').textContent = adminError(error); }
+}
+
+async function deleteGramTable(tableId) {
+  const table = adminState.grammatureTables.find(item => item.id === tableId);
+  if (!table) return;
+  if (!window.confirm(`Eliminare la tabella «${table.name}»?\n\nL'operazione non è reversibile: le diete già pubblicate non cambiano.`)) return;
+  try {
+    await callAdminSaasFunction('deleteGrammatureTable', { organizationId: orgId(), tableId, idempotencyKey: idem('gramdel') });
+    await loadGrammatureTables();
+    $('gram-tables-feedback').textContent = 'Tabella eliminata.';
+  } catch (error) { $('gram-tables-feedback').textContent = adminError(error); }
+}
+
+// Opzioni del selettore «Tabella grammature» nell'editor della dieta guidata:
+// la tabella guida integrata resta sempre disponibile come riferimento.
+function dietPlanGramTableOptions(selectedId) {
+  const own = adminState.grammatureTables.map(table => `<option value="table:${escapeAdmin(table.id)}" ${selectedId === `table:${table.id}` ? 'selected' : ''}>${escapeAdmin(table.name)}</option>`).join('');
+  return `<option value="guide" ${!selectedId || selectedId === 'guide' ? 'selected' : ''}>Tabella guida integrata (riferimento)</option>${own}`;
+}
+
+function renderDietPlanGramTableSelect(selectedId = 'guide') {
+  const select = $('diet-plan-gram-table');
+  if (!select) return;
+  select.innerHTML = dietPlanGramTableOptions(selectedId);
+}
+
+// Alternative per la precompilazione dei gruppi scelta: se il professionista
+// ha scelto una delle sue tabelle grammature si attinge da lì, altrimenti dal
+// riferimento guida integrato (sempre disponibile).
+function dietPlanPrefillAlternatives(domain, kind, mealId, dayType) {
+  const source = $('diet-plan-gram-table')?.value || 'guide';
+  if (source.startsWith('table:')) {
+    const table = adminState.grammatureTables.find(item => item.id === source.slice('table:'.length));
+    if (table) return domain.dietPlanTableAlternatives(table, kind, mealId, dayType);
+  }
+  return domain.dietPlanReferenceAlternatives(kind, mealId, dayType);
 }
 
 // ---- Sezione Catalogo globale ----
@@ -2733,6 +3000,7 @@ function showView(view) {
   else if (view === 'doses') loadDoseClients();
   else if (view === 'structures') loadStructures();
   else if (view === 'recipes') { loadProfessionalRecipes(); loadProfessionalShares(); }
+  else if (view === 'tables') loadGrammatureTables();
   else if (view === 'catalog') loadCatalogStatus();
   else loadReports();
 }
@@ -2780,15 +3048,16 @@ function bindAdmin() {
   $('new-diet-plan').addEventListener('click', () => openDietPlanDialog());
   $('diet-plan-form').addEventListener('submit', submitDietPlan);
   $('diet-plan-days').addEventListener('click', handleDietPlanStructure);
-  // Anteprima ingredienti della ricetta live: cambiare ricetta o moltiplicatore
-  // aggiorna solo il riquadro dell'opzione (nessun ridisegno: il focus resta).
+  // Anteprima ingredienti della ricetta live: cambiare ricetta aggiorna solo
+  // il riquadro dell'opzione (nessun ridisegno: il focus resta). Il
+  // moltiplicatore non è più editabile dalla console.
   $('diet-plan-days').addEventListener('input', event => {
-    if (event.target.matches?.('[data-f="option-recipe"], [data-f="option-mult"]')) {
+    if (event.target.matches?.('[data-f="option-recipe"]')) {
       updateDietRecipePreview(event.target.closest('.diet-option'));
     }
   });
   $('diet-plan-days').addEventListener('change', event => {
-    if (event.target.matches?.('[data-f="item-desc"]')) applyDietCatalogSelection(event.target);
+    if (event.target.matches?.('[data-f="item-desc"], [data-f="alt-desc"]')) applyDietCatalogSelection(event.target);
   });
   $('diet-plan-add-day').addEventListener('click', () => {
     const domain = dietPlanDomain();
@@ -2870,6 +3139,35 @@ function bindAdmin() {
     const button = event.target.closest('[data-cancel-share]');
     if (button) cancelProfessionalShareUI(button.dataset.cancelShare);
   });
+  // Tabelle grammature: elenco, editor con righe, duplica ed elimina.
+  $('new-gram-table').addEventListener('click', () => openGramTableDialog());
+  $('refresh-gram-tables').addEventListener('click', loadGrammatureTables);
+  $('gram-tables-list').addEventListener('click', event => {
+    const edit = event.target.closest('[data-gram-edit]');
+    if (edit) {
+      const table = adminState.grammatureTables.find(item => item.id === edit.dataset.gramEdit);
+      if (table) openGramTableDialog(table);
+      return;
+    }
+    const dup = event.target.closest('[data-gram-dup]');
+    if (dup) { duplicateGramTable(dup.dataset.gramDup); return; }
+    const del = event.target.closest('[data-gram-del]');
+    if (del) deleteGramTable(del.dataset.gramDel);
+  });
+  $('gram-table-form').addEventListener('submit', submitGramTable);
+  // Nuova riga in coda: il resto del modulo non viene ridisegnato, quindi il
+  // digitato nelle altre righe non si perde.
+  $('gram-table-add-row').addEventListener('click', () => {
+    $('gram-table-rows').insertAdjacentHTML('beforeend', gramTableRowHtml(null));
+  });
+  $('gram-table-rows').addEventListener('click', event => {
+    const remove = event.target.closest('[data-gram-row-del]');
+    if (remove) remove.closest('.gram-table-row').remove();
+  });
+  $('gram-table-rows').addEventListener('change', event => {
+    if (event.target.matches?.('[data-g="row-desc"]')) applyGramCatalogSelection(event.target);
+  });
+  document.querySelectorAll('[data-close-gram-table]').forEach(node => node.addEventListener('click', closeGramTableDialog));
   $('catalog-picker-search').addEventListener('input', event => renderCatalogPicker(event.target.value));
   $('catalog-picker-list').addEventListener('change', event => {
     const box = event.target.closest('[data-picker-ing]');

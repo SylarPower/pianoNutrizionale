@@ -332,18 +332,54 @@ function getIngredientDisplay(ingredient, dayType) {
   const profile = getPortionProfile();
   if (profile === "ipo") return getPortionValue(ingredient, "ipo", dayType);
   if (profile === "couple") {
-    const man = getPortionValue(ingredient, "man", dayType);
-    const woman = getPortionValue(ingredient, "ipo", dayType);
+    // Profilo coppia con moltiplicatore porzioni: le dosi uomo/donna vengono
+    // scalate per il fattore scelto (×1 di default).
+    const man = applyCoupleMultiplier(getPortionValue(ingredient, "man", dayType));
+    const woman = applyCoupleMultiplier(getPortionValue(ingredient, "ipo", dayType));
     if (isEmptyPortion(man) && isEmptyPortion(woman)) return "—";
     return `Uomo: ${man} · Donna: ${woman}`;
   }
   return getPortionValue(ingredient, "man", dayType);
 }
 
+// Moltiplicatore porzioni: vive solo nell'app clienti e solo con il profilo
+// coppia selezionato. Scala le quantità mostrate (uomo e donna) e i totali
+// della lista della spesa; passo 0,5, limite ×0,5–×3.
+function getCoupleMultiplier() {
+  const raw = Number(appState.deviceSettings?.coupleMultiplier);
+  if (!Number.isFinite(raw) || raw <= 0) return 1;
+  return Math.min(3, Math.max(0.5, Math.round(raw * 100) / 100));
+}
+
+function formatMultiplier(value) {
+  return `×${String(value).replace(".", ",")}`;
+}
+
+function applyCoupleMultiplier(value) {
+  if (getPortionProfile() !== "couple") return value;
+  const multiplier = getCoupleMultiplier();
+  if (multiplier === 1 || isEmptyPortion(value)) return value;
+  return window.PianoDomain?.scalePortionText
+    ? PianoDomain.scalePortionText(String(value), multiplier)
+    : value;
+}
+
+window.changeCoupleMultiplier = function (delta) {
+  const next = Math.min(3, Math.max(0.5, Math.round((getCoupleMultiplier() + Number(delta || 0)) * 2) / 2));
+  appState.deviceSettings = appState.deviceSettings || getLocalDeviceSettings();
+  appState.deviceSettings.coupleMultiplier = next;
+  saveLocalDeviceSettings(appState.deviceSettings);
+  renderGlobalHeader();
+  handleRoute();
+};
+
 function getProfileLabel() {
   const profile = getPortionProfile();
   if (profile === "ipo") return "Donna";
-  if (profile === "couple") return "Coppia · uomo + donna";
+  if (profile === "couple") {
+    const multiplier = getCoupleMultiplier();
+    return multiplier !== 1 ? `Coppia · uomo + donna ${formatMultiplier(multiplier)}` : "Coppia · uomo + donna";
+  }
   return "Uomo";
 }
 
@@ -1414,13 +1450,22 @@ function renderGlobalHeader() {
   // e luna con etichetta localizzata, stato premuto e supporto tastiera
   // nativo del bottone. Lo stato vero si legge dal DOM, non dalle preferenze.
   const dark = document.documentElement?.classList.contains("dark-mode") === true;
+  const multiplier = getCoupleMultiplier();
   header.innerHTML = `
     <div class="header-brand"><span class="header-brand-icon" aria-hidden="true"><img src="assets/loghi/logo-app.svg" alt=""></span><strong>Piano</strong></div>
-    <select aria-label="Profilo porzioni" onchange="changePortionProfile(this.value)">
-      <option value="man" ${profile === "man" ? "selected" : ""}>👨 Profilo uomo</option>
-      <option value="ipo" ${profile === "ipo" ? "selected" : ""}>👩 Profilo donna</option>
-      <option value="couple" ${profile === "couple" ? "selected" : ""}>👥 Profilo coppia</option>
-    </select>
+    <div class="header-profile">
+      <select aria-label="Profilo porzioni" onchange="changePortionProfile(this.value)">
+        <option value="man" ${profile === "man" ? "selected" : ""}>👨 Profilo uomo</option>
+        <option value="ipo" ${profile === "ipo" ? "selected" : ""}>👩 Profilo donna</option>
+        <option value="couple" ${profile === "couple" ? "selected" : ""}>👥 Profilo coppia</option>
+      </select>
+      ${profile === "couple" ? `
+      <div class="couple-mult" role="group" aria-label="Moltiplicatore porzioni della coppia">
+        <button type="button" class="couple-mult-btn" onclick="changeCoupleMultiplier(-0.5)" aria-label="Riduci il moltiplicatore porzioni" ${multiplier <= 0.5 ? "disabled" : ""}>−</button>
+        <span class="couple-mult-value" title="Moltiplicatore porzioni">${formatMultiplier(multiplier)}</span>
+        <button type="button" class="couple-mult-btn" onclick="changeCoupleMultiplier(0.5)" aria-label="Aumenta il moltiplicatore porzioni" ${multiplier >= 3 ? "disabled" : ""}>＋</button>
+      </div>` : ""}
+    </div>
     <div class="header-actions">
       <button type="button" class="theme-toggle" onclick="toggleDarkModeFromHeader()" aria-pressed="${dark ? "true" : "false"}" aria-label="${dark ? "Attiva il tema chiaro" : "Attiva il tema scuro"}" title="Tema chiaro/scuro"><span aria-hidden="true">${dark ? "☀️" : "🌙"}</span></button>
       <a href="#settings" class="header-account" title="Impostazioni" aria-label="Impostazioni"><span aria-hidden="true">⚙️</span></a>
@@ -2266,8 +2311,12 @@ function aggregateShoppingList() {
     getPortionProfile(),
     getCanonicalIngredientLabels(),
     // Stesso interruttore della Settimana: con lo switch spento la spesa elenca
-    // le quantità originali delle ricette, non quelle delle linee guida.
-    { applyGuide: planAdaptedQuantitiesEffective() }
+    // le quantità originali delle ricette, non quelle delle linee guida. Il
+    // moltiplicatore porzioni vale solo per il profilo coppia.
+    {
+      applyGuide: planAdaptedQuantitiesEffective(),
+      quantityMultiplier: getPortionProfile() === "couple" ? getCoupleMultiplier() : 1
+    }
   );
   return entries.map(entry => ({
     ...entry,
@@ -4542,8 +4591,9 @@ window.setModalDayType = function(type) {
 function getIngredientCoupleHtml(ingredient, dayType) {
   const profile = getPortionProfile();
   if (profile !== "couple") return `<strong>${escapeHtml(getIngredientDisplay(ingredient, dayType))}</strong>`;
-  const man = getPortionValue(ingredient, "man", dayType);
-  const woman = getPortionValue(ingredient, "ipo", dayType);
+  // Profilo coppia: le dosi uomo/donna seguono il moltiplicatore porzioni.
+  const man = applyCoupleMultiplier(getPortionValue(ingredient, "man", dayType));
+  const woman = applyCoupleMultiplier(getPortionValue(ingredient, "ipo", dayType));
   const manP = parseSimpleAmount(man);
   const womanP = parseSimpleAmount(woman);
   if (!manP.skip && !womanP.skip && !manP.free && !womanP.free && !manP.opaque && !womanP.opaque

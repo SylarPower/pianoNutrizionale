@@ -39,3 +39,13 @@ test('loading copre anche le operazioni cloud della console e dell’app', () =>
   assert.match(firebase, /async function callAdminSaasFunction[\s\S]*?PianoLoading\?\.start/);
   assert.match(firebase, /async function adminGetDocsQuery[\s\S]*?PianoLoading\?\.start/);
 });
+
+test('logo del loading senza sfondo e overlay solo per operazioni lente', () => {
+  // Console: il logo del loading non ha più la tessera colorata dietro.
+  assert.doesNotMatch(adminCss, /\.loading-brand\{[^}]*background/);
+  assert.doesNotMatch(adminCss, /dark-mode \.loading-brand\{[^}]*background/);
+  // Il grace period evita il lampeggio sulle operazioni istantanee.
+  assert.match(loading, /GRACE_MS/);
+  assert.match(loading, /setTimeout/);
+  assert.match(loading, /cancelScheduledShow|clearTimeout/);
+});
