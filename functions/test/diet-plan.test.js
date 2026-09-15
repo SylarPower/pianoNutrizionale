@@ -24,11 +24,21 @@ function validPlan() {
             mealId: 'lunch', time: '12:30', note: '',
             options: [
               {
-                label: 'A', note: '',
+                label: 'A', type: 'free-foods', recipeId: null, recipeMultiplier: null, note: '',
                 items: [
-                  { foodGroup: 'cereali', description: 'Riso Venere', quantity: 80, unit: 'g', quantityState: 'crudo', netOfWaste: false, alternative: 'Pasta integrale 80 g' },
-                  { foodGroup: 'verdura', description: 'Zucchine', quantity: 200, unit: 'g', quantityState: null, netOfWaste: true, alternative: '' }
-                ]
+                  { foodGroup: 'cereali', description: 'Riso Venere', quantity: 80, unit: 'g' },
+                  { foodGroup: 'verdura', description: 'Zucchine', quantity: 200, unit: 'g' }
+                ],
+                choiceGroups: [{
+                  title: 'Scegli 1 carboidrato tra:', optional: true,
+                  alternatives: [
+                    { foodGroup: 'cereali', description: 'Riso basmati', quantity: 80, unit: 'g' },
+                    { foodGroup: 'cereali', description: 'Pasta integrale', quantity: 80, unit: 'g' }
+                  ]
+                }]
+              },
+              {
+                label: 'B', type: 'recipe', recipeId: 'ricetta-pollo', recipeMultiplier: 1, items: [], choiceGroups: [], note: ''
               }
             ]
           }
@@ -117,6 +127,113 @@ test('verifyStructureRevision: v1/v2 come prima, v3 con regole vuote solo se c�
   assert.equal(verifyStructureRevision({ status: 'published', schemaVersion: 3, rules: [], alternativeGroups: [], dietPlan: plan, checksum: v3sum }), true);
   assert.equal(verifyStructureRevision({ status: 'published', schemaVersion: 3, rules: [], alternativeGroups: [], dietPlan: null, checksum: v3sum }), false);
   assert.equal(verifyStructureRevision({ status: 'draft', schemaVersion: 3, rules: [], alternativeGroups: [], dietPlan: plan, checksum: v3sum }), false);
+});
+
+// Opzioni ricetta: recipeId obbligatorio, moltiplicatore 0,1–10, nessun item.
+test('opzioni ricetta: recipeId + moltiplicatore, tipi mutuamente esclusivi', () => {
+  const plan = validPlan();
+  plan.days[0].meals[0].options[0] = {
+    label: 'A', type: 'recipe', recipeId: 'ricetta-1', recipeMultiplier: 1.5, items: [], choiceGroups: [], note: ''
+  };
+  const clean = validateDietPlan(plan);
+  const option = clean.days[0].meals[0].options[0];
+  assert.equal(option.type, 'recipe');
+  assert.equal(option.recipeId, 'ricetta-1');
+  assert.equal(option.recipeMultiplier, 1.5);
+  assert.deepEqual(option.items, []);
+  assert.deepEqual(option.choiceGroups, []);
+  // Senza recipeId: rifiutato.
+  const noRecipe = validPlan();
+  noRecipe.days[0].meals[0].options[0] = { label: 'A', type: 'recipe', recipeId: '', items: [], choiceGroups: [], note: '' };
+  assert.throws(() => validateDietPlan(noRecipe), /recipeId/);
+  // Moltiplicatore fuori scala: rifiutato.
+  const badMult = validPlan();
+  badMult.days[0].meals[0].options[0] = { label: 'A', type: 'recipe', recipeId: 'ricetta-1', recipeMultiplier: 0.01, items: [], choiceGroups: [], note: '' };
+  assert.throws(() => validateDietPlan(badMult), /recipeMultiplier/);
+  // Con lista alimenti: rifiutato (tipi esclusivi).
+  const mixed = validPlan();
+  mixed.days[0].meals[0].options[0] = { label: 'A', type: 'recipe', recipeId: 'ricetta-1', items: [{ foodGroup: 'carne', description: 'X', quantity: null, unit: null }], note: '' };
+  assert.throws(() => validateDietPlan(mixed), /items/);
+  // recipeId su opzione alimenti: rifiutato.
+  const stray = validPlan();
+  stray.days[0].meals[0].options[0].recipeId = 'ricetta-1';
+  assert.throws(() => validateDietPlan(stray), /recipeId/);
+  // Type assurdo: rifiutato.
+  const badType = validPlan();
+  badType.days[0].meals[0].options[0].type = 'mist';
+  assert.throws(() => validateDietPlan(badType), /type/);
+});
+
+// Opzioni senza `type`: revisioni precedenti, restano «free-foods».
+test('opzioni legacy senza type: normalizzate «free-foods»', () => {
+  const plan = validPlan();
+  delete plan.days[0].meals[0].options[0].type;
+  const clean = validateDietPlan(plan);
+  assert.equal(clean.days[0].meals[0].options[0].type, 'free-foods');
+  assert.equal(clean.days[0].meals[0].options[0].recipeId, null);
+  assert.equal(clean.days[0].meals[0].options[0].recipeMultiplier, null);
+  assert.equal(clean.days[0].meals[0].options[0].choiceGroups.length, 1, 'i gruppi scelta della voce legacy si conservano');
+});
+
+// Campi peso rimossi: le revisioni vecchie restano valide (round-trip), i
+// nuovi piani non li producono più.
+test('campi peso legacy: quantityState/netOfWaste/alternative tollerati e conservati', () => {
+  const plan = validPlan();
+  plan.days[0].meals[0].options[0].items[0].quantityState = 'crudo';
+  plan.days[0].meals[0].options[0].items[0].netOfWaste = true;
+  plan.days[0].meals[0].options[0].items[0].alternative = 'Pasta integrale 80 g';
+  const clean = validateDietPlan(plan);
+  const item = clean.days[0].meals[0].options[0].items[0];
+  assert.equal(item.quantityState, 'crudo');
+  assert.equal(item.netOfWaste, true);
+  assert.equal(item.alternative, 'Pasta integrale 80 g');
+  // Il valore legacy non valido resta un errore.
+  const bad = validPlan();
+  bad.days[0].meals[0].options[0].items[0].quantityState = 'surgelato';
+  assert.throws(() => validateDietPlan(bad), /quantityState/);
+  // Senza campi legacy l'item normalizzato ha solo la forma nuova.
+  const fresh = validateDietPlan(validPlan());
+  assert.deepEqual(Object.keys(fresh.days[0].meals[0].options[0].items[0]).sort(), ['description', 'foodGroup', 'quantity', 'unit']);
+});
+
+// Gruppi scelta: titolo + alternative, scelta facoltativa di default.
+test('gruppi scelta: validati con limite alternative e scelta facoltativa', () => {
+  const plan = validPlan();
+  const clean = validateDietPlan(plan);
+  const group = clean.days[0].meals[0].options[0].choiceGroups[0];
+  assert.equal(group.title, 'Scegli 1 carboidrato tra:');
+  assert.equal(group.optional, true);
+  assert.equal(group.alternatives.length, 2);
+  assert.deepEqual(Object.keys(group.alternatives[0]).sort(), ['description', 'foodGroup', 'quantity', 'unit']);
+  // Senza titolo: rifiutato.
+  const noTitle = validPlan();
+  noTitle.days[0].meals[0].options[0].choiceGroups[0].title = ' ';
+  assert.throws(() => validateDietPlan(noTitle), /title/);
+  // Senza alternative: rifiutato.
+  const noAlts = validPlan();
+  noAlts.days[0].meals[0].options[0].choiceGroups[0].alternatives = [];
+  assert.throws(() => validateDietPlan(noAlts), /alternatives/);
+  // Troppi gruppi: rifiutato.
+  const tooMany = validPlan();
+  tooMany.days[0].meals[0].options[0].choiceGroups = [
+    { title: 'G1', alternatives: [{ foodGroup: 'cereali', description: 'Riso', quantity: 80, unit: 'g' }] },
+    { title: 'G2', alternatives: [{ foodGroup: 'cereali', description: 'Pasta', quantity: 80, unit: 'g' }] },
+    { title: 'G3', alternatives: [{ foodGroup: 'cereali', description: 'Pane', quantity: 80, unit: 'g' }] },
+    { title: 'G4', alternatives: [{ foodGroup: 'cereali', description: 'Farro', quantity: 80, unit: 'g' }] }
+  ];
+  assert.throws(() => validateDietPlan(tooMany), /choiceGroups/);
+  // optional esplicito false resta false.
+  const mandatory = validPlan();
+  mandatory.days[0].meals[0].options[0].choiceGroups[0].optional = false;
+  assert.equal(validateDietPlan(mandatory).days[0].meals[0].options[0].choiceGroups[0].optional, false);
+});
+
+// Opzione completamente vuota: rifiutata anche lato server.
+test('opzione senza alimenti e senza gruppi: rifiutata', () => {
+  const plan = validPlan();
+  plan.days[0].meals[0].options[0].items = [];
+  plan.days[0].meals[0].options[0].choiceGroups = [];
+  assert.throws(() => validateDietPlan(plan), /almeno un alimento/);
 });
 
 test('regole vuote ammesse solo con piano guidato (strutture descrittive)', () => {

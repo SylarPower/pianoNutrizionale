@@ -419,23 +419,31 @@ regole classiche; una struttura solo-guidata ha `rules: []` (ammesso solo con
       label: "Lunedì" | null,
       dayType: "training|rest|other",
       target: { kcal, proteinG, carbsG, fatG, waterMl },  // appunti, null se vuoti
-      meals: [{
+      meals: [{                        // ordine fisso per tipo (il sort è stabile)
         mealId: "breakfast|morning-snack|lunch|afternoon-snack|dinner|evening-snack",
         time: "12:30" | null,
         options: [{
           label: "A|B|C|D",
-          items: [{
+          type: "free-foods|recipe",   // due tipi mutuamente esclusivi
+          // — tipo «free-foods» —
+          items: [{                    // 0–20 voci (con almeno un gruppo scelta se 0)
             foodGroup: "cereali|…|altro",  // 15 gruppi chiusi
             description: "Riso Venere",
-            quantity: 80 | null, unit: "g|…|qb" | null,
-            quantityState: "crudo|cotto" | null,
-            netOfWaste: true|false,        // al netto degli scarti
-            alternative: "Pasta integrale 80 g" | null   // «oppure»
-          }],                             // 1–20 voci
+            quantity: 80 | null, unit: "g|…|qb" | null   // sempre al netto e a crudo
+          }],
+          choiceGroups: [{             // 0–3 gruppi scelta («Scegli 1 tra:»)
+            title: "Scegli 1 carboidrato tra:",
+            optional: true,            // false = il cliente deve scegliere
+            alternatives: [{ foodGroup, description, quantity, unit }]  // 1–30, dose editabile
+          }],
+          // — tipo «recipe» —
+          recipeId: "id-ricetta-professionale",  // obbligatorio se type recipe
+          recipeMultiplier: 1.5,       // ×0,1–10, default 1; solo se type recipe
+          items: [], choiceGroups: [], // vuoti per le opzioni ricetta
           note: null
         }],                               // 1–4 opzioni
         note: null
-      }],                                 // 1–10 pasti
+      }],                                 // 1–10 pasti (UI: un solo pasto per tipo)
       supplements: null, hydration: null, note: null
     }],                                   // 1–14 giornate
     generalNotes: null
@@ -451,13 +459,23 @@ regole classiche; una struttura solo-guidata ha `rules: []` (ammesso solo con
 { hasDietPlan: true|false }
 ```
 
-Limiti: 14 giornate, 10 pasti/giornata, 4 opzioni/pasto, 20 voci/opzione;
-testi 20–2000 caratteri secondo campo; quantità 0–5000. Validazione bloccante
-server-side (`validateDietPlan`); la console pre-valida in italiano. Le
-revisioni 1/2 restano verificabili e modificabili con l'editor classico, che
-conserva l'eventuale `dietPlan`. `createDietStructure` e
-`updateDietStructureRevision` accettano `dietPlan?` (null per le classiche).
-Guida operativa: `docs/editor-dieta-guidata.md`.
+Limiti: 14 giornate, 10 pasti/giornata, 4 opzioni/pasto, 20 voci/opzione,
+3 gruppi scelta/opzione, 30 alternative/gruppo, moltiplicatore ricetta
+0,1–10; testi 20–2000 caratteri secondo campo; quantità 0–5000. Validazione
+bloccante server-side (`validateDietPlan`); la console pre-valida in italiano.
+
+**Compatibilità con le revisioni precedenti.** I piani salvati prima
+dell'evoluzione del contratto possono contenere `quantityState`
+(crudo/cotto), `netOfWaste` e `alternative` («oppure») e opzioni senza
+`type`: restano validi in lettura e round-trip (la validazione li rivalida e
+li conserva), ma i nuovi piani non li producono più — i pesi sono sempre al
+netto degli scarti e a crudo. Le opzioni senza `type` sono «free-foods».
+L'editor console ignora i campi rimossi alla riapertura (migrazione silenziosa
+al primo salvataggio). Le revisioni 1/2 restano verificabili e modificabili
+con l'editor classico, che conserva l'eventuale `dietPlan`.
+`createDietStructure` e `updateDietStructureRevision` accettano `dietPlan?`
+(null per le classiche). Guida operativa: `docs/editor-dieta-guidata.md`;
+decisioni: `docs/adr/0007-opzioni-ricetta-e-gruppi-scelta.md`.
 
 ## Ricettario professionisti (ADR 0006)
 

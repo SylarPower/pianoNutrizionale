@@ -20,20 +20,41 @@ decisioni: `docs/adr/0005-console-unificata-dieta-guidata.md`.
 1. **Nome dieta** (almeno 3 caratteri).
 2. **Giornate**: tipo (allenamento, riposo, altra), titolo facoltativo,
    valori facoltativi (kcal, proteine, carboidrati, grassi, acqua in ml).
-   Si possono aggiungere (max 14), duplicare, riordinare (↑ ↓) ed eliminare.
-3. **Pasti** (max 10 per giornata): tipo (colazione, spuntini, pranzo,
-   merenda, cena), orario facoltativo, nota facoltativa.
+   Si possono aggiungere (max 14), duplicare (la copia ha titolo «(copia)» e
+   identità nuova), riordinare (↑ ↓) ed eliminare.
+3. **Pasti in ordine fisso** (max 10 per giornata, un solo pasto per tipo):
+   colazione → spuntino di metà mattina → pranzo → merenda → cena → spuntino
+   serale. «＋ Aggiungi pasto» propone solo i tipi ancora assenti; i pasti non
+   si riordinano e non si duplicano: l'ordine è quello del modello. Orario e
+   nota facoltativi.
 4. **Opzioni A/B/C/D** (max 4 per pasto): alternative equivalenti dello
-   stesso pasto. Si possono aggiungere, duplicare ed eliminare (ne resta
-   sempre almeno una).
-5. **Alimenti** (max 20 per opzione): gruppo alimentare, descrizione,
-   quantità + unità (g, kg, ml, l, pz, fette, cucchiai, cucchiaini, tazze,
-   bicchieri, porzioni, scatolette, misurini, q.b.), peso a crudo o a cotto,
-   flag «al netto degli scarti», alternativa «oppure» facoltativa.
-6. **Integrazione, idratazione, nota** per giornata + **note generali**.
-7. **Anteprima**: «Mostra anteprima» riepiloga la bozza (conteggi + testo);
-   resta aggiornata mentre si digita e segnala i problemi in italiano.
-8. **Pubblica dieta**: valida tutto e pubblica una nuova revisione. Le
+   stesso pasto, di due tipi **mutuamente esclusivi**:
+   - **Alimenti liberi**: lista di alimenti con gruppo, descrizione,
+     quantità + unità (g, kg, ml, l, pz, fette, cucchiai, cucchiaini, tazze,
+     bicchieri, porzioni, scatolette, misurini, q.b.), max 20 voci;
+   - **Ricetta**: una ricetta del ricettario professionale con
+     moltiplicatore porzioni (×0,1–10) e anteprima degli ingredienti con dosi
+     scalate live (le dosi testuali come «80 g» si moltiplicano; «q.b.» resta
+     tale). Gli archivi restano selezionabili per non perdere i riferimenti.
+   Si possono aggiungere, duplicare ed eliminare (ne resta sempre almeno una).
+5. **Pesi sempre al netto degli scarti e a crudo**: non esistono più il
+   select crudo/cotto, il flag «al netto degli scarti» né l'alternativa
+   «oppure». Le diete salvate prima di questa evoluzione si aprono lo stesso:
+   i campi vecchi vengono ignorati e scompaiono al primo salvataggio.
+6. **Gruppi scelta** («Scegli 1 tra:», max 3 per opzione, solo opzioni
+   alimenti liberi): titolo + alternative a dose editabile (descrizione,
+   quantità, unità) che il cliente può scegliere. La scelta è facoltativa di
+   default (il cliente può saltare il gruppo). Il gruppo si mostra
+   **minimizzato** (solo riepilogo) quando è completo e si espande con
+   «Modifica»; «Precompila alternative» riempie il gruppo dalla tabella di
+   riferimento (carboidrati o proteine) con le dosi del pasto corrente
+   (pranzo: colonna A/R della giornata; cena: dose serale) e lo minimizza
+   subito. Le alternative restano tutte editabili dopo il precompilamento.
+7. **Integrazione, idratazione, nota** per giornata + **note generali**.
+8. **Anteprima**: «Mostra anteprima» riepiloga la bozza (conteggi + testo,
+   ricette con dosi scalate, gruppi scelta in una riga); resta aggiornata
+   mentre si digita e segnala i problemi in italiano.
+9. **Pubblica dieta**: valida tutto e pubblica una nuova revisione. Le
    revisioni precedenti restano intatte e ripristinabili.
 
 Le operazioni strutturali (aggiungi, duplica, sposta, elimina) rileggono
@@ -54,6 +75,10 @@ sempre il modulo prima di ridisegnarlo: **il testo digitato non si perde**.
 | Messaggio | Causa |
 |---|---|
 | «Descrivi l’alimento» | voce senza descrizione |
+| «Seleziona la ricetta» | opzione di tipo Ricetta senza ricetta scelta |
+| «Moltiplicatore ricetta non valido» | valore fuori da ×0,1–×10 |
+| «Dai un titolo al gruppo» | gruppo scelta senza titolo |
+| «da 1 a 30 alternative» | gruppo scelta senza alternative |
 | «opzione X duplicata» | due opzioni con la stessa etichetta (l'editor le assegna da solo: ricarica la bozza) |
 | «quantità non valida» | numero negativo, non numerico o oltre 5000 |
 | «unità di misura non valida» | unità fuori elenco |

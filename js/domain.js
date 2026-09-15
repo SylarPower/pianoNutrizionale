@@ -3055,15 +3055,24 @@ const PROTEIN_CATEGORY_LABELS = {
     { id: 'porzioni', label: 'porzioni' }, { id: 'scatolette', label: 'scatolette' },
     { id: 'misurini', label: 'misurini' }, { id: 'qb', label: 'q.b.' }
   ];
-  const DIET_PLAN_QUANTITY_STATES = [
-    { id: 'crudo', label: 'Peso a crudo' },
-    { id: 'cotto', label: 'Peso a cotto' }
+  // Due tipi di opzione mutuamente esclusivi: una lista di alimenti liberi
+  // oppure una ricetta del ricettario professionale (con moltiplicatore).
+  const DIET_PLAN_OPTION_TYPES = [
+    { id: 'free-foods', label: 'Alimenti liberi' },
+    { id: 'recipe', label: 'Ricetta' }
   ];
   const DIET_PLAN_OPTION_LABELS = ['A', 'B', 'C', 'D'];
   const DIET_PLAN_LIMITS = {
     days: 14, mealsPerDay: 10, optionsPerMeal: 4, itemsPerOption: 20,
+    choiceGroupsPerOption: 3, alternativesPerChoiceGroup: 30,
+    recipeMultiplierMin: 0.1, recipeMultiplierMax: 10,
+    choiceGroupTitle: 200,
     label: 80, description: 200, note: 1000, quantity: 5000
   };
+  // Pesi sempre al netto degli scarti e a crudo: non esistono più i campi
+  // quantityState (crudo/cotto), netOfWaste e alternative («oppure»).
+  // Le revisioni salvate prima dell'evoluzione del contratto restano leggibili:
+  // la normalizzazione (createDietPlanItem/Option) ignora i campi rimossi.
 
   function dietPlanDayLabel(dayType) {
     return DIET_PLAN_DAY_TYPE_LABELS[dayType] || 'Giornata';
@@ -3086,24 +3095,54 @@ const PROTEIN_CATEGORY_LABELS = {
 
   function createDietPlanItem(detail) {
     const source = detail || {};
+    // Migrazione silenziosa: quantityState/netOfWaste/alternative delle
+    // revisioni precedenti vengono ignorati (pesi sempre al netto e a crudo).
     return {
       foodGroup: typeof source.foodGroup === 'string' ? source.foodGroup : 'altro',
       description: typeof source.description === 'string' ? source.description : '',
       quantity: source.quantity == null || source.quantity === '' ? null : Number(source.quantity),
-      unit: typeof source.unit === 'string' ? source.unit : 'g',
-      quantityState: source.quantityState === 'cotto' || source.quantityState === 'crudo' ? source.quantityState : null,
-      netOfWaste: source.netOfWaste === true,
-      alternative: typeof source.alternative === 'string' ? source.alternative : ''
+      unit: typeof source.unit === 'string' ? source.unit : 'g'
     };
+  }
+
+  function createDietPlanChoiceGroup(detail) {
+    const source = detail || {};
+    const alternatives = Array.isArray(source.alternatives) && source.alternatives.length
+      ? source.alternatives.map(item => createDietPlanItem(item))
+      : [createDietPlanItem()];
+    return {
+      title: typeof source.title === 'string' ? source.title : '',
+      optional: source.optional !== false,
+      alternatives
+    };
+  }
+
+  function dietPlanOptionType(source) {
+    if (source.type === 'recipe' || source.type === 'free-foods') return source.type;
+    return source.recipeId ? 'recipe' : 'free-foods';
   }
 
   function createDietPlanOption(label, detail) {
     const source = detail || {};
+    const type = dietPlanOptionType(source);
+    const multiplier = Number(source.recipeMultiplier);
     return {
       label: DIET_PLAN_OPTION_LABELS.includes(source.label) ? source.label : (label || 'A'),
-      items: Array.isArray(source.items) && source.items.length
-        ? source.items.map(item => createDietPlanItem(item))
-        : [createDietPlanItem()],
+      type,
+      recipeId: type === 'recipe' && typeof source.recipeId === 'string' && source.recipeId ? source.recipeId : null,
+      recipeMultiplier: type === 'recipe'
+        ? (Number.isFinite(multiplier)
+          ? Math.min(DIET_PLAN_LIMITS.recipeMultiplierMax, Math.max(DIET_PLAN_LIMITS.recipeMultiplierMin, multiplier))
+          : 1)
+        : null,
+      items: type === 'free-foods'
+        ? (Array.isArray(source.items) && source.items.length
+          ? source.items.map(item => createDietPlanItem(item))
+          : [createDietPlanItem()])
+        : [],
+      choiceGroups: type === 'free-foods' && Array.isArray(source.choiceGroups)
+        ? source.choiceGroups.map(group => createDietPlanChoiceGroup(group))
+        : [],
       note: typeof source.note === 'string' ? source.note : ''
     };
   }
@@ -3121,6 +3160,22 @@ const PROTEIN_CATEGORY_LABELS = {
     };
   }
 
+  // Ordine fisso dei pasti (colazione → spuntino mattina → pranzo → merenda →
+  // cena → spuntino serale). L'editor non consente di riordinare i pasti né di
+  // aggiungere due volte lo stesso tipo: il sort qui sotto resta comunque
+  // stabile, quindi eventuali dati legacy con tipi ripetuti non si mescolano.
+  function dietPlanMealOrder(mealId) {
+    const index = DIET_PLAN_MEALS.findIndex(item => item.id === mealId);
+    return index >= 0 ? index : DIET_PLAN_MEALS.length;
+  }
+
+  function sortDietPlanMeals(meals) {
+    return (Array.isArray(meals) ? meals : [])
+      .map((meal, index) => ({ meal, index }))
+      .sort((a, b) => dietPlanMealOrder(a.meal?.mealId) - dietPlanMealOrder(b.meal?.mealId) || a.index - b.index)
+      .map(entry => entry.meal);
+  }
+
   function createDietPlanDay(dayType, detail) {
     const source = detail || {};
     const target = source.target || {};
@@ -3133,9 +3188,9 @@ const PROTEIN_CATEGORY_LABELS = {
         kcal: readTarget('kcal'), proteinG: readTarget('proteinG'),
         carbsG: readTarget('carbsG'), fatG: readTarget('fatG'), waterMl: readTarget('waterMl')
       },
-      meals: Array.isArray(source.meals) && source.meals.length
+      meals: sortDietPlanMeals(Array.isArray(source.meals) && source.meals.length
         ? source.meals.map(meal => createDietPlanMeal(meal?.mealId, meal))
-        : [createDietPlanMeal('breakfast'), createDietPlanMeal('lunch'), createDietPlanMeal('dinner')],
+        : [createDietPlanMeal('breakfast'), createDietPlanMeal('lunch'), createDietPlanMeal('dinner')]),
       supplements: typeof source.supplements === 'string' ? source.supplements : '',
       hydration: typeof source.hydration === 'string' ? source.hydration : '',
       note: typeof source.note === 'string' ? source.note : ''
@@ -3204,26 +3259,44 @@ const PROTEIN_CATEGORY_LABELS = {
             if (seenOptions.has(option.label)) errors.push(`${mealWhere}: opzione ${option.label} duplicata.`);
             seenOptions.add(option.label);
           }
+          const type = dietPlanOptionType(option);
+          if (option.type != null && option.type !== '' && !DIET_PLAN_OPTION_TYPES.some(item => item.id === option.type)) {
+            errors.push(`${optionWhere}: tipo opzione non valido (ricetta o alimenti liberi).`);
+          }
+          if (type === 'recipe') {
+            if (!String(option.recipeId || '').trim()) errors.push(`${optionWhere}: Seleziona la ricetta.`);
+            const multiplier = Number(option.recipeMultiplier);
+            if (option.recipeMultiplier != null && option.recipeMultiplier !== '' && (!Number.isFinite(multiplier) || multiplier < limits.recipeMultiplierMin || multiplier > limits.recipeMultiplierMax)) {
+              errors.push(`${optionWhere}: Moltiplicatore ricetta non valido (tra ${String(limits.recipeMultiplierMin).replace('.', ',')} e ${String(limits.recipeMultiplierMax).replace('.', ',')}).`);
+            }
+            return;
+          }
           const items = Array.isArray(option.items) ? option.items : [];
-          if (!items.length || items.length > limits.itemsPerOption) {
-            errors.push(`${optionWhere}: servono da 1 a ${limits.itemsPerOption} alimenti.`);
+          const choiceGroups = Array.isArray(option.choiceGroups) ? option.choiceGroups : [];
+          if (items.length > limits.itemsPerOption) {
+            errors.push(`${optionWhere}: massimo ${limits.itemsPerOption} alimenti per opzione.`);
+          }
+          if (!items.length && !choiceGroups.length) {
+            errors.push(`${optionWhere}: aggiungi almeno un alimento o un gruppo scelta.`);
           }
           items.forEach((item, itemIndex) => {
-            const itemWhere = `${optionWhere}, alimento ${itemIndex + 1}`;
-            if (!item || typeof item !== 'object') { errors.push(`${itemWhere}: dati mancanti.`); return; }
-            if (!DIET_PLAN_FOOD_GROUPS.some(group => group.id === item.foodGroup)) errors.push(`${itemWhere}: gruppo alimentare non valido.`);
-            if (!String(item.description || '').trim()) errors.push(`${itemWhere}: descrivi l’alimento.`);
-            if (String(item.description || '').length > limits.description) errors.push(`${itemWhere}: descrizione troppo lunga.`);
-            if (item.quantity != null && item.quantity !== '') {
-              if (!Number.isFinite(Number(item.quantity)) || Number(item.quantity) < 0 || Number(item.quantity) > limits.quantity) {
-                errors.push(`${itemWhere}: quantità non valida.`);
-              }
-              if (!DIET_PLAN_UNITS.some(unit => unit.id === item.unit)) errors.push(`${itemWhere}: unità di misura non valida.`);
-              if (item.quantityState != null && !DIET_PLAN_QUANTITY_STATES.some(state => state.id === item.quantityState)) {
-                errors.push(`${itemWhere}: indica peso a crudo o a cotto.`);
-              }
+            validateDietPlanItemSoft(item, `${optionWhere}, alimento ${itemIndex + 1}`, errors);
+          });
+          if (choiceGroups.length > limits.choiceGroupsPerOption) {
+            errors.push(`${optionWhere}: massimo ${limits.choiceGroupsPerOption} gruppi scelta per opzione.`);
+          }
+          choiceGroups.forEach((group, groupIndex) => {
+            const groupWhere = `${optionWhere}, gruppo scelta ${groupIndex + 1}`;
+            if (!group || typeof group !== 'object') { errors.push(`${groupWhere}: dati mancanti.`); return; }
+            if (!String(group.title || '').trim()) errors.push(`${groupWhere}: dai un titolo al gruppo (es. «Scegli 1 carboidrato tra:»).`);
+            if (String(group.title || '').length > limits.choiceGroupTitle) errors.push(`${groupWhere}: titolo troppo lungo.`);
+            const alternatives = Array.isArray(group.alternatives) ? group.alternatives : [];
+            if (!alternatives.length || alternatives.length > limits.alternativesPerChoiceGroup) {
+              errors.push(`${groupWhere}: da 1 a ${limits.alternativesPerChoiceGroup} alternative.`);
             }
-            if (String(item.alternative || '').length > limits.description) errors.push(`${itemWhere}: alternativa troppo lunga.`);
+            alternatives.forEach((alternative, alternativeIndex) => {
+              validateDietPlanItemSoft(alternative, `${groupWhere}, alternativa ${alternativeIndex + 1}`, errors);
+            });
           });
           if (String(option.note || '').length > limits.note) errors.push(`${optionWhere}: nota troppo lunga.`);
         });
@@ -3237,21 +3310,112 @@ const PROTEIN_CATEGORY_LABELS = {
     return { valid: errors.length === 0, errors };
   }
 
+  function validateDietPlanItemSoft(item, itemWhere, errors) {
+    const limits = DIET_PLAN_LIMITS;
+    if (!item || typeof item !== 'object') { errors.push(`${itemWhere}: dati mancanti.`); return; }
+    if (!DIET_PLAN_FOOD_GROUPS.some(group => group.id === item.foodGroup)) errors.push(`${itemWhere}: gruppo alimentare non valido.`);
+    if (!String(item.description || '').trim()) errors.push(`${itemWhere}: descrivi l’alimento.`);
+    if (String(item.description || '').length > limits.description) errors.push(`${itemWhere}: descrizione troppo lunga.`);
+    if (item.quantity != null && item.quantity !== '') {
+      if (!Number.isFinite(Number(item.quantity)) || Number(item.quantity) < 0 || Number(item.quantity) > limits.quantity) {
+        errors.push(`${itemWhere}: quantità non valida.`);
+      }
+      if (!DIET_PLAN_UNITS.some(unit => unit.id === item.unit)) errors.push(`${itemWhere}: unità di misura non valida.`);
+    }
+  }
+
   function dietPlanSummary(plan) {
     const days = Array.isArray(plan?.days) ? plan.days : [];
     let meals = 0;
     let options = 0;
     let items = 0;
+    let choiceGroups = 0;
     days.forEach(day => {
       (Array.isArray(day?.meals) ? day.meals : []).forEach(meal => {
         meals += 1;
         (Array.isArray(meal?.options) ? meal.options : []).forEach(option => {
           options += 1;
           items += Array.isArray(option?.items) ? option.items.length : 0;
+          choiceGroups += Array.isArray(option?.choiceGroups) ? option.choiceGroups.length : 0;
         });
       });
     });
-    return { dayCount: days.length, mealCount: meals, optionCount: options, itemCount: items };
+    return { dayCount: days.length, mealCount: meals, optionCount: options, itemCount: items, choiceGroupCount: choiceGroups };
+  }
+
+  // Moltiplica i numeri presenti in un testo di dose ("80 g", "1/2 panino",
+  // "q.b.") per il moltiplicatore ricetta. I numeri interi restano tali, le
+  // frazioni decimali si arrotondano a una cifra con virgola; i testi senza
+  // numeri (q.b., quanto basta) non cambiano.
+  function scalePortionText(text, multiplier) {
+    const source = String(text || '');
+    const factor = Number(multiplier);
+    if (!Number.isFinite(factor) || factor === 1 || factor <= 0) return source;
+    if (!/\d/.test(source)) return source;
+    const format = value => {
+      const rounded = Math.round(value * 100) / 100;
+      return Number.isInteger(rounded) ? String(rounded) : String(rounded).replace('.', ',');
+    };
+    // Numeri semplici ("80 g") e frazioni ("1/2 panino") si moltiplicano per
+    // il fattore come valore: 1/2 × 2 = 1, non "2/4".
+    return source.replace(/\d+(?:[.,]\d+)?(?:\/\d+(?:[.,]\d+)?)?/g, raw => {
+      if (raw.includes('/')) {
+        const [numRaw, denRaw] = raw.split('/');
+        const num = Number(numRaw.replace(',', '.'));
+        const den = Number(denRaw.replace(',', '.'));
+        if (!Number.isFinite(num) || !Number.isFinite(den) || den === 0) return raw;
+        return format((num / den) * factor);
+      }
+      const value = Number(raw.replace(',', '.')) * factor;
+      return Number.isFinite(value) ? format(value) : raw;
+    });
+  }
+
+  // Alternative di un gruppo scelta precompilate dalla tabella di riferimento
+  // (le tabelle carboidrati/proteine della guida). kind: 'carb' | 'protein';
+  // la dose segue il pasto (pranzo: colonna A/R della giornata, cena: dose
+  // serale) e le alternative restano tutte editabili dopo il precompilamento.
+  const DIET_PLAN_REFERENCE_FOOD_GROUPS = {
+    carb: 'cereali',
+    protein: 'altro',
+    vegetable: 'verdura',
+    fat: 'grassi'
+  };
+  const DIET_PLAN_REFERENCE_FOOD_GROUP_OVERRIDES = {
+    uova: 'uova', legumotti: 'legumi', legumiScatola: 'legumi', lupini: 'legumi',
+    salmoneAffumicato: 'pesce', pesceScatolaNaturale: 'pesce', pesceSottOlio: 'pesce',
+    pesceAzzurro: 'pesce', pesceBiancoMagro: 'pesce', crostaceiMolluschi: 'pesce',
+    mozzarellaLight: 'latticini', formaggiFreschiMolli: 'latticini', yogurtGreco: 'latticini',
+    fiocchiLatte: 'latticini', montasio: 'latticini', grana: 'latticini',
+    formaggiStagionati: 'latticini', feta: 'latticini', ricotta: 'latticini',
+    maiale: 'carne', polloTacchino: 'carne', manzo: 'carne', affettatiMagri: 'carne',
+    seitan: 'carne', burgerVegetali: 'carne'
+  };
+
+  function dietPlanReferenceAlternatives(kind, mealId, dayType) {
+    const entries = kind === 'protein'
+      ? [MELLER_PROTEIN_REFERENCE, ...MELLER_PROTEIN_ALTERNATIVES]
+      : MELLER_CARB_ALTERNATIVES;
+    return entries.map(entry => {
+      const item = describeAlternative(entry);
+      const isDinner = mealId === 'dinner';
+      const quantity = isDinner
+        ? (item.dinner ?? item.lunchTraining ?? item.lunchRest)
+        : (dayType === 'rest' ? (item.lunchRest ?? item.lunchTraining) : (item.lunchTraining ?? item.lunchRest));
+      if (!Number.isFinite(quantity)) return null;
+      const family = entry.family;
+      return createDietPlanItem({
+        foodGroup: DIET_PLAN_REFERENCE_FOOD_GROUP_OVERRIDES[family] || DIET_PLAN_REFERENCE_FOOD_GROUPS[kind] || 'altro',
+        description: entry.label,
+        quantity,
+        unit: 'g'
+      });
+    }).filter(Boolean);
+  }
+
+  // Titolo suggerito per un gruppo scelta precompilato dalla tabella.
+  function dietPlanReferenceGroupTitle(kind) {
+    return kind === 'protein' ? 'Scegli 1 fonte proteica tra:' : 'Scegli 1 carboidrato tra:';
   }
 
   return {
@@ -3399,19 +3563,25 @@ const PROTEIN_CATEGORY_LABELS = {
     DIET_PLAN_MEALS,
     DIET_PLAN_FOOD_GROUPS,
     DIET_PLAN_UNITS,
-    DIET_PLAN_QUANTITY_STATES,
+    DIET_PLAN_OPTION_TYPES,
     DIET_PLAN_OPTION_LABELS,
     DIET_PLAN_LIMITS,
     dietPlanDayLabel,
     dietPlanMealLabel,
     dietPlanFoodGroupLabel,
     dietPlanUnitLabel,
+    dietPlanMealOrder,
+    sortDietPlanMeals,
     createDietPlanItem,
+    createDietPlanChoiceGroup,
     createDietPlanOption,
     createDietPlanMeal,
     createDietPlanDay,
     createEmptyDietPlan,
     validateDietPlanSoft,
-    dietPlanSummary
+    dietPlanSummary,
+    scalePortionText,
+    dietPlanReferenceAlternatives,
+    dietPlanReferenceGroupTitle
   };
 });

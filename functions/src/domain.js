@@ -503,9 +503,16 @@ const DIET_PLAN_DAY_TYPES = new Set(['training', 'rest', 'other']);
 const DIET_PLAN_MEAL_IDS = new Set(['breakfast', 'morning-snack', 'lunch', 'afternoon-snack', 'dinner', 'evening-snack']);
 const DIET_PLAN_FOOD_GROUPS = new Set(['cereali', 'pseudo-cereali', 'legumi', 'carne', 'pesce', 'uova', 'latticini', 'verdura', 'frutta', 'frutta-secca', 'grassi', 'dolci', 'bevande', 'integratori', 'altro']);
 const DIET_PLAN_UNITS = new Set(['g', 'kg', 'ml', 'l', 'pz', 'fette', 'cucchiai', 'cucchiaini', 'tazze', 'bicchieri', 'porzioni', 'scatolette', 'misurini', 'qb']);
+// Legacy: le revisioni pubblicate prima dell'evoluzione del contratto usano
+// quantityState (crudo/cotto), netOfWaste e alternative («oppure»). Restano
+// valide in lettura e round-trip, ma i nuovi piani non le producono più.
 const DIET_PLAN_QUANTITY_STATES = new Set(['crudo', 'cotto']);
 const DIET_PLAN_OPTION_LABELS = new Set(['A', 'B', 'C', 'D']);
-const DIET_PLAN_LIMITS = { days: 14, mealsPerDay: 10, optionsPerMeal: 4, itemsPerOption: 20 };
+const DIET_PLAN_OPTION_TYPES = new Set(['free-foods', 'recipe']);
+const DIET_PLAN_LIMITS = {
+  days: 14, mealsPerDay: 10, optionsPerMeal: 4, itemsPerOption: 20,
+  choiceGroupsPerOption: 3, alternativesPerChoiceGroup: 30, choiceGroupTitle: 200
+};
 
 function dietPlanNumber(value, name, { max }) {
   if (value == null || value === '') return null;
@@ -517,42 +524,79 @@ function dietPlanNumber(value, name, { max }) {
 }
 
 function validateDietPlanItem(item, name) {
+  // I campi legacy (quantityState, netOfWaste, alternative) sono ammessi solo
+  // per le revisioni salvate prima della rimozione: se presenti vengono
+  // rivalidati e conservati, così il round-trip dell'editor classico non
+  // riscrive le revisioni. I nuovi piani non li producono.
   exactObject(item, ['foodGroup', 'description', 'quantity', 'unit', 'quantityState', 'netOfWaste', 'alternative'], name);
   if (!DIET_PLAN_FOOD_GROUPS.has(item.foodGroup)) fail('invalid-argument', `${name}.foodGroup non valido`);
   const description = text(item.description, `${name}.description`, { max: 200 });
   const quantity = dietPlanNumber(item.quantity, `${name}.quantity`, { max: 5000 });
   let unit = null;
-  let quantityState = null;
   if (quantity != null) {
     if (!DIET_PLAN_UNITS.has(item.unit)) fail('invalid-argument', `${name}.unit non valida`);
     unit = item.unit;
-    if (item.quantityState != null && item.quantityState !== '') {
-      if (!DIET_PLAN_QUANTITY_STATES.has(item.quantityState)) fail('invalid-argument', `${name}.quantityState non valido`);
-      quantityState = item.quantityState;
-    }
+  }
+  const clean = { foodGroup: item.foodGroup, description, quantity, unit };
+  if (item.quantityState != null && item.quantityState !== '') {
+    if (!DIET_PLAN_QUANTITY_STATES.has(item.quantityState)) fail('invalid-argument', `${name}.quantityState non valido`);
+    clean.quantityState = item.quantityState;
+  }
+  if (item.netOfWaste === true) clean.netOfWaste = true;
+  const alternative = optionalText(item.alternative, `${name}.alternative`, 200);
+  if (alternative != null) clean.alternative = alternative;
+  return clean;
+}
+
+function validateDietPlanChoiceGroup(group, name) {
+  exactObject(group, ['title', 'optional', 'alternatives'], name);
+  const title = text(group.title, `${name}.title`, { max: DIET_PLAN_LIMITS.choiceGroupTitle });
+  if (!Array.isArray(group.alternatives) || !group.alternatives.length || group.alternatives.length > DIET_PLAN_LIMITS.alternativesPerChoiceGroup) {
+    fail('invalid-argument', `${name}.alternatives deve contenere da 1 a ${DIET_PLAN_LIMITS.alternativesPerChoiceGroup} alternative`);
   }
   return {
-    foodGroup: item.foodGroup,
-    description,
-    quantity,
-    unit,
-    quantityState,
-    netOfWaste: item.netOfWaste === true,
-    alternative: optionalText(item.alternative, `${name}.alternative`, 200)
+    title,
+    optional: group.optional !== false,
+    alternatives: group.alternatives.map((alternative, index) => validateDietPlanItem(alternative, `${name}.alternatives[${index}]`))
   };
 }
 
 function validateDietPlanOption(option, name) {
-  exactObject(option, ['label', 'items', 'note'], name);
+  // Due tipi mutuamente esclusivi: «free-foods» (lista alimenti + gruppi
+  // scelta) oppure «recipe» (ricetta del ricettario con moltiplicatore).
+  // Le opzioni senza `type` sono legacy e restano «free-foods».
+  exactObject(option, ['label', 'items', 'note', 'type', 'recipeId', 'recipeMultiplier', 'choiceGroups'], name);
   if (!DIET_PLAN_OPTION_LABELS.has(option.label)) fail('invalid-argument', `${name}.label non valido (A–D)`);
-  if (!Array.isArray(option.items) || !option.items.length || option.items.length > DIET_PLAN_LIMITS.itemsPerOption) {
-    fail('invalid-argument', `${name}.items deve contenere da 1 a ${DIET_PLAN_LIMITS.itemsPerOption} alimenti`);
+  if (option.type != null && option.type !== '' && !DIET_PLAN_OPTION_TYPES.has(option.type)) {
+    fail('invalid-argument', `${name}.type non valido (recipe|free-foods)`);
   }
-  return {
-    label: option.label,
-    items: option.items.map((item, index) => validateDietPlanItem(item, `${name}.items[${index}]`)),
-    note: optionalText(option.note, `${name}.note`, 1000)
-  };
+  const type = option.type === 'recipe' || (!option.type && option.recipeId) ? 'recipe' : 'free-foods';
+  const note = optionalText(option.note, `${name}.note`, 1000);
+  if (type === 'recipe') {
+    if (!option.recipeId || typeof option.recipeId !== 'string') fail('invalid-argument', `${name}.recipeId mancante per opzione ricetta`);
+    const recipeId = id(option.recipeId, `${name}.recipeId`);
+    const multiplierRaw = dietPlanNumber(option.recipeMultiplier ?? 1, `${name}.recipeMultiplier`, { max: 10 });
+    if (multiplierRaw == null || multiplierRaw < 0.1) fail('invalid-argument', `${name}.recipeMultiplier non valido (0,1–10)`);
+    if (Array.isArray(option.items) && option.items.length) fail('invalid-argument', `${name}: opzione ricetta non ammette items`);
+    if (Array.isArray(option.choiceGroups) && option.choiceGroups.length) fail('invalid-argument', `${name}: opzione ricetta non ammette choiceGroups`);
+    return { label: option.label, type: 'recipe', recipeId, recipeMultiplier: multiplierRaw, items: [], choiceGroups: [], note };
+  }
+  if (option.recipeId != null && option.recipeId !== '') fail('invalid-argument', `${name}: recipeId ammesso solo con type "recipe"`);
+  if (option.recipeMultiplier != null && option.recipeMultiplier !== '') fail('invalid-argument', `${name}: recipeMultiplier ammesso solo con type "recipe"`);
+  const items = Array.isArray(option.items) ? option.items.map((item, index) => validateDietPlanItem(item, `${name}.items[${index}]`)) : [];
+  if (items.length > DIET_PLAN_LIMITS.itemsPerOption) {
+    fail('invalid-argument', `${name}.items può contenere al massimo ${DIET_PLAN_LIMITS.itemsPerOption} alimenti`);
+  }
+  const choiceGroups = Array.isArray(option.choiceGroups)
+    ? option.choiceGroups.map((group, index) => validateDietPlanChoiceGroup(group, `${name}.choiceGroups[${index}]`))
+    : [];
+  if (choiceGroups.length > DIET_PLAN_LIMITS.choiceGroupsPerOption) {
+    fail('invalid-argument', `${name}.choiceGroups può contenere al massimo ${DIET_PLAN_LIMITS.choiceGroupsPerOption} gruppi`);
+  }
+  if (!items.length && !choiceGroups.length) {
+    fail('invalid-argument', `${name}: serve almeno un alimento o un gruppo scelta`);
+  }
+  return { label: option.label, type: 'free-foods', recipeId: null, recipeMultiplier: null, items, choiceGroups, note };
 }
 
 function validateDietPlanMeal(meal, name) {

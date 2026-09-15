@@ -427,6 +427,43 @@ button:focus-visible,input:focus-visible,select:focus-visible,textarea:focus-vis
 .diet-item .check-inline{grid-column:1/-1}
 .diet-item .diet-del{position:static;width:32px;height:32px}
 .diet-add{justify-self:start}
+/* Ordine pasti fisso: etichetta non editabile + chip di aggiunta per i tipi mancanti. */
+.diet-meal-name{font-family:var(--font-display);font-size:var(--fs-h4);white-space:nowrap}
+.diet-meal-add{display:flex;flex-wrap:wrap;gap:8px}
+.diet-add-chip{border:1px dashed var(--line-strong, var(--line));border-radius:999px;padding:8px 16px;background:var(--surface);font-size:var(--fs-caption);cursor:pointer}
+.diet-add-chip:hover{border-color:var(--primary);color:var(--primary)}
+/* Tipo opzione: segmenti «Alimenti | Ricetta» mutuamente esclusivi. */
+.diet-type-toggle{display:inline-flex;border:1px solid var(--line);border-radius:999px;overflow:hidden}
+.diet-type-chip{border:0;background:transparent;padding:4px 12px;font-size:var(--fs-caption);cursor:pointer;color:var(--text-muted)}
+.diet-type-chip.active{background:var(--primary);color:#fff;font-weight:700}
+.diet-type-chip:disabled{cursor:default}
+.diet-option.is-recipe{border-style:solid;border-color:var(--primary-soft, var(--line))}
+/* Ricetta: selettore + moltiplicatore + anteprima ingredienti scalati. */
+.diet-recipe-fields{display:grid;gap:12px}
+.diet-recipe-fields select{max-width:420px}
+.diet-mult{display:flex;align-items:center;gap:8px;font-size:var(--fs-caption)}
+.diet-mult input{width:90px}
+.diet-recipe-preview{border:1px dashed var(--line);border-radius:10px;padding:12px;background:var(--surface-alt)}
+.diet-recipe-title{margin:0 0 8px;font-weight:700}
+.diet-recipe-ingredients{margin:0;padding-left:16px;display:grid;gap:4px;font-size:var(--fs-caption)}
+.diet-recipe-hint{margin:0;font-size:var(--fs-caption);color:var(--text-muted)}
+/* Gruppo scelta: minimizzato di default quando completo, espandibile. */
+.diet-choice-groups{display:grid;gap:12px}
+.diet-choice-group{border:1px solid var(--line);border-radius:11px;background:var(--surface-alt);padding:12px;display:grid;gap:12px}
+.diet-choice-head{display:flex;align-items:center;gap:12px;flex-wrap:wrap}
+.diet-choice-head strong{white-space:nowrap}
+.diet-choice-summary{flex:1 1 220px;font-size:var(--fs-caption);color:var(--text-muted);overflow-wrap:anywhere}
+.diet-choice-summary .diet-choice-alts{color:var(--text)}
+.diet-choice-body{display:grid;gap:12px}
+.diet-choice-group:not(.expanded) .diet-choice-body{display:none}
+.diet-choice-alternatives{display:grid;gap:12px}
+.diet-choice-alt{display:grid;gap:8px;grid-template-columns:minmax(110px,1fr) minmax(140px,2fr) 76px 84px auto;align-items:center}
+.diet-choice-alt [data-f="alt-qty"]{width:100%}
+.diet-choice-alt .diet-del{position:static;width:32px;height:32px}
+.diet-choice-prefill{display:flex;align-items:end;gap:12px;flex-wrap:wrap}
+.diet-choice-prefill label{font-size:var(--fs-caption);display:grid;gap:4px}
+.diet-choice-prefill select{min-width:220px}
+.preview-choice{margin:4px 0 0;font-size:var(--fs-caption);color:var(--text-muted)}
 .diet-preview{border:1px solid var(--line);border-radius:14px;padding: 16px;background:var(--surface-alt);display:grid;gap: 12px;margin-top: 4px}
 .preview-meta{color:var(--text-muted);font-size: var(--fs-secondary);font-weight:700;margin: 0}
 .preview-day{border-top:1px dashed var(--line);padding-top: 12px}
@@ -463,6 +500,8 @@ html.dark-mode .check-row small,html.dark-mode .report-main small,html.dark-mode
   .diet-targets{grid-template-columns:1fr 1fr}
   .diet-item{grid-template-columns:1fr auto}
   .diet-item .diet-qty{grid-column:1/-1}
+  .diet-choice-alt{grid-template-columns:1fr auto}
+  .diet-choice-alt [data-f="alt-desc"]{grid-column:1/-1;order:-1}
   .danger-zone{flex-direction:column-reverse}
   .danger-zone button{width:100%}
 }
