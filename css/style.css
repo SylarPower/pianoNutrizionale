@@ -291,6 +291,35 @@ h4 { font-size: var(--fs-body); font-weight: 700; }
   font-weight: 700;
 }
 .global-header select option { color: #111; }
+/* Profilo porzioni + moltiplicatore coppia: un solo blocco centrale. */
+.header-profile { display: flex; align-items: center; gap: 8px; min-width: 0; }
+.header-profile select { flex: 0 1 auto; min-width: 0; }
+.couple-mult {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  border: 1px solid rgba(255,255,255,.25);
+  border-radius: 11px;
+  background: rgba(255,255,255,.12);
+  padding: 4px;
+}
+.couple-mult-btn {
+  width: 32px;
+  height: 32px;
+  border: 0;
+  border-radius: 9px;
+  background: transparent;
+  color: #fff;
+  font-size: var(--fs-subtitle);
+  font-weight: 700;
+  cursor: pointer;
+}
+.couple-mult-btn:hover:not(:disabled) { background: rgba(255,255,255,.18); }
+.couple-mult-btn:disabled { opacity: .4; cursor: default; }
+.couple-mult-value { min-width: 42px; text-align: center; font-weight: 800; font-size: var(--fs-input); color: #fff; }
+@media (max-width: 640px) {
+  .couple-mult-value { min-width: 34px; }
+}
 .header-account {
   justify-self: end;
   display: inline-flex;
@@ -1406,6 +1435,12 @@ body.dark-mode .global-header select {
   background: #080808;
   color: #FFFFFF;
 }
+
+body.dark-mode .couple-mult {
+  border-color: #282828;
+  background: #080808;
+}
+body.dark-mode .couple-mult-btn:hover:not(:disabled) { background: #1a1a1a; }
 
 body.dark-mode .header-account {
   color: var(--text-muted);

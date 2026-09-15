@@ -1,0 +1,562 @@
+{
+  "schemaVersion": 1,
+  "name": "Tabella grammature — alternative carboidrati e proteine",
+  "description": "Tabella di esempio con le grammature di tutte le alternative di carboidrati e proteine della guida: dosi in grammi a crudo per pranzo e cena, nei giorni di allenamento (A) e riposo (R).",
+  "rows": [
+    {
+      "description": "Patate dolci",
+      "group": "carb",
+      "foodGroup": "cereali",
+      "doses": {
+        "lunch": {
+          "training": 300,
+          "rest": 220
+        },
+        "dinner": {
+          "training": 160,
+          "rest": 160
+        }
+      }
+    },
+    {
+      "description": "Gnocchi",
+      "group": "carb",
+      "foodGroup": "cereali",
+      "doses": {
+        "lunch": {
+          "training": 150,
+          "rest": 110
+        },
+        "dinner": {
+          "training": 80,
+          "rest": 80
+        }
+      }
+    },
+    {
+      "description": "Polenta",
+      "group": "carb",
+      "foodGroup": "cereali",
+      "doses": {
+        "lunch": {
+          "training": 330,
+          "rest": 240
+        },
+        "dinner": {
+          "training": 170,
+          "rest": 170
+        }
+      }
+    },
+    {
+      "description": "Mais",
+      "group": "carb",
+      "foodGroup": "cereali",
+      "doses": {
+        "lunch": {
+          "training": 300,
+          "rest": 210
+        },
+        "dinner": {
+          "training": 150,
+          "rest": 150
+        }
+      }
+    },
+    {
+      "description": "Avena",
+      "group": "carb",
+      "foodGroup": "cereali",
+      "doses": {
+        "lunch": {
+          "training": 70,
+          "rest": 50
+        },
+        "dinner": {
+          "training": 40,
+          "rest": 40
+        }
+      }
+    },
+    {
+      "description": "Gallette",
+      "group": "carb",
+      "foodGroup": "cereali",
+      "doses": {
+        "lunch": {
+          "training": 65,
+          "rest": 45
+        },
+        "dinner": {
+          "training": 35,
+          "rest": 35
+        }
+      }
+    },
+    {
+      "description": "Crackers e grissini",
+      "group": "carb",
+      "foodGroup": "cereali",
+      "doses": {
+        "lunch": {
+          "training": 60,
+          "rest": 45
+        },
+        "dinner": {
+          "training": 30,
+          "rest": 30
+        }
+      }
+    },
+    {
+      "description": "Piadina e wrap",
+      "group": "carb",
+      "foodGroup": "cereali",
+      "doses": {
+        "lunch": {
+          "training": 80,
+          "rest": 55
+        },
+        "dinner": {
+          "training": 40,
+          "rest": 40
+        }
+      }
+    },
+    {
+      "description": "Cereali colazione",
+      "group": "carb",
+      "foodGroup": "cereali",
+      "doses": {
+        "lunch": {
+          "training": 70,
+          "rest": 50
+        },
+        "dinner": {
+          "training": 40,
+          "rest": 40
+        }
+      }
+    },
+    {
+      "description": "Cereali",
+      "group": "carb",
+      "foodGroup": "cereali",
+      "doses": {
+        "lunch": {
+          "training": 70,
+          "rest": 50
+        },
+        "dinner": {
+          "training": 40,
+          "rest": 40
+        }
+      }
+    },
+    {
+      "description": "Pane",
+      "group": "carb",
+      "foodGroup": "cereali",
+      "doses": {
+        "lunch": {
+          "training": 100,
+          "rest": 70
+        },
+        "dinner": {
+          "training": 50,
+          "rest": 50
+        }
+      }
+    },
+    {
+      "description": "Patate",
+      "group": "carb",
+      "foodGroup": "cereali",
+      "doses": {
+        "lunch": {
+          "training": 340,
+          "rest": 240
+        },
+        "dinner": {
+          "training": 170,
+          "rest": 170
+        }
+      }
+    },
+    {
+      "description": "Pollo e tacchino",
+      "group": "protein",
+      "foodGroup": "carne",
+      "doses": {
+        "lunch": {
+          "training": 200,
+          "rest": 200
+        },
+        "dinner": {
+          "training": 200,
+          "rest": 200
+        }
+      }
+    },
+    {
+      "description": "Salmone affumicato",
+      "group": "protein",
+      "foodGroup": "pesce",
+      "doses": {
+        "lunch": {
+          "training": 150,
+          "rest": 150
+        },
+        "dinner": {
+          "training": 150,
+          "rest": 150
+        }
+      }
+    },
+    {
+      "description": "Pesce al naturale",
+      "group": "protein",
+      "foodGroup": "pesce",
+      "doses": {
+        "lunch": {
+          "training": 220,
+          "rest": 220
+        },
+        "dinner": {
+          "training": 220,
+          "rest": 220
+        }
+      }
+    },
+    {
+      "description": "Pesce sott'olio",
+      "group": "protein",
+      "foodGroup": "pesce",
+      "doses": {
+        "lunch": {
+          "training": 110,
+          "rest": 110
+        },
+        "dinner": {
+          "training": 110,
+          "rest": 110
+        }
+      }
+    },
+    {
+      "description": "Pesce azzurro",
+      "group": "protein",
+      "foodGroup": "pesce",
+      "doses": {
+        "lunch": {
+          "training": 130,
+          "rest": 130
+        },
+        "dinner": {
+          "training": 130,
+          "rest": 130
+        }
+      }
+    },
+    {
+      "description": "Pesce bianco",
+      "group": "protein",
+      "foodGroup": "pesce",
+      "doses": {
+        "lunch": {
+          "training": 260,
+          "rest": 260
+        },
+        "dinner": {
+          "training": 260,
+          "rest": 260
+        }
+      }
+    },
+    {
+      "description": "Crostacei e molluschi",
+      "group": "protein",
+      "foodGroup": "pesce",
+      "doses": {
+        "lunch": {
+          "training": 310,
+          "rest": 310
+        },
+        "dinner": {
+          "training": 310,
+          "rest": 310
+        }
+      }
+    },
+    {
+      "description": "Maiale magro",
+      "group": "protein",
+      "foodGroup": "carne",
+      "doses": {
+        "lunch": {
+          "training": 200,
+          "rest": 200
+        },
+        "dinner": {
+          "training": 200,
+          "rest": 200
+        }
+      }
+    },
+    {
+      "description": "Manzo e vitello",
+      "group": "protein",
+      "foodGroup": "carne",
+      "doses": {
+        "lunch": {
+          "training": 190,
+          "rest": 190
+        },
+        "dinner": {
+          "training": 190,
+          "rest": 190
+        }
+      }
+    },
+    {
+      "description": "Affettati",
+      "group": "protein",
+      "foodGroup": "carne",
+      "doses": {
+        "lunch": {
+          "training": 150,
+          "rest": 150
+        },
+        "dinner": {
+          "training": 150,
+          "rest": 150
+        }
+      }
+    },
+    {
+      "description": "Mozzarella light",
+      "group": "protein",
+      "foodGroup": "latticini",
+      "doses": {
+        "lunch": {
+          "training": 140,
+          "rest": 140
+        },
+        "dinner": {
+          "training": 140,
+          "rest": 140
+        }
+      }
+    },
+    {
+      "description": "Formaggi freschi",
+      "group": "protein",
+      "foodGroup": "latticini",
+      "doses": {
+        "lunch": {
+          "training": 80,
+          "rest": 80
+        },
+        "dinner": {
+          "training": 80,
+          "rest": 80
+        }
+      }
+    },
+    {
+      "description": "Yogurt greco",
+      "group": "protein",
+      "foodGroup": "latticini",
+      "doses": {
+        "lunch": {
+          "training": 400,
+          "rest": 400
+        },
+        "dinner": {
+          "training": 400,
+          "rest": 400
+        }
+      }
+    },
+    {
+      "description": "Fiocchi di latte",
+      "group": "protein",
+      "foodGroup": "latticini",
+      "doses": {
+        "lunch": {
+          "training": 200,
+          "rest": 200
+        },
+        "dinner": {
+          "training": 200,
+          "rest": 200
+        }
+      }
+    },
+    {
+      "description": "Montasio",
+      "group": "protein",
+      "foodGroup": "latticini",
+      "doses": {
+        "lunch": {
+          "training": 60,
+          "rest": 60
+        },
+        "dinner": {
+          "training": 60,
+          "rest": 60
+        }
+      }
+    },
+    {
+      "description": "Grana",
+      "group": "protein",
+      "foodGroup": "latticini",
+      "doses": {
+        "lunch": {
+          "training": 55,
+          "rest": 55
+        },
+        "dinner": {
+          "training": 55,
+          "rest": 55
+        }
+      }
+    },
+    {
+      "description": "Formaggi stagionati",
+      "group": "protein",
+      "foodGroup": "latticini",
+      "doses": {
+        "lunch": {
+          "training": 55,
+          "rest": 55
+        },
+        "dinner": {
+          "training": 55,
+          "rest": 55
+        }
+      }
+    },
+    {
+      "description": "Feta",
+      "group": "protein",
+      "foodGroup": "latticini",
+      "doses": {
+        "lunch": {
+          "training": 85,
+          "rest": 85
+        },
+        "dinner": {
+          "training": 85,
+          "rest": 85
+        }
+      }
+    },
+    {
+      "description": "Ricotta",
+      "group": "protein",
+      "foodGroup": "latticini",
+      "doses": {
+        "lunch": {
+          "training": 150,
+          "rest": 150
+        },
+        "dinner": {
+          "training": 150,
+          "rest": 150
+        }
+      }
+    },
+    {
+      "description": "Uova",
+      "group": "protein",
+      "foodGroup": "uova",
+      "doses": {
+        "lunch": {
+          "training": 180,
+          "rest": 180
+        },
+        "dinner": {
+          "training": 180,
+          "rest": 180
+        }
+      }
+    },
+    {
+      "description": "Legumotti",
+      "group": "protein",
+      "foodGroup": "legumi",
+      "doses": {
+        "lunch": {
+          "training": 70,
+          "rest": 70
+        },
+        "dinner": {
+          "training": 70,
+          "rest": 70
+        }
+      }
+    },
+    {
+      "description": "Legumi",
+      "group": "protein",
+      "foodGroup": "legumi",
+      "doses": {
+        "lunch": {
+          "training": 240,
+          "rest": 240
+        },
+        "dinner": {
+          "training": 240,
+          "rest": 240
+        }
+      }
+    },
+    {
+      "description": "Lupini",
+      "group": "protein",
+      "foodGroup": "legumi",
+      "doses": {
+        "lunch": {
+          "training": 200,
+          "rest": 200
+        },
+        "dinner": {
+          "training": 200,
+          "rest": 200
+        }
+      }
+    },
+    {
+      "description": "Seitan",
+      "group": "protein",
+      "foodGroup": "carne",
+      "doses": {
+        "lunch": {
+          "training": 180,
+          "rest": 180
+        },
+        "dinner": {
+          "training": 180,
+          "rest": 180
+        }
+      }
+    },
+    {
+      "description": "Burger vegetali",
+      "group": "protein",
+      "foodGroup": "carne",
+      "doses": {
+        "lunch": {
+          "training": 100,
+          "rest": 100
+        },
+        "dinner": {
+          "training": 100,
+          "rest": 100
+        }
+      }
+    }
+  ]
+}

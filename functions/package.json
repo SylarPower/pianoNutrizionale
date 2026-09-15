@@ -6,7 +6,7 @@
   "engines": { "node": "22" },
   "scripts": {
     "test": "node --test test/*.test.js",
-    "syntax": "node --check src/domain.js && node --check src/index.js && node --check scripts/seed-emulator.js",
+    "syntax": "node --check src/domain.js && node --check src/index.js && node --check scripts/seed-emulator.js && node --check scripts/seed-grammature-tables.js",
     "seed:emulator": "node scripts/seed-emulator.js"
   },
   "dependencies": {

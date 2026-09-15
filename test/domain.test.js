@@ -157,6 +157,34 @@ test('profilo Coppia somma dosi uomo + donna', () => {
   assert.deepEqual(d.parseSimpleAmount('2 cucchiaini'), { value: 2, unit: 'cucchiaino' });
 });
 
+test('moltiplicatore coppia scala la spesa solo se richiesto (profilo coppia)', () => {
+  const { days, recipesById } = shoppingFixture();
+  const selected = { monday: ['lunch'] };
+  // Senza moltiplicatore: invariata.
+  const base = d.aggregateShopping(planWith(days), recipesById, selected, 'couple');
+  assert.equal(base.find(e => e.ingredientId === 'petto-di-pollo').totals.g, 350);
+  // ×2 scala entrambe le dosi della coppia prima di sommare.
+  const doubled = d.aggregateShopping(planWith(days), recipesById, selected, 'couple', {}, { quantityMultiplier: 2 });
+  assert.equal(doubled.find(e => e.ingredientId === 'petto-di-pollo').totals.g, 700);
+  // ×1.5 arrotonda alla stessa cifra della singola dose (200→300, 150→225).
+  const half = d.aggregateShopping(planWith(days), recipesById, selected, 'couple', {}, { quantityMultiplier: 1.5 });
+  assert.equal(half.find(e => e.ingredientId === 'petto-di-pollo').totals.g, 525);
+  // Profilo singolo: il moltiplicatore non ha effetto se non applicato (qui uomo ×2).
+  const man = d.aggregateShopping(planWith(days), recipesById, selected, 'man', {}, { quantityMultiplier: 2 });
+  assert.equal(man.find(e => e.ingredientId === 'petto-di-pollo').totals.g, 400);
+});
+
+test('moltiplicatore nullo o fuori range non altera le dosi', () => {
+  const { days, recipesById } = shoppingFixture();
+  const selected = { monday: ['lunch'] };
+  const opts = q => ({ quantityMultiplier: q });
+  const pollo = list => list.find(e => e.ingredientId === 'petto-di-pollo').totals.g;
+  assert.equal(pollo(d.aggregateShopping(planWith(days), recipesById, selected, 'couple', {}, opts(1))), 350);
+  assert.equal(pollo(d.aggregateShopping(planWith(days), recipesById, selected, 'couple', {}, opts(0))), 350);
+  assert.equal(pollo(d.aggregateShopping(planWith(days), recipesById, selected, 'couple', {}, opts('x'))), 350);
+  assert.equal(pollo(d.aggregateShopping(planWith(days), recipesById, selected, 'couple', {}, opts(-1))), 350);
+});
+
 test('parseSimpleAmount usa il massimo degli intervalli e normalizza le unità', () => {
   assert.deepEqual(d.parseSimpleAmount('8-10'), { value: 10, unit: 'pz' });
   assert.deepEqual(d.parseSimpleAmount('8-10 pz'), { value: 10, unit: 'pz' });

@@ -1326,6 +1326,10 @@ function portionFor(ingredient, profile, dayType, slot, recipeSlot) {
   // dose cena; cena -> pranzo: pranzo A/R).
   function aggregateShopping(plan, recipesById, selectedMeals, profile = 'man', canonicalLabels = {}, options = {}) {
     const out = {};
+    // Moltiplicatore porzioni (app clienti, profilo coppia): scala le dosi
+    // prima dell'aggregazione. 1 o valori non validi = nessuna scala.
+    const multiplierValue = Number(options.quantityMultiplier);
+    const multiplier = Number.isFinite(multiplierValue) && multiplierValue > 0 && multiplierValue !== 1 ? multiplierValue : null;
     const contextualPlan = planUsesGuideDoses(plan, options.applyGuide);
     DAYS.forEach(day => {
       const dayType = plan?.days?.[day]?.type || 'rest';
@@ -1347,9 +1351,10 @@ function portionFor(ingredient, profile, dayType, slot, recipeSlot) {
             ? { ...ingredient, name: adapted.name, ingredientId: adapted.ingredientId, portions: adapted.portions }
             : ingredient;
           const amount = portionFor(effective, profile, dayType);
-          const entries = profile === 'couple' && amount && typeof amount === 'object'
-            ? [{ role: 'Uomo', raw: amount.man }, { role: 'Donna', raw: amount.ipo }]
-            : [{ role: profile === 'ipo' ? 'Donna' : 'Uomo', raw: amount }];
+          const scaledAmount = multiplier && typeof amount === 'string' ? scalePortionText(amount, multiplier) : amount;
+          const entries = profile === 'couple' && scaledAmount && typeof scaledAmount === 'object'
+            ? [{ role: 'Uomo', raw: scalePortionText(String(scaledAmount.man ?? ''), multiplier || 1) }, { role: 'Donna', raw: scalePortionText(String(scaledAmount.ipo ?? ''), multiplier || 1) }]
+            : [{ role: profile === 'ipo' ? 'Donna' : 'Uomo', raw: scaledAmount }];
           const id = ingredientIdFor(effective.name, effective.ingredientId);
           const entry = out[id] || (out[id] = {
             ingredientId: id,
@@ -3484,6 +3489,33 @@ const PROTEIN_CATEGORY_LABELS = {
     return kind === 'protein' ? 'Scegli 1 fonte proteica tra:' : 'Scegli 1 carboidrato tra:';
   }
 
+  // Alternative precompilate da una tabella grammature del nutrizionista
+  // (stessa forma della tabella di riferimento: righe con gruppo carb/protein
+  // e dosi pranzo/cena per giorno di allenamento e riposo). Le righe senza
+  // dose per il pasto richiesto vengono saltate.
+  function dietPlanTableAlternatives(table, kind, mealId, dayType) {
+    const rows = Array.isArray(table?.rows) ? table.rows : [];
+    const fallbackDay = dayType === 'rest' ? 'training' : 'rest';
+    return rows
+      .filter(row => row && row.group === kind && String(row.description || '').trim())
+      .map(row => {
+        const doses = row.doses || {};
+        const isDinner = mealId === 'dinner';
+        const slot = isDinner ? doses.dinner : doses.lunch;
+        const otherSlot = isDinner ? doses.lunch : doses.dinner;
+        const candidates = [slot?.[dayType], slot?.[fallbackDay], otherSlot?.[dayType], otherSlot?.[fallbackDay]];
+        const quantity = candidates.find(value => Number.isFinite(Number(value)) && Number(value) > 0);
+        if (!Number.isFinite(Number(quantity))) return null;
+        return createDietPlanItem({
+          foodGroup: typeof row.foodGroup === 'string' && row.foodGroup ? row.foodGroup : 'altro',
+          description: String(row.description).trim(),
+          quantity: Number(quantity),
+          unit: 'g'
+        });
+      })
+      .filter(Boolean);
+  }
+
   return {
     VERSION,
     DAYS,
@@ -3649,6 +3681,7 @@ const PROTEIN_CATEGORY_LABELS = {
     dietPlanSummary,
     scalePortionText,
     dietPlanReferenceAlternatives,
-    dietPlanReferenceGroupTitle
+    dietPlanReferenceGroupTitle,
+    dietPlanTableAlternatives
   };
 });

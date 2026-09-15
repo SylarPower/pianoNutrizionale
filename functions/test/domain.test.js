@@ -14,7 +14,8 @@ const {
   validateRemoveClientLink, validateMemberStatus, validateRemoveNutritionist,
   validateTransferStructureOwnership,
   RECIPE_SLOTS, PROFESSIONAL_RECIPE_VISIBILITY, PROFESSIONAL_RECIPE_LIMITS,
-  validateProfessionalRecipePortions, validateProfessionalRecipeIngredient, validateProfessionalRecipe
+  validateProfessionalRecipePortions, validateProfessionalRecipeIngredient, validateProfessionalRecipe,
+  GRAMMATURE_TABLE_GROUPS, GRAMMATURE_TABLE_LIMITS, validateGrammatureTable
 } = require('../src/domain');
 
 const ClientDomain = require('../../js/domain');
@@ -408,4 +409,42 @@ test('validateProfessionalRecipe: rifiuta slot, limiti e campi extra', () => {
   assert.throws(() => validateProfessionalRecipePortions({ man: 'x', extra: 1 }), /non ammessi/);
   assert.equal(PROFESSIONAL_RECIPE_VISIBILITY.has('studio'), true);
   assert.equal(PROFESSIONAL_RECIPE_LIMITS.ingredients, 100);
+});
+
+test('validateGrammatureTable: nome, righe e dosi per pasto/giorno', () => {
+  const row = {
+    description: 'Riso basmati', group: 'carb', foodGroup: 'cereali',
+    doses: { lunch: { training: 80, rest: 60 }, dinner: { training: 50, rest: 50 } }
+  };
+  const out = validateGrammatureTable({ name: 'Tabella base', description: '', rows: [row] });
+  assert.equal(out.name, 'Tabella base');
+  assert.equal(out.description, null);
+  assert.deepEqual(out.rows[0].doses.lunch, { training: 80, rest: 60 });
+  assert.equal(out.rows[0].foodGroup, 'cereali');
+  // foodGroup assente → altro; dosi mancanti → null.
+  const minimal = validateGrammatureTable({ name: 'Minima', rows: [{ description: 'Pollo', group: 'protein', doses: { lunch: { training: 200 } } }] });
+  assert.equal(minimal.rows[0].foodGroup, 'altro');
+  assert.deepEqual(minimal.rows[0].doses.dinner, { training: null, rest: null });
+  assert.equal(GRAMMATURE_TABLE_GROUPS.has('carb'), true);
+  assert.equal(GRAMMATURE_TABLE_GROUPS.has('protein'), true);
+});
+
+test('validateGrammatureTable: rifiuti per campi mancanti, gruppi e dosi fuori scala', () => {
+  const row = { description: 'Riso', group: 'carb', doses: { lunch: { training: 80 } } };
+  assert.throws(() => validateGrammatureTable({ name: 'ab', rows: [row] }), /name/, 'nome troppo corto');
+  assert.throws(() => validateGrammatureTable({ name: 'Tabella', rows: [] }), /rows/, 'nessuna riga');
+  assert.throws(() => validateGrammatureTable({ name: 'Tabella', rows: [{ ...row, group: 'dolci' }] }), /group/);
+  assert.throws(() => validateGrammatureTable({ name: 'Tabella', rows: [{ ...row, description: '' }] }), /description/);
+  assert.throws(() => validateGrammatureTable({ name: 'Tabella', rows: [{ ...row, doses: { lunch: {} } }] }), /almeno una dose/);
+  assert.throws(() => validateGrammatureTable({ name: 'Tabella', rows: [{ ...row, doses: { lunch: { training: GRAMMATURE_TABLE_LIMITS.quantity + 1 } } }] }), /non valida/);
+  assert.throws(() => validateGrammatureTable({ name: 'Tabella', rows: [{ ...row, doses: { lunch: { training: -5 } } }] }), /non valida/);
+  assert.throws(() => validateGrammatureTable({ name: 'Tabella', rows: [{ ...row, extra: 1 }] }), /non ammessi/);
+});
+
+test('tabella grammature di esempio: fixture coerente col contratto', () => {
+  const table = JSON.parse(fs.readFileSync(path.join(__dirname, '../../docs/tabella-grammature-esempio.json'), 'utf8'));
+  const out = validateGrammatureTable({ name: table.name, description: table.description, rows: table.rows });
+  assert.ok(out.rows.length >= 30, 'tutte le alternative carb+proteine');
+  assert.ok(out.rows.some(row => row.group === 'carb'));
+  assert.ok(out.rows.some(row => row.group === 'protein'));
 });

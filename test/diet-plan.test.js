@@ -349,12 +349,45 @@ test('editor console: gruppi scelta minimizzati con precompilazione dalla tabell
   assert.match(js, /function dietChoiceGroupHtml/);
   assert.match(js, /data-act="cg-toggle"/);
   assert.match(js, /data-act="cg-prefill"/);
-  assert.match(js, /dietPlanReferenceAlternatives\(kind, meal\.mealId, day\.dayType\)/);
   assert.match(js, /dietPlanReferenceGroupTitle\(kind\)/);
   assert.match(js, /data-f="cg-optional"/, 'la scelta può essere facoltativa (il cliente può saltare)');
   // Il gruppo si minimizza quando è completo: dopo il precompilamento si richiude.
   assert.match(js, /dietChoiceGroupsExpanded\.delete\(`\$\{dayIndex\}:\$\{mealIndex\}:\$\{optionIndex\}:\$\{cgIndex\}`\);\s*\}\s*break;\s*\}\s*default:/);
   assert.match(css, /\.diet-choice-group:not\(\.expanded\) \.diet-choice-body\{display:none\}/);
+});
+
+test('editor console: la precompilazione attinge dalla tabella grammature scelta', () => {
+  // Il selettore della tabella vive nel dialog della dieta guidata.
+  assert.match(html, /id="diet-plan-gram-table"/);
+  // L'helper sceglie tra tabella personale e riferimento guida integrato.
+  assert.match(js, /function dietPlanPrefillAlternatives/);
+  assert.match(js, /dietPlanTableAlternatives\(table, kind, mealId, dayType\)/);
+  assert.match(js, /domain\.dietPlanReferenceAlternatives\(kind, mealId, dayType\)/);
+  assert.match(js, /function renderDietPlanGramTableSelect/);
+  // Il dominio sa leggere le alternative da una tabella del nutrizionista.
+  assert.equal(typeof domain.dietPlanTableAlternatives, 'function');
+  const table = { rows: [
+    { description: 'Riso', group: 'carb', foodGroup: 'cereali', doses: { lunch: { training: 80, rest: 60 }, dinner: { training: 50, rest: 50 } } },
+    { description: 'Pollo', group: 'protein', foodGroup: 'carne', doses: { lunch: { training: 200, rest: 200 }, dinner: { training: 200, rest: 200 } } }
+  ] };
+  const carbLunch = domain.dietPlanTableAlternatives(table, 'carb', 'lunch', 'rest');
+  assert.equal(carbLunch.length, 1);
+  assert.equal(carbLunch[0].quantity, 60, 'pranzo riposo: colonna R');
+  const carbDinner = domain.dietPlanTableAlternatives(table, 'carb', 'dinner', 'training');
+  assert.equal(carbDinner[0].quantity, 50, 'cena: dose serale');
+  const proteins = domain.dietPlanTableAlternatives(table, 'protein', 'lunch', 'training');
+  assert.equal(proteins.length, 1);
+  assert.equal(proteins[0].foodGroup, 'carne');
+});
+
+test('editor console: i pasti partono minimizzati', () => {
+  // Stato dei pasti espansi azzerato all'apertura dell'editor.
+  assert.match(js, /dietMealsExpanded\.clear\(\)/);
+  assert.match(js, /data-act="meal-toggle"/);
+  // Corpo del pasto nascosto finché non è espanso.
+  assert.match(css, /\.diet-meal:not\(\.expanded\) \.diet-meal-body\{display:none\}/);
+  // Riepilogo compatto visibile solo a pasto ridotto.
+  assert.match(js, /function dietMealSummary/);
 });
 
 test('editor console: duplicazione giornata con nuova identità', () => {
