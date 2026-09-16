@@ -1789,7 +1789,7 @@ exports.acceptOrganizationInvite = callable(async (data, uid) => {
   exactObject(data, ['token']);
   const token = text(data.token, 'token', { min: 32, max: 256 });
   const tokenHash = hashToken(token);
-  const snap = await db.collectionGroup('invitations').where('tokenHash', '==', tokenHash).limit(2).get();
+  const snap = await findInvitationByTokenHash(tokenHash);
   if (snap.empty || snap.size > 1) throw new HttpsError('not-found', 'Invito non valido o già utilizzato');
   const inviteDoc = snap.docs[0];
   const invite = inviteDoc.data();
@@ -2005,6 +2005,28 @@ function buildInviteLink(baseUrl, token) {
 
 function inviteExpiryDate({ days = INVITE_TTL_DAYS, now = new Date() } = {}) {
   return new Date(now.getTime() + days * 24 * 3600 * 1000);
+}
+
+async function findInvitationByTokenHash(tokenHash) {
+  try {
+    const primarySnap = await db.collection(`organizations/${SINGLE_ORGANIZATION_ID}/invitations`)
+      .where('tokenHash', '==', tokenHash)
+      .limit(2)
+      .get();
+    if (!primarySnap.empty) return primarySnap;
+  } catch (err) {
+    logger.warn('Ricerca inviti su collezione primaria fallita', { err: err?.message });
+  }
+
+  try {
+    return await db.collectionGroup('invitations')
+      .where('tokenHash', '==', tokenHash)
+      .limit(2)
+      .get();
+  } catch (err) {
+    logger.warn('collectionGroup invitations fallback non disponibile o indice mancante', { err: err?.message });
+    return { empty: true, size: 0, docs: [] };
+  }
 }
 
 // Flag esplicito e documentato per la creazione di account tecnici di test.
@@ -2325,13 +2347,14 @@ exports.getClientInvitePreview = onCall(callableOptions, async request => {
   try {
     exactObject(request.data || {}, ['token']);
     const token = text((request.data || {}).token, 'token', { min: 64, max: 64, pattern: /^[a-f0-9]{64}$/ });
-    const snap = await db.collectionGroup('invitations').where('tokenHash', '==', hashToken(token)).limit(2).get();
+    const snap = await findInvitationByTokenHash(hashToken(token));
     if (snap.empty || snap.size > 1) return { status: 'not-found' };
     const doc = snap.docs[0];
     const invite = doc.data();
     const orgId = doc.ref.path.split('/')[1];
-    // Solo il nuovo flusso email: gli inviti legacy hanno un percorso separato.
-    if (invite.type !== CLIENT_EMAIL_INVITE_TYPE || orgId !== SINGLE_ORGANIZATION_ID) return { status: 'not-found' };
+    if ((invite.type !== CLIENT_EMAIL_INVITE_TYPE && invite.type !== 'nutritionist') || orgId !== SINGLE_ORGANIZATION_ID) {
+      return { status: 'not-found' };
+    }
     const expiresAt = invite.expiresAt?.toDate?.() || null;
     const expired = !expiresAt || expiresAt.getTime() <= Date.now();
     let status = 'expired';
@@ -2339,11 +2362,19 @@ exports.getClientInvitePreview = onCall(callableOptions, async request => {
     else if (invite.status === 'accepted') status = 'used';
     else if (invite.status === 'superseded') status = 'superseded';
     else if (invite.status === 'revoked') status = 'revoked';
-    const organizationName = await organizationDisplayName(orgId);
+    let organizationName;
+    if (invite.type === 'nutritionist') {
+      const orgDisplay = await organizationDisplayName(orgId);
+      organizationName = (orgDisplay && orgDisplay !== orgId) ? orgDisplay : 'Studio Professionale';
+      if (organizationName === orgId) organizationName = 'Studio Professionale';
+    } else {
+      organizationName = await organizationDisplayName(orgId);
+    }
     const nutritionistName = status === 'valid' ? await professionalDisplayName(orgId, invite.nutritionistUid) : null;
     return {
       status,
-      email: invite.targetEmailNormalized || null,
+      type: invite.type || CLIENT_EMAIL_INVITE_TYPE,
+      email: invite.targetEmailNormalized || invite.targetEmail || null,
       firstName: invite.firstName || null,
       lastName: invite.lastName || null,
       expiresAt: inviteExpiryIso(invite),
@@ -2366,11 +2397,13 @@ exports.redeemClientInvite = callable(async (data, uid, request) => {
   let inviteDoc = null;
   let invite = null;
   if (input.token) {
-    const snap = await db.collectionGroup('invitations').where('tokenHash', '==', hashToken(input.token)).limit(2).get();
+    const snap = await findInvitationByTokenHash(hashToken(input.token));
     if (snap.empty || snap.size > 1) throw new HttpsError('not-found', 'Invito non valido o già utilizzato');
     inviteDoc = snap.docs[0];
     invite = inviteDoc.data();
-    if (invite.type !== CLIENT_EMAIL_INVITE_TYPE) throw new HttpsError('not-found', 'Invito non valido o già utilizzato');
+    if (invite.type !== CLIENT_EMAIL_INVITE_TYPE && invite.type !== 'nutritionist') {
+      throw new HttpsError('not-found', 'Invito non valido o già utilizzato');
+    }
   } else {
     if (!emailVerified || !authEmail) return { status: 'no-pending-invite' };
     const snap = await db.collection(`organizations/${SINGLE_ORGANIZATION_ID}/invitations`)
@@ -2388,6 +2421,9 @@ exports.redeemClientInvite = callable(async (data, uid, request) => {
   const expiresAt = invite.expiresAt?.toDate?.() || null;
   if (invite.status !== 'pending') {
     if (invite.status === 'accepted' && invite.redeemedBy === uid) {
+      if (invite.type === 'nutritionist') {
+        return { status: 'already-linked', role: 'nutritionist', organizationId: orgId };
+      }
       return { status: 'already-linked', organizationId: orgId, clientId: invite.clientId };
     }
     throw new HttpsError('failed-precondition', invite.status === 'superseded'
@@ -2399,17 +2435,72 @@ exports.redeemClientInvite = callable(async (data, uid, request) => {
     await inviteDoc.ref.update({ status: 'expired', updatedAt: FieldValue.serverTimestamp() });
     throw new HttpsError('failed-precondition', 'Invito scaduto: chiedi un nuovo link al tuo nutrizionista');
   }
-  if (invite.targetEmailNormalized !== authEmail) {
+  const targetEmailNorm = invite.targetEmailNormalized || null;
+  const targetEmailRaw = invite.targetEmail ? String(invite.targetEmail).trim().toLowerCase() : null;
+  const emailMatches = (targetEmailNorm && targetEmailNorm === authEmail) || (targetEmailRaw && targetEmailRaw === authEmail) || (!targetEmailNorm && !targetEmailRaw);
+  if (targetEmailNorm && targetEmailNorm !== authEmail && !(targetEmailRaw && targetEmailRaw === authEmail)) {
+    // Per retrocompatibilità manteniamo il controllo stretto, ma consentiamo match su targetEmail
+    if (!emailMatches) {
+      throw new HttpsError('permission-denied', 'Questo invito è stato emesso per un altro indirizzo email');
+    }
+  } else if (!emailMatches) {
     throw new HttpsError('permission-denied', 'Questo invito è stato emesso per un altro indirizzo email');
   }
   // Il collegamento abilita dati professionali: si attiva dopo la verifica.
   if (!emailVerified) {
     return {
       status: 'email-verification-required', email: authEmail,
-      clientId: invite.clientId,
+      ...(invite.type === 'nutritionist' ? {} : { clientId: invite.clientId }),
       message: 'Verifica il tuo indirizzo email: poi il collegamento si attiva da solo.'
     };
   }
+
+  if (invite.type === 'nutritionist') {
+    const firstName = invite.firstName || '';
+    const lastName = invite.lastName || '';
+    const displayName = [firstName, lastName].filter(Boolean).join(' ') || authEmail;
+    const memberRef = db.doc(`organizations/${orgId}/members/${uid}`);
+    const eventId = checksum(`member.invite-redeemed:${inviteDoc.id}:${uid}`).slice(0, 32);
+    const actor = { uid, role: 'nutritionist' };
+    await db.runTransaction(async tx => {
+      const [fresh, member, audit] = await Promise.all([
+        tx.get(inviteDoc.ref), tx.get(memberRef), tx.get(auditRef(orgId, eventId))
+      ]);
+      if (audit.exists) return;
+      if (fresh.data()?.status !== 'pending') throw new HttpsError('failed-precondition', 'Invito non più valido: chiedi un nuovo link');
+      const prev = member.exists ? member.data() : {};
+      tx.set(memberRef, {
+        schemaVersion: 1,
+        role: 'nutritionist',
+        status: 'active',
+        email: authEmail,
+        emailNormalized: authEmail,
+        firstName,
+        lastName,
+        displayName,
+        createdAt: prev.createdAt || FieldValue.serverTimestamp(),
+        updatedAt: FieldValue.serverTimestamp(),
+        createdBy: prev.createdBy || uid,
+        updatedBy: uid
+      }, { merge: true });
+      tx.update(inviteDoc.ref, {
+        status: 'accepted',
+        redeemedBy: uid,
+        registeredAt: FieldValue.serverTimestamp(),
+        verifiedAt: FieldValue.serverTimestamp(),
+        decidedAt: FieldValue.serverTimestamp(),
+        decidedBy: uid,
+        updatedAt: FieldValue.serverTimestamp()
+      });
+      tx.create(auditRef(orgId, eventId), auditEvent({
+        orgId, eventId, type: 'member.invite-redeemed', actor,
+        subject: { type: 'member', id: uid }, idempotencyKey: input.idempotencyKey,
+        metadata: { via: 'invite', email: authEmail }
+      }));
+    });
+    return { status: 'link-active', role: 'nutritionist', organizationId: orgId };
+  }
+
   const linkSnap = await db.doc(`accountClientLinks/${uid}`).get();
   if (linkSnap.exists && linkSnap.data()?.status === 'active' && linkSnap.data()?.clientId !== invite.clientId) {
     throw new HttpsError('failed-precondition', 'Questo account è già associato a un altro professionista e non può ricevere un nuovo invito');
