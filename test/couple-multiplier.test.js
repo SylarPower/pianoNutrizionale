@@ -21,8 +21,10 @@ test('header: il controllo moltiplicatore esiste ed è solo per il profilo coppi
   assert.match(appJs, /class="couple-mult"/);
   // Il blocco è renderizzato soltanto quando il profilo è couple.
   assert.match(appJs, /profile === "couple" \? `[\s\S]*couple-mult[\s\S]*` : ""/);
-  // Limiti ×0,5–×3, passo 0,5.
+  // Limiti ×0,5–×3, passo 0,05.
   assert.match(appJs, /Math\.min\(3, Math\.max\(0\.5/);
+  assert.match(appJs, /changeCoupleMultiplier\(0\.05\)/);
+  assert.match(appJs, /changeCoupleMultiplier\(-0\.05\)/);
 });
 
 test('le dosi uomo/donna e la spesa seguono il moltiplicatore', () => {

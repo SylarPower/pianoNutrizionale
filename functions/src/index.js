@@ -17,7 +17,7 @@ const {
   validateTransferStructureOwnership,
   normalizeEmail, isLegacyTestEmail, emailFingerprint, maskEmail, INVITE_DELIVERY_CHANNEL,
   validateInviteClientEmail, validateCorrectClientInvite, validateResendClientInvite,
-  validateCancelClientInvite, validateUpdateClientProfileByStaff,
+  validateCancelClientInvite, validateUpdateClientProfileByStaff, validateDeleteClientPermanently,
   validateProposeClientEmailChange, validateRespondClientEmailChange, validateRedeemClientInvite,
   CLIENT_FREQUENCY_KEYS, CLIENT_FREQUENCY_LABELS, CLIENT_FREQUENCY_DEFAULTS,
   DOSE_EDITABLE_ASSIGNMENT_STATUSES,
@@ -1667,11 +1667,80 @@ exports.listOrganizationUsers = callable(async (data, uid) => {
 
 // Invito nutritionist (creatore): account esistente → membership immediata;
 // account inesistente → invito monouso con scadenza 7gg. Il token in chiaro
-// è restituito UNA sola volta; nel documento resta solo l'hash SHA-256.
+// Invito di un membro dello studio (nutritionist) da parte dell'admin.
+// Supporta sia l'email reale (con generazione link monouso come per i clienti)
+// sia lo username per retrocompatibilità.
 exports.inviteOrganizationUser = callable(async (data, uid) => {
   const input = validateInviteOrganizationUser(data);
   const actor = await actorContext(input.organizationId, uid);
   requireCreator(actor);
+  const orgId = actor.organizationId;
+
+  if (input.email) {
+    const authUser = await authUserByEmail(input.email);
+    if (authUser) {
+      const memberRef = db.doc(`organizations/${orgId}/members/${authUser.uid}`);
+      const eventId = checksum(`member.added:${orgId}:${authUser.uid}:${input.idempotencyKey}`).slice(0, 32);
+      let status = 'member-added';
+      await db.runTransaction(async tx => {
+        const [member, audit] = await Promise.all([tx.get(memberRef), tx.get(auditRef(orgId, eventId))]);
+        if (audit.exists) return;
+        if (member.exists && member.data()?.status === 'active') { status = 'already-member'; return; }
+        const memberData = {
+          schemaVersion: 1, role: 'nutritionist', status: 'active',
+          email: input.email, emailNormalized: input.email,
+          firstName: input.firstName || '', lastName: input.lastName || '',
+          displayName: [input.firstName, input.lastName].filter(Boolean).join(' ') || input.email,
+          updatedAt: FieldValue.serverTimestamp(), updatedBy: uid
+        };
+        if (member.exists) tx.update(memberRef, memberData);
+        else tx.create(memberRef, { ...memberData, createdAt: FieldValue.serverTimestamp(), createdBy: uid });
+        tx.create(auditRef(orgId, eventId), auditEvent({
+          orgId, eventId, type: 'member.added', actor,
+          subject: { type: 'member', id: authUser.uid }, idempotencyKey: input.idempotencyKey,
+          metadata: { role: 'nutritionist', email: maskEmail(input.email) }
+        }));
+      });
+      return { status, userId: authUser.uid, email: input.email };
+    }
+
+    const token = crypto.randomBytes(32).toString('hex');
+    const inviteId = checksum(`${orgId}:nutri-invite:${input.email}:${input.idempotencyKey}`).slice(0, 32);
+    const inviteRef = db.doc(`organizations/${orgId}/invitations/${inviteId}`);
+    const expiresAt = new Date(Date.now() + 7 * 24 * 3600 * 1000);
+    const eventId = checksum(`member.invited:${inviteId}`).slice(0, 32);
+    let created = true;
+
+    await db.runTransaction(async tx => {
+      const [existing, audit] = await Promise.all([tx.get(inviteRef), tx.get(auditRef(orgId, eventId))]);
+      if (existing.exists || audit.exists) { created = false; return; }
+      tx.create(inviteRef, {
+        schemaVersion: 2, inviteId, type: 'nutritionist', channel: 'manual-link',
+        targetEmail: input.email, targetEmailNormalized: input.email,
+        targetEmailHash: emailFingerprint(input.email),
+        firstName: input.firstName || '', lastName: input.lastName || '',
+        tokenHash: hashToken(token), status: 'pending', expiresAt: Timestamp.fromDate(expiresAt),
+        delivery: { schemaVersion: 2, channel: 'manual-link', status: 'manual', handedToConsole: true, updatedAt: FieldValue.serverTimestamp() },
+        createdAt: FieldValue.serverTimestamp(), updatedAt: FieldValue.serverTimestamp(), createdBy: uid
+      });
+      tx.create(auditRef(orgId, eventId), auditEvent({
+        orgId, eventId, type: 'member.invited', actor,
+        subject: { type: 'invitation', id: inviteId }, idempotencyKey: input.idempotencyKey,
+        metadata: { role: 'nutritionist', email: maskEmail(input.email) }
+      }));
+    });
+
+    const inviteUrl = buildInviteLink(APP_PUBLIC_URL, token);
+    return {
+      status: created ? 'invited' : 'already-invited',
+      inviteId,
+      expiresAt: expiresAt.toISOString(),
+      inviteUrl,
+      token,
+      delivery: { channel: 'manual-link', status: 'manual', handedToConsole: true }
+    };
+  }
+
   const targetUid = await usernameOwner(input.username);
   const inviteId = checksum(`${actor.organizationId}:member:${input.username}:${input.idempotencyKey}`).slice(0, 32);
   const inviteRef = db.doc(`organizations/${actor.organizationId}/invitations/${inviteId}`);
@@ -2405,7 +2474,7 @@ exports.resendClientInvite = callable(async (data, uid) => {
   if (!snapshot.exists) throw new HttpsError('not-found', 'Invito non trovato');
   const invite = snapshot.data();
   if (!authorizeInviteActor(actor, invite)) throw new HttpsError('permission-denied', 'Invito non autorizzato');
-  if (invite.type !== CLIENT_EMAIL_INVITE_TYPE) {
+  if (invite.type !== CLIENT_EMAIL_INVITE_TYPE && invite.type !== 'nutritionist') {
     throw new HttpsError('failed-precondition', 'Questo invito usa il flusso legacy: creane uno nuovo dal modulo legacy oppure annullalo');
   }
   if (invite.status === 'accepted') throw new HttpsError('failed-precondition', 'Invito già utilizzato: il cliente è registrato');
@@ -2569,25 +2638,61 @@ exports.correctClientInvite = callable(async (data, uid) => {
   };
 });
 
-// Anagrafica del cliente (nome e cognome) aggiornata dal nutrizionista.
-// Non tocca credenziali né dati Auth: l'email si cambia solo con la procedura
-// a due passi (proposta + conferma del cliente).
+// Anagrafica del cliente (nome, cognome ed eventuale email) aggiornata dal nutrizionista.
+// Se l'email viene modificata, viene aggiornata direttamente sia sul profilo cliente
+// sia su Firebase Authentication (se l'account esiste già).
 exports.updateClientProfileByStaff = callable(async (data, uid) => {
   const input = validateUpdateClientProfileByStaff(data);
   const actor = await actorContext(input.organizationId, uid);
   const client = await authorizedClient(actor, input.clientId);
+  const orgId = actor.organizationId;
   const eventId = checksum(`client.profile-updated-staff:${client.id}:${input.idempotencyKey}`).slice(0, 32);
+
+  const newEmail = input.email ? input.email : null;
+  const currentEmail = client.emailNormalized || client.email || null;
+  const emailChanging = Boolean(newEmail && newEmail !== currentEmail);
+
+  if (emailChanging) {
+    const otherProfiles = await clientProfilesByEmail(orgId, newEmail);
+    if (otherProfiles.some(item => item.id !== client.id)) {
+      throw new HttpsError('already-exists', 'Esiste già un profilo cliente con questo indirizzo email');
+    }
+  }
+
   await db.runTransaction(async tx => {
     const [fresh, audit] = await Promise.all([tx.get(client.ref), tx.get(auditRef(actor.organizationId, eventId))]);
     if (audit.exists) return;
-    tx.update(client.ref, {
+    const updateData = {
       firstName: input.firstName, lastName: input.lastName,
       updatedAt: FieldValue.serverTimestamp(), updatedBy: uid
-    });
+    };
+    if (emailChanging) {
+      updateData.email = newEmail;
+      updateData.emailNormalized = newEmail;
+      updateData.emailVerified = false;
+    }
+    tx.update(client.ref, updateData);
+
+    // Se ci sono inviti pendenti per questo cliente, aggiorniamo l'email e l'anagrafica
+    if (emailChanging) {
+      const pendingInvites = await tx.get(
+        db.collection(`organizations/${orgId}/invitations`).where('clientId', '==', client.id)
+      );
+      pendingInvites.docs.filter(doc => doc.data()?.status === 'pending').forEach(doc => {
+        tx.update(doc.ref, {
+          targetEmailNormalized: newEmail,
+          firstName: input.firstName,
+          lastName: input.lastName,
+          updatedAt: FieldValue.serverTimestamp(),
+          updatedBy: uid
+        });
+      });
+    }
+
     tx.create(auditRef(actor.organizationId, eventId), auditEvent({
       orgId: actor.organizationId, eventId, type: 'client.profile-updated-staff', actor,
       subject: { type: 'client', id: client.id }, idempotencyKey: input.idempotencyKey,
-      metadata: { fields: ['firstName', 'lastName'] }
+      metadata: { fields: emailChanging ? ['firstName', 'lastName', 'email'] : ['firstName', 'lastName'] }
     }));
     if (fresh.data()?.authUid) {
       tx.create(db.doc(`organizations/${actor.organizationId}/notifications/${eventId}`), {
@@ -2598,7 +2703,75 @@ exports.updateClientProfileByStaff = callable(async (data, uid) => {
       });
     }
   });
-  return { clientId: client.id, firstName: input.firstName, lastName: input.lastName };
+
+  if (emailChanging && client.authUid) {
+    try {
+      await adminAuth().updateUser(client.authUid, { email: newEmail, emailVerified: false });
+    } catch (error) {
+      if (error?.code === 'auth/email-already-exists') {
+        throw new HttpsError('already-exists', 'Esiste già un account con questo nuovo indirizzo email');
+      }
+      logger.error('Aggiornamento email Auth non riuscito', { code: error?.code, email: maskEmail(newEmail) });
+      throw new HttpsError('internal', 'Aggiornamento email di autenticazione non riuscito');
+    }
+  }
+
+  return {
+    clientId: client.id, firstName: input.firstName, lastName: input.lastName,
+    ...(emailChanging ? { email: newEmail } : {})
+  };
+});
+
+// Eliminazione definitiva di un cliente dalla piattaforma (SOLO ADMIN / CREATORE).
+// Esegue un wipe completo: cancella la scheda cliente, lo storico delle assegnazioni,
+// activeAssignment, accountClientLinks/{authUid}, eventuali inviti/richieste, e cancella
+// l'account Firebase Authentication corrispondente liberando l'indirizzo email.
+exports.deleteClientPermanently = callable(async (data, uid) => {
+  const input = validateDeleteClientPermanently(data);
+  const actor = await actorContext(input.organizationId, uid);
+  requireCreator(actor);
+  const orgId = actor.organizationId;
+  const clientRef = db.doc(`organizations/${orgId}/clients/${input.clientId}`);
+  const clientSnap = await clientRef.get();
+  if (!clientSnap.exists) throw new HttpsError('not-found', 'Cliente non trovato');
+  const clientData = clientSnap.data();
+  const authUid = clientData.authUid || null;
+  const eventId = checksum(`client.deleted-permanently:${input.clientId}:${input.idempotencyKey}`).slice(0, 32);
+
+  await db.runTransaction(async tx => {
+    const [assignmentsSnap, pendingRequests, pendingInvites] = await Promise.all([
+      tx.get(db.collection(`organizations/${orgId}/clients/${input.clientId}/assignments`)),
+      tx.get(db.collection(`organizations/${orgId}/clientLinkRequests`).where('clientId', '==', input.clientId)),
+      tx.get(db.collection(`organizations/${orgId}/invitations`).where('clientId', '==', input.clientId))
+    ]);
+
+    assignmentsSnap.docs.forEach(doc => tx.delete(doc.ref));
+    tx.delete(db.doc(`organizations/${orgId}/clients/${input.clientId}/state/activeAssignment`));
+    tx.delete(clientRef);
+
+    if (authUid) {
+      tx.delete(db.doc(`accountClientLinks/${authUid}`));
+    }
+
+    pendingRequests.docs.forEach(doc => tx.delete(doc.ref));
+    pendingInvites.docs.forEach(doc => tx.delete(doc.ref));
+
+    tx.create(auditRef(orgId, eventId), auditEvent({
+      orgId, eventId, type: 'client.deleted-permanently', actor,
+      subject: { type: 'client', id: input.clientId }, idempotencyKey: input.idempotencyKey,
+      metadata: { authUid, email: maskEmail(clientData.email || clientData.emailNormalized) }
+    }));
+  });
+
+  if (authUid) {
+    try {
+      await adminAuth().deleteUser(authUid);
+    } catch (err) {
+      logger.warn('Cancellazione utente Auth non riuscita o già rimosso', { authUid, err: err?.message });
+    }
+  }
+
+  return { clientId: input.clientId, status: 'deleted-permanently' };
 });
 
 // Anagrafica professionista gestita solo da admin (Sessione 1)
@@ -2612,18 +2785,32 @@ exports.updateMemberProfileByStaff = callable(async (data, uid) => {
     const [member, audit] = await Promise.all([tx.get(memberRef), tx.get(auditRef(actor.organizationId, eventId))]);
     if (audit.exists) return;
     if (!member.exists) throw new HttpsError('not-found', 'Profilo professionista non trovato');
-    tx.update(memberRef, {
+    const updatePayload = {
       firstName: input.firstName, lastName: input.lastName,
-      displayName: `${input.firstName} ${input.lastName}`,
+      displayName: `${input.firstName} ${input.lastName}`.trim(),
       updatedAt: FieldValue.serverTimestamp(), updatedBy: uid
-    });
+    };
+    if (input.email) {
+      updatePayload.email = input.email;
+      updatePayload.emailNormalized = input.email;
+    }
+    tx.update(memberRef, updatePayload);
     tx.create(auditRef(actor.organizationId, eventId), auditEvent({
       orgId: actor.organizationId, eventId, type: 'member.profile-updated-staff', actor,
       subject: { type: 'member', id: input.userId }, idempotencyKey: input.idempotencyKey,
-      metadata: { fields: ['firstName', 'lastName'] }
+      metadata: { fields: input.email ? ['firstName', 'lastName', 'email'] : ['firstName', 'lastName'] }
     }));
   });
-  return { userId: input.userId, firstName: input.firstName, lastName: input.lastName };
+
+  if (input.email) {
+    try {
+      await adminAuth().updateUser(input.userId, { email: input.email });
+    } catch (err) {
+      logger.warn('Aggiornamento email Auth professionista non riuscito o utente non Auth', { userId: input.userId, err: err?.message });
+    }
+  }
+
+  return { userId: input.userId, firstName: input.firstName, lastName: input.lastName, email: input.email || null };
 });
 
 // Proposta di cambio email (nutrizionista → cliente). Nulla cambia finché il

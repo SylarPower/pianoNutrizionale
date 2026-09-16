@@ -29,7 +29,6 @@
         <p id="admin-login-error" class="error" role="alert"></p>
         <button class="primary" type="submit">Entra nella console <span>→</span></button>
       </form>
-      <p class="trust-line">🔒 Accesso protetto · Operazioni registrate nell’audit</p>
     </section>
   </main>
 
@@ -38,7 +37,7 @@
     <aside class="sidebar" id="console-sidebar">
       <div class="brand-lockup" aria-hidden="true"><span><img src="assets/loghi/logo-console.svg" alt=""></span><div><strong>Piano</strong><small>Console professionale</small></div></div>
       <nav aria-label="Console">
-        <button class="nav-link active" data-view="clients"><span>♙</span>Clienti</button>
+        <button class="nav-link active" data-view="clients" id="nav-clients"><span>♙</span><span id="nav-clients-label">Clienti</span></button>
         <button class="nav-link" data-view="doses"><span>⚖</span>Dosi clienti</button>
         <button class="nav-link" data-view="structures"><span>▦</span>Strutture dieta</button>
         <button class="nav-link" data-view="recipes"><span>🍲</span>Ricette</button>
@@ -46,14 +45,14 @@
         <button id="nav-catalog" class="nav-link hidden" data-view="catalog"><span>⛁</span>Catalogo</button>
         <button class="nav-link" data-view="mapping"><span>◫</span>Coda ingredienti <b id="nav-open-count" class="badge-zero" aria-label="Coda ingredienti: nessun caso in sospeso">0</b></button>
       </nav>
-      <div class="sidebar-bottom"><div class="security-note"><span>✓</span><div><strong>Ambiente protetto</strong><small>Ogni azione è tracciata</small></div></div><button id="admin-logout" class="text-button">Esci</button></div>
+      <div class="sidebar-bottom"><button id="admin-logout" class="text-button">Esci</button></div>
     </aside>
 
     <div class="workspace">
       <header class="topbar">
         <button id="mobile-menu" class="icon-button" aria-label="Apri menu" aria-expanded="false" aria-controls="console-sidebar">☰</button>
         <button id="theme-toggle" class="theme-toggle" type="button" aria-pressed="false" aria-label="Attiva il tema scuro" title="Tema chiaro/scuro"><span id="theme-toggle-icon" aria-hidden="true">☾</span></button>
-        <div class="topbar-user"><span class="avatar" id="admin-avatar">A</span><div><strong id="admin-name">Professionista</strong><small>Sessione verificata</small></div></div>
+        <div class="topbar-user"><span class="avatar" id="admin-avatar">A</span><div><strong id="admin-name">Professionista</strong></div></div>
       </header>
 
       <main id="view-mapping" class="console-view">
@@ -72,18 +71,23 @@
       </main>
 
       <main id="view-clients" class="console-view hidden">
-        <section class="hero-row"><div><p class="eyebrow">I TUOI CLIENTI</p><h1>Ogni persona,<br>un solo posto.</h1><p>Attivi, in attesa e inattivi. Apri la scheda per gestire anagrafica, collegamento e struttura dieta.</p></div><div class="hero-actions"><button id="invite-client-open" class="primary small-primary">＋ Invita nuovo cliente</button><button id="refresh-clients" class="secondary">↻ Aggiorna clienti</button></div></section>
-        <section class="panel"><div class="panel-head"><div><h2>Clienti</h2><p>Vedi solo i profili consentiti dal tuo ruolo. Il titolo di ogni scheda è sempre Nome e Cognome.</p></div></div>
-          <div id="client-filter" class="filter-tabs" role="group" aria-label="Filtra i clienti per stato">
-            <button type="button" class="filter-tab active" data-client-filter="all" aria-pressed="true">Tutti <b id="count-all">0</b></button>
-            <button type="button" class="filter-tab" data-client-filter="active" aria-pressed="false">Attivi <b id="count-active">0</b></button>
-            <button type="button" class="filter-tab" data-client-filter="pending" aria-pressed="false">In attesa <b id="count-pending">0</b></button>
-            <button type="button" class="filter-tab" data-client-filter="inactive" aria-pressed="false">Inattivi <b id="count-inactive">0</b></button>
-          </div>
-          <div id="clients-feedback" class="feedback" role="status"></div><div id="clients-list" class="client-grid"></div></section>
+        <section class="hero-row"><div><p class="eyebrow" id="clients-hero-eyebrow">I TUOI CLIENTI</p><h1 id="clients-hero-title">Ogni persona,<br>un solo posto.</h1><p id="clients-hero-lead">Attivi, in attesa e inattivi. Apri la scheda per gestire anagrafica, collegamento e struttura dieta.</p></div><div class="hero-actions"><button id="invite-nutritionist-open" class="primary small-primary hidden">＋ Invita professionista</button><button id="invite-client-open" class="primary small-primary">＋ Invita nuovo cliente</button><button id="refresh-clients" class="secondary">↻ Aggiorna</button></div></section>
         <section id="team-panel" class="panel hidden"><div class="panel-head"><div><h2>Professionisti dello studio</h2><p id="users-scope">Visibile solo all’admin: qui si gestiscono i professionisti che lavorano nello studio.</p></div></div><div id="users-feedback" class="feedback" role="status"></div><div id="nutritionist-profile-form" class="profile-name-form"></div><div id="members-list" class="report-list"></div>
           <form id="invite-nutritionist-form" class="invite-card hidden"><h3>Invita professionista</h3><label>Username<div class="restore-row"><input id="invite-nutritionist-username" required autocomplete="off" placeholder="username esatto"><button type="button" class="secondary" data-verify-username="invite-nutritionist-username" data-verify-out="invite-nutritionist-result">Verifica</button></div></label><p class="field-hint">Ruolo consentito: solo nutritionist. Se l’account non esiste, ricevi un invito monouso (7 giorni) da consegnare fuori piattaforma.</p><p id="invite-nutritionist-result" class="feedback" role="status"></p><button class="primary" type="submit">Invita professionista →</button></form>
         </section>
+        <section class="panel"><div class="panel-head"><div><h2>Clienti</h2><p>Vedi solo i profili consentiti dal tuo ruolo. Il titolo di ogni scheda è sempre Nome e Cognome.</p></div></div>
+          <div class="client-toolbar">
+            <div id="client-filter" class="filter-tabs" role="group" aria-label="Filtra i clienti per stato">
+              <button type="button" class="filter-tab active" data-client-filter="all" aria-pressed="true">Tutti <b id="count-all">0</b></button>
+              <button type="button" class="filter-tab" data-client-filter="active" aria-pressed="false">Attivi <b id="count-active">0</b></button>
+              <button type="button" class="filter-tab" data-client-filter="pending" aria-pressed="false">In attesa <b id="count-pending">0</b></button>
+              <button type="button" class="filter-tab" data-client-filter="inactive" aria-pressed="false">Inattivi <b id="count-inactive">0</b></button>
+            </div>
+            <div class="client-search-wrap">
+              <input id="client-search" type="search" placeholder="Cerca nome, cognome o email…" aria-label="Cerca cliente per nome, cognome o email" autocomplete="off">
+            </div>
+          </div>
+          <div id="clients-feedback" class="feedback" role="status"></div><div id="clients-list" class="client-grid"></div></section>
       </main>
 
       <main id="view-doses" class="console-view hidden">
@@ -130,6 +134,10 @@
 
   <div id="invite-client-dialog" class="dialog hidden" role="dialog" aria-modal="true" aria-labelledby="invite-client-title"><div class="dialog-backdrop" data-close-invite-client></div><section class="dialog-card"><button class="dialog-close" data-close-invite-client aria-label="Chiudi">×</button><p class="eyebrow">NUOVO CLIENTE</p><h2 id="invite-client-title">Invita un nuovo cliente</h2><p class="dialog-lead">Serve un indirizzo email reale: sarà la credenziale del cliente. Il link è monouso, scade dopo 7 giorni e il collegamento si attiva dopo la verifica dell’email. Il link lo consegni tu: nessuna email viene inviata in automatico.</p>
     <form id="invite-client-email-form"><label>Email del cliente<input id="invite-client-email" type="email" required autocomplete="off" maxlength="254" placeholder="nome@esempio.it"></label><div class="form-grid"><label>Nome<input id="invite-client-first-name" required maxlength="80" autocomplete="off" placeholder="Mario"></label><label>Cognome<input id="invite-client-last-name" required maxlength="80" autocomplete="off" placeholder="Rossi"></label></div><label id="invite-client-email-nutri-field">Professionista destinatario<select id="invite-client-email-nutritionist"><option value="">Senza professionista (solo admin)</option></select></label><p class="field-hint">L’email reale è la credenziale del cliente: niente indirizzi tecnici e nessuno username da inventare. Nessuna email parte da qui: al termine ottieni un link personale da consegnare tu con <strong>Copia link</strong> o <strong>Condividi link</strong>.</p><p id="invite-client-email-result" class="feedback" role="status"></p><div class="dialog-actions"><button type="button" class="secondary" data-close-invite-client>Chiudi</button><button class="primary" type="submit">Crea invito →</button></div></form>
+  </section></div>
+
+  <div id="invite-nutritionist-dialog" class="dialog hidden" role="dialog" aria-modal="true" aria-labelledby="invite-nutritionist-title"><div class="dialog-backdrop" data-close-invite-nutritionist></div><section class="dialog-card"><button class="dialog-close" data-close-invite-nutritionist aria-label="Chiudi">×</button><p class="eyebrow">NUOVO PROFESSIONISTA</p><h2 id="invite-nutritionist-title">Invita un professionista</h2><p class="dialog-lead">Inserisci l’email reale, nome e cognome del professionista. Riceverai un link monouso (valido 7 giorni) da consegnare tu con <strong>Copia link</strong> o <strong>Condividi link</strong>.</p>
+    <form id="invite-nutritionist-email-form"><label>Email del professionista<input id="invite-nutritionist-email" type="email" required autocomplete="off" maxlength="254" placeholder="nutrizionista@esempio.it"></label><div class="form-grid"><label>Nome<input id="invite-nutritionist-first-name" required maxlength="80" autocomplete="off" placeholder="Mario"></label><label>Cognome<input id="invite-nutritionist-last-name" required maxlength="80" autocomplete="off" placeholder="Rossi"></label></div><p class="field-hint">Ruolo consentito: solo nutritionist. Nessuna email parte da qui: al termine ottieni il link di invito monouso per accedere allo studio.</p><p id="invite-nutritionist-email-result" class="feedback" role="status"></p><div class="dialog-actions"><button type="button" class="secondary" data-close-invite-nutritionist>Chiudi</button><button class="primary" type="submit">Crea invito professionista →</button></div></form>
   </section></div>
 
   
@@ -254,8 +262,21 @@
     <div class="dialog-actions"><button type="button" class="secondary" data-close-invite-link>Chiudi</button><button type="button" id="invite-link-copy" class="secondary">Copia link</button><button type="button" id="invite-link-share" class="primary">Condividi link</button></div>
   </section></div>
 
-  <div id="client-profile-dialog" class="dialog hidden" role="dialog" aria-modal="true" aria-labelledby="client-profile-title"><div class="dialog-backdrop" data-close-client-profile></div><section class="dialog-card"><button class="dialog-close" data-close-client-profile aria-label="Chiudi">×</button><p class="eyebrow">ANAGRAFICA CLIENTE</p><h2 id="client-profile-title">Correggi nome e cognome</h2><p id="client-profile-lead" class="dialog-lead"></p>
-    <form id="client-profile-form"><input id="client-profile-client-id" type="hidden"><div class="form-grid"><label>Nome<input id="client-profile-first-name" required minlength="1" maxlength="80" autocomplete="off" placeholder="Mario"></label><label>Cognome<input id="client-profile-last-name" required minlength="1" maxlength="80" autocomplete="off" placeholder="Rossi"></label></div><p class="field-hint">L’email dell’account non si corregge da qui: usa “Proponi cambio email”, che richiede la conferma del cliente.</p><p id="client-profile-error" class="error" role="alert"></p><div class="dialog-actions"><button type="button" class="secondary" data-close-client-profile>Annulla</button><button class="primary" type="submit">Salva anagrafica →</button></div></form>
+  <div id="client-profile-dialog" class="dialog hidden" role="dialog" aria-modal="true" aria-labelledby="client-profile-title"><div class="dialog-backdrop" data-close-client-profile></div><section class="dialog-card"><button class="dialog-close" data-close-client-profile aria-label="Chiudi">×</button><p class="eyebrow">ANAGRAFICA CLIENTE</p><h2 id="client-profile-title">Modifica anagrafica cliente</h2><p id="client-profile-lead" class="dialog-lead"></p>
+    <form id="client-profile-form"><input id="client-profile-client-id" type="hidden"><div class="form-grid"><label>Nome<input id="client-profile-first-name" required minlength="1" maxlength="80" autocomplete="off" placeholder="Mario"></label><label>Cognome<input id="client-profile-last-name" required minlength="1" maxlength="80" autocomplete="off" placeholder="Rossi"></label></div><label>Email<input id="client-profile-email" type="email" required maxlength="254" autocomplete="off" placeholder="nome@esempio.it"></label><p class="field-hint">Se modifichi l’email, l’indirizzo di accesso viene aggiornato direttamente. Ti verrà richiesta una conferma prima del salvataggio.</p><p id="client-profile-error" class="error" role="alert"></p><div class="dialog-actions"><button type="button" class="secondary" data-close-client-profile>Annulla</button><button class="primary" type="submit">Salva anagrafica →</button></div></form>
+  </section></div>
+
+  <div id="member-profile-dialog" class="dialog hidden" role="dialog" aria-modal="true" aria-labelledby="member-profile-title"><div class="dialog-backdrop" data-close-member-profile></div><section class="dialog-card"><button class="dialog-close" data-close-member-profile aria-label="Chiudi">×</button><p class="eyebrow">ANAGRAFICA PROFESSIONISTA</p><h2 id="member-profile-title">Modifica anagrafica professionista</h2><p id="member-profile-lead" class="dialog-lead"></p>
+    <form id="member-profile-form"><input id="member-profile-user-id" type="hidden"><div class="form-grid"><label>Nome<input id="member-profile-first-name" required minlength="1" maxlength="80" autocomplete="off" placeholder="Mario"></label><label>Cognome<input id="member-profile-last-name" required minlength="1" maxlength="80" autocomplete="off" placeholder="Rossi"></label></div><label>Email<input id="member-profile-email" type="email" required maxlength="254" autocomplete="off" placeholder="nutrizionista@esempio.it"></label><p class="field-hint">Se modifichi l’email, l’indirizzo di accesso del professionista viene aggiornato direttamente. Ti verrà richiesta una conferma prima del salvataggio.</p><p id="member-profile-error" class="error" role="alert"></p><div class="dialog-actions"><button type="button" class="secondary" data-close-member-profile>Annulla</button><button class="primary" type="submit">Salva anagrafica →</button></div></form>
+  </section></div>
+
+  <div id="delete-client-dialog" class="dialog hidden" role="dialog" aria-modal="true" aria-labelledby="delete-client-title"><div class="dialog-backdrop" data-close-delete-client></div><section class="dialog-card"><button class="dialog-close" data-close-delete-client aria-label="Chiudi">×</button><p class="eyebrow">ELIMINAZIONE DEFINITIVA</p><h2 id="delete-client-title">Eliminare definitivamente il cliente?</h2><p id="delete-client-lead" class="dialog-lead"></p>
+    <ul class="unlink-points">
+      <li><strong>Cancellazione totale:</strong> la scheda del cliente, il profilo studio e tutte le diete/assegnazioni vengono eliminati per sempre.</li>
+      <li><strong>Account di accesso eliminato:</strong> l’account di autenticazione viene rimosso e l’indirizzo email viene completamente liberato per un eventuale nuovo utilizzo.</li>
+      <li><strong>Azione irreversibile:</strong> questa operazione è riservata all’amministratore e non può essere annullata.</li>
+    </ul>
+    <form id="delete-client-form"><input id="delete-client-id" type="hidden"><p id="delete-client-error" class="error" role="alert"></p><div class="dialog-actions"><button type="button" class="secondary" data-close-delete-client>Annulla</button><button class="primary danger" type="submit">Elimina definitivamente</button></div></form>
   </section></div>
 
   <div id="email-change-dialog" class="dialog hidden" role="dialog" aria-modal="true" aria-labelledby="email-change-title"><div class="dialog-backdrop" data-close-email-change></div><section class="dialog-card"><button class="dialog-close" data-close-email-change aria-label="Chiudi">×</button><p class="eyebrow">CAMBIO EMAIL</p><h2 id="email-change-title">Proponi un nuovo indirizzo</h2><p id="email-change-lead" class="dialog-lead"></p>

@@ -6,7 +6,7 @@
 // lo schermo; le operazioni lente mostrano comunque logo, spinner e messaggio.
 (function () {
   'use strict';
-  const GRACE_MS = 220;
+  const GRACE_MS = 500;
   let pending = 0;
   let showTimer = null;
 

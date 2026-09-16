@@ -150,6 +150,11 @@ function harness({ entries = {}, users = {}, env, sandbox = true } = {}) {
               authUsers.set(String(patch.email || email).toLowerCase(), { ...user, ...patch });
             }
             return { uid, ...patch };
+          },
+          deleteUser: async uid => {
+            for (const [email, user] of [...authUsers]) {
+              if (user.uid === uid) authUsers.delete(email);
+            }
           }
         })
       };
@@ -438,26 +443,55 @@ test('permessi: un nutritionist non tocca gli inviti di un altro', async () => {
   );
 });
 
-test('anagrafica dal professionista: nome e cognome aggiornati, clienti altrui vietati', async () => {
+test('anagrafica dal professionista: nome, cognome ed email aggiornati direttamente', async () => {
   const { api, store } = harness({
     entries: {
       ...base(),
-      [`organizations/${ORG}/clients/client-1`]: { status: 'active', displayName: 'Mario Rossi', authUid: 'uid-mario', nutritionistUids: ['nutri-1'] },
+      [`organizations/${ORG}/clients/client-1`]: { status: 'active', displayName: 'Mario Rossi', email: 'mario.vecchio@esempio.it', emailNormalized: 'mario.vecchio@esempio.it', authUid: 'uid-mario', nutritionistUids: ['nutri-1'] },
       [`organizations/${ORG}/clients/client-9`]: { status: 'active', displayName: 'Altro', authUid: 'uid-altro', nutritionistUids: ['nutri-2'] }
     }
   });
   const result = await invoke(api, 'updateClientProfileByStaff', 'nutri-1', {
-    organizationId: ORG, clientId: 'client-1', firstName: 'Mario', lastName: 'Rossi', idempotencyKey: 'p1'
+    organizationId: ORG, clientId: 'client-1', firstName: 'Mario', lastName: 'Rossi', email: 'mario.nuovo@esempio.it', idempotencyKey: 'p1'
   });
   assert.equal(result.firstName, 'Mario');
   assert.equal(result.lastName, 'Rossi');
-  assert.equal(store.get(`organizations/${ORG}/clients/client-1`).lastName, 'Rossi');
+  assert.equal(result.email, 'mario.nuovo@esempio.it');
+  assert.equal(store.get(`organizations/${ORG}/clients/client-1`).email, 'mario.nuovo@esempio.it');
   await assert.rejects(
     invoke(api, 'updateClientProfileByStaff', 'nutri-1', {
       organizationId: ORG, clientId: 'client-9', firstName: 'Mario', lastName: 'Rossi', idempotencyKey: 'p2'
     }),
     error => error.code === 'permission-denied'
   );
+});
+
+test('eliminazione definitiva cliente: solo creatore/admin, wipe completo', async () => {
+  const { api, store } = harness({
+    entries: {
+      ...base(),
+      [`organizations/${ORG}/clients/client-wipe`]: { status: 'active', email: 'wipe@esempio.it', authUid: 'uid-wipe', nutritionistUids: ['nutri-1'] },
+      [`organizations/${ORG}/clients/client-wipe/assignments/a1`]: { status: 'active' },
+      [`organizations/${ORG}/clients/client-wipe/state/activeAssignment`]: { assignmentId: 'a1' },
+      'accountClientLinks/uid-wipe': { organizationId: ORG, clientId: 'client-wipe', status: 'active' },
+      [`organizations/${ORG}/invitations/inv-wipe`]: { clientId: 'client-wipe', status: 'pending' }
+    }
+  });
+  // Nutrizionista non può eliminare definitivamente
+  await assert.rejects(
+    invoke(api, 'deleteClientPermanently', 'nutri-1', {
+      organizationId: ORG, clientId: 'client-wipe', idempotencyKey: 'w1'
+    }),
+    error => error.code === 'permission-denied'
+  );
+  // Creatore (admin) può eliminare
+  const res = await invoke(api, 'deleteClientPermanently', 'admin-1', {
+    organizationId: ORG, clientId: 'client-wipe', idempotencyKey: 'w2'
+  });
+  assert.equal(res.status, 'deleted-permanently');
+  assert.equal(store.has(`organizations/${ORG}/clients/client-wipe`), false);
+  assert.equal(store.has('accountClientLinks/uid-wipe'), false);
+  assert.equal(store.has(`organizations/${ORG}/invitations/inv-wipe`), false);
 });
 
 test('cambio email: nulla cambia finché il cliente non conferma; poi serve nuova verifica', async () => {
