@@ -97,6 +97,16 @@
           "order": "DESCENDING"
         }
       ]
+    },
+    {
+      "collectionGroup": "invitations",
+      "queryScope": "COLLECTION_GROUP",
+      "fields": [
+        {
+          "fieldPath": "tokenHash",
+          "order": "ASCENDING"
+        }
+      ]
     }
   ],
   "fieldOverrides": []
