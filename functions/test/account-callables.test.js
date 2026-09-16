@@ -42,10 +42,14 @@ function harness(entries = {}) {
       if (name === './domain') return domain;
       if (name === 'node:crypto') return require(name);
       if (name === 'firebase-functions/v2/https') return { HttpsError, onCall: (options, handler) => {
-        assert.equal(options.region, 'europe-west1'); assert.equal(options.enforceAppCheck, true); return handler;
+        assert.equal(options.region, 'europe-west1');
+        // Callable private (true) e callable pubbliche come l'anteprima invito
+        // (false): conta che la scelta sia esplicita, non il singolo valore.
+        assert.ok(typeof options.enforceAppCheck === 'boolean'); return handler;
       } };
       if (name === 'firebase-functions/v2/scheduler') return { onSchedule: () => null };
-      if (name === 'firebase-functions') return { logger: { error() {} } };
+      // logger completo: il codice usa anche warn (es. segreto d'invito mancante).
+      if (name === 'firebase-functions') return { logger: { error() {}, warn() {}, info() {} } };
       if (name === 'firebase-admin/app') return { initializeApp() {} };
       if (name === 'firebase-admin/firestore') return { getFirestore: () => db, FieldValue: {}, Timestamp: {} };
       throw new Error(`Unexpected dependency ${name}`);

@@ -80,6 +80,11 @@ al professionista.
 
 Dalla card o dalla scheda del cliente (vista **Clienti**):
 
+- **Copia link** → riapre la finestra del link con lo **stesso link già emesso**:
+  nessuna rigenerazione del token e nessuna nuova scadenza. Il pulsante resta
+  visibile finché l'invito è `pending`, quindi chiudere la finestra non fa più
+  perdere il link (vale anche per gli inviti ai professionisti, nel pannello
+  **Team**);
 - **Nuovo link** → nuovo token monouso mostrato nella finestra del link; il
   precedente smette di funzionare;
 - **Correggi dati** → modifica email, nome o cognome: nasce un nuovo token
@@ -119,8 +124,16 @@ nuovo invito.
   altre persone e non viene usata come ID Firestore (l'ID è sempre `clientId`).
 - Ogni attore vede solo i propri clienti e i propri dati: i professionisti non
   vedono clienti o inviti altrui.
-- Il token d'invito esiste **in chiaro una sola volta** (creazione, reinvio o
-  correzione); su Firestore resta solo l'hash SHA-256.
+- Il documento invito contiene **solo l'hash SHA-256** del token. Il token in
+  chiaro vive in un documento separato
+  `organizations/pianoNutrizionale/invitationSecrets/{inviteId}`, con regole
+  `allow read, write: if false`: nessuna lettura client, nemmeno per l'admin. Lo
+  legge solo l'Admin SDK dentro `getClientInviteLink`, che prima verifica ruolo
+  (`authorizeInviteActor`), tipo di invito, stato `pending` e scadenza.
+- Ciclo di vita del segreto: **creato** con l'invito, **ruotato** da reinvio e
+  correzione, **eliminato** quando l'invito non è più utilizzabile (annullato,
+  sostituito, riscattato, collegamento rimosso, cliente eliminato). Un segreto
+  il cui hash non corrisponde all'invito non viene mai consegnato.
 - Nei log non finiscono token completi né password; gli indirizzi sono
   mascherati (`m***@esempio.it`).
 - Password mai al nutrizionista, mai in Firestore, mai nei log e mai nelle
@@ -136,6 +149,8 @@ nuovo invito.
 | --- | --- | --- |
 | "campi non ammessi (delivery)" o "Backend della console non aggiornato" creando un invito | Functions online non ancora ripubblicate dopo questa modifica | GitHub → Actions → *Deploy Firebase (manuale)* → `functions,firestore:indexes,firestore:rules` |
 | "Copia link" non copia | appunti bloccati dal browser | il campo è selezionato: Ctrl+C o pressione lunga |
+| "Il link non è più disponibile: genera un nuovo link" | invito creato prima dell'introduzione del segreto (`invitationSecrets`) oppure token già ruotato | card cliente → **Nuovo link**: da quel momento "Copia link" funziona |
+| anteprima del link vuota o errore 500 su `getClientInvitePreview` | Functions online non ripubblicate: la callable deve essere pubblica (App Check disattivato) | GitHub → Actions → *Deploy Firebase (manuale)* → `functions,firestore:indexes,firestore:rules` |
 | "Condividi link" apre WhatsApp Web | nessuna condivisione nativa sul dispositivo | comportamento previsto; in alternativa "Copia link" |
 | il cliente dice "link scaduto" | sono passati più di 7 giorni | card cliente → "Nuovo link" |
 | "esiste già un account con questa email" | l'indirizzo è già registrato | il cliente accede; se serve il collegamento, usa l'invito come richiesta in app o "Password dimenticata?" |

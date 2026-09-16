@@ -17,6 +17,7 @@ const {
   validateTransferStructureOwnership,
   normalizeEmail, isLegacyTestEmail, emailFingerprint, maskEmail, INVITE_DELIVERY_CHANNEL,
   validateInviteClientEmail, validateCorrectClientInvite, validateResendClientInvite,
+  validateGetInviteLink,
   validateCancelClientInvite, validateUpdateClientProfileByStaff, validateDeleteClientPermanently,
   validateProposeClientEmailChange, validateRespondClientEmailChange, validateRedeemClientInvite,
   CLIENT_FREQUENCY_KEYS, CLIENT_FREQUENCY_LABELS, CLIENT_FREQUENCY_DEFAULTS,
@@ -31,6 +32,14 @@ initializeApp();
 const db = getFirestore();
 const REGION = 'europe-west1';
 const callableOptions = { region: REGION, enforceAppCheck: true, cors: true };
+// Callable PUBBLICHE (nessuna autenticazione richiesta): il segreto è il token
+// d'invito presente nel link `#/invito/<token>`. App Check è disattivato di
+// proposito perché il link viene aperto da chiunque e da qualsiasi contesto
+// (browser desktop, WebView di WhatsApp/Instagram, navigazione privata): se il
+// token App Check manca o non è ancora pronto, con `enforceAppCheck: true` la
+// chiamata veniva scartata prima del handler e l'anteprima rispondeva 500.
+// `cors: true` serve perché l'app è pubblicata su GitHub Pages (altra origine).
+const publicCallableOptions = { region: 'europe-west1', enforceAppCheck: false, cors: true };
 
 function apiError(error) {
   if (error instanceof HttpsError) return error;
@@ -1595,9 +1604,9 @@ function publicRequestRow(doc) {
   };
 }
 
-// Invito lato console: MAI tokenHash né token in chiaro (l'unico momento in cui
-// il link esiste è la risposta di creazione, reinvio o correzione, che la
-// console mostra con "Copia link" e "Condividi link").
+// Invito lato console: MAI tokenHash né token in chiaro in questa riga. Il link
+// si recupera solo con la callable getClientInviteLink (segreto server-only),
+// che la console chiama dal bottone "Copia link" finché l'invito è pendente.
 function publicInvitationRow(doc) {
   const value = doc.data();
   return {
@@ -1710,10 +1719,11 @@ exports.inviteOrganizationUser = callable(async (data, uid) => {
     const expiresAt = new Date(Date.now() + 7 * 24 * 3600 * 1000);
     const eventId = checksum(`member.invited:${inviteId}`).slice(0, 32);
     let created = true;
+    let existingInvite = null;
 
     await db.runTransaction(async tx => {
       const [existing, audit] = await Promise.all([tx.get(inviteRef), tx.get(auditRef(orgId, eventId))]);
-      if (existing.exists || audit.exists) { created = false; return; }
+      if (existing.exists || audit.exists) { created = false; existingInvite = existing.exists ? existing.data() : null; return; }
       tx.create(inviteRef, {
         schemaVersion: 2, inviteId, type: 'nutritionist', channel: 'manual-link',
         targetEmail: input.email, targetEmailNormalized: input.email,
@@ -1723,6 +1733,9 @@ exports.inviteOrganizationUser = callable(async (data, uid) => {
         delivery: { schemaVersion: 2, channel: 'manual-link', status: 'manual', handedToConsole: true, updatedAt: FieldValue.serverTimestamp() },
         createdAt: FieldValue.serverTimestamp(), updatedAt: FieldValue.serverTimestamp(), createdBy: uid
       });
+      // Il segreto rende il link recuperabile dalla console finché l'invito è
+      // pendente: senza, la chiusura della finestra lo perderebbe per sempre.
+      writeInviteSecret(tx, { orgId, inviteId, token, uid });
       tx.create(auditRef(orgId, eventId), auditEvent({
         orgId, eventId, type: 'member.invited', actor,
         subject: { type: 'invitation', id: inviteId }, idempotencyKey: input.idempotencyKey,
@@ -1730,9 +1743,26 @@ exports.inviteOrganizationUser = callable(async (data, uid) => {
       }));
     });
 
+    // Replay idempotente: il token appena generato NON è quello dell'invito,
+    // quindi non va consegnato. Si ripropone il link già emesso (letto dal
+    // segreto) oppure si rimanda a "Copia link" / "Genera nuovo link".
+    if (!created) {
+      const persisted = await persistedInviteLink(orgId, inviteId, existingInvite);
+      return {
+        status: 'already-invited',
+        inviteId,
+        expiresAt: inviteExpiryIso(existingInvite) || expiresAt.toISOString(),
+        ...(persisted || {}),
+        delivery: { channel: 'manual-link', status: 'manual', handedToConsole: true },
+        message: persisted
+          ? 'Invito già creato in precedenza: questo è il link ancora valido. Consegnalo con “Copia link”.'
+          : 'Invito già creato in precedenza: nessun nuovo token emesso. Usa “Copia link” oppure genera un nuovo link.'
+      };
+    }
+
     const inviteUrl = buildInviteLink(APP_PUBLIC_URL, token);
     return {
-      status: created ? 'invited' : 'already-invited',
+      status: 'invited',
       inviteId,
       expiresAt: expiresAt.toISOString(),
       inviteUrl,
@@ -1821,6 +1851,8 @@ exports.acceptOrganizationInvite = callable(async (data, uid) => {
         createdAt: FieldValue.serverTimestamp(), updatedAt: FieldValue.serverTimestamp(), createdBy: uid, updatedBy: uid
       }, { merge: true });
       tx.update(inviteDoc.ref, { status: 'accepted', decidedAt: FieldValue.serverTimestamp(), decidedBy: uid, updatedAt: FieldValue.serverTimestamp() });
+      // Invito accettato: nessun segreto resta leggibile per questo invito.
+      tx.delete(inviteSecretRef(orgId, inviteDoc.id));
       tx.create(auditRef(orgId, eventId), auditEvent({ orgId, eventId, type: 'member.added', actor, subject: { type: 'member', id: uid }, idempotencyKey: eventId, metadata: { via: 'invite' } }));
     });
     return { status: 'member-added', organizationId: orgId };
@@ -1837,6 +1869,8 @@ exports.acceptOrganizationInvite = callable(async (data, uid) => {
     if (!client.exists) throw new HttpsError('not-found', 'Profilo cliente non trovato');
     if (link.exists && link.data()?.status === 'active') throw new HttpsError('failed-precondition', 'Account già collegato a un altro professionista: scollegati prima');
     tx.update(inviteDoc.ref, { status: 'accepted', decidedAt: FieldValue.serverTimestamp(), decidedBy: uid, updatedAt: FieldValue.serverTimestamp() });
+    // Invito accettato: il segreto del link viene eliminato.
+    tx.delete(inviteSecretRef(orgId, inviteDoc.id));
     tx.update(clientRef, { status: 'active', authUid: uid, updatedAt: FieldValue.serverTimestamp(), updatedBy: uid });
     tx.set(db.doc(`accountClientLinks/${uid}`), {
       schemaVersion: 1, organizationId: orgId, clientId: clientRef.id, status: 'active',
@@ -2005,6 +2039,64 @@ function buildInviteLink(baseUrl, token) {
 
 function inviteExpiryDate({ days = INVITE_TTL_DAYS, now = new Date() } = {}) {
   return new Date(now.getTime() + days * 24 * 3600 * 1000);
+}
+
+// Formato del token d'invito: 32 byte casuali in esadecimale (64 caratteri).
+const INVITE_TOKEN_PATTERN = /^[a-f0-9]{64}$/;
+
+// ---- Segreto del link d'invito (consegna persistente) ----
+// Il documento invito conserva SOLO l'hash del token: da lì il link non è
+// ricostruibile. Perché la console possa riaprire "Copia link" finché il
+// cliente non è attivo, il token in chiaro vive in un documento separato
+// `organizations/{orgId}/invitationSecrets/{inviteId}`, chiuso a qualunque
+// lettura client dalle Rules e raggiungibile solo dall'Admin SDK (callable
+// getClientInviteLink). Ciclo di vita del segreto: creato con l'invito, ruotato
+// da reinvio e correzione, eliminato appena l'invito smette di essere
+// utilizzabile (annullato, sostituito, riscattato, collegamento rimosso,
+// cliente eliminato). Nessuna rigenerazione: il link resta lo stesso.
+function inviteSecretRef(orgId, inviteId) {
+  return db.doc(`organizations/${orgId}/invitationSecrets/${inviteId}`);
+}
+
+function inviteSecretBody({ orgId, inviteId, token, uid }) {
+  return {
+    schemaVersion: 1, inviteId, organizationId: orgId,
+    token, tokenHash: hashToken(token),
+    createdAt: FieldValue.serverTimestamp(), updatedAt: FieldValue.serverTimestamp(), createdBy: uid
+  };
+}
+
+// Scrittura e rotazione del segreto nella STESSA transazione dell'invito: token
+// in chiaro e hash non possono mai divergere.
+function writeInviteSecret(tx, { orgId, inviteId, token, uid }) {
+  tx.set(inviteSecretRef(orgId, inviteId), inviteSecretBody({ orgId, inviteId, token, uid }), { merge: true });
+}
+
+// Lettura tollerante del segreto: usata solo nei replay idempotenti, dove un
+// segreto mancante non deve far fallire l'operazione (il link si recupera con
+// "Copia link" oppure si rinnova con "Genera nuovo link").
+async function readInviteSecretToken(orgId, inviteId) {
+  try {
+    const snap = await inviteSecretRef(orgId, inviteId).get();
+    const token = snap.exists ? String(snap.data()?.token || '') : '';
+    return INVITE_TOKEN_PATTERN.test(token) ? token : null;
+  } catch (error) {
+    logger.warn('Segreto dell’invito non leggibile', { inviteId, err: error?.message });
+    return null;
+  }
+}
+
+// Link persistente di un invito già emesso: token e URL vengono restituiti SOLO
+// se l'invito è ancora utilizzabile (pendente e non scaduto) e il segreto
+// corrisponde all'hash del documento. In ogni altro caso null: si passa da
+// "Genera nuovo link".
+async function persistedInviteLink(orgId, inviteId, invite) {
+  if (invite?.status !== 'pending') return null;
+  const expiresAt = invite.expiresAt?.toDate?.() || null;
+  if (!expiresAt || expiresAt.getTime() <= Date.now()) return null;
+  const token = await readInviteSecretToken(orgId, inviteId);
+  if (!token || hashToken(token) !== invite.tokenHash) return null;
+  return { token, inviteUrl: buildInviteLink(APP_PUBLIC_URL, token) };
 }
 
 async function findInvitationByTokenHash(tokenHash) {
@@ -2290,10 +2382,14 @@ exports.inviteClientByEmail = callable(async (data, uid) => {
       db.collection(`organizations/${orgId}/invitations`)
         .where('targetEmailNormalized', '==', input.email)
     );
-    stale.docs.filter(doc => doc.id !== inviteId && doc.data()?.status === 'pending').forEach(doc => tx.update(doc.ref, {
-      status: 'superseded', supersededBy: inviteId,
-      supersededAt: FieldValue.serverTimestamp(), updatedAt: FieldValue.serverTimestamp()
-    }));
+    stale.docs.filter(doc => doc.id !== inviteId && doc.data()?.status === 'pending').forEach(doc => {
+      tx.update(doc.ref, {
+        status: 'superseded', supersededBy: inviteId,
+        supersededAt: FieldValue.serverTimestamp(), updatedAt: FieldValue.serverTimestamp()
+      });
+      // Un invito sostituito non è più consegnabile: il suo segreto va via.
+      tx.delete(inviteSecretRef(orgId, doc.id));
+    });
     const commonProfile = {
       schemaVersion: 2, authUid: null, displayCode, status: 'pending',
       email: input.email, emailNormalized: input.email,
@@ -2315,6 +2411,9 @@ exports.inviteClientByEmail = callable(async (data, uid) => {
       idempotencyKey: input.idempotencyKey,
       createdAt: FieldValue.serverTimestamp(), updatedAt: FieldValue.serverTimestamp(), createdBy: uid
     });
+    // Segreto del link: finché l'invito è pendente la console può riaprire
+    // "Copia link" senza rigenerare il token (nessun link perso).
+    writeInviteSecret(tx, { orgId, inviteId, token, uid });
     tx.create(auditRef(orgId, eventId), auditEvent({
       orgId, eventId, type: 'client.email-invited', actor,
       subject: { type: 'invitation', id: inviteId }, idempotencyKey: input.idempotencyKey,
@@ -2342,11 +2441,13 @@ exports.inviteClientByEmail = callable(async (data, uid) => {
 });
 
 // Anteprima pubblica dell'invito (nessuna autenticazione: il token è il
-// segreto). Non scrive nulla e non rivela dati di altri utenti.
-exports.getClientInvitePreview = onCall(callableOptions, async request => {
+// segreto). Non scrive nulla e non rivela dati di altri utenti. È una callable
+// PUBBLICA: App Check non è richiesto, altrimenti il link aperto fuori
+// dall'app registrata riceveva un 500 senza nemmeno entrare nel handler.
+exports.getClientInvitePreview = onCall(publicCallableOptions, async request => {
   try {
     exactObject(request.data || {}, ['token']);
-    const token = text((request.data || {}).token, 'token', { min: 64, max: 64, pattern: /^[a-f0-9]{64}$/ });
+    const token = text((request.data || {}).token, 'token', { min: 64, max: 64, pattern: INVITE_TOKEN_PATTERN });
     const snap = await findInvitationByTokenHash(hashToken(token));
     if (snap.empty || snap.size > 1) return { status: 'not-found' };
     const doc = snap.docs[0];
@@ -2357,20 +2458,35 @@ exports.getClientInvitePreview = onCall(callableOptions, async request => {
     }
     const expiresAt = invite.expiresAt?.toDate?.() || null;
     const expired = !expiresAt || expiresAt.getTime() <= Date.now();
+    // Stati verso il link pubblico: valid, expired, used, superseded, revoked.
     let status = 'expired';
     if (invite.status === 'pending') status = expired ? 'expired' : 'valid';
     else if (invite.status === 'accepted') status = 'used';
     else if (invite.status === 'superseded') status = 'superseded';
     else if (invite.status === 'revoked') status = 'revoked';
-    let organizationName;
-    if (invite.type === 'nutritionist') {
+    // Nomi visuali: ogni lettura è isolata, così un documento mancante o un
+    // errore transitorio non trasforma l'anteprima in un 500. Il nome resta
+    // null e la schermata mostra i dati dell'invito.
+    let organizationName = null;
+    try {
       const orgDisplay = await organizationDisplayName(orgId);
-      organizationName = (orgDisplay && orgDisplay !== orgId) ? orgDisplay : 'Studio Professionale';
-      if (organizationName === orgId) organizationName = 'Studio Professionale';
-    } else {
-      organizationName = await organizationDisplayName(orgId);
+      organizationName = orgDisplay || orgId;
+      // Per i professionisti il nome dello studio è un dettaglio in più: se non
+      // è disponibile si usa un'etichetta neutra (mai l'ID tecnico).
+      if (invite.type === 'nutritionist' && organizationName === orgId) organizationName = 'Studio Professionale';
+    } catch (error) {
+      logger.warn('Nome organizzazione non disponibile per l’anteprima dell’invito', { err: error?.message });
+      organizationName = invite.type === 'nutritionist' ? 'Studio Professionale' : null;
     }
-    const nutritionistName = status === 'valid' ? await professionalDisplayName(orgId, invite.nutritionistUid) : null;
+    let nutritionistName = null;
+    if (status === 'valid') {
+      try {
+        nutritionistName = await professionalDisplayName(orgId, invite.nutritionistUid);
+      } catch (error) {
+        logger.warn('Nome professionista non disponibile per l’anteprima dell’invito', { err: error?.message });
+        nutritionistName = null;
+      }
+    }
     return {
       status,
       type: invite.type || CLIENT_EMAIL_INVITE_TYPE,
@@ -2385,6 +2501,67 @@ exports.getClientInvitePreview = onCall(callableOptions, async request => {
     throw apiError(error);
   }
 });
+
+// Recupero del link di un invito PENDENTE per la console ("Copia link").
+// Il token non viene rigenerato: si legge il segreto scritto alla creazione
+// (o ruotato da reinvio/correzione), quindi il link già consegnato resta
+// valido e la chiusura della finestra non lo perde più. Autorizzato come le
+// altre callable sugli inviti: creatore oppure professionista che lo ha emesso.
+exports.getClientInviteLink = callable(async (data, uid) => {
+  const input = validateGetInviteLink(data);
+  const actor = await actorContext(input.organizationId, uid);
+  const orgId = actor.organizationId;
+  const inviteRef = db.doc(`organizations/${orgId}/invitations/${input.inviteId}`);
+  const snapshot = await inviteRef.get();
+  if (!snapshot.exists) throw new HttpsError('not-found', 'Invito non trovato: aggiorna l’elenco e riprova');
+  const invite = snapshot.data();
+  if (!authorizeInviteActor(actor, invite)) throw new HttpsError('permission-denied', 'Invito non autorizzato');
+  if (invite.type !== CLIENT_EMAIL_INVITE_TYPE && invite.type !== 'nutritionist') {
+    throw new HttpsError('failed-precondition', 'Questo invito usa il flusso legacy: creane uno nuovo con l’email per ottenere un link');
+  }
+  if (invite.status === 'accepted') {
+    throw new HttpsError('failed-precondition', 'Invito già utilizzato: il collegamento è attivo, nessun link da consegnare');
+  }
+  if (invite.status === 'revoked') throw new HttpsError('failed-precondition', 'Invito annullato: creane uno nuovo');
+  if (invite.status === 'superseded') {
+    throw new HttpsError('failed-precondition', 'Questo invito è stato sostituito: usa il link più recente');
+  }
+  if (invite.status !== 'pending') throw new HttpsError('failed-precondition', 'Invito non più valido: genera un nuovo link');
+  const expiresAt = invite.expiresAt?.toDate?.() || null;
+  if (!expiresAt || expiresAt.getTime() <= Date.now()) {
+    throw new HttpsError('failed-precondition', 'Invito scaduto: genera un nuovo link');
+  }
+  const secretRef = inviteSecretRef(orgId, input.inviteId);
+  let secretSnap;
+  try {
+    secretSnap = await secretRef.get();
+  } catch (error) {
+    logger.error('Lettura del segreto d’invito non riuscita', { inviteId: input.inviteId, err: error?.message });
+    throw new HttpsError('internal', 'Link non disponibile in questo momento: riprova tra poco');
+  }
+  const token = secretSnap?.exists ? String(secretSnap.data()?.token || '') : '';
+  // Doppio controllo: formato del token e corrispondenza con l'hash dell'invito
+  // (un segreto vecchio di un token già ruotato non deve mai essere consegnato).
+  if (!INVITE_TOKEN_PATTERN.test(token) || hashToken(token) !== invite.tokenHash) {
+    throw new HttpsError('failed-precondition', 'Il link non è più disponibile: genera un nuovo link');
+  }
+  return {
+    inviteId: input.inviteId,
+    clientId: invite.clientId || null,
+    type: invite.type,
+    targetEmail: invite.targetEmailNormalized || invite.targetEmail || null,
+    firstName: invite.firstName || null,
+    lastName: invite.lastName || null,
+    expiresAt: inviteExpiryIso(invite),
+    inviteUrl: buildInviteLink(APP_PUBLIC_URL, token),
+    token,
+    // Consegna sempre a mano: la console mostra "Copia link" e "Condividi link".
+    delivery: { channel: 'manual' }
+  };
+});
+
+// Alias corto usato da alcune schermate della console: stessa callable.
+exports.getInviteLink = exports.getClientInviteLink;
 
 // Riscatto dell'invito email da parte del cliente autenticato. Il collegamento
 // diventa attivo SOLO con l'email verificata (decisione ADR 0004): qui il
@@ -2492,6 +2669,8 @@ exports.redeemClientInvite = callable(async (data, uid, request) => {
         decidedBy: uid,
         updatedAt: FieldValue.serverTimestamp()
       });
+      // Collegamento attivo: il segreto (e il link consegnabile) non serve più.
+      tx.delete(inviteSecretRef(orgId, inviteDoc.id));
       tx.create(auditRef(orgId, eventId), auditEvent({
         orgId, eventId, type: 'member.invite-redeemed', actor,
         subject: { type: 'member', id: uid }, idempotencyKey: input.idempotencyKey,
@@ -2535,6 +2714,8 @@ exports.redeemClientInvite = callable(async (data, uid, request) => {
       verifiedAt: FieldValue.serverTimestamp(), decidedAt: FieldValue.serverTimestamp(), decidedBy: uid,
       updatedAt: FieldValue.serverTimestamp()
     });
+    // Cliente attivo: il segreto viene eliminato, "Copia link" non ha più senso.
+    tx.delete(inviteSecretRef(orgId, inviteDoc.id));
     tx.create(auditRef(orgId, eventId), auditEvent({
       orgId, eventId, type: 'client.link-accepted', actor,
       subject: { type: 'client', id: invite.clientId }, idempotencyKey: input.idempotencyKey,
@@ -2585,13 +2766,24 @@ exports.resendClientInvite = callable(async (data, uid) => {
       tokenRotation: FieldValue.increment(1),
       updatedAt: FieldValue.serverTimestamp(), updatedBy: uid
     });
+    // Rotazione del segreto: da qui il link consegnabile è solo quello nuovo.
+    writeInviteSecret(tx, { orgId, inviteId: input.inviteId, token, uid });
     tx.create(auditRef(orgId, eventId), auditEvent({
       orgId, eventId, type: 'client.email-invite-resent', actor,
       subject: { type: 'invitation', id: input.inviteId }, idempotencyKey: input.idempotencyKey,
       metadata: { delivery: INVITE_DELIVERY_CHANNEL }
     }));
   });
-  if (!rotated) return { status: 'already-pending', inviteId: input.inviteId, message: 'Reinvio già effettuato.' };
+  if (!rotated) {
+    // Replay idempotente: il token è già stato ruotato una volta, quindi non si
+    // ruota di nuovo. Si riconsegna il link attuale, letto dal segreto.
+    const current = await inviteRef.get();
+    const persisted = await persistedInviteLink(orgId, input.inviteId, current.exists ? current.data() : null);
+    return {
+      status: 'already-pending', inviteId: input.inviteId, ...(persisted || {}),
+      message: 'Reinvio già effettuato.'
+    };
+  }
   const deliveryResult = await deliverClientInvite({ inviteRef, token, updatedBy: uid });
   return {
     inviteId: input.inviteId, clientId: invite.clientId || null, expiresAt: expiresAt.toISOString(), ...deliveryResult,
@@ -2625,6 +2817,9 @@ exports.cancelClientInvite = callable(async (data, uid) => {
       decidedAt: FieldValue.serverTimestamp(), decidedBy: uid,
       updatedAt: FieldValue.serverTimestamp(), updatedBy: uid
     });
+    // Invito annullato = link non consegnabile: il segreto non ha più ragione
+    // di esistere (il documento invito resta in storico).
+    tx.delete(inviteSecretRef(orgId, input.inviteId));
     tx.create(auditRef(orgId, eventId), auditEvent({
       orgId, eventId, type: 'client.invite-cancelled', actor,
       subject: { type: 'invitation', id: input.inviteId }, idempotencyKey: input.idempotencyKey,
@@ -2677,10 +2872,14 @@ exports.correctClientInvite = callable(async (data, uid) => {
       db.collection(`organizations/${orgId}/invitations`)
         .where('targetEmailNormalized', '==', input.email)
     );
-    otherPending.docs.filter(doc => doc.id !== inviteId && doc.data()?.status === 'pending').forEach(doc => tx.update(doc.ref, {
-      status: 'superseded', supersededBy: inviteId,
-      supersededAt: FieldValue.serverTimestamp(), updatedAt: FieldValue.serverTimestamp()
-    }));
+    otherPending.docs.filter(doc => doc.id !== inviteId && doc.data()?.status === 'pending').forEach(doc => {
+      tx.update(doc.ref, {
+        status: 'superseded', supersededBy: inviteId,
+        supersededAt: FieldValue.serverTimestamp(), updatedAt: FieldValue.serverTimestamp()
+      });
+      // Invito sostituito: il suo segreto (e quindi il suo link) viene meno.
+      tx.delete(inviteSecretRef(orgId, doc.id));
+    });
     const inviteBody = {
       schemaVersion: 2, inviteId, type: CLIENT_EMAIL_INVITE_TYPE, channel: 'email',
       organizationId: orgId, targetEmailNormalized: input.email,
@@ -2702,7 +2901,12 @@ exports.correctClientInvite = callable(async (data, uid) => {
         supersededAt: FieldValue.serverTimestamp(), updatedAt: FieldValue.serverTimestamp(), updatedBy: uid
       }, { merge: true });
       tx.create(newRef, inviteBody);
+      // Il segreto segue l'invito: quello vecchio sparisce con il link vecchio.
+      tx.delete(inviteSecretRef(orgId, input.inviteId));
     }
+    // Rotazione: la correzione emette un token nuovo, quindi il segreto
+    // dell'invito corretto punta da subito al link appena generato.
+    writeInviteSecret(tx, { orgId, inviteId, token, uid });
     // `authUid` non viene toccato: se il cliente si era già registrato senza
     // completare la verifica, il suo account resta il suo.
     tx.set(clientRef, {
@@ -2845,7 +3049,11 @@ exports.deleteClientPermanently = callable(async (data, uid) => {
     }
 
     pendingRequests.docs.forEach(doc => tx.delete(doc.ref));
-    pendingInvites.docs.forEach(doc => tx.delete(doc.ref));
+    pendingInvites.docs.forEach(doc => {
+      tx.delete(doc.ref);
+      // Eliminato l'invito, eliminato anche il suo segreto (token in chiaro).
+      tx.delete(inviteSecretRef(orgId, doc.id));
+    });
 
     tx.create(auditRef(orgId, eventId), auditEvent({
       orgId, eventId, type: 'client.deleted-permanently', actor,
@@ -3325,7 +3533,11 @@ exports.removeClientLink = callable(async (data, uid) => {
     tx.update(client.ref, { activeAssignment: null, updatedAt: FieldValue.serverTimestamp(), updatedBy: uid });
     // Singolo filtro (ADR 0003): lo stato si seleziona in codice.
     pendingRequests.docs.filter(doc => doc.data()?.status === 'pending').forEach(doc => tx.update(doc.ref, { status: 'revoked', decidedAt: FieldValue.serverTimestamp(), decidedBy: uid, updatedAt: FieldValue.serverTimestamp() }));
-    pendingInvites.docs.filter(doc => doc.data()?.status === 'pending').forEach(doc => tx.update(doc.ref, { status: 'revoked', decidedAt: FieldValue.serverTimestamp(), decidedBy: uid, updatedAt: FieldValue.serverTimestamp() }));
+    pendingInvites.docs.filter(doc => doc.data()?.status === 'pending').forEach(doc => {
+      tx.update(doc.ref, { status: 'revoked', decidedAt: FieldValue.serverTimestamp(), decidedBy: uid, updatedAt: FieldValue.serverTimestamp() });
+      // Collegamento rimosso: i link pendenti non sono più consegnabili.
+      tx.delete(inviteSecretRef(actor.organizationId, doc.id));
+    });
     tx.create(auditRef(actor.organizationId, eventId), auditEvent({ orgId: actor.organizationId, eventId, type: 'client.link-removed', actor, subject: { type: 'client', id: client.id }, idempotencyKey: input.idempotencyKey, metadata: { reason: input.reason, suspendedAssignments: suspended } }));
   });
   return { clientId: client.id, status: 'unlinked', suspendedAssignments: suspended };

@@ -29,6 +29,9 @@ const TOKEN_RE = /^[a-f0-9]{64}$/;
 function harness({ entries = {}, users = {}, env, sandbox = true } = {}) {
   const store = new Map(Object.entries(entries).map(([key, value]) => [key, { ...value }]));
   const writes = [];
+  // Scelta di App Check registrata per ogni callable: l'anteprima pubblica del
+  // link deve restare l'unica con `enforceAppCheck: false` (fix del 500).
+  const appCheckFlags = [];
   const value = path => store.get(path);
   const snapshot = path => {
     if (typeof path !== 'string') {
@@ -115,7 +118,11 @@ function harness({ entries = {}, users = {}, env, sandbox = true } = {}) {
       // tentativo di caricare un modulo di invio deve far fallire il test.
       if (name === 'node:crypto') return require(name);
       if (name === 'firebase-functions/v2/https') return { HttpsError, onCall: (options, handler) => {
-        assert.equal(options.region, 'europe-west1'); assert.equal(options.enforceAppCheck, true); return handler;
+        assert.equal(options.region, 'europe-west1');
+        // Callable private (true) e callable pubbliche come l'anteprima invito
+        // (false): conta che la scelta sia esplicita, non il singolo valore.
+        assert.ok(typeof options.enforceAppCheck === 'boolean');
+        appCheckFlags.push(options.enforceAppCheck); return handler;
       } };
       if (name === 'firebase-functions/v2/scheduler') return { onSchedule: () => null };
       if (name === 'firebase-functions') return {
@@ -164,7 +171,7 @@ function harness({ entries = {}, users = {}, env, sandbox = true } = {}) {
   if (!sandbox) delete context.require;
   if (env !== undefined) context.process = { env };
   vm.runInNewContext(fs.readFileSync(require.resolve('../src/index'), 'utf8'), context);
-  return { api: context.exports, store, writes, authUsers };
+  return { api: context.exports, store, writes, authUsers, appCheckFlags };
 }
 
 const invoke = (api, name, uid, data, auth = {}) => api[name]({
@@ -300,7 +307,7 @@ test('associazione già attiva: stesso professionista o altro, mai dati di altri
 });
 
 test('anteprima invito: dati precompilati, scaduto, usato e sostituito', async () => {
-  const { api, store } = harness({ entries: base() });
+  const { api, store, appCheckFlags } = harness({ entries: base() });
   const created = await invite(api);
   const token = created.inviteUrl.split('/').pop();
   const preview = await publicInvite(api, null, { token });
@@ -310,6 +317,9 @@ test('anteprima invito: dati precompilati, scaduto, usato e sostituito', async (
   assert.equal(preview.nutritionistName, 'Dott.ssa Verdi');
   assert.equal(preview.organizationName, 'Studio Piano');
   assert.ok(!JSON.stringify(preview).includes('tokenHash'));
+  // Callable pubblica: App Check NON richiesto, altrimenti il link aperto fuori
+  // dall'app registrata riceve un errore e l'anteprima non si carica (500).
+  assert.equal(appCheckFlags.filter(flag => flag === false).length, 1, 'solo l’anteprima dell’invito è pubblica');
 
   const withTokenHash = [...store.values()].some(doc => doc?.tokenHash === token);
   assert.equal(withTokenHash, false, 'in chiaro e hash non coincidono');
@@ -320,6 +330,16 @@ test('anteprima invito: dati precompilati, scaduto, usato e sostituito', async (
   const expiredPath = `organizations/${ORG}/invitations/${expiredInvite.inviteId}`;
   expired.store.get(expiredPath).expiresAt = { toDate: () => new Date(Date.now() - 1000), toISOString: () => new Date(Date.now() - 1000).toISOString() };
   assert.equal((await publicInvite(expired.api, null, { token: expiredToken })).status, 'expired');
+  // Invito scaduto: il link non si recupera più, serve "Genera nuovo link".
+  await assert.rejects(
+    invoke(expired.api, 'getClientInviteLink', 'nutri-1', { organizationId: ORG, inviteId: expiredInvite.inviteId }),
+    error => error.code === 'failed-precondition' && /scaduto/i.test(error.message)
+  );
+  // Invito inesistente: not-found con messaggio utilizzabile dalla console.
+  await assert.rejects(
+    invoke(api, 'getClientInviteLink', 'nutri-1', { organizationId: ORG, inviteId: 'invito-inesistente' }),
+    error => error.code === 'not-found'
+  );
 
   const used = harness({ entries: base() });
   const usedInvite = await invite(used.api);
@@ -361,6 +381,12 @@ test('riscatto: email verificata obbligatoria, token consumato una sola volta', 
   assert.equal(link.status, 'active');
   assert.equal(link.clientId, created.clientId);
   assert.equal(store.get(`organizations/${ORG}/invitations/${created.inviteId}`).status, 'accepted');
+  // Cliente attivo: il segreto del link non esiste più e "Copia link" si ferma.
+  assert.equal(store.has(`organizations/${ORG}/invitationSecrets/${created.inviteId}`), false, 'segreto eliminato al riscatto');
+  await assert.rejects(
+    invoke(api, 'getClientInviteLink', 'nutri-1', { organizationId: ORG, inviteId: created.inviteId }),
+    error => error.code === 'failed-precondition' && /già utilizzato/i.test(error.message)
+  );
 
   const again = await invoke(api, 'redeemClientInvite', 'uid-mario', { token, idempotencyKey }, { email: 'mario.rossi@esempio.it', emailVerified: true });
   assert.equal(again.status, 'already-linked', 'il token non è riutilizzabile');
@@ -396,6 +422,18 @@ test('correzione invito: nuovo token, vecchio link invalidato, audit dello stori
   const oldDoc = store.get(`organizations/${ORG}/invitations/${created.inviteId}`);
   assert.equal(oldDoc.status, 'superseded');
   assert.equal(oldDoc.supersededBy, fixed.inviteId);
+  // Il segreto segue l'invito corretto: il vecchio link non è più consegnabile,
+  // "Copia link" sul nuovo invito restituisce il nuovo link.
+  assert.equal(store.has(`organizations/${ORG}/invitationSecrets/${created.inviteId}`), false, 'segreto vecchio eliminato');
+  assert.equal(store.get(`organizations/${ORG}/invitationSecrets/${fixed.inviteId}`).token, newToken);
+  assert.equal(
+    (await invoke(api, 'getClientInviteLink', 'nutri-1', { organizationId: ORG, inviteId: fixed.inviteId })).inviteUrl,
+    fixed.inviteUrl
+  );
+  await assert.rejects(
+    invoke(api, 'getClientInviteLink', 'nutri-1', { organizationId: ORG, inviteId: created.inviteId }),
+    error => error.code === 'failed-precondition' && /sostituito/i.test(error.message)
+  );
   const client = store.get(`organizations/${ORG}/clients/${fixed.clientId}`);
   assert.equal(client.firstName, 'Maria');
   assert.equal(client.lastName, 'Bianchi');
@@ -407,6 +445,29 @@ test('reinvio e annullamento: ruotano il token, mai due inviti pendenti', async 
   const { api, store } = harness({ entries: base() });
   const created = await invite(api);
   const firstToken = created.inviteUrl.split('/').pop();
+
+  // Link persistente: la console lo recupera senza rigenerare nulla (bottone
+  // "Copia link"). Stesso token, stessa scadenza, nessun nuovo invito.
+  const secretPath = `organizations/${ORG}/invitationSecrets/${created.inviteId}`;
+  assert.equal(store.get(secretPath).token, firstToken, 'il segreto conserva il token emesso');
+  assert.equal(store.get(secretPath).tokenHash, store.get(`organizations/${ORG}/invitations/${created.inviteId}`).tokenHash);
+  const copied = await invoke(api, 'getClientInviteLink', 'nutri-1', { organizationId: ORG, inviteId: created.inviteId });
+  assert.equal(copied.inviteUrl, created.inviteUrl, 'nessuna rigenerazione del link');
+  assert.equal(copied.token, firstToken);
+  assert.equal(copied.type, 'clientEmail');
+  assert.equal(copied.targetEmail, 'mario.rossi@esempio.it');
+  assert.deepEqual([copied.firstName, copied.lastName], ['Mario', 'Rossi']);
+  assert.equal(copied.clientId, created.clientId);
+  assert.deepEqual({ ...copied.delivery }, { channel: 'manual' }, 'consegna a mano');
+  assert.equal(copied.expiresAt, created.expiresAt, 'la scadenza non cambia');
+  assert.equal(await invoke(api, 'getInviteLink', 'admin-1', { organizationId: ORG, inviteId: created.inviteId }).then(r => r.inviteUrl), created.inviteUrl, 'alias getInviteLink');
+  assert.equal([...store.keys()].filter(key => key.startsWith(`organizations/${ORG}/invitations/`)).length, 1, 'recuperare il link non crea inviti');
+  // Un professionista diverso non ottiene il link.
+  await assert.rejects(
+    invoke(api, 'getClientInviteLink', 'nutri-2', { organizationId: ORG, inviteId: created.inviteId }),
+    error => error.code === 'permission-denied'
+  );
+
   const resent = await invoke(api, 'resendClientInvite', 'nutri-1', {
     organizationId: ORG, inviteId: created.inviteId, idempotencyKey: 'resend-1'
   });
@@ -415,12 +476,21 @@ test('reinvio e annullamento: ruotano il token, mai due inviti pendenti', async 
   assert.notEqual(firstToken, secondToken);
   assert.equal((await publicInvite(api, null, { token: firstToken })).status, 'not-found', 'il vecchio link non esiste più');
   assert.equal((await publicInvite(api, null, { token: secondToken })).status, 'valid');
+  // Il segreto ruota con l'invito: "Copia link" consegna sempre il link nuovo.
+  assert.equal(store.get(secretPath).token, secondToken);
+  assert.equal((await invoke(api, 'getClientInviteLink', 'nutri-1', { organizationId: ORG, inviteId: created.inviteId })).inviteUrl, resent.inviteUrl);
 
   const cancelled = await invoke(api, 'cancelClientInvite', 'nutri-1', {
     organizationId: ORG, inviteId: created.inviteId, reason: 'Richiesta ritirata', idempotencyKey: 'cancel-1'
   });
   assert.equal(cancelled.status, 'revoked');
   assert.equal((await publicInvite(api, null, { token: secondToken })).status, 'revoked');
+  // Invito annullato: il segreto sparisce e la console non mostra più il link.
+  assert.equal(store.has(secretPath), false, 'segreto eliminato all’annullamento');
+  await assert.rejects(
+    invoke(api, 'getClientInviteLink', 'nutri-1', { organizationId: ORG, inviteId: created.inviteId }),
+    error => error.code === 'failed-precondition' && /annullato/i.test(error.message)
+  );
   const replay = await invoke(api, 'cancelClientInvite', 'nutri-1', {
     organizationId: ORG, inviteId: created.inviteId, reason: 'Richiesta ritirata', idempotencyKey: 'cancel-1'
   });

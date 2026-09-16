@@ -257,6 +257,17 @@ cambio di catalogo richiede conferma (nudge) senza ricalcoli retroattivi.
   createdAt, updatedAt, createdBy
 }
 
+// organizations/{orgId}/invitationSecrets/{inviteId} — token IN CHIARO
+// Regole: `allow read, write: if false` (solo Admin SDK, dentro
+// getClientInviteLink). Serve a riconsegnare lo stesso link dalla console
+// ("Copia link") finché l'invito è pendente.
+{
+  schemaVersion: 1, inviteId, organizationId,
+  token: "64 hex",             // chiaro: mai nelle risposte non autorizzate
+  tokenHash: "sha256 hex",     // deve corrispondere a invitations/{inviteId}.tokenHash
+  createdAt, updatedAt, createdBy
+}
+
 // organizations/{orgId}/emailChangeRequests/{requestId} (server-only)
 {
   schemaVersion: 1, requestId, organizationId, clientId, targetUid,
@@ -320,7 +331,8 @@ nuova versione mai sovrascritta; le revisioni strutture conservano
 - `setMemberStatus({ organizationId, userId, status: 'active|suspended', idempotencyKey })`
 - `inviteClientLink({ organizationId, username, nutritionistUid?, idempotencyKey })` — compatibilità interna per emulatori/migrazioni; non è esposto dalla console live
 - `inviteClientByEmail({ organizationId, email, firstName, lastName, nutritionistUid?, idempotencyKey })` → `{ status, inviteUrl?, expiresAt?, … }` — il link si consegna a mano (nessun campo `delivery`)
-- `getClientInvitePreview({ token })` — non autenticata: il token è il segreto
+- `getClientInvitePreview({ token })` — non autenticata **e pubblica** (`enforceAppCheck: false`, `cors: true`): il token è il segreto e il link viene aperto anche fuori dall'app registrata → `{ status: 'valid|expired|used|superseded|revoked|not-found', type, email, firstName, lastName, expiresAt, organizationName, nutritionistName }`
+- `getClientInviteLink({ organizationId, inviteId })` (alias `getInviteLink`) — solo staff autorizzato: restituisce il link **già emesso** di un invito `pending`, senza rigenerare il token → `{ inviteId, clientId, type, targetEmail, firstName, lastName, expiresAt, inviteUrl, token, delivery: { channel: 'manual' } }`; il token in chiaro è letto da `organizations/{orgId}/invitationSecrets/{inviteId}` (Admin SDK, regole chiuse)
 - `redeemClientInvite({ token|null, idempotencyKey })` — attiva il collegamento solo con email verificata; con `token: null` l'app lo richiama a ogni accesso/ricarica (ID token rinnovato a forza) e il server risponde `link-active` / `no-pending-invite`
 - `resendClientInvite({ organizationId, inviteId, idempotencyKey })` → nuovo `inviteUrl`
 - `correctClientInvite({ organizationId, inviteId, email, firstName, lastName, idempotencyKey })` → nuovo `inviteUrl`
