@@ -855,40 +855,28 @@ function withDataLoading(operation, message = "Caricamento dati…") {
 }
 
 function getDoc(ref) {
-  return withDataLoading(async () => {
-    if (hasCompatFirebase()) return ref.get();
-    await ensureFirebaseReady();
-    return fb.getDoc(ref);
-  });
+  if (hasCompatFirebase()) return ref.get();
+  return ensureFirebaseReady().then(() => fb.getDoc(ref));
 }
 
 function setDoc(ref, data, options = undefined) {
-  return withDataLoading(() => {
-    if (hasCompatFirebase()) return ref.set(data, options);
-    // L'SDK modulare usa { merge: true } come opzione di setDoc, stessa forma.
-    return ensureFirebaseReady().then(() => fb.setDoc(ref, data, options));
-  }, "Salvataggio dati…");
+  if (hasCompatFirebase()) return ref.set(data, options);
+  return ensureFirebaseReady().then(() => fb.setDoc(ref, data, options));
 }
 
 function updateDoc(ref, data) {
-  return withDataLoading(() => {
-    if (hasCompatFirebase()) return ref.update(data);
-    return ensureFirebaseReady().then(() => fb.updateDoc(ref, data));
-  }, "Salvataggio dati…");
+  if (hasCompatFirebase()) return ref.update(data);
+  return ensureFirebaseReady().then(() => fb.updateDoc(ref, data));
 }
 
 function deleteDocRef(ref) {
-  return withDataLoading(() => {
-    if (hasCompatFirebase()) return ref.delete();
-    return ensureFirebaseReady().then(() => fb.deleteDoc(ref));
-  }, "Aggiornamento dati…");
+  if (hasCompatFirebase()) return ref.delete();
+  return ensureFirebaseReady().then(() => fb.deleteDoc(ref));
 }
 
 function addDocRef(collectionRef, data) {
-  return withDataLoading(() => {
-    if (hasCompatFirebase()) return collectionRef.add(data);
-    return ensureFirebaseReady().then(() => fb.addDoc(collectionRef, data));
-  }, "Salvataggio dati…");
+  if (hasCompatFirebase()) return collectionRef.add(data);
+  return ensureFirebaseReady().then(() => fb.addDoc(collectionRef, data));
 }
 
 function queryWhere(collectionRef, field, op, value) {

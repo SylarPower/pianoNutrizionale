@@ -159,9 +159,11 @@ test('console Fase 2: font self-hosted e drawer mobile accessibile', () => {
   assert.match(js, /aria-expanded/);
 });
 
-test('copy premium comunica valore e sicurezza senza promessa clinica assoluta', () => {
+test('copy premium comunica valore e sicurezza senza promessa clinica assoluta e senza scritte invasive', () => {
   assert.match(html, /Decisioni più sicure/);
-  assert.match(html, /Ogni azione è tracciata/);
+  assert.doesNotMatch(html, /Ambiente protetto/);
+  assert.doesNotMatch(html, /Ogni azione è tracciata/);
+  assert.doesNotMatch(html, /Sessione verificata/);
   assert.doesNotMatch(html, /garantisce|cura|risultato garantito/i);
 });
 

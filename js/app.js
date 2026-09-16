@@ -352,7 +352,8 @@ function getCoupleMultiplier() {
 }
 
 function formatMultiplier(value) {
-  return `×${String(value).replace(".", ",")}`;
+  const num = Math.round(Number(value) * 100) / 100;
+  return `×${String(num).replace(".", ",")}`;
 }
 
 function applyCoupleMultiplier(value) {
@@ -365,7 +366,9 @@ function applyCoupleMultiplier(value) {
 }
 
 window.changeCoupleMultiplier = function (delta) {
-  const next = Math.min(3, Math.max(0.5, Math.round((getCoupleMultiplier() + Number(delta || 0)) * 2) / 2));
+  const raw = (getCoupleMultiplier() + Number(delta || 0));
+  const stepped = Math.round(raw * 20) / 20;
+  const next = Math.min(3, Math.max(0.5, Math.round(stepped * 100) / 100));
   appState.deviceSettings = appState.deviceSettings || getLocalDeviceSettings();
   appState.deviceSettings.coupleMultiplier = next;
   saveLocalDeviceSettings(appState.deviceSettings);
@@ -1461,9 +1464,9 @@ function renderGlobalHeader() {
       </select>
       ${profile === "couple" ? `
       <div class="couple-mult" role="group" aria-label="Moltiplicatore porzioni della coppia">
-        <button type="button" class="couple-mult-btn" onclick="changeCoupleMultiplier(-0.5)" aria-label="Riduci il moltiplicatore porzioni" ${multiplier <= 0.5 ? "disabled" : ""}>−</button>
+        <button type="button" class="couple-mult-btn" onclick="changeCoupleMultiplier(-0.05)" aria-label="Riduci il moltiplicatore porzioni" ${multiplier <= 0.5 ? "disabled" : ""}>−</button>
         <span class="couple-mult-value" title="Moltiplicatore porzioni">${formatMultiplier(multiplier)}</span>
-        <button type="button" class="couple-mult-btn" onclick="changeCoupleMultiplier(0.5)" aria-label="Aumenta il moltiplicatore porzioni" ${multiplier >= 3 ? "disabled" : ""}>＋</button>
+        <button type="button" class="couple-mult-btn" onclick="changeCoupleMultiplier(0.05)" aria-label="Aumenta il moltiplicatore porzioni" ${multiplier >= 3 ? "disabled" : ""}>＋</button>
       </div>` : ""}
     </div>
     <div class="header-actions">

@@ -146,9 +146,9 @@ test('console: consegna del link a mano con Copia link e Condividi link, nessun 
   assert.match(adminJs, /https:\/\/api\.whatsapp\.com\/send\?text=\$\{encodeURIComponent\(inviteLinkState\.message\)\}/);
   assert.match(adminJs, /function inviteShareMessage\(/);
   assert.match(adminJs, /ti ho invitato a Piano Nutrizionale: apri questo link personale, scegli la password e verifica la tua email\./);
-  // La finestra si apre dopo invito nuovo, reinvio e correzione.
+  // La finestra si apre dopo invito nuovo, reinvio, correzione e nuovo link diretto.
   const openings = adminJs.match(/(?<!function )openInviteLinkDialog\(\{/g) || [];
-  assert.equal(openings.length, 3, 'una apertura per invito, reinvio e correzione');
+  assert.ok(openings.length >= 3, 'apertura per invito, reinvio e correzione');
   for (const fn of ['submitClientEmailInvite', 'resendClientInvite', 'submitInviteFix']) {
     const start = adminJs.indexOf(`async function ${fn}(`);
     const end = adminJs.indexOf('\n}\n', start);

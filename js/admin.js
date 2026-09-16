@@ -1,6 +1,6 @@
 'use strict';
 
-const adminState = { user: null, reports: [], clients: [], clientInvitations: [], clientRequests: [], clientEmailChanges: [], clientFilter: 'all', detailClientId: null, detailHistory: null, clientDetailReturnFocus: null, ruleSets: [], structures: [], compareSelection: new Set(), users: null, editingStructure: null, editingDietPlan: null, dietPlan: null, dietPlanRules: [], dietPlanGroups: [], dietPlanEditingId: null, cursor: null, selectedReport: null, pickerSelection: new Set(), catalogPreview: null, isCreator: false, professionalRecipes: [], recipeFilter: 'all', editingRecipe: null, professionalShares: [], grammatureTables: [], editingGramTable: null };
+const adminState = { user: null, reports: [], clients: [], clientInvitations: [], clientRequests: [], clientEmailChanges: [], clientFilter: 'all', clientSearchQuery: '', detailClientId: null, detailHistory: null, clientDetailReturnFocus: null, ruleSets: [], structures: [], compareSelection: new Set(), users: null, editingStructure: null, editingDietPlan: null, dietPlan: null, dietPlanRules: [], dietPlanGroups: [], dietPlanEditingId: null, cursor: null, selectedReport: null, pickerSelection: new Set(), catalogPreview: null, isCreator: false, professionalRecipes: [], recipeFilter: 'all', editingRecipe: null, professionalShares: [], grammatureTables: [], editingGramTable: null };
 let catalogIndexCache = null;
 let catalogCategoriesCache = [];
 let catalogTruncated = false;
@@ -217,12 +217,21 @@ function renderClients() {
     button.classList.toggle('active', selected);
     button.setAttribute('aria-pressed', selected ? 'true' : 'false');
   });
-  const visible = withStatus.filter(({ status }) => adminState.clientFilter === 'all' || status === adminState.clientFilter);
+  const query = (adminState.clientSearchQuery || '').trim().toLowerCase();
+  const visible = withStatus.filter(({ client, status }) => {
+    if (adminState.clientFilter !== 'all' && status !== adminState.clientFilter) return false;
+    if (!query) return true;
+    const name = `${client.firstName || ''} ${client.lastName || ''}`.toLowerCase();
+    const label = clientLabel(client).toLowerCase();
+    const email = (client.email || client.emailNormalized || '').toLowerCase();
+    const code = (client.displayCode || '').toLowerCase();
+    return name.includes(query) || label.includes(query) || email.includes(query) || code.includes(query);
+  });
   const emptyHints = {
-    all: 'Nessun cliente autorizzato. Usa “Invita nuovo cliente” per iniziare.',
-    active: 'Nessun cliente attivo in questo momento.',
-    pending: 'Nessun cliente in attesa: inviti e richieste sono tutti risolti.',
-    inactive: 'Nessun cliente inattivo.'
+    all: query ? `Nessun cliente corrisponde alla ricerca “${query}”.` : 'Nessun cliente autorizzato. Usa “Invita nuovo cliente” per iniziare.',
+    active: query ? `Nessun cliente attivo corrisponde alla ricerca “${query}”.` : 'Nessun cliente attivo in questo momento.',
+    pending: query ? `Nessun cliente in attesa corrisponde alla ricerca “${query}”.` : 'Nessun cliente in attesa: inviti e richieste sono tutti risolti.',
+    inactive: query ? `Nessun cliente inattivo corrisponde alla ricerca “${query}”.` : 'Nessun cliente inattivo.'
   };
   $('clients-list').innerHTML = visible.map(({ client, status }) => {
     const invite = inviteForClient(client.id);
@@ -306,6 +315,10 @@ function renderClientDetail() {
   const adminIdentifier = adminState.isCreator
     ? `<p class="detail-admin-meta"><span>Identificativo amministrativo</span><code>${escapeAdmin(client.id)}</code></p>`
     : '';
+  const isPendingOrInactive = status !== 'active' || !client.authUid;
+  const adminDangerZone = adminState.isCreator
+    ? `<section class="detail-section"><h3>Amministrazione</h3><div class="card-actions"><button class="text-button danger-text" data-delete-client-permanent="${escapeAdmin(client.id)}">Elimina definitivamente cliente</button></div></section>`
+    : '';
   $('client-detail-body').innerHTML = `
     <section class="detail-section"><h3>Collegamento</h3>
       <dl class="detail-grid">
@@ -315,7 +328,8 @@ function renderClientDetail() {
         ${!invite && !request ? '<div><dt>Inviti e richieste</dt><dd>Nessuna attività in corso.</dd></div>' : ''}
       </dl>
       <div class="card-actions">
-        <button class="secondary" data-client-profile="${escapeAdmin(client.id)}">Correggi nome e cognome</button>
+        <button class="secondary" data-client-profile="${escapeAdmin(client.id)}">Modifica anagrafica</button>
+        ${isPendingOrInactive ? `<button class="secondary" data-client-new-link="${escapeAdmin(client.id)}">Genera nuovo link</button>` : ''}
         ${email ? `<button class="text-button" data-client-email-change="${escapeAdmin(client.id)}">Proponi cambio email</button>` : ''}
       </div>
       ${invite ? `<div class="card-actions">
@@ -333,7 +347,8 @@ function renderClientDetail() {
       </div>
     </section>
     <section class="detail-section"><h3>Attività collegamento</h3>${historyHtml}</section>
-    ${adminIdentifier}`;
+    ${adminIdentifier}
+    ${adminDangerZone}`;
 }
 
 // Dopo ogni ricarico dei clienti, la scheda aperta (se c'è) si aggiorna.
@@ -353,6 +368,10 @@ function handleClientActions(event) {
   if (assign) { openAssignment(assign.dataset.assignClient); return; }
   const profile = event.target.closest('[data-client-profile]');
   if (profile) { openClientProfile(profile.dataset.clientProfile); return; }
+  const newLink = event.target.closest('[data-client-new-link]');
+  if (newLink) { generateClientNewLink(newLink.dataset.clientNewLink); return; }
+  const deletePerm = event.target.closest('[data-delete-client-permanent]');
+  if (deletePerm) { openDeleteClientDialog(deletePerm.dataset.deleteClientPermanent); return; }
   const emailChange = event.target.closest('[data-client-email-change]');
   if (emailChange) { openEmailChange(emailChange.dataset.clientEmailChange); return; }
   const doses = event.target.closest('[data-goto-doses]');
@@ -2544,19 +2563,52 @@ function memberStatusLabel(status) {
   return ({ active: 'Attivo', suspended: 'Sospeso', removed: 'Rimosso' })[status] || status;
 }
 
-// saveMemberDisplayName rimosso: anagrafica professionista gestita solo da admin via updateMemberProfileByStaff (Sessione 1)
-async function saveMemberProfileByStaff(event, userId) {
-  event.preventDefault();
-  const form = event.target;
-  const firstName = form.querySelector('[data-member-first-name]')?.value.trim() || '';
-  const lastName = form.querySelector('[data-member-last-name]')?.value.trim() || '';
-  try {
-    await callAdminSaasFunction('updateMemberProfileByStaff', { organizationId: orgId(), userId, firstName, lastName, idempotencyKey: idem('member-profile-' + userId) });
-    $('users-feedback').textContent = 'Anagrafica aggiornata.';
-    await loadUsers();
-  } catch (error) { $('users-feedback').textContent = adminError(error); }
+function openMemberProfile(userId) {
+  const member = (adminState.users?.members || []).find(item => item.userId === userId);
+  if (!member) return;
+  $('member-profile-user-id').value = userId;
+  $('member-profile-first-name').value = member.firstName || '';
+  $('member-profile-last-name').value = member.lastName || '';
+  const currentEmail = member.email || member.emailNormalized || '';
+  $('member-profile-email').value = currentEmail;
+  $('member-profile-form').dataset.originalEmail = currentEmail;
+  $('member-profile-lead').textContent = `Dati anagrafici per ${[member.firstName, member.lastName].filter(Boolean).join(' ') || member.displayName || member.username || 'il professionista'}.`;
+  $('member-profile-error').textContent = '';
+  $('member-profile-dialog').classList.remove('hidden');
+  $('member-profile-first-name').focus();
 }
-window.saveMemberProfileByStaff = saveMemberProfileByStaff;
+
+function closeMemberProfile() { $('member-profile-dialog').classList.add('hidden'); }
+
+async function submitMemberProfile(event) {
+  event.preventDefault();
+  const errorEl = $('member-profile-error');
+  errorEl.textContent = '';
+  const userId = $('member-profile-user-id').value;
+  const firstName = $('member-profile-first-name').value.trim();
+  const lastName = $('member-profile-last-name').value.trim();
+  const email = $('member-profile-email').value.trim();
+  const originalEmail = $('member-profile-form').dataset.originalEmail || '';
+
+  if (email && originalEmail && email.toLowerCase() !== originalEmail.toLowerCase()) {
+    const ok = window.confirm(`Confermi la modifica dell'indirizzo email da "${originalEmail}" a "${email}"?\n\nIl professionista utilizzerà il nuovo indirizzo per accedere alla piattaforma.`);
+    if (!ok) return;
+  }
+
+  try {
+    await callAdminSaasFunction('updateMemberProfileByStaff', {
+      organizationId: orgId(),
+      userId,
+      firstName,
+      lastName,
+      email,
+      idempotencyKey: idem('member-profile-' + userId)
+    });
+    closeMemberProfile();
+    $('users-feedback').textContent = 'Anagrafica professionista aggiornata.';
+    await loadUsers();
+  } catch (error) { errorEl.textContent = adminError(error); }
+}
 
 function renderUsers() {
   const data = adminState.users || { members: [], clients: [], invitations: [], requests: [] };
@@ -2572,15 +2624,15 @@ function renderUsers() {
   $('members-list').style.display = isAdmin ? '' : 'none';
   $('members-list').innerHTML = (data.members || []).map(member => `
     <article class="report-row">
-      <div class="report-main"><span class="ingredient-mark">⛉</span><div><strong>${escapeAdmin(([member.firstName, member.lastName].filter(Boolean).join(' ') || member.displayName || member.username || member.userId.slice(0, 8)))}</strong><small>${escapeAdmin(member.role === 'admin' ? 'Admin' : 'Professionista')}</small></div></div>
+      <div class="report-main"><span class="ingredient-mark">⛉</span><div><strong>${escapeAdmin(([member.firstName, member.lastName].filter(Boolean).join(' ') || member.displayName || member.username || member.userId.slice(0, 8)))}</strong><small>${escapeAdmin(member.email || '')}${member.email ? ' · ' : ''}${escapeAdmin(member.role === 'admin' ? 'Admin' : 'Professionista')}</small></div></div>
       <div class="report-meta"><small>Stato</small><strong>${escapeAdmin(memberStatusLabel(member.status))}</strong></div>
       <div class="report-meta"><small>Azioni</small><strong class="member-actions">
         ${member.status === 'active'
           ? `<button class="text-button archive-toggle" data-member-status="${escapeAdmin(member.userId)}" data-status="suspended">Sospendi</button>`
           : member.status === 'suspended' ? `<button class="text-button archive-toggle" data-member-status="${escapeAdmin(member.userId)}" data-status="active">Riattiva</button>` : ''}
         ${member.role === 'nutritionist' && member.status !== 'removed' ? `<button class="text-button archive-toggle danger-text" data-member-remove="${escapeAdmin(member.userId)}">Rimuovi</button>` : ''}
+        ${member.role === 'nutritionist' ? `<button class="text-button" data-member-profile="${escapeAdmin(member.userId)}">Modifica anagrafica</button>` : ''}
       </strong></div>
-      ${member.role === 'nutritionist' ? `<form class="member-profile-form" onsubmit="saveMemberProfileByStaff(event, '${escapeAdmin(member.userId)}')"><div class="form-grid"><label>Nome<input data-member-first-name value="${escapeAdmin(member.firstName || '')}" maxlength="80" placeholder="Mario"></label><label>Cognome<input data-member-last-name value="${escapeAdmin(member.lastName || '')}" maxlength="80" placeholder="Rossi"></label></div><button class="secondary" type="submit">Salva anagrafica</button></form>` : ''}
     </article>`).join('') || '<p class="feedback">Nessun membro visibile al tuo ruolo.</p>';
   // Il cliente vede inviti e richieste direttamente nella propria card, dove
   // trova anche l'azione corretta. Non ripetiamo gli stessi dati in un secondo
@@ -2596,8 +2648,11 @@ function renderUsers() {
   if (isAdmin && nutriInvites.length) {
     $('members-list').insertAdjacentHTML('beforeend', nutriInvites.map(item => `
     <article class="report-row pending-member-invite">
-      <div class="report-main"><span class="ingredient-mark">◈</span><div><strong>${escapeAdmin(item.targetUsername || '—')}</strong><small>Invito professionista${item.expiresAt ? ` · scade ${formatDateOnly(item.expiresAt)}` : ''}</small></div></div>
+      <div class="report-main"><span class="ingredient-mark">◈</span><div><strong>${escapeAdmin(([item.firstName, item.lastName].filter(Boolean).join(' ') || item.targetEmail || item.targetUsername || '—'))}</strong><small>${escapeAdmin(item.targetEmail || item.targetUsername || '')}${item.targetEmail || item.targetUsername ? ' · ' : ''}Invito professionista${item.expiresAt ? ` · scade ${formatDateOnly(item.expiresAt)}` : ''}</small></div></div>
       <div class="report-meta"><small>Stato</small><strong>In attesa di registrazione</strong></div>
+      <div class="report-meta"><small>Azioni</small><strong class="member-actions">
+        ${item.status === 'pending' || item.status === 'expired' ? `<button class="text-button" data-resend-nutri-invite="${escapeAdmin(item.inviteId)}">Genera nuovo link</button>` : ''}
+      </strong></div>
     </article>`).join(''));
   }
 }
@@ -2766,6 +2821,79 @@ function openInviteClientDialog() {
 
 function closeInviteClientDialog() { $('invite-client-dialog').classList.add('hidden'); }
 
+function openInviteNutritionistDialog() {
+  $('invite-nutritionist-email-result').textContent = '';
+  $('invite-nutritionist-dialog').classList.remove('hidden');
+  $('invite-nutritionist-email').focus();
+}
+
+function closeInviteNutritionistDialog() {
+  $('invite-nutritionist-dialog').classList.add('hidden');
+}
+
+async function submitNutritionistEmailInvite(event) {
+  event.preventDefault();
+  const out = $('invite-nutritionist-email-result');
+  out.textContent = 'Creazione invito in corso…';
+  const firstName = $('invite-nutritionist-first-name').value.trim();
+  const lastName = $('invite-nutritionist-last-name').value.trim();
+  const email = $('invite-nutritionist-email').value.trim();
+  try {
+    const result = await callAdminSaasFunction('inviteOrganizationUser', {
+      organizationId: orgId(),
+      email,
+      firstName,
+      lastName,
+      role: 'nutritionist',
+      idempotencyKey: idem('nutri-email')
+    });
+    if (result.inviteUrl) {
+      $('invite-nutritionist-email').value = '';
+      $('invite-nutritionist-first-name').value = '';
+      $('invite-nutritionist-last-name').value = '';
+      closeInviteNutritionistDialog();
+      openInviteLinkDialog({
+        url: result.inviteUrl,
+        firstName,
+        lastName,
+        email,
+        expiresAt: result.expiresAt,
+        title: 'Link professionista pronto'
+      });
+    }
+    await loadUsers();
+    $('users-feedback').textContent = result.inviteUrl
+      ? 'Invito per il professionista creato. Consegnalo con “Copia link” o “Condividi link”.'
+      : (result.status === 'already-member' ? 'Account già membro attivo.' : 'Professionista aggiunto.');
+  } catch (error) { out.textContent = adminError(error); }
+}
+
+async function resendNutritionistInvite(inviteId) {
+  $('users-feedback').textContent = 'Creazione del nuovo link in corso…';
+  try {
+    const result = await callAdminSaasFunction('resendClientInvite', {
+      organizationId: orgId(),
+      inviteId,
+      idempotencyKey: idem('resend-nutri-invite')
+    });
+    const invite = (adminState.users?.invitations || []).find(item => item.inviteId === inviteId);
+    if (result.inviteUrl) {
+      openInviteLinkDialog({
+        url: result.inviteUrl,
+        firstName: invite?.firstName || '',
+        lastName: invite?.lastName || '',
+        email: invite?.targetEmail || '',
+        expiresAt: result.expiresAt,
+        title: 'Nuovo link per il professionista'
+      });
+    }
+    await loadUsers();
+    $('users-feedback').textContent = result.message || 'Nuovo link pronto.';
+  } catch (error) {
+    $('users-feedback').textContent = adminError(error);
+  }
+}
+
 async function submitClientEmailInvite(event) {
   event.preventDefault();
   const out = $('invite-client-email-result');
@@ -2881,7 +3009,10 @@ function openClientProfile(clientId) {
   $('client-profile-client-id').value = clientId;
   $('client-profile-first-name').value = client.firstName || '';
   $('client-profile-last-name').value = client.lastName || '';
-  $('client-profile-lead').textContent = `${client.email || client.displayCode || 'Cliente'}: nome e cognome sono visibili al cliente e usati nel suo profilo.`;
+  const currentEmail = client.email || client.emailNormalized || '';
+  $('client-profile-email').value = currentEmail;
+  $('client-profile-form').dataset.originalEmail = currentEmail;
+  $('client-profile-lead').textContent = `Dati anagrafici per ${clientLabel(client)}.`;
   $('client-profile-error').textContent = '';
   $('client-profile-dialog').classList.remove('hidden');
   $('client-profile-first-name').focus();
@@ -2893,17 +3024,100 @@ async function submitClientProfile(event) {
   event.preventDefault();
   const errorEl = $('client-profile-error');
   errorEl.textContent = '';
+  const clientId = $('client-profile-client-id').value;
+  const firstName = $('client-profile-first-name').value.trim();
+  const lastName = $('client-profile-last-name').value.trim();
+  const email = $('client-profile-email').value.trim();
+  const originalEmail = $('client-profile-form').dataset.originalEmail || '';
+
+  if (email && originalEmail && email.toLowerCase() !== originalEmail.toLowerCase()) {
+    const ok = window.confirm(`Confermi la modifica dell'indirizzo email da "${originalEmail}" a "${email}"?\n\nIl cliente utilizzerà il nuovo indirizzo per accedere alla piattaforma.`);
+    if (!ok) return;
+  }
+
   try {
     await callAdminSaasFunction('updateClientProfileByStaff', {
       organizationId: orgId(),
-      clientId: $('client-profile-client-id').value,
-      firstName: $('client-profile-first-name').value.trim(),
-      lastName: $('client-profile-last-name').value.trim(),
+      clientId,
+      firstName,
+      lastName,
+      email,
       idempotencyKey: idem('client-profile')
     });
     closeClientProfile();
-    $('clients-feedback').textContent = 'Anagrafica aggiornata e cliente avvisato in app.';
+    $('clients-feedback').textContent = 'Anagrafica cliente aggiornata con successo.';
     await loadClients();
+  } catch (error) { errorEl.textContent = adminError(error); }
+}
+
+async function generateClientNewLink(clientId) {
+  const client = adminState.clients.find(item => item.id === clientId);
+  if (!client) return;
+  const invite = inviteForClient(clientId);
+  if (invite?.inviteId) {
+    await resendClientInvite(invite.inviteId);
+    return;
+  }
+  const email = client.email || client.emailNormalized;
+  if (!email) {
+    $('clients-feedback').textContent = 'Indirizzo email mancante: aggiorna l’anagrafica del cliente per creare un link.';
+    return;
+  }
+  $('clients-feedback').textContent = 'Generazione del link in corso…';
+  try {
+    const result = await callAdminSaasFunction('inviteClientByEmail', {
+      organizationId: orgId(),
+      email,
+      firstName: client.firstName,
+      lastName: client.lastName,
+      nutritionistUid: adminState.isCreator ? (client.nutritionistUids?.[0] || '') : adminState.user.uid,
+      idempotencyKey: idem('invite-new-' + client.id)
+    });
+    if (result.inviteUrl) {
+      openInviteLinkDialog({
+        url: result.inviteUrl,
+        firstName: client.firstName,
+        lastName: client.lastName,
+        email,
+        expiresAt: result.expiresAt,
+        title: 'Nuovo link d’invito'
+      });
+    }
+    await Promise.all([loadUsers(), loadClients()]);
+    $('clients-feedback').textContent = clientEmailInviteMessage(result);
+  } catch (error) {
+    $('clients-feedback').textContent = adminError(error);
+  }
+}
+
+function openDeleteClientDialog(clientId) {
+  const client = adminState.clients.find(item => item.id === clientId);
+  if (!client) return;
+  $('delete-client-id').value = clientId;
+  $('delete-client-lead').textContent = `Stai per eliminare definitivamente ${clientLabel(client)} (${client.email || 'nessuna email'}).`;
+  $('delete-client-error').textContent = '';
+  $('delete-client-dialog').classList.remove('hidden');
+}
+
+function closeDeleteClientDialog() {
+  $('delete-client-dialog').classList.add('hidden');
+}
+
+async function submitDeleteClientPermanent(event) {
+  event.preventDefault();
+  const errorEl = $('delete-client-error');
+  errorEl.textContent = '';
+  const clientId = $('delete-client-id').value;
+  try {
+    await callAdminSaasFunction('deleteClientPermanently', {
+      organizationId: orgId(),
+      clientId,
+      idempotencyKey: idem('delete-client-' + clientId)
+    });
+    closeDeleteClientDialog();
+    closeClientDetail();
+    $('clients-feedback').textContent = 'Cliente eliminato definitivamente dalla piattaforma.';
+    await Promise.all([loadClients(), loadUsers()]);
   } catch (error) { errorEl.textContent = adminError(error); }
 }
 
@@ -3020,9 +3234,15 @@ function bindAdmin() {
   $('mapping-form').addEventListener('submit', submitMapping);
   document.querySelectorAll('[data-close-dialog]').forEach(node => node.addEventListener('click', closeMapping));
   $('refresh-clients').addEventListener('click', () => { loadClients(); loadUsers(); });
+  $('invite-nutritionist-open')?.addEventListener('click', openInviteNutritionistDialog);
+  document.querySelectorAll('[data-close-invite-nutritionist]').forEach(node => node.addEventListener('click', closeInviteNutritionistDialog));
   $('invite-client-open').addEventListener('click', openInviteClientDialog);
   document.querySelectorAll('[data-close-invite-client]').forEach(node => node.addEventListener('click', closeInviteClientDialog));
   document.querySelectorAll('[data-close-client-detail]').forEach(node => node.addEventListener('click', closeClientDetail));
+  $('client-search')?.addEventListener('input', event => {
+    adminState.clientSearchQuery = event.target.value.trim().toLowerCase();
+    renderClients();
+  });
   $('client-filter').addEventListener('click', event => {
     const tab = event.target.closest('[data-client-filter]');
     if (!tab) return;
@@ -3188,21 +3408,30 @@ function bindAdmin() {
   $('catalog-file').addEventListener('change', () => { $('catalog-report').innerHTML = ''; $('catalog-commit').disabled = true; adminState.catalogPreview = null; });
   document.querySelectorAll('[data-verify-username]').forEach(node => node.addEventListener('click', () => verifyUsername(node.dataset.verifyUsername, node.dataset.verifyOut)));
   $('invite-nutritionist-form').addEventListener('submit', submitNutritionistInvite);
+  $('invite-nutritionist-email-form')?.addEventListener('submit', submitNutritionistEmailInvite);
   $('invite-client-email-form')?.addEventListener('submit', submitClientEmailInvite);
   $('invite-fix-form')?.addEventListener('submit', submitInviteFix);
   $('client-profile-form')?.addEventListener('submit', submitClientProfile);
   $('email-change-form')?.addEventListener('submit', submitEmailChange);
+  $('member-profile-form')?.addEventListener('submit', submitMemberProfile);
+  $('delete-client-form')?.addEventListener('submit', submitDeleteClientPermanent);
   document.querySelectorAll('[data-close-invite-fix]').forEach(node => node.addEventListener('click', closeInviteFix));
   document.querySelectorAll('[data-close-invite-link]').forEach(node => node.addEventListener('click', closeInviteLinkDialog));
   $('invite-link-copy')?.addEventListener('click', copyInviteLink);
   $('invite-link-share')?.addEventListener('click', shareInviteLink);
   document.querySelectorAll('[data-close-client-profile]').forEach(node => node.addEventListener('click', closeClientProfile));
   document.querySelectorAll('[data-close-email-change]').forEach(node => node.addEventListener('click', closeEmailChange));
+  document.querySelectorAll('[data-close-member-profile]').forEach(node => node.addEventListener('click', closeMemberProfile));
+  document.querySelectorAll('[data-close-delete-client]').forEach(node => node.addEventListener('click', closeDeleteClientDialog));
   $('members-list').addEventListener('click', event => {
     const statusButton = event.target.closest('[data-member-status]');
     if (statusButton) { changeMemberStatus(statusButton.dataset.memberStatus, statusButton.dataset.status); return; }
     const removeButton = event.target.closest('[data-member-remove]');
-    if (removeButton) removeNutritionist(removeButton.dataset.memberRemove);
+    if (removeButton) { removeNutritionist(removeButton.dataset.memberRemove); return; }
+    const resendNutriBtn = event.target.closest('[data-resend-nutri-invite]');
+    if (resendNutriBtn) { resendNutritionistInvite(resendNutriBtn.dataset.resendNutriInvite); return; }
+    const profileButton = event.target.closest('[data-member-profile]');
+    if (profileButton) openMemberProfile(profileButton.dataset.memberProfile);
   });
   $('unlink-form').addEventListener('submit', submitUnlink);
   document.querySelectorAll('[data-close-unlink]').forEach(node => node.addEventListener('click', closeUnlink));
@@ -3271,6 +3500,9 @@ observeAdminAuthState(async user => {
     adminState.isCreator = false;
     $('invite-nutritionist-form').classList.add('hidden');
     $('team-panel')?.classList.add('hidden');
+    $('invite-nutritionist-open')?.classList.add('hidden');
+    const navClientsLabel = $('nav-clients-label');
+    if (navClientsLabel) navClientsLabel.textContent = 'Clienti';
     $('nav-catalog').classList.add('hidden');
     $('admin-login').classList.remove('hidden');
     $('admin-app').classList.add('hidden');
@@ -3304,8 +3536,17 @@ observeAdminAuthState(async user => {
   $('admin-login').classList.add('hidden');
   $('admin-app').classList.remove('hidden');
   $('invite-nutritionist-form').classList.toggle('hidden', !adminState.isCreator);
+  $('invite-nutritionist-open')?.classList.toggle('hidden', !adminState.isCreator);
   $('team-panel')?.classList.toggle('hidden', !adminState.isCreator);
   $('nav-catalog').classList.toggle('hidden', !adminState.isCreator);
+  const navClientsLabel = $('nav-clients-label');
+  if (navClientsLabel) {
+    navClientsLabel.textContent = adminState.isCreator ? 'Utenti' : 'Clienti';
+  }
+  const heroEyebrow = $('clients-hero-eyebrow');
+  if (heroEyebrow) {
+    heroEyebrow.textContent = adminState.isCreator ? 'GESTIONE UTENTI' : 'I TUOI CLIENTI';
+  }
   const name = usernameFromUser(user) || 'Professionista';
   $('admin-name').textContent = name; $('admin-avatar').textContent = name.slice(0, 1).toUpperCase();
   // Landing: la vista Clienti è la porta d'ingresso della console.
