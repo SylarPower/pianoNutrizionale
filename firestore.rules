@@ -291,6 +291,15 @@ service cloud.firestore {
       allow write: if false;
     }
 
+    // Segreto del link d'invito: contiene il token IN CHIARO, cioè quanto basta
+    // per riscattare l'invito. Accesso negato a tutti i client (anche al creatore
+    // e al professionista che lo ha emesso): si legge solo con l'Admin SDK
+    // dentro la callable autorizzata getClientInviteLink, che verifica ruolo e
+    // stato dell'invito. Il link arriva alla console da lì, mai da Firestore.
+    match /organizations/{organizationId}/invitationSecrets/{secretId} {
+      allow read, write: if false;
+    }
+
     // Richieste di collegamento: lettura al creatore, professionista
     // proponente, cliente destinatario. Accettazione solo via callable.
     match /organizations/{organizationId}/clientLinkRequests/{requestId} {

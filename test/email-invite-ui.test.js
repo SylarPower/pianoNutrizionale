@@ -158,6 +158,18 @@ test('console: consegna del link a mano con Copia link e Condividi link, nessun 
   }
   // Chiudendo la finestra il link non resta nel documento.
   assert.match(adminJs, /function closeInviteLinkDialog\(\) \{[\s\S]*?\$\('invite-link-url'\)\.value = '';/);
+  // Link persistente: finché l'invito è pendente la console lo recupera con
+  // "Copia link" (stesso link, nessuna rigenerazione del token).
+  assert.match(adminJs, /data-invite-copy/, 'bottone Copia link sugli inviti pendenti');
+  assert.match(adminJs, /async function getExistingInviteLink\(inviteId/);
+  assert.match(adminJs, /'getClientInviteLink'/);
+  assert.match(indexJs, /exports\.getClientInviteLink = callable/);
+  assert.match(indexJs, /exports\.getInviteLink = exports\.getClientInviteLink;/, 'alias getInviteLink');
+  // L'anteprima pubblica del link non richiede App Check: è la causa del 500 su
+  // getClientInvitePreview quando il link viene aperto fuori dall'app.
+  assert.match(indexJs, /const publicCallableOptions = \{ region: 'europe-west1', enforceAppCheck: false, cors: true \};/);
+  assert.match(indexJs, /exports\.getClientInvitePreview = onCall\(publicCallableOptions/);
+  assert.doesNotMatch(indexJs, /exports\.getClientInvitePreview = onCall\(callableOptions/);
   // Nessuna variabile d'ambiente o provider lato server.
   assert.ok(!fs.existsSync(path.join(root, 'functions', 'src', 'email-service.js')), 'il servizio email è stato eliminato');
   assert.doesNotMatch(indexJs, /INVITE_EMAIL_|APP_PUBLIC_URL \|\||process\.env\.APP_PUBLIC_URL/);

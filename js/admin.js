@@ -194,8 +194,15 @@ function renderClients() {
   // mostra solo lo stato dell'invito, senza stati di invio email.
   const inviteChip = invite => {
     if (!invite) return '';
+    // Finché l'invito è pendente il link resta recuperabile: "Copia link" lo
+    // richiede al server, che restituisce lo stesso link già emesso (nessuna
+    // rigenerazione). Chiudere la finestra non lo fa più perdere.
+    const copyButton = invite.status === 'pending'
+      ? `<button class="text-button" data-invite-copy="${escapeAdmin(invite.inviteId)}">Copia link</button>`
+      : '';
     return `<p><small>Invito · ${escapeAdmin(inviteStatusLabelOf(invite.status))} · link da consegnare a mano</small></p>
       <div class="card-actions">
+        ${copyButton}
         <button class="text-button" data-invite-resend="${escapeAdmin(invite.inviteId)}">Nuovo link</button>
         <button class="text-button" data-invite-fix="${escapeAdmin(invite.inviteId)}">Correggi dati</button>
         <button class="text-button danger-text" data-invite-cancel="${escapeAdmin(invite.inviteId)}">Annulla invito</button>
@@ -333,6 +340,7 @@ function renderClientDetail() {
         ${email ? `<button class="text-button" data-client-email-change="${escapeAdmin(client.id)}">Proponi cambio email</button>` : ''}
       </div>
       ${invite ? `<div class="card-actions">
+        ${invite.status === 'pending' ? `<button class="text-button" data-invite-copy="${escapeAdmin(invite.inviteId)}">Copia link</button>` : ''}
         <button class="text-button" data-invite-resend="${escapeAdmin(invite.inviteId)}">Nuovo link</button>
         <button class="text-button" data-invite-fix="${escapeAdmin(invite.inviteId)}">Correggi dati invito</button>
         <button class="text-button danger-text" data-invite-cancel="${escapeAdmin(invite.inviteId)}">Annulla invito</button>
@@ -376,6 +384,8 @@ function handleClientActions(event) {
   if (emailChange) { openEmailChange(emailChange.dataset.clientEmailChange); return; }
   const doses = event.target.closest('[data-goto-doses]');
   if (doses) { gotoDosesForClient(doses.dataset.gotoDoses); return; }
+  const copy = event.target.closest('[data-invite-copy]');
+  if (copy) { getExistingInviteLink(copy.dataset.inviteCopy, inviteFeedbackIdFor(event)); return; }
   const resend = event.target.closest('[data-invite-resend]');
   if (resend) { resendClientInvite(resend.dataset.inviteResend); return; }
   const fix = event.target.closest('[data-invite-fix]');
@@ -2651,6 +2661,7 @@ function renderUsers() {
       <div class="report-main"><span class="ingredient-mark">◈</span><div><strong>${escapeAdmin(([item.firstName, item.lastName].filter(Boolean).join(' ') || item.targetEmail || item.targetUsername || '—'))}</strong><small>${escapeAdmin(item.targetEmail || item.targetUsername || '')}${item.targetEmail || item.targetUsername ? ' · ' : ''}Invito professionista${item.expiresAt ? ` · scade ${formatDateOnly(item.expiresAt)}` : ''}</small></div></div>
       <div class="report-meta"><small>Stato</small><strong>In attesa di registrazione</strong></div>
       <div class="report-meta"><small>Azioni</small><strong class="member-actions">
+        ${item.status === 'pending' && item.targetEmail ? `<button class="text-button" data-invite-copy="${escapeAdmin(item.inviteId)}">Copia link</button>` : ''}
         ${item.status === 'pending' || item.status === 'expired' ? `<button class="text-button" data-resend-nutri-invite="${escapeAdmin(item.inviteId)}">Genera nuovo link</button>` : ''}
       </strong></div>
     </article>`).join(''));
@@ -2862,9 +2873,12 @@ async function submitNutritionistEmailInvite(event) {
       });
     }
     await loadUsers();
-    $('users-feedback').textContent = result.inviteUrl
-      ? 'Invito per il professionista creato. Consegnalo con “Copia link” o “Condividi link”.'
-      : (result.status === 'already-member' ? 'Account già membro attivo.' : 'Professionista aggiunto.');
+    // Il replay idempotente arriva con il messaggio del server (link ancora
+    // valido oppure invito da rinnovare): ha la precedenza sul testo generico.
+    $('users-feedback').textContent = result.message
+      || (result.inviteUrl
+        ? 'Invito per il professionista creato. Consegnalo con “Copia link” o “Condividi link”.'
+        : (result.status === 'already-member' ? 'Account già membro attivo.' : 'Professionista aggiunto.'));
   } catch (error) { out.textContent = adminError(error); }
 }
 
@@ -2929,6 +2943,37 @@ function inviteById(inviteId) {
   return adminState.clientInvitations.find(item => item.inviteId === inviteId)
     || ((adminState.users?.invitations || []).find(item => item.inviteId === inviteId))
     || null;
+}
+
+// ---- Link d'invito persistente ("Copia link") ----
+// Finché il cliente non è attivo, il link già emesso resta recuperabile: il
+// server legge il segreto dell'invito e restituisce lo STESSO link (nessuna
+// rigenerazione del token, nessuna nuova scadenza). La console riapre la
+// finestra di consegna con "Copia link" e "Condividi link".
+async function getExistingInviteLink(inviteId, feedbackId = 'clients-feedback') {
+  const invite = inviteById(inviteId);
+  const out = $(feedbackId);
+  if (out) out.textContent = 'Recupero del link in corso…';
+  try {
+    const result = await callAdminSaasFunction('getClientInviteLink', { organizationId: orgId(), inviteId });
+    openInviteLinkDialog({
+      url: result.inviteUrl,
+      firstName: result.firstName || invite?.firstName || '',
+      lastName: result.lastName || invite?.lastName || '',
+      email: result.targetEmail || invite?.targetEmail || '',
+      expiresAt: result.expiresAt,
+      title: result.type === 'nutritionist' ? 'Link professionista pronto' : 'Link d’invito pronto'
+    });
+    if (out) out.textContent = 'Link recuperato: consegnalo con “Copia link” o “Condividi link”.';
+  } catch (error) {
+    if (out) out.textContent = adminError(error);
+  }
+}
+
+// Il messaggio di esito va nel riquadro della vista da cui arriva il clic: la
+// scheda cliente ha il suo, l'elenco clienti e il pannello team ne hanno altri.
+function inviteFeedbackIdFor(event) {
+  return event?.currentTarget?.id === 'client-detail-body' ? 'client-detail-feedback' : 'clients-feedback';
 }
 
 async function resendClientInvite(inviteId) {
@@ -3428,6 +3473,8 @@ function bindAdmin() {
     if (statusButton) { changeMemberStatus(statusButton.dataset.memberStatus, statusButton.dataset.status); return; }
     const removeButton = event.target.closest('[data-member-remove]');
     if (removeButton) { removeNutritionist(removeButton.dataset.memberRemove); return; }
+    const copyInviteButton = event.target.closest('[data-invite-copy]');
+    if (copyInviteButton) { getExistingInviteLink(copyInviteButton.dataset.inviteCopy, 'users-feedback'); return; }
     const resendNutriBtn = event.target.closest('[data-resend-nutri-invite]');
     if (resendNutriBtn) { resendNutritionistInvite(resendNutriBtn.dataset.resendNutriInvite); return; }
     const profileButton = event.target.closest('[data-member-profile]');

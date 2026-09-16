@@ -86,7 +86,8 @@ function harness(entries = {}) {
         return handler;
       } };
       if (name === 'firebase-functions/v2/scheduler') return { onSchedule: () => null };
-      if (name === 'firebase-functions') return { logger: { error() {} } };
+      // logger completo: il codice usa anche warn (es. segreto d'invito mancante).
+      if (name === 'firebase-functions') return { logger: { error() {}, warn() {}, info() {} } };
       if (name === 'firebase-admin/app') return { initializeApp() {} };
       if (name === 'firebase-admin/firestore') return {
         getFirestore: () => db,
@@ -99,7 +100,9 @@ function harness(entries = {}) {
   vm.runInNewContext(fs.readFileSync(require.resolve('../src/index'), 'utf8'), context);
   regions.forEach(options => {
     assert.equal(options.region, 'europe-west1');
-    assert.equal(options.enforceAppCheck, true);
+    // Callable private e callable pubbliche (anteprima invito): la scelta di
+    // App Check è esplicita in entrambi i casi, il valore non è unico.
+    assert.ok(typeof options.enforceAppCheck === 'boolean');
   });
   return { api: context.exports, store };
 }

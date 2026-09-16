@@ -1078,6 +1078,18 @@ function validateResendClientInvite(input) {
   };
 }
 
+// Recupero del link di un invito già emesso (bottone "Copia link" della
+// console). Nessun nuovo token e nessuna idempotencyKey: l'operazione è una
+// lettura autorizzata del segreto dell'invito, ripetibile quante volte serve
+// finché il cliente non è attivo.
+function validateGetInviteLink(input) {
+  exactObject(input, ['organizationId', 'inviteId']);
+  return {
+    organizationId: id(input.organizationId, 'organizationId'),
+    inviteId: id(input.inviteId, 'inviteId')
+  };
+}
+
 function validateCancelClientInvite(input) {
   exactObject(input, ['organizationId', 'inviteId', 'reason', 'idempotencyKey']);
   return {
@@ -1482,6 +1494,7 @@ module.exports = {
   INVITE_DELIVERY_CHANNEL, EMAIL_CHANGE_STATUSES, CLIENT_EMAIL_INVITE_STATUSES,
   normalizeEmail, emailDomainOf, isLegacyTestEmail, emailFingerprint, maskEmail,
   validateInviteClientEmail, validateCorrectClientInvite, validateResendClientInvite,
+  validateGetInviteLink,
   validateCancelClientInvite, validateUpdateClientProfileByStaff, validateDeleteClientPermanently, validateUpdateMemberProfileByStaff,
   validateProposeClientEmailChange, validateRespondClientEmailChange, validateRedeemClientInvite,
   CLIENT_FREQUENCY_KEYS, CLIENT_FREQUENCY_LABELS, CLIENT_FREQUENCY_DEFAULTS,

@@ -34,6 +34,9 @@ test('strutture, revisioni e code: nessun accesso diretto', () => {
   // Proposte di cambio email: server-only, nessuna lettura diretta (il
   // destinatario le vede tramite callable, legate al suo UID).
   assert.match(rules, /match \/organizations\/\{organizationId\}\/emailChangeRequests\/\{requestId\} \{\s+allow read, write: if false;/);
+  // Segreto del link d'invito (token IN CHIARO): solo Admin SDK, dentro la
+  // callable getClientInviteLink. Nessuna lettura client, nemmeno del creatore.
+  assert.match(rules, /match \/organizations\/\{organizationId\}\/invitationSecrets\/\{secretId\} \{\s+allow read, write: if false;/);
 });
 
 test('singola organizzazione piano e ruolo solo nutritionist', () => {
