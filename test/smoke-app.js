@@ -138,8 +138,8 @@ window.PIANO_SAAS_CONFIG.enabled = false;
 const R = (id, name, slot, cat) => ({
   id, name, slot, proteinCategory: cat, emoji: '🍲', frequency: '',
   ingredients: [
-    { name: 'Riso venere', ingredientId: 'riso-venere', portions: { ipoTraining: '60g', ipoRest: '50g', manTraining: '90g', manRest: '70g' } },
-    { name: 'Uova intere', ingredientId: 'whole-eggs', portions: { ipoTraining: '2', ipoRest: '2', manTraining: '2', manRest: '2' } }
+    { name: 'Riso venere', ingredientId: 'riso-venere', portions: { single: '90g' } },
+    { name: 'Uova intere', ingredientId: 'whole-eggs', portions: { single: '2' } }
   ],
   steps: ['Passo uno'], notes: ['Nota uno']
 });
@@ -152,7 +152,7 @@ const recipes = [
   R('M1', 'Yogurt', 'snack2', '')
 ];
 // Schema 6: quantità originale unica per profilo (riposo derivato dal piano).
-const samePortion = value => ({ ipo: value, man: value });
+const samePortion = value => ({ single: value });
 recipes.find(item => item.id === 'L1').ingredients.push({ name: 'Basilico', ingredientId: 'basilico', portions: samePortion('1') });
 recipes.find(item => item.id === 'D1').ingredients.push({ name: 'Basilico', ingredientId: 'basilico', portions: samePortion('un mazzetto') });
 // Secondo carboidrato nella colazione: serve per verificare l'ordine degli
@@ -181,7 +181,7 @@ appState.shopping = {
   selectedMeals: Object.fromEntries(window.PianoDomain.DAYS.map(day => [day, ['breakfast', 'snack1', 'lunch', 'snack2', 'dinner']])),
   includePantry: true, excludedItems: [], customQuantities: {}
 };
-appState.deviceSettings = { portionProfile: 'man', darkMode: false, lastOpenDate: null };
+appState.deviceSettings = { portionProfile: 'single', darkMode: false, lastOpenDate: null };
 
 // Regressione: l'adattamento avviato dalla modalità lettura non deve catturare
 // input inesistenti e sovrascrivere i dati della ricetta con i fallback.
@@ -210,9 +210,8 @@ for (const field of ['name', 'emoji', 'slot', 'proteinCategory', 'steps', 'notes
 assert.equal(currentModal.recipe.ingredients[0].name, beforeReadAdapt.ingredients[0].name);
 assert.deepEqual(currentModal.recipe.ingredients[1], beforeReadAdapt.ingredients[1], 'ingrediente non adattato identico');
 // Dosi v3 della tabella di riferimento: cereali al pranzo nel giorno di
-// allenamento = 70 g (la vecchia aspettativa 90 g apparteneva allo schema 5).
-assert.equal(currentModal.recipe.ingredients[0].portions.man, '70 g', 'porzione unica per profilo dopo adattamento (schema 6)');
-assert.equal(currentModal.recipe.ingredients[0].portions.ipo, '70 g', 'profilo donna allineato al riferimento del pranzo');
+// allenamento = 70 g.
+assert.equal(currentModal.recipe.ingredients[0].portions.single, '70 g', 'porzione unica dopo adattamento');
 setRecipes(recipes);
 
 // ---- Percorsi di rendering ----
@@ -220,11 +219,11 @@ renderGlobalHeader();
 assert.match(document.getElementById('global-header-container').innerHTML, /header-brand-icon/, 'brand premium generato nell’header');
 assert.match(document.getElementById('global-header-container').innerHTML, /id="notification-bell"/, 'campanella notifiche sempre presente in header');
 assert.match(document.getElementById('global-header-container').innerHTML, /aria-haspopup="dialog"/, 'campanella accessibile da tastiera');
-appState.deviceSettings.portionProfile = 'ipo';
+appState.deviceSettings.portionProfile = 'single';
 renderGlobalHeader();
-assert.match(document.getElementById('global-header-container').innerHTML, />👩 Profilo donna<\/option>/, 'profilo donna rinominato nell’header');
-assert.doesNotMatch(document.getElementById('global-header-container').innerHTML, /Profilo donna IPO/, 'vecchia etichetta rimossa dall’header');
-appState.deviceSettings.portionProfile = 'man';
+assert.match(document.getElementById('global-header-container').innerHTML, />👤 1 persona<\/option>/, 'profilo singolo unificato nell’header');
+assert.doesNotMatch(document.getElementById('global-header-container').innerHTML, /Profilo donna IPO|Profilo donna|Profilo uomo|👨 1 persona|👩 1 persona/, 'vecchie etichette profilo rimosse dall’header');
+appState.deviceSettings.portionProfile = 'single';
 renderGlobalHeader();
 renderWeek();
 const weekMarkup = document.getElementById('view-week').innerHTML;
@@ -235,9 +234,9 @@ appState.deviceSettings.portionProfile = 'couple';
 renderGlobalHeader();
 renderWeek();
 const headerCouple = document.getElementById('global-header-container').innerHTML;
-assert.match(headerCouple, /👥 Profilo coppia/, 'profilo coppia selezionabile dall’header');
+assert.match(headerCouple, /👥 2 persone/, 'profilo coppia rinominato nell’header');
 assert.match(headerCouple, /value="couple" selected/, 'profilo coppia mostrato come attivo nell’header');
-appState.deviceSettings.portionProfile = 'man';
+appState.deviceSettings.portionProfile = 'single';
 renderGlobalHeader();
 renderWeek();
 
@@ -317,9 +316,9 @@ assert.ok(copiedShopping.indexOf('----- 🐟 Pesce') < copiedShopping.indexOf('-
 assert.ok(copiedShopping.indexOf('----- 🍚 Carboidrati') < copiedShopping.indexOf('----- 🥚 Uova e latticini'));
 assert.ok(exportedShopping.indexOf('----- 🐟 Pesce') < exportedShopping.indexOf('----- 🍚 Carboidrati'));
 assert.ok(exportedShopping.indexOf('----- 🍚 Carboidrati') < exportedShopping.indexOf('----- 🥚 Uova e latticini'));
-assert.equal(shoppingAmountText({ id: 'opaque-a', legacyId: 'opaque-a', totals: { pz: 28 }, opaque: { 'Uomo: 8-10': 2, 'Donna: 8-10': 1 }, free: false }), '28 pz');
-assert.equal(shoppingAmountText({ id: 'opaque-b', legacyId: 'opaque-b', totals: {}, opaque: { 'Uomo: 1 mazzetto': 1, 'Donna: 1 mazzetto': 1 }, free: false }), '2 mazzetti');
-assert.equal(shoppingAmountText({ id: 'opaque-only', legacyId: 'opaque-only', totals: {}, opaque: { 'Uomo: una confezione piccola': 2 }, free: false }), 'Uomo: una confezione piccola');
+assert.equal(shoppingAmountText({ id: 'opaque-a', legacyId: 'opaque-a', totals: { pz: 28 }, opaque: { '8-10': 3 }, free: false }), '28 pz');
+assert.equal(shoppingAmountText({ id: 'opaque-b', legacyId: 'opaque-b', totals: {}, opaque: { '1 mazzetto': 2 }, free: false }), '2 mazzetti');
+assert.equal(shoppingAmountText({ id: 'opaque-only', legacyId: 'opaque-only', totals: {}, opaque: { 'una confezione piccola': 2 }, free: false }), 'una confezione piccola');
 assert.equal(shoppingAmountText({ id: 'spoons', legacyId: 'spoons', totals: { g: 50 }, opaque: {}, free: false }), '50g');
 assert.match(exportedShopping, /Basilico - 7 pz/);
 assert.doesNotMatch(exportedShopping, /Basilico[^\n]*mazzetto/);
@@ -916,21 +915,15 @@ renderModalContent();
   // Assenza del vecchio input Frequenza
   assert.doesNotMatch(timeHtml, /edit-recipe-frequency/, 'input frequenza rimosso dall\'editor');
   assert.doesNotMatch(editHtml, /edit-recipe-frequency/, 'nessun campo frequenza negli ingredienti');
-  // Schema 6 editor: un solo campo quantità per profilo, combobox catalogo e
-  // niente tab Batch in modifica (le note sono nella tab Preparazione).
-  assert.match(editHtml, /id="edit-ing-man-0"/, 'quantità uomo singola presente');
-  assert.match(editHtml, /id="edit-ing-ipo-0"/, 'quantità donna singola presente');
-  // Primo campo Uomo, poi Donna (etichetta senza "IPO"), selettore unità e
-  // hint chiaro: numero + unità, valori particolari conservati.
-  assert.ok(editHtml.indexOf('id="edit-ing-man-0"') < editHtml.indexOf('id="edit-ing-ipo-0"'), 'il campo Uomo precede il campo Donna');
-  assert.match(editHtml, /Quantità · Uomo/);
-  assert.match(editHtml, /Quantità · Donna/);
-  assert.doesNotMatch(editHtml, /IPO/, 'etichetta IPO rimossa dall\'editor');
-  assert.match(editHtml, /id="edit-ing-man-0" type="number"/, 'numero uomo presente');
-  assert.match(editHtml, /id="edit-ing-man-0-unit"/, 'selettore unità uomo presente');
-  assert.match(editHtml, /id="edit-ing-ipo-0-unit"/, 'selettore unità donna presente');
+  // Schema 6 editor: un solo campo quantità, combobox catalogo e niente tab
+  // Batch in modifica (le note sono nella tab Preparazione).
+  assert.match(editHtml, /id="edit-ing-single-0"/, 'quantità singola presente');
+  assert.match(editHtml, /Quantità/, 'etichetta quantità presente');
+  assert.doesNotMatch(editHtml, /Quantità · Uomo|Quantità · Donna|IPO/, 'etichette legacy rimosse dall\'editor');
+  assert.match(editHtml, /id="edit-ing-single-0" type="number"/, 'numero quantità presente');
+  assert.match(editHtml, /id="edit-ing-single-0-unit"/, 'selettore unità presente');
   assert.match(editHtml, /numero e unità di misura/, 'hint numero+unità presente');
-  assert.doesNotMatch(editHtml, /edit-ing-man-training-0|edit-ing-ipo-rest-0/, 'campi legacy 4-porzioni rimossi dall\'editor');
+  assert.doesNotMatch(editHtml, /edit-ing-man-training-0|edit-ing-ipo-rest-0|edit-ing-man-0|edit-ing-ipo-0/, 'campi legacy rimossi dall\'editor');
   assert.match(editHtml, /role="combobox"/, 'campo nome come combobox accessibile');
   assert.match(editHtml, /ing-suggest-0/, 'listbox suggerimenti catalogo presente');
   assert.equal(document.getElementById('modal-batch-text')._textContent, '', 'tab Batch svuotata in modalità modifica (solo consultazione)');

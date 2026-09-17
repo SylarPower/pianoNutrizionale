@@ -180,17 +180,16 @@ test('switch ON: engineRulesFor v2 + attivazione motore adattano le porzioni del
     assert.equal(Domain.activateGuideRuleSet(engine.rules, engine.freeAliases), true, 'motore installato');
     const recipe = {
       name: 'Pranzo tipo', slot: 'lunch',
-      ingredients: [{ name: 'Pasta', portions: { ipo: '500 g', man: '500 g' } }]
+      ingredients: [{ name: 'Pasta', portions: { single: '500 g' } }]
     };
     const onTraining = Domain.resolveRecipeForPlan(recipe, 'lunch', Domain.GUIDE_MODE_GUIDE, 'training');
     assert.equal(onTraining.mode, 'guide');
     assert.equal(onTraining.applied, true, 'dosi personalizzate applicate');
-    assert.equal(onTraining.recipe.ingredients[0].portions.ipo, '120 g', 'override allenamento');
-    assert.equal(onTraining.recipe.ingredients[0].portions.man, '120 g');
+    assert.equal(onTraining.recipe.ingredients[0].portions.single, '120 g', 'override allenamento');
     const onRest = Domain.resolveRecipeForPlan(recipe, 'lunch', Domain.GUIDE_MODE_GUIDE, 'rest');
     assert.equal(onRest.applied, true);
-    assert.equal(onRest.recipe.ingredients[0].portions.ipo, '70 g', 'dose riposo della struttura (non coperta dall’override)');
-    assert.equal(recipe.ingredients[0].portions.ipo, '500 g', 'ricetta originale mai mutata');
+    assert.equal(onRest.recipe.ingredients[0].portions.single, '70 g', 'dose riposo della struttura (non coperta dall’override)');
+    assert.equal(recipe.ingredients[0].portions.single, '500 g', 'ricetta originale mai mutata');
   } finally {
     Domain.activateGuideRuleSet = previousActivate;
   }
@@ -203,13 +202,13 @@ test('switch OFF: stessa struttura assegnata ma le quantità restano originali',
     Domain.activateGuideRuleSet(engine.rules, engine.freeAliases);
     const recipe = {
       name: 'Pranzo tipo', slot: 'lunch',
-      ingredients: [{ name: 'Pasta', portions: { ipo: '500 g', man: '500 g' } }]
+      ingredients: [{ name: 'Pasta', portions: { single: '500 g' } }]
     };
     const off = Domain.resolveRecipeForPlan(recipe, 'lunch', Domain.GUIDE_MODE_ORIGINAL, 'training');
     assert.equal(off.mode, 'original');
     assert.equal(off.applied, false, 'nessuna adattazione in modalità originale');
-    assert.equal(off.recipe.ingredients[0].portions.ipo, '500 g', 'porzioni intatte');
-    assert.equal(recipe.ingredients[0].portions.ipo, '500 g', 'sorgente immutata');
+    assert.equal(off.recipe.ingredients[0].portions.single, '500 g', 'porzioni intatte');
+    assert.equal(recipe.ingredients[0].portions.single, '500 g', 'sorgente immutata');
   } finally {
     Domain.activateGuideRuleSet = previousActivate;
   }
@@ -223,11 +222,11 @@ test('switch ON senza override: valgono le dosi dello studio dalla revisione v2'
     Domain.activateGuideRuleSet(engine.rules, engine.freeAliases);
     const recipe = {
       name: 'Pranzo tipo', slot: 'lunch',
-      ingredients: [{ name: 'Pasta', portions: { ipo: '500 g', man: '500 g' } }]
+      ingredients: [{ name: 'Pasta', portions: { single: '500 g' } }]
     };
     const on = Domain.resolveRecipeForPlan(recipe, 'lunch', Domain.GUIDE_MODE_GUIDE, 'training');
     assert.equal(on.applied, true);
-    assert.equal(on.recipe.ingredients[0].portions.ipo, '90 g', 'dose studio applicata');
+    assert.equal(on.recipe.ingredients[0].portions.single, '90 g', 'dose studio applicata');
   } finally {
     Domain.activateGuideRuleSet = previousActivate;
   }

@@ -130,7 +130,7 @@ observeAuthState(() => {});
 function sampleRecipe(id, name) {
   return {
     id, name, slot: 'lunch',
-    ingredients: [{ name: 'Riso', portions: { manTraining: '90g' } }],
+    ingredients: [{ name: 'Riso', portions: { single: '90g' } }],
     steps: ['Cuoci']
   };
 }

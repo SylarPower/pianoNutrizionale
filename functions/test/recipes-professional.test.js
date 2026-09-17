@@ -118,7 +118,7 @@ async function errCode(promise) {
 
 const RECIPE = {
   name: 'Riso al telefono', emoji: '🍚', slot: 'lunch', proteinCategory: null,
-  ingredients: [{ name: 'Riso', ingredientId: null, portions: { man: '80 g', ipo: '60 g' } }],
+  ingredients: [{ name: 'Riso', ingredientId: null, portions: { single: '80 g' } }],
   steps: ['Cuoci il riso.'], notes: []
 };
 

@@ -126,7 +126,7 @@ initFirebase();
 observeAuthState(() => {});
 appState.user = { uid: 'u1', email: 'mario@utenti.pianonutrizionale.app' };
 appState.deviceSettings = {
-  portionProfile: 'man', darkMode: false, lastOpenDate: null,
+  portionProfile: 'single', darkMode: false, lastOpenDate: null,
   recipeLibraryState: { searchQuery: '', openSections: {} }, shopCategoryOrder: []
 };
 appState.household = null;
@@ -137,12 +137,12 @@ const ASSIGNED = {
 };
 const alignedRecipe = () => ({
   id: 'L1', slot: 'lunch', name: 'Pasta', emoji: '🍝',
-  ingredients: [{ name: 'Pasta di semola', portions: { man: '70 g', ipo: '70 g' } }],
+  ingredients: [{ name: 'Pasta di semola', portions: { single: '70 g' } }],
   steps: [], notes: []
 });
 const unknownRecipe = (name = 'Proteina misteriosa') => ({
   id: 'L9', slot: 'lunch', name: 'Test', emoji: '🍲',
-  ingredients: [{ name, portions: { man: '100 g', ipo: '100 g' } }],
+  ingredients: [{ name, portions: { single: '100 g' } }],
   steps: [], notes: []
 });
 function openModal(recipe, dayKey = null, planSlot = null) {

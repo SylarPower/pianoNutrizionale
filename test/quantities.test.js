@@ -8,9 +8,9 @@ const test = require('node:test');
 const assert = require('node:assert/strict');
 const d = require('../js/domain.js');
 
-const pastaLunch = (man = '70 g', ipo = '50 g') => ({
+const pastaLunch = (single = '70 g') => ({
   id: 'L1', slot: 'lunch', name: 'Pasta', emoji: '🍝',
-  ingredients: [{ name: 'Pasta di semola', portions: { man, ipo } }]
+  ingredients: [{ name: 'Pasta di semola', portions: { single } }]
 });
 
 test('parseQuantity: vuoti, q.b., quantità, opachi', () => {
@@ -59,12 +59,11 @@ test('somme: i cucchiai restano cucchiai, unità diverse non si fondono', () => 
 });
 
 test('adattamento Guide: solo grammi espliciti, resto invariato', () => {
-  const adapted = d.resolveRecipeForPlan(pastaLunch('120 g', '120 g'), 'lunch', 'guide', 'training').recipe;
-  assert.equal(adapted.ingredients[0].portions.man, '70 g');
-  assert.equal(adapted.ingredients[0].portions.ipo, '70 g');
+  const adapted = d.resolveRecipeForPlan(pastaLunch('120 g'), 'lunch', 'guide', 'training').recipe;
+  assert.equal(adapted.ingredients[0].portions.single, '70 g');
   for (const dose of ['120', '2 pz', '1 cucchiaio', '250 ml', 'q.b.', '1 mazzetto', '8-10 g', '—']) {
-    const result = d.resolveRecipeForPlan(pastaLunch(dose, dose), 'lunch', 'guide', 'training').recipe;
-    assert.equal(result.ingredients[0].portions.man, dose, `dose "${dose}" invariata`);
+    const result = d.resolveRecipeForPlan(pastaLunch(dose), 'lunch', 'guide', 'training').recipe;
+    assert.equal(result.ingredients[0].portions.single, dose, `dose "${dose}" invariata`);
   }
 });
 
@@ -82,7 +81,7 @@ test('guideComparableAmount e parseCarbAmount: g-only, niente naked→grammi', (
 
 test('carbBaseAmount: riferimento solo se dose mancante o non numerica', () => {
   const source = d.carbSourceForName('Pasta di semola');
-  const base = man => d.carbBaseAmount({ name: 'Pasta di semola', portions: { man, ipo: '—' } }, source, 'lunch');
+  const base = single => d.carbBaseAmount({ name: 'Pasta di semola', portions: { single } }, source, 'lunch');
   assert.deepEqual(base('60 g'), { value: 60, unit: 'g' }, 'grammi nativi usati');
   assert.ok(base('—') && base('—').unit === 'g', 'dose mancante → riferimento');
   assert.ok(base('q.b.') && base('q.b.').unit === 'g', 'q.b. → riferimento linee guida');
@@ -94,7 +93,7 @@ test('carbBaseAmount: riferimento solo se dose mancante o non numerica', () => {
 
 test('carboidrato cross-slot con unità non-grammi resta testuale', () => {
   const crossed = d.adaptIngredientForSlot(
-    { name: 'Pasta di semola', portions: { man: '2 pz', ipo: '2 pz' } }, 'lunch', 'dinner', 'rest'
+    { name: 'Pasta di semola', portions: { single: '2 pz' } }, 'lunch', 'dinner', 'rest'
   );
   assert.equal(crossed, null, 'niente "50 pz" inventati');
 });
@@ -102,14 +101,14 @@ test('carboidrato cross-slot con unità non-grammi resta testuale', () => {
 test('Riposo/Allenamento: dosi Guide distinte per tipo giorno', () => {
   const training = d.resolveRecipeForPlan(pastaLunch(), 'lunch', 'guide', 'training').recipe;
   const rest = d.resolveRecipeForPlan(pastaLunch(), 'lunch', 'guide', 'rest').recipe;
-  assert.equal(training.ingredients[0].portions.man, '70 g');
-  assert.equal(rest.ingredients[0].portions.man, '50 g');
-  assert.notEqual(training.ingredients[0].portions.man, rest.ingredients[0].portions.man);
+  assert.equal(training.ingredients[0].portions.single, '70 g');
+  assert.equal(rest.ingredients[0].portions.single, '50 g');
+  assert.notEqual(training.ingredients[0].portions.single, rest.ingredients[0].portions.single);
 });
 
 test('spostamento pranzo→cena: dose cena da tabella su grammi nativi', () => {
   const dinner = d.resolveRecipeForPlan(pastaLunch(), 'dinner', 'guide', 'rest').recipe;
-  assert.equal(dinner.ingredients[0].portions.man, '40 g');
+  assert.equal(dinner.ingredients[0].portions.single, '40 g');
 });
 
 test('spesa: totali cucchiai separati dai grammi', () => {
@@ -122,12 +121,12 @@ test('spesa: totali cucchiai separati dai grammi', () => {
     L9: {
       id: 'L9', slot: 'lunch', name: 'Test',
       ingredients: [
-        { name: 'Olio extravergine', portions: { man: '1 cucchiaio', ipo: '1 cucchiaio' } },
-        { name: 'Pasta di semola', portions: { man: '70 g', ipo: '50 g' } }
+        { name: 'Olio extravergine', portions: { single: '1 cucchiaio' } },
+        { name: 'Pasta di semola', portions: { single: '70 g' } }
       ]
     }
   };
-  const list = d.aggregateShopping(plan, recipesById, { monday: ['lunch'] }, 'man');
+  const list = d.aggregateShopping(plan, recipesById, { monday: ['lunch'] }, 'single');
   const oil = list.find(entry => entry.ingredientId === d.ingredientIdFor('Olio extravergine'));
   assert.equal(oil.totals.cucchiaio, 1);
   assert.equal(oil.totals.g, undefined, 'nessun grammo inventato dai cucchiai');
@@ -138,19 +137,11 @@ test('spesa: totali cucchiai separati dai grammi', () => {
 test('batch cooking: somme con cucchiai e unità miste mai fuse', () => {
   assert.equal(d.combineTaskQuantities('1 cucchiaio', '2 cucchiai'), '3 cucchiai');
   assert.equal(d.combineTaskQuantities('100g', '1 cucchiaio'), '100g + 1 cucchiaio');
-  assert.deepEqual(
-    d.combineTaskQuantities(
-      { man: '1 cucchiaio', ipo: '1 cucchiaio' },
-      { man: '1 cucchiaio', ipo: '2 cucchiai' },
-      'couple'
-    ),
-    { man: '2 cucchiai', ipo: '3 cucchiai' }
-  );
   assert.equal(d.combineTaskQuantities('2', '3'), '5 pz');
 });
 
 test('resolveRecipeForPlan non muta mai la ricetta originale (non-retroattività)', () => {
-  const recipe = pastaLunch('120 g', '120 g');
+  const recipe = pastaLunch('120 g');
   const before = JSON.stringify(recipe);
   d.resolveRecipeForPlan(recipe, 'lunch', 'guide', 'training');
   d.resolveRecipeForPlan(recipe, 'dinner', 'guide', 'rest');

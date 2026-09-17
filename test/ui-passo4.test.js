@@ -126,7 +126,7 @@ initFirebase();
 observeAuthState(() => {});
 appState.user = { uid: 'u1', email: 'mario@utenti.pianonutrizionale.app' };
 appState.deviceSettings = {
-  portionProfile: 'man', darkMode: false, lastOpenDate: null,
+  portionProfile: 'single', darkMode: false, lastOpenDate: null,
   recipeLibraryState: { searchQuery: '', openSections: {} }, shopCategoryOrder: []
 };
 appState.household = null;
@@ -216,15 +216,15 @@ test('dosi override nel motore: settimana e spesa usano la dose cliente', () => 
     assert.equal(PianoDomain.activateGuideRuleSet(engine.rules, engine.freeAliases), true);
     const recipe = {
       id: 'L1', slot: 'lunch', name: 'Pasta', emoji: '🍝',
-      ingredients: [{ name: 'Pasta di semola', portions: { man: '120 g', ipo: '120 g' } }]
+      ingredients: [{ name: 'Pasta di semola', portions: { single: '120 g' } }]
     };
     setRecipes([recipe]);
     appState.plan.days.monday.type = 'training';
     appState.plan.days.monday.lunch = 'L1';
     const resolved = resolvePlannedRecipe(getRecipe('L1'), 'monday', 'lunch');
-    assert.equal(resolved.recipe.ingredients[0].portions.man, '120 g', 'settimana con dose cliente');
+    assert.equal(resolved.recipe.ingredients[0].portions.single, '120 g', 'settimana con dose cliente');
     const list = PianoDomain.aggregateShopping(
-      appState.plan, { L1: getRecipe('L1') }, { monday: ['lunch'] }, 'man'
+      appState.plan, { L1: getRecipe('L1') }, { monday: ['lunch'] }, 'single'
     );
     const pasta = list.find(entry => entry.ingredientId === PianoDomain.ingredientIdFor('Pasta di semola'));
     assert.equal(pasta.totals.g, 120, 'spesa unica riflette la dose cliente');
@@ -243,12 +243,12 @@ test('interazione: switch adattate OFF → originali anche con profilo assegnato
   appState.plan = PianoDomain.setAdaptedQuantitiesEnabled(appState.plan, false);
   const recipe = {
     id: 'L1', slot: 'lunch', name: 'Pasta', emoji: '🍝',
-    ingredients: [{ name: 'Pasta di semola', portions: { man: '200 g', ipo: '200 g' } }]
+    ingredients: [{ name: 'Pasta di semola', portions: { single: '200 g' } }]
   };
   setRecipes([recipe]);
   appState.plan.days.monday.type = 'training';
   appState.plan.days.monday.lunch = 'L1';
   const resolved = resolvePlannedRecipe(getRecipe('L1'), 'monday', 'lunch');
   assert.equal(resolved.mode, 'original');
-  assert.equal(resolved.recipe.ingredients[0].portions.man, '200 g');
+  assert.equal(resolved.recipe.ingredients[0].portions.single, '200 g');
 });

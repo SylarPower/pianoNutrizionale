@@ -132,7 +132,7 @@ initFirebase();
 observeAuthState(() => {});
 appState.user = { uid: 'u1', email: 'mario@utenti.pianonutrizionale.app' };
 appState.deviceSettings = {
-  portionProfile: 'man', darkMode: false, lastOpenDate: null,
+  portionProfile: 'single', darkMode: false, lastOpenDate: null,
   recipeLibraryState: { searchQuery: '', openSections: {} }, shopCategoryOrder: []
 };
 appState.household = null;
@@ -198,7 +198,7 @@ test('editor ricetta: etichetta "Pasto" per lo slot', () => {
   currentModal = {
     recipe: {
       id: 'L1', slot: 'lunch', name: 'Test', emoji: '🍲',
-      ingredients: [{ name: 'Pasta', portions: { ipo: '70 g', man: '90 g' } }],
+      ingredients: [{ name: 'Pasta', portions: { single: '90 g' } }],
       steps: [], notes: []
     },
     original: null, dayKey: null, dayType: 'training', slot: null, planSlot: null, isNew: false

@@ -310,18 +310,18 @@ function getSlotMeta(slotId) {
   return MEAL_SLOTS.find(slot => slot.id === slotId) || { id: slotId, label: slotId, shortLabel: slotId, emoji: "🍽️" };
 }
 
+function normalizePortionProfile(profile) {
+  return profile === "couple" ? "couple" : "single";
+}
+
 function getPortionProfile() {
-  return appState.deviceSettings?.portionProfile || "man";
+  return normalizePortionProfile(appState.deviceSettings?.portionProfile);
 }
 
 function getPortionValue(ingredient, profile, dayType) {
   const portions = ingredient?.portions || {};
-  // Schema 6: una sola quantità originale per profilo — la dose A/R è derivata
-  // dalla struttura sul piano, mai salvata nei 4 campi legacy.
-  if (profile === "ipo") {
-    return portions.ipo ?? portions.ipoTraining ?? "—";
-  }
-  return portions.man ?? portions.manTraining ?? portions[dayType] ?? portions.training ?? "—";
+  // Una sola quantità originale per ingrediente: la UI legge solo `single`.
+  return portions.single ?? "—";
 }
 
 function isEmptyPortion(value) {
@@ -330,25 +330,18 @@ function isEmptyPortion(value) {
 }
 
 function getIngredientDisplay(ingredient, dayType) {
-  const profile = getPortionProfile();
-  if (profile === "ipo") return getPortionValue(ingredient, "ipo", dayType);
-  if (profile === "couple") {
-    // Profilo coppia con moltiplicatore porzioni: le dosi uomo/donna vengono
-    // scalate per il fattore scelto (×1 di default).
-    const man = applyCoupleMultiplier(getPortionValue(ingredient, "man", dayType));
-    const woman = applyCoupleMultiplier(getPortionValue(ingredient, "ipo", dayType));
-    if (isEmptyPortion(man) && isEmptyPortion(woman)) return "—";
-    return `Uomo: ${man} · Donna: ${woman}`;
-  }
-  return getPortionValue(ingredient, "man", dayType);
+  const amount = getPortionValue(ingredient, getPortionProfile(), dayType);
+  return getPortionProfile() === "couple"
+    ? applyCoupleMultiplier(amount)
+    : amount;
 }
 
 // Moltiplicatore porzioni: vive solo nell'app clienti e solo con il profilo
-// coppia selezionato. Scala le quantità mostrate (uomo e donna) e i totali
-// della lista della spesa; passo 0,5, limite ×0,5–×3.
+// coppia selezionato. Scala la dose singola mostrata e i totali derivati; il
+// valore di default è ×2, coerente con il profilo "2 persone".
 function getCoupleMultiplier() {
   const raw = Number(appState.deviceSettings?.coupleMultiplier);
-  if (!Number.isFinite(raw) || raw <= 0) return 1;
+  if (!Number.isFinite(raw) || raw <= 0) return 2;
   return Math.min(3, Math.max(0.5, Math.round(raw * 100) / 100));
 }
 
@@ -377,14 +370,17 @@ window.changeCoupleMultiplier = function (delta) {
   handleRoute();
 };
 
+function getPortionProfileLabel(profile = getPortionProfile()) {
+  return profile === "couple" ? "2 persone" : "1 persona";
+}
+
 function getProfileLabel() {
   const profile = getPortionProfile();
-  if (profile === "ipo") return "Donna";
   if (profile === "couple") {
     const multiplier = getCoupleMultiplier();
-    return multiplier !== 1 ? `Coppia · uomo + donna ${formatMultiplier(multiplier)}` : "Coppia · uomo + donna";
+    return multiplier !== 2 ? `${getPortionProfileLabel(profile)} ${formatMultiplier(multiplier)}` : getPortionProfileLabel(profile);
   }
-  return "Uomo";
+  return getPortionProfileLabel(profile);
 }
 
 function normalizeRecipeLibraryState(state = {}) {
@@ -445,7 +441,8 @@ function recipeUsesGuideInPlan(dayKey, slot) {
 }
 
 function normalizeRecipeSchema(recipe) {
-  // Schema 4: ingredientId stabile + porzioni normalizzate (supporto legacy).
+  // Normalizza la ricetta allo schema corrente: ingredientId stabile, porzione
+  // singola e note unificate.
   return window.PianoDomain ? PianoDomain.migrateRecipe(recipe) : clone(recipe);
 }
 
@@ -471,12 +468,18 @@ function getActiveBatch(dayKey) {
     templates,
     appState.recipesById,
     getPortionProfile(),
-    { applyGuide: planAdaptedQuantitiesEffective() }
+    {
+      applyGuide: planAdaptedQuantitiesEffective(),
+      quantityMultiplier: getPortionProfile() === "couple" ? getCoupleMultiplier() : 1
+    }
   );
   // Batch automatico "doppia porzione": stessa ricetta a cena e al pranzo
   // successivo (anche via cross-slot). Le dosi sono la somma cena + pranzo.
   const dinnerId = appState.plan.days[dayKey]?.dinner;
-  const common = PianoDomain.commonRecipeBatch(dayKey, appState.plan, appState.recipesById, getPortionProfile(), { applyGuide: planAdaptedQuantitiesEffective() });
+  const common = PianoDomain.commonRecipeBatch(dayKey, appState.plan, appState.recipesById, getPortionProfile(), {
+    applyGuide: planAdaptedQuantitiesEffective(),
+    quantityMultiplier: getPortionProfile() === "couple" ? getCoupleMultiplier() : 1
+  });
   if (common && dinnerId) {
     const alreadyCovered = batches.some(batch => batch.targetDay === common.targetDay && batch.template?.target?.recipeId === dinnerId);
     if (!alreadyCovered) batches.push(common);
@@ -1450,18 +1453,13 @@ function renderGlobalHeader() {
   }
   const profile = getPortionProfile();
   const pending = pendingNotificationCount();
-  // Interruttore del tema nell'intestazione (unico punto di controllo): sole
-  // e luna con etichetta localizzata, stato premuto e supporto tastiera
-  // nativo del bottone. Lo stato vero si legge dal DOM, non dalle preferenze.
-  const dark = document.documentElement?.classList.contains("dark-mode") === true;
   const multiplier = getCoupleMultiplier();
   header.innerHTML = `
     <div class="header-brand"><span class="header-brand-icon" aria-hidden="true"><img src="assets/loghi/logo-app.svg" alt=""></span><strong>Piano</strong></div>
     <div class="header-profile">
       <select aria-label="Profilo porzioni" onchange="changePortionProfile(this.value)">
-        <option value="man" ${profile === "man" ? "selected" : ""}>👨 Profilo uomo</option>
-        <option value="ipo" ${profile === "ipo" ? "selected" : ""}>👩 Profilo donna</option>
-        <option value="couple" ${profile === "couple" ? "selected" : ""}>👥 Profilo coppia</option>
+        <option value="single" ${profile === "single" ? "selected" : ""}>👤 ${getPortionProfileLabel("single")}</option>
+        <option value="couple" ${profile === "couple" ? "selected" : ""}>👥 ${getPortionProfileLabel("couple")}</option>
       </select>
       ${profile === "couple" ? `
       <div class="couple-mult" role="group" aria-label="Moltiplicatore porzioni della coppia">
@@ -1471,8 +1469,6 @@ function renderGlobalHeader() {
       </div>` : ""}
     </div>
     <div class="header-actions">
-      <button type="button" class="theme-toggle" onclick="toggleDarkModeFromHeader()" aria-pressed="${dark ? "true" : "false"}" aria-label="${dark ? "Attiva il tema chiaro" : "Attiva il tema scuro"}" title="Tema chiaro/scuro"><span aria-hidden="true">${dark ? "☀️" : "🌙"}</span></button>
-      <a href="#settings" class="header-account" title="Impostazioni" aria-label="Impostazioni"><span aria-hidden="true">⚙️</span></a>
       <button type="button" id="notification-bell" class="notification-bell ${pending ? "has-pending" : ""}" onclick="openIncomingShares()" aria-label="${notificationBellLabel(pending)}" aria-haspopup="dialog" aria-expanded="false" aria-controls="incoming-shares-modal">
         <span aria-hidden="true">🔔</span>
         <span id="notification-badge" class="notification-badge ${pending ? "" : "hidden"}" aria-hidden="true">${pending > 9 ? "9+" : pending}</span>
@@ -1482,8 +1478,9 @@ function renderGlobalHeader() {
 }
 
 window.changePortionProfile = function(profile) {
-  if (!["man", "ipo", "couple"].includes(profile)) return;
-  appState.deviceSettings.portionProfile = profile;
+  const normalized = normalizePortionProfile(profile);
+  if (!["single", "couple"].includes(normalized)) return;
+  appState.deviceSettings.portionProfile = normalized;
   saveLocalDeviceSettings(appState.deviceSettings);
   renderGlobalHeader();
   handleRoute();
@@ -1533,7 +1530,7 @@ function batchRecipeIngredients(recipe, dayKey, slot, batch) {
   }
   return (effectiveRecipe.ingredients || []).map(ingredient => ({
     name: ingredient.name,
-    quantityHtml: getIngredientCoupleHtml(ingredient, getDayType(dayKey))
+    quantityHtml: getIngredientQuantityHtml(ingredient, getDayType(dayKey))
   }));
 }
 
@@ -1743,11 +1740,10 @@ window.toggleWeekAdaptedQuantities = async function(enabled) {
 function weekMealDosesHtml(planned, dayType) {
   const portions = planned?.context?.portions;
   if (!planned?.applied || !portions || !window.PianoDomain) return "";
-  const profile = getPortionProfile() === "ipo" ? "ipo" : "man";
   const rows = (planned.recipe?.ingredients || []).map(ingredient => {
     const id = ingredient.ingredientId || PianoDomain.ingredientIdFor(ingredient.name);
     if (!portions[id]) return null;
-    const amount = getPortionValue(ingredient, profile, dayType);
+    const amount = getIngredientDisplay(ingredient, dayType);
     if (isEmptyPortion(amount)) return null;
     return `${ingredient.name} ${amount}`;
   }).filter(Boolean);
@@ -1843,7 +1839,7 @@ function setupSwapModal() {
     <div id="swap-modal" class="modal hidden" role="dialog" aria-modal="true">
       <div class="modal-content swap-modal-content">
         <div class="modal-header"><div><p class="eyebrow">Piano personale</p><h2 id="swap-title">Sostituisci ricetta</h2></div><button class="btn-icon" onclick="closeSwapModal()">&times;</button></div>
-        <p class="text-muted">La sostituzione può cambiare frequenze e batch cooking. Le dosi per Allenamento, Riposo e per gli altri profili restano invariate.</p>
+        <p class="text-muted">La sostituzione può cambiare frequenze e batch cooking. Le dosi continuano a seguire il contesto Allenamento/Riposo e l’eventuale moltiplicatore di 2 persone.</p>
         <div id="swap-options-list" class="swap-options"></div>
       </div>
     </div>`);
@@ -2300,16 +2296,6 @@ function parseSimpleAmount(raw) {
   return { value, unit };
 }
 
-function shoppingPortionsForIngredient(ingredient, dayType) {
-  const profile = getPortionProfile();
-  if (profile === "ipo") return [{ role: "Donna", raw: getPortionValue(ingredient, "ipo", dayType) }];
-  if (profile === "couple") return [
-    { role: "Uomo", raw: getPortionValue(ingredient, "man", dayType) },
-    { role: "Donna", raw: getPortionValue(ingredient, "ipo", dayType) }
-  ];
-  return [{ role: "Uomo", raw: getPortionValue(ingredient, "man", dayType) }];
-}
-
 function aggregateShoppingList() {
   if (!window.PianoDomain || !appState.plan) return [];
   // Aggregazione per ingredientId (schema 4): le quantità vengono sommate
@@ -2359,15 +2345,11 @@ function pluralizeOpaqueUnit(unit, amount) {
 }
 
 function formatOpaqueShoppingParts(opaque = {}) {
-  const items = Object.entries(opaque).map(([label, count]) => {
-    const roleMatch = label.match(/^(Uomo|Donna):\s*(.+)$/i);
-    return {
-      label,
-      count,
-      role: roleMatch ? roleMatch[1] : null,
-      raw: roleMatch ? roleMatch[2] : label
-    };
-  });
+  const items = Object.entries(opaque).map(([label, count]) => ({
+    label,
+    count,
+    raw: label
+  }));
   const groups = new Map();
   items.forEach(item => {
     const key = item.raw.trim().toLowerCase();
@@ -2379,10 +2361,9 @@ function formatOpaqueShoppingParts(opaque = {}) {
   const details = [];
   groups.forEach(group => {
     const counted = group[0].raw.match(/^(\d+(?:[.,]\d+)?)\s+(.+)$/);
-    const roleCount = new Set(group.map(item => item.role).filter(Boolean)).size;
     // Valori opachi uguali (es. "1 mazzetto") possono essere sommati senza
-    // perdere significato. Per i profili Coppia richiediamo entrambi i ruoli.
-    if (counted && (roleCount > 1 || group.every(item => !item.role))) {
+    // perdere significato.
+    if (counted) {
       const perOccurrence = Number(counted[1].replace(",", "."));
       const total = group.reduce((sum, item) => sum + perOccurrence * item.count, 0);
       primary.push(`${formatNumber(total)} ${pluralizeOpaqueUnit(counted[2], total)}`);
@@ -3143,13 +3124,16 @@ window.confirmAssignedNutritionProfile = async function() {
   }
 };
 
+function renderThemeSettingsSection() {
+  const dark = document.documentElement?.classList.contains("dark-mode") === true;
+  return `<section class="settings-section"><p class="eyebrow">ASPETTO</p><h2>Tema</h2><label class="settings-row settings-toggle-row" for="settings-dark-mode-toggle"><span><strong>Tema scuro</strong><small>Attiva la modalità scura in tutta l'app.</small></span><span class="switch"><input type="checkbox" role="switch" id="settings-dark-mode-toggle" aria-label="Tema scuro" ${dark ? "checked" : ""} onchange="toggleDarkMode(this.checked)"><span class="switch-track" aria-hidden="true"></span></span></label></section>`;
+}
+
 function renderSettings() {
   const container = document.getElementById("view-settings");
-  // Impostazioni riordinate in 4 sezioni con eyebrow (Sessione 1): PROFILO
-  // NUTRIZIONALE, PROFESSIONISTA, ACCOUNT COLLEGATI, USCITA. La card
-  // "Accesso personale" (account-card) è rimossa: l'uscita vive nella sezione
-  // dedicata USCITA. Il form "Nome mostrato" è rimosso (displayName cliente
-  // eliminato).
+  // Impostazioni: prima le sezioni informative e le guide, poi Aspetto e,
+  // solo alla fine di tutto, l'uscita dall'account. In questo modo il footer
+  // ospita l'accesso alle Impostazioni e l'header resta pulito e coerente.
   container.innerHTML = `
     <div class="page-heading"><div><p class="eyebrow">Preferenze e manuale alimentare</p><h1>Impostazioni</h1></div></div>
 
@@ -3159,8 +3143,6 @@ function renderSettings() {
 
     ${renderLinkedAccountsSection()}
 
-    <section class="settings-section"><p class="eyebrow">USCITA</p><h2>Uscita dall'account</h2><p class="text-muted">Esci in sicurezza. I tuoi dati restano salvati nel cloud.</p><button class="btn btn-outline" onclick="logoutCurrentUser()">Esci</button></section>
-
     <div class="manual-heading"><p class="eyebrow">LINEE GUIDA</p><h2>Dieta e alternative</h2><p>Le alternative originali restano sempre consultabili nell'app.</p></div>
 
     ${settingsAccordion("Giorno di allenamento", guideDayHtml(GUIDE_MANUAL.trainingDay, "training"))}
@@ -3168,21 +3150,18 @@ function renderSettings() {
     ${settingsAccordion("Alternative alimentari", `<div class="alternatives-grid">${alternativesTableHtml(GUIDE_MANUAL.alternatives.carbohydrates)}${alternativesTableHtml(GUIDE_MANUAL.alternatives.proteins)}</div>`)}
     ${settingsAccordion("Frequenze proteiche", `<div class="alternative-table frequency-table">${GUIDE_MANUAL.proteinFrequencies.map(row => `<div><span>${escapeHtml(row[0])}</span><strong>${escapeHtml(row[1])}</strong></div>`).join("")}</div>`)}
     ${settingsAccordion("Altre informazioni e FAQ", `<h3>Struttura della dieta</h3><ul class="guide-list">${GUIDE_MANUAL.structure.map(item => `<li>${escapeHtml(item)}</li>`).join("")}</ul><h3>Altre informazioni</h3><ul class="guide-list">${GUIDE_MANUAL.faq.map(item => `<li>${escapeHtml(item)}</li>`).join("")}</ul>`)}
+
+    ${renderThemeSettingsSection()}
+
+    <section class="settings-section"><p class="eyebrow">USCITA</p><h2>Uscita dall'account</h2><p class="text-muted">Esci in sicurezza. I tuoi dati restano salvati nel cloud.</p><button class="btn btn-outline" onclick="logoutCurrentUser()">Esci</button></section>
   `;
 }
 
 window.toggleDarkMode = function(checked) {
+  appState.deviceSettings = appState.deviceSettings || getLocalDeviceSettings();
   appState.deviceSettings.darkMode = checked;
   saveLocalDeviceSettings(appState.deviceSettings);
   applyTheme(checked);
-};
-
-// Unico controllo del tema (intestazione): inverte lo stato, persiste e
-// ridisegna l'header così che icona, etichetta e aria-pressed si aggiornino.
-window.toggleDarkModeFromHeader = function() {
-  const next = document.documentElement?.classList.contains("dark-mode") !== true;
-  window.toggleDarkMode(next);
-  renderGlobalHeader();
 };
 
 window.logoutCurrentUser = async function() {
@@ -3556,7 +3535,7 @@ function setupTransferModals() {
         <div class="modal-header"><div><p class="eyebrow">FILE JSON</p><h2>Importa o esporta</h2></div><button class="btn-icon" onclick="closeTransferModal()">&times;</button></div>
         <p class="text-muted">Trasferisci le ricette del tuo account con un file JSON: utile per backup e passaggio ad altri account.</p>
         <div class="transfer-choice-grid">
-          <label class="transfer-choice file-import-button"><span>⬆️</span><strong>Importa</strong><small>Legge un file JSON esportato in precedenza e propone aggiunta o sostituzione.</small><input type="file" accept="application/json,.json" onchange="closeTransferModal(); prepareRecipeImport(this.files[0]); this.value=''"></label>
+          <label class="transfer-choice file-import-button"><span>⬆️</span><strong>Importa</strong><small>Legge un file JSON esportato dall'app e ti lascia scegliere se aggiungere o sostituire il catalogo.</small><input type="file" accept="application/json,.json" onchange="prepareRecipeImport(this.files[0]); this.value=''" style="display:none"></label>
           <button class="transfer-choice" onclick="closeTransferModal(); exportAllRecipes()"><span>⬇️</span><strong>Esporta</strong><small>Scarica tutte le ricette del catalogo in un unico file JSON.</small></button>
         </div>
       </div>
@@ -4572,20 +4551,7 @@ window.setModalDayType = function(type) {
   renderModalContent();
 };
 
-function getIngredientCoupleHtml(ingredient, dayType) {
-  const profile = getPortionProfile();
-  if (profile !== "couple") return `<strong>${escapeHtml(getIngredientDisplay(ingredient, dayType))}</strong>`;
-  // Profilo coppia: le dosi uomo/donna seguono il moltiplicatore porzioni.
-  const man = applyCoupleMultiplier(getPortionValue(ingredient, "man", dayType));
-  const woman = applyCoupleMultiplier(getPortionValue(ingredient, "ipo", dayType));
-  const manP = parseSimpleAmount(man);
-  const womanP = parseSimpleAmount(woman);
-  if (!manP.skip && !womanP.skip && !manP.free && !womanP.free && !manP.opaque && !womanP.opaque
-      && manP.unit === womanP.unit && manP.value > 0 && womanP.value > 0) {
-    const total = manP.value + womanP.value;
-    const formatted = window.PianoDomain?.formatAmount ? PianoDomain.formatAmount(total, manP.unit) : `${formatNumber(total)}${manP.unit === "pz" ? " pz" : manP.unit}`;
-    return `<span class="portion-sum"><strong>${formatted}</strong> <small class="portion-detail">(Uomo: ${escapeHtml(man)} · Donna: ${escapeHtml(woman)})</small></span>`;
-  }
+function getIngredientQuantityHtml(ingredient, dayType) {
   return `<strong>${escapeHtml(getIngredientDisplay(ingredient, dayType))}</strong>`;
 }
 
@@ -4665,7 +4631,7 @@ function renderModalContent() {
   const dayTypeLabel = currentModal.dayKey
     ? `${DAY_NAMES[currentModal.dayKey]} · ${dayType === "training" ? "Allenamento" : "Riposo"}`
     : "Anteprima";
-  const canToggle = !currentModal.dayKey && getPortionProfile() !== "ipo";
+  const canToggle = !currentModal.dayKey;
   const toggleHtml = canToggle ? `
     <span class="modal-daytype-toggle day-type-control" aria-label="Dosi per tipo di giornata">
       <button class="type-option training ${dayType === "training" ? "active" : ""}" onclick="setModalDayType('training')" aria-pressed="${dayType === "training"}">Allenamento</button>
@@ -4697,7 +4663,7 @@ function renderModalContent() {
           <div id="ing-suggest-${index}" class="ing-suggest hidden" role="listbox" aria-label="Suggerimenti dal catalogo ingredienti"></div>
           ${meta.mappingMissing ? `<small class="ing-mapping-flag" title="Non presente nel catalogo attuale: nessuna quantità verrà adattata per questo ingrediente">⚠ mapping mancante</small>` : ""}
         </div>
-        <div class="portion-edit-grid portion-edit-grid-single">${quantityEditorField(`edit-ing-man-${index}`, "Quantità · Uomo", getPortionValue(ingredient, "man", "training"))}${quantityEditorField(`edit-ing-ipo-${index}`, "Quantità · Donna", getPortionValue(ingredient, "ipo", "training"))}<button class="btn-icon remove-edit-item" aria-label="Rimuovi ingrediente" onclick="removeIngredient(${index})">×</button><small class="portion-shared-hint">Scegli numero e unità di misura (es. 60 g, 2 pz, 1 cucchiaio, q.b.). I valori particolari già salvati restano com'erano finché non li modifichi.</small></div>
+        <div class="portion-edit-grid portion-edit-grid-single">${quantityEditorField(`edit-ing-single-${index}`, "Quantità", getPortionValue(ingredient, "single", "training"))}<button class="btn-icon remove-edit-item" aria-label="Rimuovi ingrediente" onclick="removeIngredient(${index})">×</button><small class="portion-shared-hint">Scegli numero e unità di misura (es. 60 g, 2 pz, 1 cucchiaio, q.b.). I valori particolari già salvati restano com'erano finché non li modifichi.</small></div>
       </li>`;
     }).join("") + `<li><button class="btn btn-outline full-width" onclick="addIngredient()">+ Aggiungi ingrediente</button></li>`;
   } else {
@@ -4706,9 +4672,9 @@ function renderModalContent() {
     ingredientList.innerHTML = items.map(({ ing, adapted }) => {
       const adaptedMark = adapted ? ` <small class="adapted-mark" title="Dose adattata alle linee guida di questo pasto">↻</small>` : "";
       if (getGuideAlternativesForIngredient(ing.name)) {
-        return `<li class="guide-ingredient" onclick="openGuideAlternatives('${escapeAttr(ing.name)}')" title="Tocca per alternative"><span>${escapeHtml(ing.name)}${adaptedMark} <small class="guide-hint">⇄</small></span>${getIngredientCoupleHtml(ing, dayType)}</li>`;
+        return `<li class="guide-ingredient" onclick="openGuideAlternatives('${escapeAttr(ing.name)}')" title="Tocca per alternative"><span>${escapeHtml(ing.name)}${adaptedMark} <small class="guide-hint">⇄</small></span>${getIngredientQuantityHtml(ing, dayType)}</li>`;
       }
-      return `<li><span>${escapeHtml(ing.name)}${adaptedMark}</span>${getIngredientCoupleHtml(ing, dayType)}</li>`;
+      return `<li><span>${escapeHtml(ing.name)}${adaptedMark}</span>${getIngredientQuantityHtml(ing, dayType)}</li>`;
     }).join("") + (hasGuide ? `<li class="guide-footnote"><small>↑ Tocca carboidrati o proteine per le equivalenze</small></li>` : "");
   }
 
@@ -5122,8 +5088,7 @@ function captureEditState() {
   recipe.ingredients.forEach((ingredient, index) => {
     ingredient.name = document.getElementById(`edit-ing-name-${index}`)?.value.trim() || "Ingrediente";
     ingredient.portions = {
-      ipo: readQuantityInput(`edit-ing-ipo-${index}`, ingredient.portions?.ipo),
-      man: readQuantityInput(`edit-ing-man-${index}`, ingredient.portions?.man)
+      single: readQuantityInput(`edit-ing-single-${index}`, getPortionValue(ingredient, "single", "training"))
     };
     const metaId = ingredientMeta[index]?.ingredientId || "";
     if (metaId) ingredient.ingredientId = metaId;
@@ -5138,7 +5103,7 @@ function captureEditState() {
 
 window.addIngredient = function() {
   captureEditState();
-  currentModal.recipe.ingredients.push({ name: "", portions: { ipo: "—", man: "—" } });
+  currentModal.recipe.ingredients.push({ name: "", portions: { single: "—" } });
   renderModalContent();
   // Focus sulla riga appena creata per accelerare l'inserimento.
   const index = currentModal.recipe.ingredients.length - 1;
@@ -6794,7 +6759,5 @@ async function handlePriceBarcode(barcode) {
     clearLoading();
   }
 }
-
-document.addEventListener("DOMContentLoaded", initApp);
 
 document.addEventListener("DOMContentLoaded", initApp);

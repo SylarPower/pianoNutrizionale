@@ -1054,7 +1054,7 @@ function observeSharedDataChanges(callback, onError = null) {
 
 function getDefaultDeviceSettings() {
   return {
-    portionProfile: "man",
+    portionProfile: "single",
     darkMode: false,
     lastOpenDate: null,
     // Tipo giornata (A/R) scelto nell'anteprima del ricettario: resta finché

@@ -71,7 +71,7 @@ test('permessi UI: proprietario modifica/archivia, creatore condivide', () => {
 });
 
 test('stili ricette: righe ingrediente in scala, responsive', () => {
-  assert.match(css, /\.recipe-ingredient-row\{display:grid;grid-template-columns:2fr 1fr 1fr auto;gap: 8px/);
+  assert.match(css, /\.recipe-ingredient-row\{display:grid;grid-template-columns:2fr 1fr auto;gap: 8px/);
   assert.match(css, /\.recipe-ingredients\{display:grid;gap: 8px\}/);
-  assert.match(css, /\.recipe-ingredient-row \.ing-name\{grid-column:1\/-1\}/);
+  assert.match(css, /\.recipe-ingredient-row \.ing-name\{grid-column:auto\}/);
 });

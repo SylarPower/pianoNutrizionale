@@ -126,7 +126,7 @@ initFirebase();
 observeAuthState(() => {});
 appState.user = { uid: 'u1', email: 'mario@utenti.pianonutrizionale.app' };
 appState.deviceSettings = {
-  portionProfile: 'man', darkMode: false, lastOpenDate: null,
+  portionProfile: 'single', darkMode: false, lastOpenDate: null,
   recipeLibraryState: { searchQuery: '', openSections: {} }, shopCategoryOrder: []
 };
 appState.household = null;
@@ -135,7 +135,7 @@ appState.saasPolicy = { mode: 'assigned', migrationRequired: false };
 
 const PASTA = {
   id: 'L1', slot: 'lunch', name: 'Pasta', emoji: '🍝',
-  ingredients: [{ name: 'Pasta di semola', portions: { man: '90 g', ipo: '70 g' } }],
+  ingredients: [{ name: 'Pasta di semola', portions: { single: '90 g' } }],
   steps: [], notes: []
 };
 
@@ -154,11 +154,11 @@ test('resolvePlannedRecipe: dosi distinte tra allenamento e riposo', () => {
   setupPlan();
   const training = resolvePlannedRecipe(getRecipe('L1'), 'monday', 'lunch');
   assert.equal(training.applied, true);
-  assert.equal(training.recipe.ingredients[0].portions.man, '70 g');
+  assert.equal(training.recipe.ingredients[0].portions.single, '70 g');
   appState.plan.days.monday.type = 'rest';
   const rest = resolvePlannedRecipe(getRecipe('L1'), 'monday', 'lunch');
   assert.equal(rest.applied, true);
-  assert.equal(rest.recipe.ingredients[0].portions.man, '50 g');
+  assert.equal(rest.recipe.ingredients[0].portions.single, '50 g');
 });
 
 test('changeDayType: persiste il tipo giorno e ri-renderizza la settimana', async () => {
@@ -193,15 +193,15 @@ test('quantityEditorState: precompila solo i valori rappresentabili', () => {
 });
 
 test('quantityEditorField: markup accessibile numero+unità', () => {
-  const grams = quantityEditorField('edit-ing-man-0', 'Quantità · Uomo', '60 g');
+  const grams = quantityEditorField('edit-ing-single-0', 'Quantità', '60 g');
   assert.match(grams, /type="number"/);
   assert.match(grams, /value="60"/);
-  assert.match(grams, /id="edit-ing-man-0-unit"/);
+  assert.match(grams, /id="edit-ing-single-0-unit"/);
   assert.match(grams, /<option value="g" selected>/);
-  assert.match(grams, /aria-label="Quantità · Uomo: unità di misura"/);
-  const naked = quantityEditorField('edit-ing-man-1', 'Quantità · Uomo', '2');
+  assert.match(grams, /aria-label="Quantità: unità di misura"/);
+  const naked = quantityEditorField('edit-ing-single-1', 'Quantità', '2');
   assert.match(naked, /<option value="" selected disabled>—<\/option>/, 'segnaposto senza unità attribuita');
-  const free = quantityEditorField('edit-ing-man-2', 'Quantità · Uomo', 'q.b.');
+  const free = quantityEditorField('edit-ing-single-2', 'Quantità', 'q.b.');
   assert.match(free, /disabled hidden/, 'numero nascosto e disabilitato con q.b.');
   assert.match(free, /<option value="q\.b\." selected>/);
 });

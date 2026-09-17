@@ -24,7 +24,6 @@ rules né indici):
 {
   id: "R" + 12 hex, organizationId, ownerUid, ownerUsername,
   name, emoji, slot, proteinCategory?, ingredients, steps, notes,
-  batch?: "man" | "ipo" | null,   // solo duplicati da dosi cliente
   visibility: "private" | "studio",
   status: "active" | "archived",
   revision: 1, version: 1, archivedAt?, createdAt, updatedAt, createdBy

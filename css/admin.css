@@ -343,8 +343,8 @@ button:focus-visible,input:focus-visible,select:focus-visible,textarea:focus-vis
   .report-main{grid-column:auto}
   .form-grid,.dose-grid,.group-doses{grid-template-columns:1fr}
   .picker-category-items{grid-template-columns:1fr}
-  .recipe-ingredient-row{grid-template-columns:1fr 1fr}
-  .recipe-ingredient-row .ing-name{grid-column:1/-1}
+  .recipe-ingredient-row{grid-template-columns:1fr}
+  .recipe-ingredient-row .ing-name{grid-column:auto}
   .dialog-card{padding: 16px}
   .dialog-actions{flex-direction:column-reverse}
   .dialog-actions button{width:100%}
@@ -523,7 +523,7 @@ html.dark-mode .check-row small,html.dark-mode .report-main small,html.dark-mode
 
 /* Ricettario professionisti (ADR 0006): righe ingrediente dell’editor. */
 .recipe-ingredients{display:grid;gap: 8px}
-.recipe-ingredient-row{display:grid;grid-template-columns:2fr 1fr 1fr auto;gap: 8px;align-items:center}
+.recipe-ingredient-row{display:grid;grid-template-columns:2fr 1fr auto;gap: 8px;align-items:center}
 
 /* Tabelle grammature: elenco in vista dedicata ed editor a righe. */
 .gram-table-description{color:var(--text-muted);font-size:var(--fs-secondary)}

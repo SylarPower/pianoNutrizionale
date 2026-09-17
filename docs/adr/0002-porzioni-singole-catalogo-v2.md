@@ -13,12 +13,12 @@ In parallelo, `GUIDE_GRAMMATURE` mescolava: identità degli ingredienti (nomi, c
 
 ## Decisioni
 
-1. **Quantità originale unica per profilo** (`portions: { man, ipo }`, schema 6).
-   - La quantità originale è **una sola per profilo** ed è il riferimento del giorno di **allenamento** del pasto canonico della ricetta (il contesto canonico).
+1. **Quantità originale unica per ingrediente** (`portions: { single }`, schema 6).
+   - La quantità originale è **una sola per ingrediente** ed è il riferimento del giorno di **allenamento** del pasto canonico della ricetta (il contesto canonico).
    - La dose di riposo (e il travaso pranzo/cena) **deriva a tempo di piano** dalla struttura assegnata (`resolveRecipeForPlan(recipe, slot, mode, dayType)` + `adaptIngredientForSlot(..., dayType)`), mai memorizzata nella ricetta.
-   - Le porzioni legacy a 4 campi vengono migrare allo schema 6 preservando i valori di **allenamento**. La migrazione è idempotente.
+   - Le ricette nuove e correnti usano solo `portions.single`; non è previsto alcun fallback ai vecchi campi per profilo.
    - `checkGuideAdaptation`/`checkGuideContext` confrontano l'originale con il **riferimento di allenamento del pasto** (canonico); il riposo non è un difetto dell'originale.
-   - **UI editor**: i campi sono nell'ordine **Uomo → Donna** (etichetta senza "IPO"), con placeholder **"g"** come unità suggerita e hint esplicito *"Se compili un solo campo, il valore vale per entrambi"*. L'etichetta "Donna IPO" sparisce da tutte le viste (chiave dati `ipo` invariata).
+   - **UI editor**: un solo campo quantità per ingrediente, con placeholder **"g"** come unità suggerita e hint esplicito sul formato (*numero + unità*, oppure valori come `q.b.`).
 
 2. **Tre concetti separati** (vedi schema allegato):
    - **Catalogo globale ingredienti** (`globalIngredientCatalog/current/...`): nomi canonici, alias, categorie, `searchTokens`, `mappingKind` (`guided`/`free`), `guideFamilyId` opzionale. **Zero quantità.** Governance da platform admin. Fonte dell'autocomplete dell'editor. Le Rules ne consentono la **lettura a ogni account autenticato**, scritture solo da callable/Admin SDK.

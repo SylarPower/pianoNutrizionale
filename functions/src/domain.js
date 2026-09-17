@@ -1363,12 +1363,10 @@ const PROFESSIONAL_RECIPE_LIMITS = {
 };
 
 function validateProfessionalRecipePortions(portions) {
-  if (portions == null) return { man: null, ipo: null };
-  exactObject(portions, ['man', 'ipo'], 'portions');
-  return {
-    man: optionalText(portions.man, 'portions.man', PROFESSIONAL_RECIPE_LIMITS.portion),
-    ipo: optionalText(portions.ipo, 'portions.ipo', PROFESSIONAL_RECIPE_LIMITS.portion)
-  };
+  if (portions == null) return { single: null };
+  exactObject(portions, ['single'], 'portions');
+  const single = optionalText(portions.single, 'portions.single', PROFESSIONAL_RECIPE_LIMITS.portion);
+  return { single };
 }
 
 function validateProfessionalRecipeIngredient(ingredient, index) {

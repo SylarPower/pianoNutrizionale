@@ -133,7 +133,7 @@ initFirebase();
 observeAuthState(() => {});
 appState.user = { uid: 'u1', email: 'mario@utenti.pianonutrizionale.app' };
 appState.deviceSettings = {
-  portionProfile: 'man', darkMode: false, lastOpenDate: null,
+  portionProfile: 'single', darkMode: false, lastOpenDate: null,
   recipeLibraryState: { searchQuery: '', openSections: {} }, shopCategoryOrder: []
 };
 appState.household = null;

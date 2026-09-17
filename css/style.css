@@ -363,9 +363,9 @@ h4 { font-size: var(--fs-body); font-weight: 700; }
 .notification-bell:active { transform: scale(.94); background: transparent; }
 .notification-bell:focus-visible { outline: 2px solid #fff; outline-offset: 2px; }
 
-/* Interruttore del tema nell'header (unico controllo, sole/luna): stessa
-   impronta della campanella, senza animazioni (sicuro con
-   prefers-reduced-motion). Lo stato si legge da aria-pressed + etichetta. */
+/* Stile legacy del toggle tema dell'app: il controllo ora vive nelle
+   Impostazioni, ma la classe resta per compatibilità con markup precedenti.
+   Stessa impronta della campanella, senza animazioni intrusive. */
 .theme-toggle {
   display: grid;
   place-items: center;
@@ -470,7 +470,7 @@ body.dark-mode .notification-badge { border-color: #000; }
 .nav-item.active::before { opacity: 1; transform: translateX(-50%) scaleX(1); }
 .nav-item.active .nav-icon { animation: nav-icon-spring .38s cubic-bezier(.34,1.56,.64,1); }
 .nav-icon { font-size: var(--fs-h3); transition: transform .2s; }
-.nav-label { margin-top: 4px; font-size: var(--fs-bottom-nav); font-weight: 650; letter-spacing: .015em; }
+.nav-label { margin-top: 4px; font-size: var(--fs-bottom-nav); font-weight: 650; letter-spacing: .015em; line-height: 1.05; text-align: center; }
 .nav-item.active .nav-label { font-weight: 800; letter-spacing: 0; }
 @keyframes nav-icon-spring {
   50% { transform: translateY(-4px) scale(1.12); }
@@ -972,6 +972,7 @@ input[type="checkbox"], input[type="radio"] { accent-color: var(--primary); widt
 .settings-section > h2 { margin-bottom: 12px; }
 .account-avatar { display: grid; place-items: center; width: 50px; height: 50px; border-radius: 15px; background: var(--primary); color: #fff; font-size: var(--fs-h3); font-weight: 850; text-transform: uppercase; }
 .settings-row input[type="time"] { min-height: 38px; padding: 4px 8px; border: 1px solid var(--line); border-radius: 9px; background: var(--surface-alt); color: var(--text); }
+.settings-toggle-row { cursor: pointer; }
 
 /* Modale ricetta */
 .modal {

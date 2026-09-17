@@ -172,7 +172,7 @@ initFirebase();
 observeAuthState(() => {});
 appState.user = { uid: 'u1', email: 'mario@utenti.pianonutrizionale.app' };
 appState.deviceSettings = {
-  portionProfile: 'man', darkMode: false, lastOpenDate: null,
+  portionProfile: 'single', darkMode: false, lastOpenDate: null,
   recipeLibraryState: { searchQuery: '', openSections: {} }, shopCategoryOrder: []
 };
 appState.household = null;
@@ -182,7 +182,7 @@ appState.clientLink = null;
 const PRO_SHARE = {
   id: 'sh-pro', senderUid: 'n1', senderUsername: 'dottore', senderRole: 'professional',
   organizationId: 'pianoNutrizionale', status: 'pending', recipeCount: 1,
-  recipes: [recipe('A', 'Pro A', { ingredients: [{ name: 'Riso', portions: { man: '80 g', ipo: '60 g' } }] })]
+  recipes: [recipe('A', 'Pro A', { ingredients: [{ name: 'Riso', portions: { single: '80 g' } }] })]
 };
 const USER_SHARE = {
   id: 'sh-user', senderUid: 'u2', senderUsername: 'amico', status: 'pending', recipeCount: 1,
@@ -239,7 +239,7 @@ test('modale ricetta: badge e modifica bloccata', () => {
   currentModal = {
     recipe: recipe('B', 'Pro B', {
       fromProfessional: { senderUid: 'n1', senderUsername: 'dottore' },
-      ingredients: [{ name: 'Riso', portions: { man: '80 g', ipo: '60 g' } }]
+      ingredients: [{ name: 'Riso', portions: { single: '80 g' } }]
     }),
     original: null, dayKey: null, dayType: 'training', slot: null, planSlot: null, isNew: false
   };

@@ -17,7 +17,7 @@
 })(typeof globalThis !== 'undefined' ? globalThis : window, () => {
   'use strict';
 
-  // Schema 6: quantità originale singola per profilo persona (porzioni v2),
+  // Schema 6: quantità originale singola per ingrediente (porzioni v2),
   // controllo piano «quantità adattate alle linee guida», catalogo globale e
   // Strutture dieta v2.
   const VERSION = 6;
@@ -29,6 +29,8 @@
   const GUIDE_MODE_ORIGINAL = 'original';
   const GUIDE_ADAPTATION_SCHEMA_VERSION = 1;
   const EMPTY_PORTION = '—';
+  const PROFILE_SINGLE = 'single';
+  const PROFILE_COUPLE = 'couple';
 
   const DAY_LABELS = {
     monday: 'Lunedì', tuesday: 'Martedì', wednesday: 'Mercoledì', thursday: 'Giovedì',
@@ -632,18 +634,24 @@
     return INGREDIENT_ALIASES[aliasKey(name)] || slug(name) || 'ingredient';
   }
 
-  // Porzioni v2 (schema 6): una sola quantità originale per profilo persona
-  // (`ipo` Donna, `man` Uomo). Non esistono più campi distinti per
-  // allenamento/riposo o pranzo/cena: le quantità adattate sono derivate a
-  // livello di piano e non modificano la ricetta. In lettura i vecchi formati
-  // vengono migrati conservando il valore di ALLENAMENTO come originale
-  // (decisione di prodotto approvata: il riposo è una derivazione delle
-  // linee guida, non un dato originale separato).
+  // Porzioni v2 (schema 6): una sola quantità originale per ingrediente.
+  // Il formato supportato è esclusivamente `portions.single`; Allenamento/
+  // Riposo resta una derivazione delle linee guida del piano.
   function normalizePortions(p = {}) {
     return {
-      ipo: p.ipo ?? p.ipoTraining ?? p.ipoRest ?? EMPTY_PORTION,
-      man: p.man ?? p.manTraining ?? p.training ?? p.manRest ?? p.rest ?? EMPTY_PORTION
+      single: p?.single ?? EMPTY_PORTION
     };
+  }
+
+  function normalizePortionProfileKey(profile) {
+    return profile === PROFILE_COUPLE ? PROFILE_COUPLE : PROFILE_SINGLE;
+  }
+
+  function portionMultiplierForProfile(profile, rawMultiplier) {
+    if (normalizePortionProfileKey(profile) !== PROFILE_COUPLE) return 1;
+    const value = Number(rawMultiplier);
+    if (!Number.isFinite(value) || value <= 0) return 2;
+    return value;
   }
 
   // Schema 6: il campo storico `specialNote` (stringa singola, "Nota
@@ -665,8 +673,8 @@
   // Migrazione idempotente di una singola ricetta allo schema corrente (6).
   // Schema 4 → 5: rimuove il campo legacy `frequency` (sostituito dalle
   // frequenze proteiche calcolate dal generatore sui pasti principali).
-  // Schema 5 → 6: porzioni ridotte a una quantità originale per profilo
-  // persona (vedi normalizePortions).
+  // Schema 5 → 6: porzioni ridotte a una quantità originale unica per
+  // ingrediente (vedi normalizePortions).
   // Note unificate: `specialNote` confluisce in `notes` (vedi mergeRecipeNotes).
   function migrateRecipe(recipe) {
     if (!recipe || typeof recipe !== 'object') return recipe;
@@ -878,38 +886,22 @@
     return 'later';
   }
 
-function portionFor(ingredient, profile, dayType, slot, recipeSlot) {
-  const p = normalizePortions(ingredient?.portions || {});
+  function portionFor(ingredient, profile, dayType, slot, recipeSlot) {
+    const p = normalizePortions(ingredient?.portions || {});
 
-  // Se è un carboidrato e la ricetta è di pranzo ma viene usata a cena
-  // (o viceversa), applica la trasformazione percentuale del contesto.
-  if (slot && recipeSlot && isPranzoCenaCross(recipeSlot, slot)) {
-    const adapted = crossSlotCarbPortions(ingredient, recipeSlot, slot, dayType);
-    if (adapted) {
-      if (profile === 'ipo') return adapted.ipo;
-      if (profile === 'couple') return { man: adapted.man, ipo: adapted.ipo };
-      return adapted.man;
+    // Se è un carboidrato e la ricetta è di pranzo ma viene usata a cena
+    // (o viceversa), applica la trasformazione percentuale del contesto.
+    if (slot && recipeSlot && isPranzoCenaCross(recipeSlot, slot)) {
+      const adapted = crossSlotCarbPortions(ingredient, recipeSlot, slot, dayType);
+      if (adapted) return adapted.single;
     }
+
+    // Quantità originale: un solo valore per ricetta, uguale in ogni contesto.
+    // Le dosi adattate (allenamento/riposo, pranzo/cena) sono derivate dal piano.
+    return p.single;
   }
 
-  // Quantità originale: un solo valore per profilo persona, uguale in ogni
-  // contesto. Le dosi adattate (ripreso/pranzo/cena) sono derivate dal piano.
-  if (profile === 'ipo') return p.ipo;
-  if (profile === 'couple') {
-    return {
-      man: p.man,
-      ipo: p.ipo
-    };
-  }
-  return p.man;
-}
-
-  function formatPortion(portion, profile) {
-    if (profile === 'couple' && portion && typeof portion === 'object') {
-      const man = portion.man === undefined || portion.man === null || portion.man === '' ? EMPTY_PORTION : portion.man;
-      const ipo = portion.ipo === undefined || portion.ipo === null || portion.ipo === '' ? EMPTY_PORTION : portion.ipo;
-      return `Uomo: ${man} · Donna: ${ipo}`;
-    }
+  function formatPortion(portion) {
     const value = portion ?? EMPTY_PORTION;
     return value === '' ? EMPTY_PORTION : value;
   }
@@ -929,13 +921,16 @@ function portionFor(ingredient, profile, dayType, slot, recipeSlot) {
       (item.ingredientId || ingredientIdFor(item.name)) === src.ingredientId
     );
     if (!ingredient) return '';
-    return formatPortion(portionFor(ingredient, profile, dayType), profile);
+    const amount = portionFor(ingredient, profile, dayType);
+    const multiplier = portionMultiplierForProfile(profile, options.quantityMultiplier);
+    const scaled = multiplier !== 1 ? scalePortionText(String(amount ?? ''), multiplier) : amount;
+    return formatPortion(scaled);
   }
 
   // Batch attivi per il giorno: almeno una preparazione deve essere valida
   // (fresca o preparabile oggi). Il tipo A/R del giorno corrente non conta:
   // conta solo il tipo A/R del giorno target per le quantità.
-  function activeBatch(anchorDay, plan, templates, recipesById = {}, profile = 'man', options = {}) {
+  function activeBatch(anchorDay, plan, templates, recipesById = {}, profile = PROFILE_SINGLE, options = {}) {
     if (!plan?.days?.[anchorDay]) return [];
     const dinner = plan.days[anchorDay].dinner;
     const result = [];
@@ -999,14 +994,9 @@ function portionFor(ingredient, profile, dayType, slot, recipeSlot) {
     return `${left} + ${right}`;
   }
 
-  // Combina le dosi di cena e pranzo per un ingrediente, gestendo il profilo
-  // Coppia (somma separata uomo/donna IPO).
-  function combineTaskQuantities(cenaPortion, pranzoPortion, profile) {
-    if (profile === 'couple') {
-      const c = cenaPortion && typeof cenaPortion === 'object' ? cenaPortion : { man: cenaPortion, ipo: cenaPortion };
-      const p = pranzoPortion && typeof pranzoPortion === 'object' ? pranzoPortion : { man: pranzoPortion, ipo: pranzoPortion };
-      return { man: sumPortionStrings(c.man, p.man), ipo: sumPortionStrings(c.ipo, p.ipo) };
-    }
+  // Combina le dosi di cena e pranzo per un ingrediente mantenendo il formato
+  // testuale originale quando non è possibile sommare numericamente.
+  function combineTaskQuantities(cenaPortion, pranzoPortion) {
     return sumPortionStrings(cenaPortion, pranzoPortion);
   }
 
@@ -1015,7 +1005,7 @@ function portionFor(ingredient, profile, dayType, slot, recipeSlot) {
   // dosi da preparare sono la somma della porzione di cena + quella del pranzo
   // (carboidrati trasformati in percentuale). Attivo solo se il pranzo è al massimo a 1
   // giorno (conservazione in frigo); oltre non è sicuro e non viene suggerito.
-  function commonRecipeBatch(anchorDay, plan, recipesById = {}, profile = 'man', options = {}) {
+  function commonRecipeBatch(anchorDay, plan, recipesById = {}, profile = PROFILE_SINGLE, options = {}) {
     const dinnerId = plan?.days?.[anchorDay]?.dinner;
     if (!dinnerId) return null;
     const recipe = recipesById?.[dinnerId];
@@ -1063,11 +1053,15 @@ function portionFor(ingredient, profile, dayType, slot, recipeSlot) {
       // proteine e condimenti: il contesto Guide viene applicato all'intera
       // ricetta, non soltanto al carboidrato.
       const sameIngredient = cenaId === pranzoId;
+      const multiplier = portionMultiplierForProfile(profile, options.quantityMultiplier);
       let quantityStr;
       if (sameIngredient) {
-        quantityStr = formatPortion(combineTaskQuantities(cenaPortion, pranzoPortion, profile), profile);
+        const combined = combineTaskQuantities(cenaPortion, pranzoPortion);
+        quantityStr = formatPortion(multiplier !== 1 ? scalePortionText(String(combined ?? ''), multiplier) : combined);
       } else {
-        quantityStr = `${formatPortion(cenaPortion, profile)} + ${formatPortion(pranzoPortion, profile)}`;
+        const left = multiplier !== 1 ? scalePortionText(String(cenaPortion ?? ''), multiplier) : cenaPortion;
+        const right = multiplier !== 1 ? scalePortionText(String(pranzoPortion ?? ''), multiplier) : pranzoPortion;
+        quantityStr = `${formatPortion(left)} + ${formatPortion(right)}`;
       }
       return {
         id: `common-${baseId}`,
@@ -1256,16 +1250,16 @@ function portionFor(ingredient, profile, dayType, slot, recipeSlot) {
     return { value: parsed.value, unit: 'g' };
   }
 
-  // Quantità di partenza: prima la dose originale della ricetta (profilo
-  // Uomo) quando è in grammi, poi — solo se manca davvero (vuota, "—", "-",
-  // zero) oppure non è numerica (q.b., note) — il riferimento delle linee
-  // guida per il pasto di origine. Numeri senza unità e unità diverse (pz,
-  // cucchiai, ml) restano testuali: né adattamento né fallback.
+  // Quantità di partenza: prima la dose originale della ricetta quando è in
+  // grammi, poi — solo se manca davvero (vuota, "—", "-", zero) oppure non
+  // è numerica (q.b., note) — il riferimento delle linee guida per il pasto di
+  // origine. Numeri senza unità e unità diverse (pz, cucchiai, ml) restano
+  // testuali: né adattamento né fallback.
   function carbBaseAmount(ingredient, source, nativeSlot) {
     const p = normalizePortions(ingredient?.portions || {});
-    const native = parseCarbAmount(p.man);
+    const native = parseCarbAmount(p.single);
     if (native) return native;
-    const nativeKind = parseQuantity(p.man).kind;
+    const nativeKind = parseQuantity(p.single).kind;
     if (nativeKind !== 'empty' && nativeKind !== 'free' && nativeKind !== 'opaque') return null;
     const amountObj = nativeSlot === 'lunch' ? source.pranzo : (source.cena || source.pranzo);
     if (amountObj && Number(amountObj.training) > 0) {
@@ -1294,7 +1288,7 @@ function portionFor(ingredient, profile, dayType, slot, recipeSlot) {
       const value = source?.cena?.rest ?? Math.floor((source?.pranzo?.rest ?? base.value) * 2 / 3 / 10) * 10;
       if (!value) return null;
       const amount = carbAmountText(value, base.unit);
-      return { ipo: amount, man: amount };
+      return { single: amount };
     }
 
     const trainingValue = source?.pranzo?.training ?? roundUpToTen(base.value * 2);
@@ -1302,7 +1296,7 @@ function portionFor(ingredient, profile, dayType, slot, recipeSlot) {
     const value = dayType === 'rest' ? restValue : trainingValue;
     if (!value) return null;
     const amount = carbAmountText(value, base.unit);
-    return { ipo: amount, man: amount };
+    return { single: amount };
   }
 
   // Adatta un ingrediente carboidrato quando la sua ricetta viene collocata nel
@@ -1324,12 +1318,13 @@ function portionFor(ingredient, profile, dayType, slot, recipeSlot) {
   // Nei pasti incrociati i carboidrati vengono travasati da
   // adaptIngredientForSlot con le dosi Guide della tabella (pranzo -> cena:
   // dose cena; cena -> pranzo: pranzo A/R).
-  function aggregateShopping(plan, recipesById, selectedMeals, profile = 'man', canonicalLabels = {}, options = {}) {
+  function aggregateShopping(plan, recipesById, selectedMeals, profile = PROFILE_SINGLE, canonicalLabels = {}, options = {}) {
     const out = {};
     // Moltiplicatore porzioni (app clienti, profilo coppia): scala le dosi
-    // prima dell'aggregazione. 1 o valori non validi = nessuna scala.
-    const multiplierValue = Number(options.quantityMultiplier);
-    const multiplier = Number.isFinite(multiplierValue) && multiplierValue > 0 && multiplierValue !== 1 ? multiplierValue : null;
+    // prima dell'aggregazione. Senza valore esplicito usa ×2, coerente con il
+    // profilo "2 persone" dell'app clienti.
+    const multiplierValue = portionMultiplierForProfile(profile, options.quantityMultiplier);
+    const multiplier = normalizePortionProfileKey(profile) === PROFILE_COUPLE && multiplierValue !== 1 ? multiplierValue : null;
     const contextualPlan = planUsesGuideDoses(plan, options.applyGuide);
     DAYS.forEach(day => {
       const dayType = plan?.days?.[day]?.type || 'rest';
@@ -1352,9 +1347,6 @@ function portionFor(ingredient, profile, dayType, slot, recipeSlot) {
             : ingredient;
           const amount = portionFor(effective, profile, dayType);
           const scaledAmount = multiplier && typeof amount === 'string' ? scalePortionText(amount, multiplier) : amount;
-          const entries = profile === 'couple' && scaledAmount && typeof scaledAmount === 'object'
-            ? [{ role: 'Uomo', raw: scalePortionText(String(scaledAmount.man ?? ''), multiplier || 1) }, { role: 'Donna', raw: scalePortionText(String(scaledAmount.ipo ?? ''), multiplier || 1) }]
-            : [{ role: profile === 'ipo' ? 'Donna' : 'Uomo', raw: scaledAmount }];
           const id = ingredientIdFor(effective.name, effective.ingredientId);
           const entry = out[id] || (out[id] = {
             ingredientId: id,
@@ -1367,17 +1359,17 @@ function portionFor(ingredient, profile, dayType, slot, recipeSlot) {
           });
           const tag = `${DAY_SHORT[day]} · ${SLOT_SHORT[slot]}`;
           if (!entry.tags.includes(tag)) entry.tags.push(tag);
-          entries.forEach(({ role, raw }) => {
-            const parsed = parseSimpleAmount(raw);
-            if (parsed.skip) return;
-            if (parsed.free) { entry.free = true; return; }
-            if (parsed.opaque) {
-              const label = profile === 'couple' ? `${role}: ${parsed.opaque}` : parsed.opaque;
-              entry.opaque[label] = (entry.opaque[label] || 0) + 1;
-              return;
-            }
-            entry.totals[parsed.unit] = (entry.totals[parsed.unit] || 0) + parsed.value;
-          });
+          const parsed = parseSimpleAmount(scaledAmount);
+          if (parsed.skip) return;
+          if (parsed.free) {
+            entry.free = true;
+            return;
+          }
+          if (parsed.opaque) {
+            entry.opaque[parsed.opaque] = (entry.opaque[parsed.opaque] || 0) + 1;
+            return;
+          }
+          entry.totals[parsed.unit] = (entry.totals[parsed.unit] || 0) + parsed.value;
         });
       });
     });
@@ -2289,10 +2281,8 @@ const PROTEIN_CATEGORY_LABELS = {
     return { value: parsed.value, unit: 'g' };
   }
 
-  // Chiavi logiche del confronto contestuale: profili persona e giorni A/R.
-  // Le porzioni v2 hanno un solo valore per profilo; il confronto con il
-  // riferimento Guide avviene per ogni giorno A/R sullo stesso originale.
-  const GUIDE_PROFILE_KEYS = ['man', 'ipo'];
+  // Chiavi logiche del confronto contestuale: una dose originale singola per
+  // ricetta e due giorni A/R derivati dalla struttura.
   const GUIDE_DAY_TYPES = ['training', 'rest'];
 
   function guideSourceFingerprint(recipe) {
@@ -2355,35 +2345,30 @@ const PROTEIN_CATEGORY_LABELS = {
       .map(([group, count]) => ({ group, count }));
 
     // Confronto STRICT sul contesto canonico (giorno di allenamento): la
-    // quantità originale è unica per profilo; la dose di riposo è derivata
+    // quantità originale è unica per ricetta; la dose di riposo è derivata
     // dal piano e non è un difetto dell'originale.
     const issues = [];
     guided.forEach(item => {
       const rule = item.mapping.rule;
       const original = normalizePortions(item.ingredient?.portions || {});
-      // Se i due profili hanno la stessa quantità il confronto produce una
-      // sola segnalazione (niente duplicati uomo/donna).
-      const profiles = String(original.ipo) === String(original.man) ? ['man'] : GUIDE_PROFILE_KEYS;
-      profiles.forEach(profileKey => {
-        ['training'].forEach(dayType => {
-          const expected = guideReferenceAmount(rule, slot, dayType);
-          if (expected == null) return;
-          const amount = guideComparableAmount(original[profileKey]);
-          if (!amount || amount.unit !== 'g' || amount.value !== expected) {
-            issues.push({
-              ingredient: item.ingredient.name,
-              ingredientId: item.id,
-              family: rule.family,
-              label: rule.label,
-              portion: profileKey,
-              dayType,
-              expected,
-              actual: amount?.value ?? null,
-              unit: amount?.unit || 'g',
-              kind: amount ? (amount.value > expected ? 'above' : 'below') : 'unreadable'
-            });
-          }
-        });
+      ['training'].forEach(dayType => {
+        const expected = guideReferenceAmount(rule, slot, dayType);
+        if (expected == null) return;
+        const amount = guideComparableAmount(original.single);
+        if (!amount || amount.unit !== 'g' || amount.value !== expected) {
+          issues.push({
+            ingredient: item.ingredient.name,
+            ingredientId: item.id,
+            family: rule.family,
+            label: rule.label,
+            portion: 'single',
+            dayType,
+            expected,
+            actual: amount?.value ?? null,
+            unit: amount?.unit || 'g',
+            kind: amount ? (amount.value > expected ? 'above' : 'below') : 'unreadable'
+          });
+        }
       });
     });
 
@@ -2463,7 +2448,7 @@ const PROTEIN_CATEGORY_LABELS = {
       // leggibile, l'ingrediente resta testuale e non entra nel contesto
       // (niente dosi inventate su pz, cucchiai, ml, numeri nudi, q.b., note).
       const original = normalizePortions(item.ingredient?.portions || {});
-      if (!guideComparableAmount(original.man) && !guideComparableAmount(original.ipo)) return;
+      if (!guideComparableAmount(original.single)) return;
       const divisor = groupCounts[rule.group] || 1;
       const portions = {};
       GUIDE_DAY_TYPES.forEach(dayType => {
@@ -2504,7 +2489,7 @@ const PROTEIN_CATEGORY_LABELS = {
       if (!adapted) return ingredient;
       const amount = adapted[day] ?? adapted.training;
       if (amount == null) return ingredient;
-      return { ...ingredient, portions: { ipo: amount, man: amount } };
+      return { ...ingredient, portions: { single: amount } };
     });
     return next;
   }
@@ -2550,32 +2535,29 @@ const PROTEIN_CATEGORY_LABELS = {
       const rule = guideRuleForIngredient(ingredient?.name);
       if (!rule) return;
       const portions = normalizePortions(ingredient?.portions || {});
-      const profiles = String(portions.ipo) === String(portions.man) ? ['man'] : GUIDE_PROFILE_KEYS;
       // Massimale sul contesto canonico (allenamento): il riposo è derivato.
-      profiles.forEach(profileKey => {
-        ['training'].forEach(dayType => {
-          const expected = guideReferenceAmount(rule, slot, dayType);
-          if (expected == null) return;
-          const amount = guideComparableAmount(portions[profileKey]);
-          if (!amount || amount.value <= expected) return;
-          issues.push({
-            ingredient: ingredient.name,
-            family: rule.family,
-            label: rule.label,
-            portion: profileKey,
-            dayType,
-            expected,
-            actual: Math.round(amount.value * 100) / 100,
-            unit: amount.unit
-          });
+      ['training'].forEach(dayType => {
+        const expected = guideReferenceAmount(rule, slot, dayType);
+        if (expected == null) return;
+        const amount = guideComparableAmount(portions.single);
+        if (!amount || amount.value <= expected) return;
+        issues.push({
+          ingredient: ingredient.name,
+          family: rule.family,
+          label: rule.label,
+          portion: 'single',
+          dayType,
+          expected,
+          actual: Math.round(amount.value * 100) / 100,
+          unit: amount.unit
         });
       });
     });
 
     const summary = [];
     issues.forEach(issue => {
-      // Mantiene distinti scostamenti diversi dello stesso ingrediente e
-      // aggrega soltanto i profili (uomo/donna) con identica correzione.
+      // Mantiene distinti scostamenti diversi dello stesso ingrediente sullo
+      // stesso contesto e aggrega solo le giornate equivalenti.
       let entry = summary.find(item =>
         item.ingredient === issue.ingredient && item.expected === issue.expected &&
         item.unit === issue.unit
@@ -2613,15 +2595,13 @@ const PROTEIN_CATEGORY_LABELS = {
       const portions = normalizePortions(ingredient.portions || {});
       const expected = guideReferenceAmount(rule, next.slot && SLOTS.includes(next.slot) ? next.slot : 'lunch', 'training');
       if (expected == null) return;
-      GUIDE_PROFILE_KEYS.forEach(profileKey => {
-        const raw = String(portions[profileKey] ?? '');
-        const amount = guideComparableAmount(raw);
-        if (!amount || amount.value <= expected) return;
-        // guideComparableAmount accetta solo grammi: la correzione è in grammi.
-        const nextAmount = `${expected} g`;
-        report.push({ ingredient: ingredient.name, portion: profileKey, from: raw, to: nextAmount });
-        portions[profileKey] = nextAmount;
-      });
+      const raw = String(portions.single ?? '');
+      const amount = guideComparableAmount(raw);
+      if (!amount || amount.value <= expected) return;
+      // guideComparableAmount accetta solo grammi: la correzione è in grammi.
+      const nextAmount = `${expected} g`;
+      report.push({ ingredient: ingredient.name, portion: 'single', from: raw, to: nextAmount });
+      portions.single = nextAmount;
       ingredient.portions = portions;
     });
     return { recipe: next, report, changed: report.length > 0 };

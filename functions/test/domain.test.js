@@ -388,7 +388,7 @@ test('validateProfessionalRecipe: normalizza porzioni, default e trimming', () =
   const out = validateProfessionalRecipe({
     name: '  Riso  ', slot: 'lunch',
     ingredients: [
-      { name: 'Riso', portions: { man: '80 g' } },
+      { name: 'Riso', portions: { single: '80 g' } },
       { name: 'Sale', ingredientId: '', portions: null }
     ]
   });
@@ -396,8 +396,8 @@ test('validateProfessionalRecipe: normalizza porzioni, default e trimming', () =
   assert.equal(out.emoji, null);
   assert.deepEqual(out.steps, []);
   assert.deepEqual(out.notes, []);
-  assert.deepEqual(out.ingredients[0].portions, { man: '80 g', ipo: null });
-  assert.deepEqual(out.ingredients[1], { name: 'Sale', ingredientId: null, portions: { man: null, ipo: null } });
+  assert.deepEqual(out.ingredients[0].portions, { single: '80 g' });
+  assert.deepEqual(out.ingredients[1], { name: 'Sale', ingredientId: null, portions: { single: null } });
 });
 
 test('validateProfessionalRecipe: rifiuta slot, limiti e campi extra', () => {
@@ -406,7 +406,7 @@ test('validateProfessionalRecipe: rifiuta slot, limiti e campi extra', () => {
   assert.throws(() => validateProfessionalRecipe({ ...good, ingredients: [] }), /ingredients/);
   assert.throws(() => validateProfessionalRecipe({ ...good, id: 'X' }), /non ammessi/);
   assert.throws(() => validateProfessionalRecipe({ ...good, steps: ['ok', 42] }), /steps/);
-  assert.throws(() => validateProfessionalRecipePortions({ man: 'x', extra: 1 }), /non ammessi/);
+  assert.throws(() => validateProfessionalRecipePortions({ single: 'x', extra: 1 }), /non ammessi/);
   assert.equal(PROFESSIONAL_RECIPE_VISIBILITY.has('studio'), true);
   assert.equal(PROFESSIONAL_RECIPE_LIMITS.ingredients, 100);
 });
