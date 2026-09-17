@@ -1,10 +1,10 @@
 'use strict';
-/* Interruttore del tema nell'intestazione (app + console).
+/* Interruttore del tema (app + console).
  *
  * Contratto verificato senza rete, per sola lettura dei sorgenti:
- *  - un solo controllo del tema, nell'header, con icone sole/luna;
- *  - nessun duplicato nelle Impostazioni dell'app;
- *  - accessibilità: bottone nativo, aria-pressed, etichetta localizzata;
+ *  - nell'app il controllo del tema vive solo nelle Impostazioni;
+ *  - l'header dell'app non contiene più il toggle;
+ *  - accessibilità: switch nativo con etichetta localizzata;
  *  - persistenza su dispositivo + rispetto di prefers-reduced-motion.
  */
 const test = require('node:test');
@@ -20,27 +20,23 @@ const adminHtml = read('admin.html');
 const styleCss = read('css/style.css');
 const adminCss = read('css/admin.css');
 
-test('app: interruttore unico nell’header con sole/luna ed etichette italiane', () => {
-  assert.match(appJs, /toggleDarkModeFromHeader/);
-  assert.match(appJs, /class="theme-toggle"/);
-  assert.match(appJs, /aria-pressed="/);
-  assert.match(appJs, /Attiva il tema chiaro/);
-  assert.match(appJs, /Attiva il tema scuro/);
-  assert.match(appJs, /☀️/);
-  assert.match(appJs, /🌙/);
-  // Lo stato vero si legge dal DOM, così icona ed etichetta non mentono.
-  assert.match(appJs, /classList\.contains\("dark-mode"\)/);
-  assert.match(styleCss, /\.theme-toggle/);
-});
+test('app: il tema è nelle Impostazioni e non più nell’header', () => {
+  const headerStart = appJs.indexOf('function renderGlobalHeader()');
+  const headerEnd = appJs.indexOf('window.changePortionProfile = function');
+  assert.ok(headerStart > 0 && headerEnd > headerStart, 'renderGlobalHeader trovato');
+  const headerView = appJs.slice(headerStart, headerEnd);
+  assert.doesNotMatch(headerView, /class="theme-toggle"/);
+  assert.doesNotMatch(headerView, /toggleDarkModeFromHeader\(/);
 
-test('app: nessun duplicato del tema nelle Impostazioni', () => {
-  const settingsStart = appJs.indexOf('Preferenze e manuale alimentare');
+  const settingsStart = appJs.indexOf('function renderThemeSettingsSection()');
   const settingsEnd = appJs.indexOf('window.toggleDarkMode = function');
   assert.ok(settingsStart > 0 && settingsEnd > settingsStart, 'vista Impostazioni trovata');
   const settingsView = appJs.slice(settingsStart, settingsEnd);
-  assert.doesNotMatch(settingsView, /Tema scuro/, 'niente checkbox duplicata');
-  assert.doesNotMatch(settingsView, /toggleDarkMode\(this\.checked\)/);
-  // Il resto delle Impostazioni resta intatto: 4 sezioni (3 via funzioni + USCITA) + guide.
+  assert.match(settingsView, /ASPETTO/);
+  assert.match(settingsView, /Tema scuro/);
+  assert.match(settingsView, /id="settings-dark-mode-toggle"/);
+  assert.match(settingsView, /role="switch"/);
+  assert.match(settingsView, /toggleDarkMode\(this\.checked\)/);
   assert.match(settingsView, /renderSaasProfileSection\(\)/);
   assert.match(settingsView, /renderClientLinkSection\(\)/);
   assert.match(settingsView, /renderLinkedAccountsSection\(\)/);
@@ -69,12 +65,12 @@ test('console: interruttore nel topbar con persistenza separata', () => {
   assert.match(adminCss, /html\.dark-mode/);
 });
 
-test('tema e movimento ridotto: nessuna animazione nel commutatore', () => {
+test('tema e movimento ridotto: il nuovo switch dell’app resta compatibile', () => {
   assert.match(styleCss, /prefers-reduced-motion/);
   assert.match(adminCss, /prefers-reduced-motion/);
-  // Il commutatore non introduce animazioni proprie (solo :hover statico).
-  const start = styleCss.indexOf('.theme-toggle {');
-  const focusRule = styleCss.indexOf('.theme-toggle:focus-visible');
-  const toggleRules = styleCss.slice(start, styleCss.indexOf('}', focusRule));
-  assert.doesNotMatch(toggleRules, /@keyframes|animation:/);
+  assert.match(styleCss, /\.switch-track/);
+  const switchStart = styleCss.indexOf('.switch-track {');
+  const switchBlockEnd = styleCss.indexOf('@media (prefers-reduced-motion: reduce)', switchStart);
+  const switchRules = styleCss.slice(switchStart, switchBlockEnd);
+  assert.doesNotMatch(switchRules, /@keyframes|animation:/);
 });

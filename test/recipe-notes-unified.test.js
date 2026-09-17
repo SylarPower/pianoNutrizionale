@@ -128,7 +128,7 @@ initFirebase();
 observeAuthState(() => {});
 appState.user = { uid: 'u1', email: 'mario@utenti.pianonutrizionale.app' };
 appState.deviceSettings = {
-  portionProfile: 'man', darkMode: false, lastOpenDate: null,
+  portionProfile: 'single', darkMode: false, lastOpenDate: null,
   recipeLibraryState: { searchQuery: '', openSections: {} }, shopCategoryOrder: []
 };
 appState.household = null;
@@ -142,7 +142,7 @@ appState.plan = PianoDomain.migratePlan(createEmptyWeeklyPlan());
 function legacyRecipe(extra = {}) {
   return {
     id: 'N1', name: 'Pasta al pepe', slot: 'lunch', emoji: '🍝', proteinCategory: '',
-    ingredients: [{ name: 'Pasta integrale', portions: { ipo: '70g', man: '90g' } }],
+    ingredients: [{ name: 'Pasta integrale', portions: { single: '90g' } }],
     steps: ['Cuoci la pasta'],
     ...extra
   };
@@ -214,8 +214,7 @@ test('captureEditState salva solo notes e non ricrea specialNote', () => {
   renderModalContent();
   document.getElementById('edit-recipe-name').value = 'Pasta al pepe';
   document.getElementById('edit-ing-name-0').value = 'Pasta integrale';
-  document.getElementById('edit-ing-man-0').value = '90 g';
-  document.getElementById('edit-ing-ipo-0').value = '70 g';
+  document.getElementById('edit-ing-single-0').value = '90 g';
   document.getElementById('edit-recipe-notes').value = 'Non scuocere\nUsa pepe fresco\n\n';
   captureEditState();
   assert.deepEqual(currentModal.recipe.notes, ['Non scuocere', 'Usa pepe fresco'], 'righe vuote scartate');

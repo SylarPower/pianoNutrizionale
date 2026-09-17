@@ -8,8 +8,8 @@ WebApp PWA privata per gestire colazioni, spuntini, pranzi, cene, batch cooking 
 
 - accesso personale con email e password, con l'indirizzo usato come credenziale;
 - account utilizzabile anche con ricettario completamente vuoto;
-- creazione manuale di ricette con dosi Donna IPO A/R e Uomo A/R;
-- importazione ed esportazione JSON di una ricetta o dell'intero catalogo (schema 5);
+- creazione manuale di ricette con una dose originale unica per ingrediente;
+- importazione ed esportazione JSON di una ricetta o dell'intero catalogo (schema 6);
 - condivisione di ricette **e/o della struttura della settimana** con un altro username, con anteprima dei conflitti e scelta della modalità di sostituzione;
 - collegamento di due o più account in una **household**: piano, catalogo, batch cooking e spesa condivisi in tempo reale, con profilo porzioni locale per ogni persona;
 - invito al collegamento per username, scelta della settimana base, backup automatico di entrambi gli account e scollegamento con copia indipendente;
@@ -24,12 +24,12 @@ WebApp PWA privata per gestire colazioni, spuntini, pranzi, cene, batch cooking 
 - generatore automatico della settimana con parametri strutturali (slot da rigenerare, **accoppiate cena → pranzo per il batch**, tetto ripetizioni, cross-slot pranzo ↔ cena, frequenze proteiche min–max), vincoli nutrizionali, blocchi pasto/giornata che contano nelle frequenze, seed riproducibile, anteprima e diff;
 - batch cooking dinamico basato su `batchTemplates` strutturati (cena di oggi → pranzo futuro): la colonna del giorno nella vista **Settimana** mostra la chip cliccabile "Batch cooking disponibile", che apre direttamente una modale con ingredienti, dosi e preparazione completi delle ricette coinvolte; per la stessa ricetta a cena e pranzo viene mostrato un solo riquadro con dosi totali, senza informazioni ridondanti né note di conservazione;
 - backup precedente automatico (`users/{uid}/backups/previous`) prima delle operazioni distruttive (meccanismo interno, senza UI);
-- lista della spesa aggregata per `ingredientId` con profili Uomo, Donna IPO e Coppia, ordine delle categorie locale e **ordine degli alimenti dentro ogni categoria condiviso nell'household** (salvato nel documento spesa come mappa `itemOrder` categoria → ingredientId, con frecce ↑/↓ e scorciatoie A→Z / Ripristina);
+- lista della spesa aggregata per `ingredientId` con profili **1 persona** e **2 persone**, moltiplicatore locale per il profilo `2 persone` e **ordine degli alimenti dentro ogni categoria condiviso nell'household** (salvato nel documento spesa come mappa `itemOrder` categoria → ingredientId, con frecce ↑/↓ e scorciatoie A→Z / Ripristina);
 - PWA offline con shell versionata, aggiornamento one-tap e fallback offline comprensibile;
 - alternative alimentari di Guide sempre consultabili nelle Impostazioni;
 - **manuale Guide single source in `js/domain.js`**: famiglie, grammature per pasto e giorno A/R e frequenze proteiche vivono in un solo file (`GUIDE_GRAMMATURE`, `GUIDE_PROTEIN_FREQUENCIES`); da lì derivano i vincoli del generatore, il riferimento carboidrati del travaso pranzo ↔ cena, le tabelle delle alternative dei popup e delle Impostazioni (`guideAlternativeGroups(dayType)`, `GUIDE_MANUAL`), il riconoscimento carboidrati/proteine degli ingredienti (`isGuideCarbIngredient` / `isGuideProteinIngredient`) e la verifica delle ricette (`checkGuideAdaptation` / `adaptRecipeToGuide`); le grammature **restano nell'app**, quindi per aggiornare un valore si tocca solo `js/domain.js`;
 - **equivalenze Guide legate alla giornata visualizzata**: il popup di un ingrediente mostra le dosi della giornata della ricetta aperta — in allenamento `Alimento | Pranzo A | Cena` (pasta 90 g), in riposo `Alimento | Pranzo R | Cena` (pasta 70 g); nelle Impostazioni, dove non c'è una giornata di contesto, la tabella mostra entrambe le colonne pranzo; le proteine, uguali in tutti i casi, restano a colonna unica `Pranzo e cena`;
-- **Guide contestuale e non distruttivo**: il ricettario conserva sempre le quantità originali; il piano memorizza per ogni giorno/slot principale la modalità `guide` o `original`, applica le quattro dosi per persona a crudo Uomo/Donna × Allenamento/Riposo e conserva su ogni ricetta l’adattamento riutilizzabile per pranzo/cena;
+- **Guide contestuale e non distruttivo**: il ricettario conserva sempre le quantità originali; il piano memorizza per ogni giorno/slot principale la modalità `guide` o `original`, applica la dose del profilo nutrizionale per Allenamento/Riposo e conserva su ogni ricetta l’adattamento riutilizzabile per pranzo/cena;
 - **segnalazioni e blocco mapping**: durante creazione, modifica e importazione le ricette fuori riferimento ricevono un flag senza essere riscritte; verdure, aromi e spezie esplicitamente liberi non vengono segnalati, mentre ingredienti non riconosciuti o gruppi ambigui bloccano l’applicazione Guide e consentono di usare esplicitamente le quantità originali;
 - **propagazione della dose effettiva**: quando il piano usa Guide, lista della spesa e batch cooking lavorano sulla ricetta risolta del contesto, senza mutare quella del catalogo;
 - **equivalenze solo a pranzo e a cena**: il manuale costruisce le alternative sul rapporto pranzo/cena, quindi negli spuntini, nelle merende e a colazione gli ingredienti non sono tappabili — i crackers dello spuntino valgono 30 g fissi e non si scambiano con 90 g di pasta (`guideSlotHasAlternatives`); nelle ricette cross-slot conta il pasto di **destinazione**;
@@ -136,7 +136,7 @@ Operazioni indicative (catalogo medio ~60 ricette):
 - accettazione collegamento: backup del destinatario + membership, tre documenti condivisi quando necessari e rimozione invito in un **unico batch**;
 - rifiuto: una cancellazione della richiesta;
 - generatore: solo letture locali; l'applicazione scrive il piano (1) preceduta dal backup (1);
-- migrazione schema 3/4 → 5: una sola scrittura per documento, al primo avvio che rileva la versione precedente (rimuove `frequency` dalle ricette).
+- normalizzazione del catalogo allo schema corrente: una sola scrittura per documento quando serve (ingredientId, note unificate e rimozione di `frequency`).
 
 Il registro prezzi (scheda Prezzi) è progettato per costare poco:
 
@@ -298,7 +298,7 @@ http://localhost:8080
 2. La webapp si apre anche se non hai importato alcun JSON.
 3. Il Ricettario può essere vuoto.
 4. Premi **Ricettario → + Nuova** per creare una ricetta manualmente.
-5. Compila nome, tipo di pasto, ingredienti, quattro dosi e preparazione.
+5. Compila nome, tipo di pasto, ingredienti, dose originale e preparazione.
 6. Premi **Salva su Firebase**.
 
 Se crei una ricetta dal riquadro vuoto di un pasto giornaliero, viene anche assegnata automaticamente a quel giorno.
@@ -445,17 +445,14 @@ Se la condivisione restituisce “utente non trovato”, fai accedere il destina
 
 ## Schema ricette v5
 
-Il catalogo usa `schemaVersion: 5`. Ogni ingrediente ha una struttura stabile:
+Il catalogo usa `schemaVersion: 6`. Ogni ingrediente ha una struttura stabile:
 
 ```javascript
 {
   ingredientId: "whole-eggs",
   name: "Uova intere",
   portions: {
-    ipoTraining: "2",
-    ipoRest: "2",
-    manTraining: "2",
-    manRest: "2"
+    single: "2"
   }
 }
 ```
@@ -463,8 +460,8 @@ Il catalogo usa `schemaVersion: 5`. Ogni ingrediente ha una struttura stabile:
 - `ingredientId` è l'identificatore **stabile** usato per aggregare la lista della spesa;
 - `name` è solo l'etichetta visualizzata;
 - la migrazione è **idempotente** e avviene **solo quando necessario** (versione precedente rilevata), con una sola scrittura per documento;
-- le porzioni legacy (`ipo`, `training`, `rest`) continuano a funzionare e vengono normalizzate senza cambiare i valori;
-- importazioni, esportazioni e condivisioni sono normalizzate a schema 4;
+- le porzioni delle ricette usano solo `portions.single` come quantità originale;
+- importazioni, esportazioni e condivisioni sono normalizzate allo schema corrente;
 - il catalogo ingredienti canonici (alias + etichette) è incorporato nel documento catalogo (`ingredientAliases`, `canonicalIngredients`);
 - nessuna lettura Firestore per singolo ingrediente.
 
@@ -499,11 +496,10 @@ La categoria proteica di una ricetta viene determinata in questo ordine:
 
 Il valore selezionato manualmente nell'editor ricette **non sovrascrive** un ingrediente già riconosciuto: serve solo come fallback per ricette con ingredienti non riconoscibili.
 
-## Migrazioni retrocompatibili
+## Normalizzazioni ancora attive
 
-Vengono gestite senza perdita di dati:
+Restano attive solo le normalizzazioni non legate al vecchio modello porzioni:
 
-- porzioni schema precedente (`ipo`/`training`/`rest`);
 - ricette senza `ingredientId`;
 - campo legacy `frequency` rimosso (schema 4 → 5);
 - `batchRules` testuali → `batchTemplates` strutturati;
@@ -775,7 +771,7 @@ npm run smoke
 git diff --check
 ```
 
-I test (`test/domain.test.js`) coprono: migrazioni schema 3→5 e idempotenza (inclusa rimozione `frequency`), alias ingredienti, ingredienti senza ID, porzioni legacy, **Guide contestuale non distruttivo (350 g pollo → riferimento 200 g), ingredienti liberi, mapping bloccati, adattamenti persistenti, modalità piano e propagazione a spesa/batch**, lista spesa per `ingredientId`, profili Uomo/Donna IPO/Coppia, crackers A/R, **travaso carboidrati pranzo↔cena sulle dosi Guide** (riconoscimento carboidrati, pranzo→cena con la dose cena della tabella, cena→pranzo con le dosi A/R rilette dalla tabella, propagazione alla lista spesa), **fonte unica Guide** (grammature e regola dei 2/3, sei valori cena confermati, proteine invariate tra pranzo e cena, righe dei popup per giornata A/R/entrambe), batch indipendente da A/R, batch cena→pranzo futuro, attraversamento domenica→lunedì, batch parziale, `maxDays` diversi, quantità target A/R, copia/scambio pasti, blocchi, generatore e vincoli (frequenze su molti seed, **omega-3 distanziati con eccezione solo per le accoppiate batch richieste**, **accoppiate batch cena → pranzo fino a 7 giorni**, tetto ripetizioni, blocchi che contano nelle frequenze e nel pesce/giorno, slot disabilitati, cross-slot, inferenza della categoria dagli ingredienti, vincoli personalizzati, beef e curedMeats conteggiati separatamente, warning centralizzati), classificazione proteica (ingredienti prevalgono su `proteinCategory`, fallback su chiavi tecniche e testuali legacy), cataloghi vuoto/insufficiente, riferimenti piano mancanti, import Aggiungi/Sostituisci, conflitti condivisione (solo ricette/solo settimana/completa), backup, service worker (shell, cache, fallback offline, aggiornamento).
+I test (`test/domain.test.js`) coprono: normalizzazione allo schema corrente e idempotenza (ingredientId, note unificate, rimozione `frequency`), alias ingredienti, ingredienti senza ID, **Guide contestuale non distruttivo (350 g pollo → riferimento 200 g), ingredienti liberi, mapping bloccati, adattamenti persistenti, modalità piano e propagazione a spesa/batch**, lista spesa per `ingredientId`, profili **1 persona**/**2 persone** con moltiplicatore locale, crackers A/R, **travaso carboidrati pranzo↔cena sulle dosi Guide** (riconoscimento carboidrati, pranzo→cena con la dose cena della tabella, cena→pranzo con le dosi A/R rilette dalla tabella, propagazione alla lista spesa), **fonte unica Guide** (grammature e regola dei 2/3, sei valori cena confermati, proteine invariate tra pranzo e cena, righe dei popup per giornata A/R/entrambe), batch indipendente da A/R, batch cena→pranzo futuro, attraversamento domenica→lunedì, batch parziale, `maxDays` diversi, quantità target A/R, copia/scambio pasti, blocchi, generatore e vincoli (frequenze su molti seed, **omega-3 distanziati con eccezione solo per le accoppiate batch richieste**, **accoppiate batch cena → pranzo fino a 7 giorni**, tetto ripetizioni, blocchi che contano nelle frequenze e nel pesce/giorno, slot disabilitati, cross-slot, inferenza della categoria dagli ingredienti, vincoli personalizzati, beef e curedMeats conteggiati separatamente, warning centralizzati), classificazione proteica (ingredienti prevalgono su `proteinCategory`, fallback su chiavi tecniche e testuali legacy), cataloghi vuoto/insufficiente, riferimenti piano mancanti, import Aggiungi/Sostituisci, conflitti condivisione (solo ricette/solo settimana/completa), backup, service worker (shell, cache, fallback offline, aggiornamento).
 
 Smoke test locale:
 

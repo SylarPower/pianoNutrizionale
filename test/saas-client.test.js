@@ -194,7 +194,7 @@ test('round-trip export → import: payload valido accettato, payload manomesso 
   assert.equal(typeof validateImportedDataset, 'function', 'validatore caricato nel sandbox');
   const recipe = id => ({
     id: `r-${id}`, name: `Ricetta ${id}`, slot: 'lunch',
-    ingredients: [{ name: 'Pasta', portions: { ipo: '80 g', man: '90 g' } }],
+    ingredients: [{ name: 'Pasta', portions: { single: '90 g' } }],
     steps: ['Porta a bollore, cuoci e scola.']
   });
   const days = {};

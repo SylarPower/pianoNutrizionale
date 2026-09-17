@@ -1,7 +1,7 @@
 'use strict';
 /* Moltiplicatore porzioni — solo app clienti, solo profilo coppia:
  *  - il controllo −/＋ vive nell'header ed è renderizzato solo in coppia;
- *  - scala le dosi uomo/donna mostrate e i totali della lista della spesa;
+ *  - scala la dose singola mostrata e i totali della lista della spesa;
  *  - la preferenza resta nelle impostazioni locali del dispositivo;
  *  - la console non espone più un campo moltiplicatore visibile. */
 const test = require('node:test');
@@ -27,9 +27,8 @@ test('header: il controllo moltiplicatore esiste ed è solo per il profilo coppi
   assert.match(appJs, /changeCoupleMultiplier\(-0\.05\)/);
 });
 
-test('le dosi uomo/donna e la spesa seguono il moltiplicatore', () => {
-  assert.match(appJs, /applyCoupleMultiplier\(getPortionValue\(ingredient, "man", dayType\)\)/);
-  assert.match(appJs, /applyCoupleMultiplier\(getPortionValue\(ingredient, "ipo", dayType\)\)/);
+test('la dose singola e la spesa seguono il moltiplicatore', () => {
+  assert.match(appJs, /getPortionProfile\(\) === "couple"[\s\S]*applyCoupleMultiplier\(amount\)/);
   // La spesa passa il moltiplicatore solo quando il profilo è coppia.
   assert.match(appJs, /quantityMultiplier: getPortionProfile\(\) === "couple" \? getCoupleMultiplier\(\) : 1/);
 });

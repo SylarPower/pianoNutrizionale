@@ -499,7 +499,6 @@ regole negano tutto ai client, nessun indice composto):
 {
   id: "R" + 12 hex, organizationId, ownerUid, ownerUsername,
   name, emoji, slot, proteinCategory?, ingredients, steps, notes,
-  batch?: "man" | "ipo" | null,
   visibility: "private" | "studio", status: "active" | "archived",
   revision: 1, version: 1, archivedAt?, createdAt, updatedAt, createdBy
 }

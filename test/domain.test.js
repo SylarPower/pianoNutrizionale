@@ -7,7 +7,7 @@ const vm = require('node:vm');
 const d = require('../js/domain.js');
 
 const ROOT = path.join(__dirname, '..');
-const PORTIONS = { ipo: '60g', training: '90g', rest: '70g' };
+const PORTIONS = { single: '90g' };
 
 function ingredient(name, portions = PORTIONS, ingredientId = null) {
   const item = { name, portions };
@@ -25,12 +25,11 @@ function planWith(days, extra = {}) {
 
 // ---- Migrazioni schema 3 → 4 ----
 
-test('migrazione ricetta 3 → schema corrente: ingredientId e porzione singola per profilo', () => {
+test('migrazione ricetta allo schema corrente: ingredientId e porzione singola', () => {
   const migrated = d.migrateRecipe(recipe('R1', 'Uova', 'lunch', [ingredient('Uova intere (sode)')], 'Uova'));
   assert.equal(migrated.ingredients[0].ingredientId, 'whole-eggs');
-  // Schema 6: le porzioni legacy 4-campi convergono in un'unica quantità
-  // originale per profilo; il valore conservato è quello di allenamento.
-  assert.deepEqual(migrated.ingredients[0].portions, { ipo: '60g', man: '90g' });
+  // Schema 6: la ricetta espone una sola quantità originale per ingrediente.
+  assert.deepEqual(migrated.ingredients[0].portions, { single: '90g' });
 });
 
 test('migrazione idempotente', () => {
@@ -97,22 +96,22 @@ function shoppingFixture() {
   };
   const recipesById = {};
   [
-    recipe('L1', 'Pollo A', 'lunch', [ingredient('Petto di pollo', { ipoTraining: '150g', ipoRest: '140g', manTraining: '200g', manRest: '180g' })], 'Pollame'),
-    recipe('L2', 'Pollo R', 'lunch', [ingredient('Petto di pollo', { ipoTraining: '150g', ipoRest: '140g', manTraining: '200g', manRest: '180g' })], 'Pollame'),
-    recipe('L3', 'Uova A', 'lunch', [ingredient('Uova intere', { ipoTraining: '2', ipoRest: '2', manTraining: '2', manRest: '2' })], 'Uova'),
-    recipe('L4', 'Uovo A', 'lunch', [ingredient('Uovo intero', { ipoTraining: '2', ipoRest: '2', manTraining: '2', manRest: '2' })], 'Uova'),
-    recipe('L5', 'Riso', 'lunch', [ingredient('Riso venere', { ipoTraining: '60g', ipoRest: '50g', manTraining: '90g', manRest: '70g' })], 'Legumi'),
-    recipe('L6', 'Zucchine', 'lunch', [ingredient('Zucchine', { ipoTraining: '—', ipoRest: '—', manTraining: '—', manRest: '—' })], ''),
-    recipe('L7', 'Tonno', 'lunch', [ingredient('Tonno al naturale sgocciolato', { ipoTraining: '150g', ipoRest: '150g', manTraining: '150g', manRest: '150g' })], 'Altro pesce e molluschi'),
-    recipe('D1', 'Salmone', 'dinner', [ingredient('Salmone', { ipoTraining: '100g', ipoRest: '100g', manTraining: '100g', manRest: '100g' })], 'Pesce omega-3'),
-    recipe('D2', 'Verdure', 'dinner', [ingredient('Zucchine', { ipoTraining: '200g', ipoRest: '200g', manTraining: '200g', manRest: '200g' })], ''),
-    recipe('D3', 'Riso D', 'dinner', [ingredient('Riso venere', { ipoTraining: '60g', ipoRest: '50g', manTraining: '90g', manRest: '70g' })], 'Legumi'),
-    recipe('D4', 'Salmone D', 'dinner', [ingredient('Salmone', { ipoTraining: '100g', ipoRest: '100g', manTraining: '100g', manRest: '100g' })], 'Pesce omega-3'),
-    recipe('D5', 'Yogurt', 'dinner', [ingredient('Yogurt greco magro o Skyr', { ipoTraining: '100g', ipoRest: '100g', manTraining: '150g', manRest: '150g' })], 'Latticini e formaggi'),
-    recipe('D6', 'Riso D6', 'dinner', [ingredient('Riso venere', { ipoTraining: '60g', ipoRest: '50g', manTraining: '90g', manRest: '70g' })], 'Legumi'),
-    recipe('D7', 'Pesce D7', 'dinner', [ingredient('Merluzzo', { ipoTraining: '250g', ipoRest: '250g', manTraining: '250g', manRest: '250g' })], 'Altro pesce e molluschi'),
-    recipe('SN1', 'Spuntino A', 'snack1', [ingredient('Crackers', { ipoTraining: '30g', ipoRest: '—', manTraining: '30g', manRest: '—' })], ''),
-    recipe('SN2', 'Spuntino R', 'snack1', [ingredient('Frutta', { ipoTraining: '250g', ipoRest: '250g', manTraining: '250g', manRest: '250g' })], '')
+    recipe('L1', 'Pollo A', 'lunch', [ingredient('Petto di pollo', { single: '200g' })], 'Pollame'),
+    recipe('L2', 'Pollo R', 'lunch', [ingredient('Petto di pollo', { single: '200g' })], 'Pollame'),
+    recipe('L3', 'Uova A', 'lunch', [ingredient('Uova intere', { single: '2' })], 'Uova'),
+    recipe('L4', 'Uovo A', 'lunch', [ingredient('Uovo intero', { single: '2' })], 'Uova'),
+    recipe('L5', 'Riso', 'lunch', [ingredient('Riso venere', { single: '90g' })], 'Legumi'),
+    recipe('L6', 'Zucchine', 'lunch', [ingredient('Zucchine', { single: '—' })], ''),
+    recipe('L7', 'Tonno', 'lunch', [ingredient('Tonno al naturale sgocciolato', { single: '150g' })], 'Altro pesce e molluschi'),
+    recipe('D1', 'Salmone', 'dinner', [ingredient('Salmone', { single: '100g' })], 'Pesce omega-3'),
+    recipe('D2', 'Verdure', 'dinner', [ingredient('Zucchine', { single: '200g' })], ''),
+    recipe('D3', 'Riso D', 'dinner', [ingredient('Riso venere', { single: '90g' })], 'Legumi'),
+    recipe('D4', 'Salmone D', 'dinner', [ingredient('Salmone', { single: '100g' })], 'Pesce omega-3'),
+    recipe('D5', 'Yogurt', 'dinner', [ingredient('Yogurt greco magro o Skyr', { single: '150g' })], 'Latticini e formaggi'),
+    recipe('D6', 'Riso D6', 'dinner', [ingredient('Riso venere', { single: '90g' })], 'Legumi'),
+    recipe('D7', 'Pesce D7', 'dinner', [ingredient('Merluzzo', { single: '250g' })], 'Altro pesce e molluschi'),
+    recipe('SN1', 'Spuntino A', 'snack1', [ingredient('Crackers', { single: '30g' })], ''),
+    recipe('SN2', 'Spuntino R', 'snack1', [ingredient('Frutta', { single: '250g' })], '')
   ].forEach(recipe => { recipesById[recipe.id] = recipe; });
   return { days, recipesById };
 }
@@ -125,64 +124,53 @@ function allMeals(days) {
 
 test('lista spesa aggrega per ingredientId (nomi diversi convergono)', () => {
   const { days, recipesById } = shoppingFixture();
-  const list = d.aggregateShopping(planWith(days), recipesById, allMeals(days), 'man');
+  const list = d.aggregateShopping(planWith(days), recipesById, allMeals(days), 'single');
   const eggs = list.find(entry => entry.ingredientId === 'whole-eggs');
   assert.ok(eggs, 'uova aggregate per whole-eggs');
   assert.equal(eggs.totals.pz, 4);
   const rice = list.find(entry => entry.ingredientId === 'riso-venere');
   assert.ok(rice, 'riso venere presente');
-  assert.equal(rice.totals.g, 270); // L5 90g + D3 90g + D6 90g: porzione originale unica per profilo (schema 6)
+  assert.equal(rice.totals.g, 270);
 });
 
-test('profilo Uomo usa dosi man', () => {
+test('profilo 1 persona usa la dose singola della ricetta', () => {
   const { days, recipesById } = shoppingFixture();
-  const list = d.aggregateShopping(planWith(days), recipesById, { monday: ['lunch'] }, 'man');
+  const list = d.aggregateShopping(planWith(days), recipesById, { monday: ['lunch'] }, 'single');
   assert.equal(list.find(entry => entry.ingredientId === 'petto-di-pollo').totals.g, 200);
 });
 
-test('profilo Donna IPO usa dosi ipo', () => {
-  const { days, recipesById } = shoppingFixture();
-  const list = d.aggregateShopping(planWith(days), recipesById, { monday: ['lunch'] }, 'ipo');
-  assert.equal(list.find(entry => entry.ingredientId === 'petto-di-pollo').totals.g, 150);
-});
-
-test('profilo Coppia somma dosi uomo + donna', () => {
+test('profilo 2 persone applica di default il moltiplicatore ×2', () => {
   const { days, recipesById } = shoppingFixture();
   const list = d.aggregateShopping(planWith(days), recipesById, { monday: ['lunch'] }, 'couple');
   const pollo = list.find(entry => entry.ingredientId === 'petto-di-pollo');
-  assert.equal(pollo.totals.g, 350); // 200 uomo + 150 donna IPO
+  assert.equal(pollo.totals.g, 400);
   assert.deepEqual(d.parseSimpleAmount('1 cucchiaio'), { value: 1, unit: 'cucchiaio' });
   assert.deepEqual(d.parseSimpleAmount('3 cucchiai'), { value: 3, unit: 'cucchiaio' });
   assert.deepEqual(d.parseSimpleAmount('1 cucchiaino'), { value: 1, unit: 'cucchiaino' });
   assert.deepEqual(d.parseSimpleAmount('2 cucchiaini'), { value: 2, unit: 'cucchiaino' });
 });
 
-test('moltiplicatore coppia scala la spesa solo se richiesto (profilo coppia)', () => {
+test('moltiplicatore 2 persone: default ×2, override personalizzabile', () => {
   const { days, recipesById } = shoppingFixture();
   const selected = { monday: ['lunch'] };
-  // Senza moltiplicatore: invariata.
   const base = d.aggregateShopping(planWith(days), recipesById, selected, 'couple');
-  assert.equal(base.find(e => e.ingredientId === 'petto-di-pollo').totals.g, 350);
-  // ×2 scala entrambe le dosi della coppia prima di sommare.
-  const doubled = d.aggregateShopping(planWith(days), recipesById, selected, 'couple', {}, { quantityMultiplier: 2 });
-  assert.equal(doubled.find(e => e.ingredientId === 'petto-di-pollo').totals.g, 700);
-  // ×1.5 arrotonda alla stessa cifra della singola dose (200→300, 150→225).
-  const half = d.aggregateShopping(planWith(days), recipesById, selected, 'couple', {}, { quantityMultiplier: 1.5 });
-  assert.equal(half.find(e => e.ingredientId === 'petto-di-pollo').totals.g, 525);
-  // Profilo singolo: il moltiplicatore non ha effetto se non applicato (qui uomo ×2).
-  const man = d.aggregateShopping(planWith(days), recipesById, selected, 'man', {}, { quantityMultiplier: 2 });
-  assert.equal(man.find(e => e.ingredientId === 'petto-di-pollo').totals.g, 400);
+  assert.equal(base.find(e => e.ingredientId === 'petto-di-pollo').totals.g, 400);
+  const oneAndHalf = d.aggregateShopping(planWith(days), recipesById, selected, 'couple', {}, { quantityMultiplier: 1.5 });
+  assert.equal(oneAndHalf.find(e => e.ingredientId === 'petto-di-pollo').totals.g, 300);
+  const tripled = d.aggregateShopping(planWith(days), recipesById, selected, 'couple', {}, { quantityMultiplier: 3 });
+  assert.equal(tripled.find(e => e.ingredientId === 'petto-di-pollo').totals.g, 600);
+  const single = d.aggregateShopping(planWith(days), recipesById, selected, 'single', {}, { quantityMultiplier: 2 });
+  assert.equal(single.find(e => e.ingredientId === 'petto-di-pollo').totals.g, 200, 'il moltiplicatore è riservato al profilo 2 persone');
 });
 
-test('moltiplicatore nullo o fuori range non altera le dosi', () => {
+test('moltiplicatore invalido della coppia torna al default ×2', () => {
   const { days, recipesById } = shoppingFixture();
   const selected = { monday: ['lunch'] };
   const opts = q => ({ quantityMultiplier: q });
   const pollo = list => list.find(e => e.ingredientId === 'petto-di-pollo').totals.g;
-  assert.equal(pollo(d.aggregateShopping(planWith(days), recipesById, selected, 'couple', {}, opts(1))), 350);
-  assert.equal(pollo(d.aggregateShopping(planWith(days), recipesById, selected, 'couple', {}, opts(0))), 350);
-  assert.equal(pollo(d.aggregateShopping(planWith(days), recipesById, selected, 'couple', {}, opts('x'))), 350);
-  assert.equal(pollo(d.aggregateShopping(planWith(days), recipesById, selected, 'couple', {}, opts(-1))), 350);
+  assert.equal(pollo(d.aggregateShopping(planWith(days), recipesById, selected, 'couple', {}, opts(0))), 400);
+  assert.equal(pollo(d.aggregateShopping(planWith(days), recipesById, selected, 'couple', {}, opts('x'))), 400);
+  assert.equal(pollo(d.aggregateShopping(planWith(days), recipesById, selected, 'couple', {}, opts(-1))), 400);
 });
 
 test('parseSimpleAmount usa il massimo degli intervalli e normalizza le unità', () => {
@@ -193,22 +181,20 @@ test('parseSimpleAmount usa il massimo degli intervalli e normalizza le unità',
   assert.deepEqual(d.parseSimpleAmount('1—2 cucchiai'), { value: 2, unit: 'cucchiaio' });
 });
 
-test('lista spesa somma valori fissi e intervalli per Uomo, Donna IPO e Coppia', () => {
-  const samePortions = (man, ipo) => ({
-    ipoTraining: ipo, ipoRest: ipo, manTraining: man, manRest: man
-  });
+test('lista spesa somma valori fissi e intervalli per 1 persona e 2 persone', () => {
+  const samePortions = single => ({ single });
   const days = {
     monday: { type: 'training', lunch: 'T1' },
     tuesday: { type: 'rest', lunch: 'T2' },
     wednesday: { type: 'training', lunch: 'T3' }
   };
   const recipesById = {
-    T1: recipe('T1', 'Pomodorini fissi', 'lunch', [ingredient('Pomodorini', samePortions('10', '8'))]),
-    T2: recipe('T2', 'Pomodorini intervallo', 'lunch', [ingredient('Pomodorini', samePortions('8-10', '8-10 pz'))]),
-    T3: recipe('T3', 'Pomodorini intervallo lungo', 'lunch', [ingredient('Pomodorini', samePortions('8—10 pz', '—'))])
+    T1: recipe('T1', 'Pomodorini fissi', 'lunch', [ingredient('Pomodorini', samePortions('10'))]),
+    T2: recipe('T2', 'Pomodorini intervallo', 'lunch', [ingredient('Pomodorini', samePortions('8-10 pz'))]),
+    T3: recipe('T3', 'Pomodorini intervallo lungo', 'lunch', [ingredient('Pomodorini', samePortions('8—10 pz'))])
   };
   const selected = { monday: ['lunch'], tuesday: ['lunch'], wednesday: ['lunch'] };
-  const expected = { man: 30, ipo: 18, couple: 48 };
+  const expected = { single: 30, couple: 60 };
 
   Object.entries(expected).forEach(([profile, total]) => {
     const list = d.aggregateShopping(planWith(days), recipesById, selected, profile);
@@ -220,7 +206,7 @@ test('lista spesa somma valori fissi e intervalli per Uomo, Donna IPO e Coppia',
 
 test('dosi "—" non entrano nella lista', () => {
   const { days, recipesById } = shoppingFixture();
-  const list = d.aggregateShopping(planWith(days), recipesById, { saturday: ['lunch'] }, 'man');
+  const list = d.aggregateShopping(planWith(days), recipesById, { saturday: ['lunch'] }, 'single');
   const zucchini = list.find(entry => entry.ingredientId === 'zucchini');
   assert.ok(zucchini);
   assert.equal(Object.keys(zucchini.totals).length, 0);
@@ -229,7 +215,7 @@ test('dosi "—" non entrano nella lista', () => {
 test('crackers dinamici A/R: presenti nei giorni A solo via piano', () => {
   const { days, recipesById } = shoppingFixture();
   const selected = { monday: ['snack1'], tuesday: ['snack1'] };
-  const list = d.aggregateShopping(planWith(days), recipesById, selected, 'man');
+  const list = d.aggregateShopping(planWith(days), recipesById, selected, 'single');
   const crackers = list.find(entry => entry.ingredientId === 'crackers');
   assert.ok(crackers);
   assert.equal(crackers.totals.g, 30); // solo lunedì (A)
@@ -326,77 +312,68 @@ test('isPranzoCenaCross solo tra pranzo e cena', () => {
   assert.equal(d.isPranzoCenaCross('breakfast', 'lunch'), false);
 });
 
-test('trasforma carboidrato cena -> pranzo (porzione unica per profilo, tabella pranzo A/R)', () => {
-  const pane = ingredient('Pane', { ipo: '50g', man: '50g' }, 'bread');
+test('trasforma carboidrato cena -> pranzo (porzione unica, tabella pranzo A/R)', () => {
+  const pane = ingredient('Pane', { single: '50g' }, 'bread');
   const adapted = d.adaptIngredientForSlot(pane, 'dinner', 'lunch');
-  assert.equal(adapted.portions.man, '100g');
-  assert.equal(adapted.portions.ipo, '100g');
+  assert.equal(adapted.portions.single, '100g');
   const adaptedRest = d.adaptIngredientForSlot(pane, 'dinner', 'lunch', 'rest');
-  assert.equal(adaptedRest.portions.man, '70g');
-  assert.equal(adaptedRest.portions.ipo, '70g');
+  assert.equal(adaptedRest.portions.single, '70g');
   assert.equal(adapted.name, 'Pane');
   assert.equal(adapted.ingredientId, 'bread');
 });
 
 test('trasforma carboidrato pranzo -> cena (pane: dose cena unica 50g)', () => {
-  const pane = ingredient('Pane', { ipo: '100g', man: '100g' }, 'bread');
+  const pane = ingredient('Pane', { single: '100g' }, 'bread');
   const adapted = d.adaptIngredientForSlot(pane, 'lunch', 'dinner');
-  assert.equal(adapted.portions.man, '50g');
-  assert.equal(adapted.portions.ipo, '50g');
+  assert.equal(adapted.portions.single, '50g');
   const adaptedRest = d.adaptIngredientForSlot(pane, 'lunch', 'dinner', 'rest');
-  assert.equal(adaptedRest.portions.man, '50g');
+  assert.equal(adaptedRest.portions.single, '50g');
 });
 
 test('pranzo -> cena: la pasta resta pasta e usa la dose cena Guide', () => {
-  const pasta = ingredient('Pasta di semola', { ipo: '70g', man: '70g' });
+  const pasta = ingredient('Pasta di semola', { single: '70g' });
   const adapted = d.adaptIngredientForSlot(pasta, 'lunch', 'dinner');
   assert.equal(adapted.name, 'Pasta di semola');
   assert.equal(adapted.ingredientId, 'pasta-di-semola');
-  assert.equal(adapted.portions.man, '40g'); // tabella: dose cena unica della pasta (cereali)
-  assert.equal(adapted.portions.ipo, '40g');
+  assert.equal(adapted.portions.single, '40g'); // tabella: dose cena unica della pasta (cereali)
 });
 
 test('pranzo -> cena: dose cena dalla tabella', () => {
-  // La dose cena viene dalla tabella, non dalla dose personalizzata.
-  const patate = ingredient('Patate', { ipo: '—', man: '360g' });
+  const patate = ingredient('Patate', { single: '360g' });
   const adapted = d.adaptIngredientForSlot(patate, 'lunch', 'dinner');
   assert.equal(adapted.name, 'Patate');
-  assert.equal(adapted.portions.man, '170g');
-  assert.equal(adapted.portions.ipo, '170g');
+  assert.equal(adapted.portions.single, '170g');
 });
 
 test('cena -> pranzo: pranzo A/R dalla tabella', () => {
-  // Il ritorno legge pranzo A/R dalla tabella, selezionata dal tipo di giorno.
-  const patate = ingredient('Patate', { ipo: '—', man: '172g' });
+  const patate = ingredient('Patate', { single: '172g' });
   const adapted = d.adaptIngredientForSlot(patate, 'dinner', 'lunch');
   assert.equal(adapted.name, 'Patate');
-  assert.equal(adapted.portions.man, '340g');
+  assert.equal(adapted.portions.single, '340g');
   const adaptedRest = d.adaptIngredientForSlot(patate, 'dinner', 'lunch', 'rest');
-  assert.equal(adaptedRest.portions.man, '240g');
+  assert.equal(adaptedRest.portions.single, '240g');
 });
 
 test('pranzo -> cena: trofie e cous cous usano la dose cena Guide', () => {
-  const trofie = ingredient('Trofie secche', { ipo: '90g', man: '90g' });
+  const trofie = ingredient('Trofie secche', { single: '90g' });
   const adaptedT = d.adaptIngredientForSlot(trofie, 'lunch', 'dinner');
   assert.equal(adaptedT.name, 'Trofie secche');
-  assert.equal(adaptedT.portions.man, '40g');
-  assert.equal(adaptedT.portions.ipo, '40g');
+  assert.equal(adaptedT.portions.single, '40g');
 
-  const couscous = ingredient('Cous cous', { ipo: '80g', man: '80g' });
+  const couscous = ingredient('Cous cous', { single: '80g' });
   const adaptedC = d.adaptIngredientForSlot(couscous, 'lunch', 'dinner');
   assert.equal(adaptedC.name, 'Cous cous');
-  assert.equal(adaptedC.portions.man, '40g');
-  assert.equal(adaptedC.portions.ipo, '40g');
+  assert.equal(adaptedC.portions.single, '40g');
 });
 
 test('ingredienti non carboidrati non vengono trasformati', () => {
-  const eggs = ingredient('Uova intere', { ipoTraining: '3', ipoRest: '3', manTraining: '3', manRest: '3' }, 'whole-eggs');
+  const eggs = ingredient('Uova intere', { single: '3' }, 'whole-eggs');
   assert.equal(d.adaptIngredientForSlot(eggs, 'dinner', 'lunch'), null);
   assert.equal(d.adaptIngredientForSlot(eggs, 'lunch', 'dinner'), null);
 });
 
 test('nessuna trasformazione nello slot nativo o in pasti non incrociati', () => {
-  const pane = ingredient('Pane', { ipoTraining: '60g', ipoRest: '60g', manTraining: '60g', manRest: '60g' }, 'bread');
+  const pane = ingredient('Pane', { single: '60g' }, 'bread');
   assert.equal(d.adaptIngredientForSlot(pane, 'dinner', 'dinner'), null);
   assert.equal(d.adaptIngredientForSlot(pane, 'lunch', 'lunch'), null);
   assert.equal(d.adaptIngredientForSlot(pane, 'breakfast', 'lunch'), null);
@@ -406,12 +383,12 @@ test('lista spesa trasforma i carboidrati di una cena spostata a pranzo', () => 
   const days = { monday: { type: 'training', lunch: 'C15' } };
   const recipesById = {
     C15: recipe('C15', 'Frittata ai peperoni', 'dinner', [
-      ingredient('Uova intere', { ipoTraining: '3', ipoRest: '3', manTraining: '3', manRest: '3' }, 'whole-eggs'),
-      ingredient('Peperone', { ipoTraining: '1', ipoRest: '1', manTraining: '1', manRest: '1' }),
-      ingredient('Pane', { ipoTraining: '50g', ipoRest: '50g', manTraining: '50g', manRest: '50g' }, 'bread')
+      ingredient('Uova intere', { single: '3' }, 'whole-eggs'),
+      ingredient('Peperone', { single: '1' }),
+      ingredient('Pane', { single: '50g' }, 'bread')
     ], 'Uova')
   };
-  const list = d.aggregateShopping(planWith(days), recipesById, { monday: ['lunch'] }, 'man', {});
+  const list = d.aggregateShopping(planWith(days), recipesById, { monday: ['lunch'] }, 'single', {});
   assert.equal(list.find(e => e.ingredientId === 'bread').totals.g, 100); // 50g -> 100g (pranzo A)
   assert.equal(list.find(e => e.ingredientId === 'whole-eggs').totals.pz, 3); // uova invariate
 });
@@ -420,11 +397,11 @@ test('lista spesa: pasta di pranzo spostata a cena resta pasta, con la dose cena
   const days = { monday: { type: 'training', dinner: 'P1' } };
   const recipesById = {
     P1: recipe('P1', 'Pasta al tonno', 'lunch', [
-      ingredient('Pasta', { ipoTraining: '90g', ipoRest: '70g', manTraining: '90g', manRest: '70g' }),
-      ingredient('Tonno al naturale', { ipoTraining: '150g', ipoRest: '150g', manTraining: '150g', manRest: '150g' }, 'tuna')
+      ingredient('Pasta', { single: '90g' }),
+      ingredient('Tonno al naturale', { single: '150g' }, 'tuna')
     ], 'Altro pesce e molluschi')
   };
-  const list = d.aggregateShopping(planWith(days), recipesById, { monday: ['dinner'] }, 'man', {});
+  const list = d.aggregateShopping(planWith(days), recipesById, { monday: ['dinner'] }, 'single', {});
   assert.equal(list.find(e => e.ingredientId === 'pasta').totals.g, 40); // dose cena dalla tabella
   assert.equal(list.find(e => e.ingredientId === 'tuna').totals.g, 150); // proteina invariata
   assert.ok(!list.find(e => e.ingredientId === 'bread'), 'nessuna conversione in pane');
@@ -434,10 +411,10 @@ test('lista spesa non trasforma le ricette nel loro slot nativo', () => {
   const days = { monday: { type: 'training', dinner: 'D1' } };
   const recipesById = {
     D1: recipe('D1', 'Cena con pane', 'dinner', [
-      ingredient('Pane', { ipoTraining: '60g', ipoRest: '60g', manTraining: '60g', manRest: '60g' }, 'bread')
+      ingredient('Pane', { single: '60g' }, 'bread')
     ], 'Pollame')
   };
-  const list = d.aggregateShopping(planWith(days), recipesById, { monday: ['dinner'] }, 'man', {});
+  const list = d.aggregateShopping(planWith(days), recipesById, { monday: ['dinner'] }, 'single', {});
   assert.equal(list.find(e => e.ingredientId === 'bread').totals.g, 60); // dose nativa, non trasformata
 });
 
@@ -462,8 +439,8 @@ function batchFixture() {
   const recipesById = {
     C19: recipe('C19', 'Pollo alla piastra', 'dinner', [ingredient('Pollo')], 'Pollame'),
     P16: recipe('P16', 'Riso venere e salmone', 'lunch', [
-      { name: 'Riso venere', ingredientId: 'venere-rice', portions: { ipoTraining: '60g', ipoRest: '50g', manTraining: '90g', manRest: '70g' } },
-      { name: 'Salmone', ingredientId: 'salmon', portions: { ipoTraining: '100g', ipoRest: '100g', manTraining: '100g', manRest: '100g' } }
+      { name: 'Riso venere', ingredientId: 'venere-rice', portions: { single: '90g' } },
+      { name: 'Salmone', ingredientId: 'salmon', portions: { single: '100g' } }
     ], 'Pesce omega-3'),
     C20: recipe('C20', 'Zucchine', 'dinner', [ingredient('Zucchine')], '')
   };
@@ -472,19 +449,19 @@ function batchFixture() {
 
 test('batch indipendente da A/R del giorno corrente (domenica R → lunedì A)', () => {
   const { days, templates, recipesById } = batchFixture();
-  const active = d.activeBatch('sunday', planWith(days, { batchTemplates: templates }), templates, recipesById, 'man');
+  const active = d.activeBatch('sunday', planWith(days, { batchTemplates: templates }), templates, recipesById, 'single');
   assert.equal(active.length, 1);
   assert.equal(active[0].targetDay, 'monday');
   assert.equal(active[0].daysUntilTarget, 1);
   const rice = active[0].tasks.find(task => task.id === 'cook-rice');
   assert.equal(rice.status, 'today'); // maxDays 1 copre 1 giorno
-  assert.equal(rice.quantity, '90g'); // man + giorno target A (training)
+  assert.equal(rice.quantity, '90g'); // dose originale + giorno target A (training)
 });
 
 test('quantità batch: piano non contestuale usa la porzione originale qualunque sia il tipo A/R', () => {
   const { days, templates, recipesById } = batchFixture();
   days.monday.type = 'rest';
-  const active = d.activeBatch('sunday', planWith(days, { batchTemplates: templates }), templates, recipesById, 'man');
+  const active = d.activeBatch('sunday', planWith(days, { batchTemplates: templates }), templates, recipesById, 'single');
   const rice = active[0].tasks.find(task => task.id === 'cook-rice');
   assert.equal(rice.quantity, '90g');
 });
@@ -495,7 +472,7 @@ test('quantità batch: con contesto Guide attivo la dose riposo deriva dalle lin
   // Piano migrato (guideModes + sanitizzazione) = contesto pieno: la dose di
   // riposo per il riso (cereali) a pranzo è 50 g dalle linee guida v3, non una porzione salvata.
   const plan = d.migratePlan(planWith(days, { batchTemplates: templates }));
-  const active = d.activeBatch('sunday', plan, templates, recipesById, 'man');
+  const active = d.activeBatch('sunday', plan, templates, recipesById, 'single');
   const rice = active[0].tasks.find(task => task.id === 'cook-rice');
   assert.equal(rice.quantity, '50 g');
 });
@@ -503,7 +480,7 @@ test('quantità batch: con contesto Guide attivo la dose riposo deriva dalle lin
 test('batch attraversa domenica → lunedì anche oltre il giorno successivo', () => {
   const { days, templates, recipesById } = batchFixture();
   days.monday.lunch = 'ALTRO';
-  const active = d.activeBatch('sunday', planWith(days, { batchTemplates: templates }), templates, recipesById, 'man');
+  const active = d.activeBatch('sunday', planWith(days, { batchTemplates: templates }), templates, recipesById, 'single');
   assert.equal(active[0].targetDay, 'tuesday');
   assert.equal(active[0].daysUntilTarget, 2);
   // cook-rice: maxDays 1 < 2 → non ancora preparabile
@@ -514,7 +491,7 @@ test('batch attraversa domenica → lunedì anche oltre il giorno successivo', (
 test('batch parziale: attivo se almeno una preparazione è valida', () => {
   const { days, templates, recipesById } = batchFixture();
   days.monday.lunch = 'ALTRO';
-  const active = d.activeBatch('sunday', planWith(days, { batchTemplates: templates }), templates, recipesById, 'man');
+  const active = d.activeBatch('sunday', planWith(days, { batchTemplates: templates }), templates, recipesById, 'single');
   assert.equal(active.length, 1); // fresh-salad è valida
   assert.equal(active[0].validCount, 1);
 });
@@ -529,7 +506,7 @@ test('batch non attivo se tutte le attività sono oltre la finestra', () => {
     target: { slot: 'lunch', recipeId: 'P16', lookAheadDays: 5 },
     tasks: [{ id: 'cook-rice', actionType: 'cook', label: 'Cuoci', storage: { method: 'fridge', maxDays: 1 }, quantitySource: { recipeId: 'P16', ingredientId: 'venere-rice' } }]
   }];
-  const active = d.activeBatch('sunday', planWith(days, { batchTemplates: templatesOnlyCooked }), templatesOnlyCooked, recipesById, 'man');
+  const active = d.activeBatch('sunday', planWith(days, { batchTemplates: templatesOnlyCooked }), templatesOnlyCooked, recipesById, 'single');
   assert.equal(active.length, 0);
 });
 
@@ -539,7 +516,7 @@ test('task duplicati con lo stesso ID non vengono raddoppiati', () => {
     { id: 't1', anchor: { recipeId: 'C19' }, target: { slot: 'lunch', recipeId: 'P16', lookAheadDays: 3 }, tasks: [{ id: 'same', label: 'A', storage: { maxDays: 1 } }] },
     { id: 't2', anchor: { recipeId: 'C19' }, target: { slot: 'lunch', recipeId: 'P16', lookAheadDays: 3 }, tasks: [{ id: 'same', label: 'B', storage: { maxDays: 1 } }] }
   ];
-  const active = d.activeBatch('sunday', planWith(days, { batchTemplates: templates }), templates, recipesById, 'man');
+  const active = d.activeBatch('sunday', planWith(days, { batchTemplates: templates }), templates, recipesById, 'single');
   assert.equal(active.length, 2);
   assert.equal(active[0].tasks.length, 1);
 });
@@ -554,12 +531,12 @@ function commonBatchFixture() {
   };
   const recipesById = {
     C1: recipe('C1', 'Pollo e pane', 'dinner', [
-      ingredient('Petto di pollo', { ipoTraining: '200g', ipoRest: '180g', manTraining: '200g', manRest: '180g' }),
-      ingredient('Pane', { ipoTraining: '60g', ipoRest: '60g', manTraining: '60g', manRest: '60g' }, 'bread'),
-      ingredient('Verdura', { ipoTraining: '—', ipoRest: '—', manTraining: '—', manRest: '—' })
+      ingredient('Petto di pollo', { single: '200g' }),
+      ingredient('Pane', { single: '60g' }, 'bread'),
+      ingredient('Verdura', { single: '—' })
     ], 'Pollame'),
     C2: recipe('C2', 'Pasta', 'lunch', [
-      ingredient('Pasta', { ipoTraining: '90g', ipoRest: '70g', manTraining: '90g', manRest: '70g' })
+      ingredient('Pasta', { single: '90g' })
     ], 'Legumi')
   };
   return { days, recipesById };
@@ -567,7 +544,7 @@ function commonBatchFixture() {
 
 test('batch doppia porzione: stessa ricetta a cena e al pranzo successivo', () => {
   const { days, recipesById } = commonBatchFixture();
-  const batch = d.commonRecipeBatch('monday', planWith(days), recipesById, 'man');
+  const batch = d.commonRecipeBatch('monday', planWith(days), recipesById, 'single');
   assert.ok(batch, 'batch generato');
   assert.equal(batch.targetDay, 'tuesday');
   assert.equal(batch.daysUntilTarget, 1);
@@ -590,14 +567,14 @@ test('batch doppia porzione attivo solo per il pranzo del giorno dopo', () => {
     monday: { type: 'training', dinner: 'C1' },
     wednesday: { type: 'training', lunch: 'C1' }
   };
-  const batch = d.commonRecipeBatch('monday', planWith(days), recipesById, 'man');
+  const batch = d.commonRecipeBatch('monday', planWith(days), recipesById, 'single');
   assert.equal(batch, null);
 });
 
 test('batch doppia porzione: niente pranzo futuro con la stessa ricetta', () => {
   const { days, recipesById } = commonBatchFixture();
   days.tuesday.lunch = 'DIVERSA';
-  const batch = d.commonRecipeBatch('monday', planWith(days), recipesById, 'man');
+  const batch = d.commonRecipeBatch('monday', planWith(days), recipesById, 'single');
   assert.equal(batch, null);
 });
 
@@ -619,7 +596,7 @@ test('batch doppia porzione con ricetta di pranzo spostata a cena (cross-slot)',
     tuesday: { type: 'training', lunch: 'C2' }
   };
   const { recipesById } = commonBatchFixture();
-  const batch = d.commonRecipeBatch('monday', planWith(days), recipesById, 'man');
+  const batch = d.commonRecipeBatch('monday', planWith(days), recipesById, 'single');
   assert.ok(batch);
   const carb = batch.tasks.find(t => t.label === 'Pasta');
   assert.equal(carb.quantity, '130g'); // 40g cena + 90g pranzo
@@ -1018,14 +995,14 @@ test('import Sostituisci: mantiene solo le ricette importate e sanifica il piano
 
 function shareFixture() {
   const current = [
-    recipe('A', 'Mia A', 'lunch', [ingredient('Uova intere', { ipo: '2' }, 'whole-eggs')], 'Uova'),
+    recipe('A', 'Mia A', 'lunch', [ingredient('Uova intere', { single: '2' }, 'whole-eggs')], 'Uova'),
     recipe('B', 'Mia B', 'lunch', [ingredient('Pollo', PORTIONS, 'chicken-breast')], 'Pollame')
   ];
   const incoming = [
-    recipe('A', 'Ricevuta A (modificata)', 'lunch', [ingredient('Uova intere (sode)', { ipo: '3' }, 'whole-eggs')], 'Uova'),
+    recipe('A', 'Ricevuta A (modificata)', 'lunch', [ingredient('Uova intere (sode)', { single: '3' }, 'whole-eggs')], 'Uova'),
     recipe('B', 'Mia B', 'lunch', [ingredient('Pollo', PORTIONS, 'chicken-breast')], 'Pollame'),
     recipe('C', 'Nuova C', 'dinner', [ingredient('Salmone', PORTIONS, 'salmon')], 'Pesce omega-3'),
-    recipe('D', 'Mancante di ingredientId', 'dinner', [{ name: 'Zucchine', portions: { ipo: '200g' } }], '')
+    recipe('D', 'Mancante di ingredientId', 'dinner', [{ name: 'Zucchine', portions: { single: '200g' } }], '')
   ];
   return { current, incoming };
 }
@@ -1437,11 +1414,11 @@ test('categorie spesa: passata di pomodoro e farine in Dispensa', () => {
 // ---------------------------------------------------------------------
 // Grammature del dott. Guide: segnalazione e adattamento one-click.
 // ---------------------------------------------------------------------
-// Schema 6: la quantità originale è una per profilo. Gli argomenti legacy
-// mantengono la semantica (allenamento uomo/donna); le dosi di riposo non
-// vivono più nella ricetta ma derivano dal piano.
-const mportion = (manTraining, manRest = manTraining, ipoTraining = manTraining, ipoRest = manRest) => ({
-  man: manTraining, ipo: ipoTraining
+// Schema 6: la quantità originale è una sola per ricetta. Gli argomenti
+// legacy del helper restano accettati solo per non appesantire i test storici;
+// il valore usato dal modello corrente è quello di allenamento.
+const mportion = (singleTraining, singleRest = singleTraining) => ({
+  single: singleTraining
 });
 
 test('Guide: riconosce la famiglia e l\'ordine delle regole', () => {
@@ -1508,12 +1485,11 @@ test('Guide: adatta le quantità originali alle grammature del pasto (contesto r
   const result = d.adaptRecipeToGuide(pranzo);
   assert.equal(result.changed, true);
   const pasta = result.recipe.ingredients[0].portions;
-  // L'adattamento scrive l'originale per profilo sul riferimento di allenamento;
-  // la dose di riposo (50 g) deriva dal piano contestuale, non dalla ricetta.
-  assert.equal(pasta.man, '70 g');
-  assert.equal(pasta.ipo, '70 g');
-  assert.equal(result.recipe.ingredients[1].portions.man, '40g', 'sotto il riferimento resta invariato');
-  assert.equal(result.recipe.ingredients[2].portions.man, 'q.b.', 'q.b. invariato');
+  // L'adattamento scrive l'originale sul riferimento di allenamento; la dose
+  // di riposo (50 g) deriva dal piano contestuale, non dalla ricetta.
+  assert.equal(pasta.single, '70 g');
+  assert.equal(result.recipe.ingredients[1].portions.single, '40g', 'sotto il riferimento resta invariato');
+  assert.equal(result.recipe.ingredients[2].portions.single, 'q.b.', 'q.b. invariato');
 });
 
 test('Guide: il riferimento cambia con il pasto (pane e pesce a cena)', () => {
@@ -1527,9 +1503,8 @@ test('Guide: il riferimento cambia con il pasto (pane e pesce a cena)', () => {
   assert.equal(byName['Pane'].expected, 50);
   assert.equal(byName['Orata'].expected, 260);
   const result = d.adaptRecipeToGuide(cena);
-  assert.equal(result.recipe.ingredients[0].portions.man, '50 g');
-  assert.equal(result.recipe.ingredients[0].portions.ipo, '50 g');
-  assert.equal(result.recipe.ingredients[1].portions.man, '260 g');
+  assert.equal(result.recipe.ingredients[0].portions.single, '50 g');
+  assert.equal(result.recipe.ingredients[1].portions.single, '260 g');
 });
 
 test('Guide: una ricetta già adattata non viene segnalata né modificata', () => {
@@ -1571,7 +1546,7 @@ test('Guide carboidrati: dosi esplicite Pranzo A/R e Cena A/R (cena esplicita)',
 test('Guide regressione: pasta a cena viene controllata e adattata', () => {
   const dinner = recipe('M1', 'Pasta 500g', 'dinner', [ingredient('Pasta', mportion('500g'))]);
   assert.equal(d.checkGuideAdaptation(dinner).summary[0].expected, 40);
-  assert.equal(d.adaptRecipeToGuide(dinner).recipe.ingredients[0].portions.man, '40 g');
+  assert.equal(d.adaptRecipeToGuide(dinner).recipe.ingredients[0].portions.single, '40 g');
 });
 
 test('Guide travaso patate: tabella pranzo A/R e cena unica', () => {
@@ -1579,11 +1554,11 @@ test('Guide travaso patate: tabella pranzo A/R e cena unica', () => {
   const dinnerToLunch = d.adaptIngredientForSlot(ingredient('Patate', mportion('170g')), 'dinner', 'lunch');
   const dinnerToLunchRest = d.adaptIngredientForSlot(ingredient('Patate', mportion('170g')), 'dinner', 'lunch', 'rest');
   // pranzo 340g -> cena 170g (la cena è unica in A e R)
-  assert.equal(lunchToDinner.portions.man, '170g');
-  assert.equal(lunchToDinner.portions.ipo, '170g');
+  assert.equal(lunchToDinner.portions.single, '170g');
+  assert.equal(lunchToDinner.portions.single, '170g');
   // cena 170g -> pranzo A 340g e pranzo R 240g (letti dalla tabella)
-  assert.equal(dinnerToLunch.portions.man, '340g');
-  assert.equal(dinnerToLunchRest.portions.man, '240g');
+  assert.equal(dinnerToLunch.portions.single, '340g');
+  assert.equal(dinnerToLunchRest.portions.single, '240g');
 });
 
 // ---------------------------------------------------------------------
@@ -1697,8 +1672,8 @@ test('Guide grammature: la tabella pranzo A/R resta quella del manuale', () => {
   });
   // L'inversa cena -> pranzo si legge dalla tabella, non si calcola.
   const patate = d.adaptIngredientForSlot(ingredient('Patate', mportion('170g')), 'dinner', 'lunch');
-  assert.equal(patate.portions.man, '340g', 'il pranzo A si legge dalla tabella, non si calcola');
-  assert.equal(d.adaptIngredientForSlot(ingredient('Patate', mportion('170g')), 'dinner', 'lunch', 'rest').portions.man, '240g', 'il pranzo R deriva dal tipo di giorno');
+  assert.equal(patate.portions.single, '340g', 'il pranzo A si legge dalla tabella, non si calcola');
+  assert.equal(d.adaptIngredientForSlot(ingredient('Patate', mportion('170g')), 'dinner', 'lunch', 'rest').portions.single, '240g', 'il pranzo R deriva dal tipo di giorno');
 });
 
 test('Guide proteine: stessa dose a pranzo e a cena, mai trasformate', () => {
@@ -1738,7 +1713,7 @@ test('Guide regressione: pasta 500g a cena non è adattata e torna a 40g', () =>
   assert.equal(check.summary[0].actual, 500);
   const adapted = d.adaptRecipeToGuide(dinner);
   assert.equal(adapted.changed, true);
-  assert.equal(adapted.recipe.ingredients[0].portions.man, '40 g', 'adattata a 40 g');
+  assert.equal(adapted.recipe.ingredients[0].portions.single, '40 g', 'adattata a 40 g');
 });
 
 test('Guide regressione: cous cous 40g a cena è già adattato', () => {
@@ -1997,8 +1972,8 @@ test('CSS smartphone: titoli ricettario, profilo e tipo giornata non collassano'
 
 test('Guide contestuale: segnala 350 g di pollo, lascia libere le erbe e usa 200 g come riferimento', () => {
   const source = recipe('M1', 'Pollo e basilico', 'lunch', [
-    ingredient('Pollo', { ipo: '350 g', man: '350 g' }),
-    ingredient('Basilico', { ipo: 'q.b.', man: 'q.b.' })
+    ingredient('Pollo', { single: '350 g' }),
+    ingredient('Basilico', { single: 'q.b.' })
   ]);
   const report = d.checkGuideContext(source, 'lunch');
   assert.equal(report.status, 'needs-adaptation');
@@ -2011,17 +1986,16 @@ test('Guide contestuale: segnala 350 g di pollo, lascia libere le erbe e usa 200
   assert.equal(built.context.portions[Object.keys(built.context.portions)[0]].training, '200 g');
   assert.equal(built.context.portions[Object.keys(built.context.portions)[0]].rest, '200 g');
   const effective = d.applyGuideContextAdaptation(source, built.context);
-  assert.equal(effective.ingredients[0].portions.man, '200 g');
-  assert.equal(effective.ingredients[0].portions.ipo, '200 g');
-  assert.equal(effective.ingredients[1].portions.man, 'q.b.');
+  assert.equal(effective.ingredients[0].portions.single, '200 g');
+  assert.equal(effective.ingredients[1].portions.single, 'q.b.');
   const effectiveRest = d.applyGuideContextAdaptation(source, built.context, 'rest');
-  assert.equal(effectiveRest.ingredients[0].portions.man, '200 g', 'proteine: stessa dose in riposo');
-  assert.equal(source.ingredients[0].portions.man, '350 g', 'la sorgente non viene mutata');
+  assert.equal(effectiveRest.ingredients[0].portions.single, '200 g', 'proteine: stessa dose in riposo');
+  assert.equal(source.ingredients[0].portions.single, '350 g', 'la sorgente non viene mutata');
 });
 
 test('Guide contestuale: mapping sconosciuto blocca l’applicazione', () => {
   const source = recipe('M2', 'Ricetta senza mapping', 'dinner', [
-    ingredient('Proteina misteriosa', { ipoTraining: '100 g', ipoRest: '100 g', manTraining: '100 g', manRest: '100 g' })
+    ingredient('Proteina misteriosa', { single: '100 g' })
   ]);
   const report = d.checkGuideContext(source, 'dinner');
   assert.equal(report.status, 'blocked');
@@ -2029,23 +2003,23 @@ test('Guide contestuale: mapping sconosciuto blocca l’applicazione', () => {
   assert.equal(d.buildGuideContextAdaptation(source, 'dinner').changed, false);
   const resolved = d.resolveRecipeForPlan(source, 'dinner', d.GUIDE_MODE_GUIDE);
   assert.equal(resolved.blocked, true);
-  assert.equal(resolved.recipe.ingredients[0].portions.manTraining, '100 g');
+  assert.equal(resolved.recipe.ingredients[0].portions.single, '100 g');
 });
 
 test('Guide contestuale: l’adattamento persistente viene riutilizzato senza riscrivere la ricetta', () => {
   const source = recipe('M3', 'Pollo persistente', 'lunch', [
-    ingredient('Pollo', { ipo: '350 g', man: '350 g' })
+    ingredient('Pollo', { single: '350 g' })
   ]);
   const stored = { ...source, guideAdaptations: d.buildGuideAdaptationMetadata(source) };
   const resolved = d.resolveRecipeForPlan(stored, 'lunch', d.GUIDE_MODE_GUIDE);
   assert.equal(resolved.applied, true);
-  assert.equal(resolved.recipe.ingredients[0].portions.man, '200 g');
-  assert.equal(stored.ingredients[0].portions.man, '350 g');
+  assert.equal(resolved.recipe.ingredients[0].portions.single, '200 g');
+  assert.equal(stored.ingredients[0].portions.single, '350 g');
   const resolvedRest = d.resolveRecipeForPlan(stored, 'lunch', d.GUIDE_MODE_GUIDE, 'rest');
-  assert.equal(resolvedRest.recipe.ingredients[0].portions.man, '200 g');
+  assert.equal(resolvedRest.recipe.ingredients[0].portions.single, '200 g');
   const original = d.resolveRecipeForPlan(stored, 'lunch', d.GUIDE_MODE_ORIGINAL);
   assert.equal(original.applied, false);
-  assert.equal(original.recipe.ingredients[0].portions.man, '350 g');
+  assert.equal(original.recipe.ingredients[0].portions.single, '350 g');
 });
 
 test('Guide contestuale: shopping e batch usano la dose effettiva del piano', () => {
@@ -2057,15 +2031,15 @@ test('Guide contestuale: shopping e batch usano la dose effettiva del piano', ()
   days.tuesday.lunch = 'P1';
   const plan = d.migratePlan({ days, defaultDays: JSON.parse(JSON.stringify(days)), batchRules: {}, batchTemplates: [] });
   const lunch = recipe('P1', 'Pollo', 'lunch', [
-    ingredient('Pollo', { ipoTraining: '350 g', ipoRest: '350 g', manTraining: '350 g', manRest: '350 g' })
+    ingredient('Pollo', { single: '350 g' })
   ]);
-  const dinner = recipe('D1', 'Cena', 'dinner', [ingredient('Zucchine', { ipoTraining: 'q.b.', ipoRest: 'q.b.', manTraining: 'q.b.', manRest: 'q.b.' })]);
+  const dinner = recipe('D1', 'Cena', 'dinner', [ingredient('Zucchine', { single: 'q.b.' })]);
   const recipes = { P1: lunch, D1: dinner };
   const selected = { monday: [], tuesday: ['lunch'] };
-  const guideShopping = d.aggregateShopping(plan, recipes, selected, 'man');
+  const guideShopping = d.aggregateShopping(plan, recipes, selected, 'single');
   assert.equal(guideShopping.find(item => item.ingredientId === 'pollo').totals.g, 200);
   plan.guideModes.tuesday.lunch = d.GUIDE_MODE_ORIGINAL;
-  const originalShopping = d.aggregateShopping(plan, recipes, selected, 'man');
+  const originalShopping = d.aggregateShopping(plan, recipes, selected, 'single');
   assert.equal(originalShopping.find(item => item.ingredientId === 'pollo').totals.g, 350);
 
   plan.guideModes.tuesday.lunch = d.GUIDE_MODE_GUIDE;
@@ -2075,7 +2049,7 @@ test('Guide contestuale: shopping e batch usano la dose effettiva del piano', ()
     target: { slot: 'lunch', recipeId: 'P1', lookAheadDays: 2 },
     tasks: [{ id: 'pollo', label: 'Prepara il pollo', storage: { maxDays: 1 }, quantitySource: { recipeId: 'P1', ingredientId: 'pollo' } }]
   }];
-  const batches = d.activeBatch('monday', plan, templates, recipes, 'man');
+  const batches = d.activeBatch('monday', plan, templates, recipes, 'single');
   assert.equal(batches[0].tasks[0].quantity, '200 g');
 });
 
@@ -2132,7 +2106,7 @@ test('SaaS: rule set server-side aggiorna resolver e derivati senza toccare rice
   const cereali = serverRules.find(rule => rule.family === 'cereali');
   cereali.aliases = ['pasta premium'];
   cereali.slots.lunch.training = 91;
-  const recipeSource = { id: 'immutable', ingredients: [{ name: 'Pasta premium', portions: { manTraining: '120 g' } }] };
+  const recipeSource = { id: 'immutable', ingredients: [{ name: 'Pasta premium', portions: { single: '120 g' } }] };
   const before = JSON.stringify(recipeSource);
   assert.equal(d.activateGuideRuleSet(serverRules, ['Ingrediente libero approvato']), true);
   assert.equal(d.guideMappingForIngredient('Ingrediente libero approvato').kind, 'free');

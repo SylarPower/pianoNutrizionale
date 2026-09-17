@@ -1,8 +1,8 @@
 'use strict';
 /* Passo 1 — micro-fix UI client:
  *  - campanella senza cerchio (badge, ARIA, shake e reduced-motion preservati);
- *  - header con sola icona impostazioni (nome accessibile preservato);
- *  - icone ⚙️/🔔 stessa dimensione, allineate al select profilo;
+ *  - header pulito: niente impostazioni né dark mode;
+ *  - impostazioni spostate nel footer, dopo Spesa / Prezzi;
  *  - switch quantità adattate: label, persistenza, blocco pre-conferma;
  *  - chip batch "Cena + pranzo di {giorno successivo}";
  *  - categoria proteica non editabile ma preservata nel salvataggio;
@@ -129,7 +129,7 @@ initFirebase();
 observeAuthState(() => {});
 appState.user = { uid: 'u1', email: 'mario@utenti.pianonutrizionale.app' };
 appState.deviceSettings = {
-  portionProfile: 'man', darkMode: false, lastOpenDate: null,
+  portionProfile: 'single', darkMode: false, lastOpenDate: null,
   recipeLibraryState: { searchQuery: '', openSections: {} }, shopCategoryOrder: []
 };
 appState.household = null;
@@ -177,27 +177,21 @@ test('campanella: ARIA, focus e dialog preservati nel markup', () => {
   assert.match(headerHtml(), /notification-badge hidden/, 'badge nascosto senza pendenti');
 });
 
-// ---- Header: sola icona impostazioni ----
+// ---- Header pulito + Impostazioni nel footer ----
 
-test('header senza nome utente: resta la sola icona con nome accessibile', () => {
+test('header senza nome utente né scorciatoie duplicate a impostazioni o tema', () => {
   renderGlobalHeader();
   const html = headerHtml();
-  assert.match(html, /class="header-account"[^>]*aria-label="Impostazioni"/);
-  assert.match(html, /<span aria-hidden="true">⚙️<\/span>/);
+  assert.doesNotMatch(html, /header-account/);
+  assert.doesNotMatch(html, /theme-toggle/);
+  assert.doesNotMatch(html, /toggleDarkModeFromHeader/);
   assert.doesNotMatch(html, /mario/, 'il nome utente non compare più in header');
 });
 
-// ---- Icone stessa dimensione ----
-
-test('icone impostazioni e campanella: stessa dimensione desktop e mobile', () => {
-  const bellBlock = css.match(/\.notification-bell \{[^}]*\}/)[0];
-  const gearBlock = css.match(/\.header-account \{[^}]*\}/)[0];
-  assert.match(bellBlock, /font-size: var\(--fs-subtitle\);/);
-  assert.match(gearBlock, /font-size: var\(--fs-subtitle\);/);
-  assert.match(gearBlock, /line-height: 1;/);
-  assert.match(gearBlock, /align-items: center;/, 'allineamento coerente col select profilo');
-  assert.match(css, /\.header-account \{ font-size: var\(--fs-nav\);/, 'mobile: ingranaggio leggibile');
-  assert.match(css, /\.notification-bell \{ width: 40px; height: 40px; font-size: var\(--fs-nav\); \}/, 'mobile: campanella stessa misura');
+test('footer: Impostazioni resta dopo Prezzi e usa l’icona dedicata', () => {
+  const indexHtml = fs.readFileSync(path.join(ROOT, 'index.html'), 'utf8');
+  assert.match(indexHtml, /id="nav-shop"[\s\S]*id="nav-prices"[\s\S]*id="nav-settings"/, 'ordine footer: Spesa → Prezzi → Impostazioni');
+  assert.match(indexHtml, /id="nav-settings"[\s\S]*⚙️[\s\S]*Impostazioni/, 'tab footer Impostazioni presente');
 });
 
 // ---- Switch quantità adattate ----
@@ -279,7 +273,7 @@ test('editor senza controllo categoria proteica, valore preservato al salvataggi
   currentModal = {
     recipe: {
       id: 'L1', slot: 'lunch', name: 'Test', emoji: '🍲', proteinCategory: 'poultry',
-      ingredients: [{ name: 'Pasta', portions: { ipo: '70 g', man: '90 g' } }],
+      ingredients: [{ name: 'Pasta', portions: { single: '90 g' } }],
       steps: [], notes: []
     },
     original: null, dayKey: null, dayType: 'training', slot: null, planSlot: null, isNew: false
@@ -291,8 +285,7 @@ test('editor senza controllo categoria proteica, valore preservato al salvataggi
   assert.doesNotMatch(timeHtml, /Categoria proteica/);
   document.getElementById('edit-recipe-name').value = 'Test';
   document.getElementById('edit-ing-name-0').value = 'Pasta';
-  document.getElementById('edit-ing-man-0').value = '90 g';
-  document.getElementById('edit-ing-ipo-0').value = '70 g';
+  document.getElementById('edit-ing-single-0').value = '90 g';
   captureEditState();
   assert.equal(currentModal.recipe.proteinCategory, 'poultry', 'il fallback salvato non viene azzerato');
   assert.equal(PianoDomain.classifyProtein(currentModal.recipe), 'poultry', 'classificazione automatica invariata');
@@ -308,4 +301,7 @@ test('page-heading settimana senza chip profilo duplicato', () => {
   assert.doesNotMatch(weekHtml(), /profile-chip/);
   renderGlobalHeader();
   assert.match(headerHtml(), /aria-label="Profilo porzioni"/, 'il profilo resta nel select globale');
+  assert.match(headerHtml(), />👤 1 persona<\/option>/);
+  assert.match(headerHtml(), />👥 2 persone<\/option>/);
+  assert.doesNotMatch(headerHtml(), /👨 1 persona|👩 1 persona/);
 });

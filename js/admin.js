@@ -536,11 +536,11 @@ function handleRecipeActions(event) {
 }
 
 function recipeIngredientRow(ingredient = {}) {
+  const quantity = ingredient.portions?.single ?? '';
   return `
   <div class="recipe-ingredient-row">
     <input class="ing-name" placeholder="Ingrediente (es. Riso)" value="${escapeAdmin(ingredient.name || '')}" aria-label="Ingrediente">
-    <input class="ing-man" placeholder="Uomo (es. 80 g)" value="${escapeAdmin(ingredient.portions?.man || '')}" aria-label="Dose uomo">
-    <input class="ing-ipo" placeholder="Donna (es. 60 g)" value="${escapeAdmin(ingredient.portions?.ipo || '')}" aria-label="Dose donna">
+    <input class="ing-qty" placeholder="Quantità (es. 80 g)" value="${escapeAdmin(quantity)}" aria-label="Quantità">
     <button type="button" class="dialog-close ing-remove" aria-label="Rimuovi ingrediente">×</button>
   </div>`;
 }
@@ -592,8 +592,7 @@ function collectRecipeForm() {
   const ingredients = [...document.querySelectorAll('#recipe-ingredients .recipe-ingredient-row')].map(row => ({
     name: row.querySelector('.ing-name').value.trim(),
     portions: {
-      man: row.querySelector('.ing-man').value.trim(),
-      ipo: row.querySelector('.ing-ipo').value.trim()
+      single: row.querySelector('.ing-qty').value.trim()
     }
   })).filter(item => item.name);
   const lines = value => String(value || '').split('\n').map(line => line.trim()).filter(Boolean);
@@ -1808,21 +1807,19 @@ function dietRecipeOptions(current) {
     .join('');
 }
 
-// Anteprima ingredienti della ricetta con dosi scalate dal moltiplicatore.
+// Anteprima ingredienti della ricetta con dose singola scalata dal moltiplicatore.
 // Le dosi della ricetta sono testo libero ("80 g", "q.b."): la scala tocca
 // solo i numeri e mostra l'originale accanto al risultato (80 g → 120 g).
 function dietRecipePreviewInner(domain, recipe, multiplier) {
   if (!recipe) return '<p class="diet-recipe-hint">Seleziona una ricetta per vedere gli ingredienti.</p>';
   const factor = Number(multiplier);
   const rows = (recipe.ingredients || []).map(ingredient => {
-    const doses = [['Uomo', ingredient.portions?.man], ['Donna', ingredient.portions?.ipo]]
-      .filter(([, raw]) => String(raw || '').trim())
-      .map(([labelText, raw]) => {
-        const scaled = domain.scalePortionText(String(raw), factor);
-        const value = scaled === String(raw) ? escapeAdmin(String(raw)) : `${escapeAdmin(String(raw))} → <strong>${escapeAdmin(scaled)}</strong>`;
-        return `${labelText} ${value}`;
-      });
-    return `<li>${escapeAdmin(ingredient.name || '—')}${doses.length ? ` — ${doses.join(' · ')}` : ''}</li>`;
+    const raw = ingredient.portions?.single;
+    const dose = String(raw || '').trim();
+    if (!dose) return `<li>${escapeAdmin(ingredient.name || '—')}</li>`;
+    const scaled = domain.scalePortionText(dose, factor);
+    const value = scaled === dose ? escapeAdmin(dose) : `${escapeAdmin(dose)} → <strong>${escapeAdmin(scaled)}</strong>`;
+    return `<li>${escapeAdmin(ingredient.name || '—')} — ${value}</li>`;
   }).join('');
   return `<p class="diet-recipe-title">${escapeAdmin(recipe.emoji || '🍲')} ${escapeAdmin(recipe.name || 'Ricetta')} ×${escapeAdmin(String(Number.isFinite(factor) ? factor : 1).replace('.', ','))}</p><ul class="diet-recipe-ingredients">${rows || '<li>Nessun ingrediente.</li>'}</ul>`;
 }
@@ -2029,9 +2026,10 @@ function dietPreviewOptionHtml(domain, option, label) {
     const multiplier = Number(option.recipeMultiplier) || 1;
     const ingredients = recipe
       ? (recipe.ingredients || []).map(ingredient => {
-          const doses = [ingredient.portions?.man, ingredient.portions?.ipo].filter(raw => String(raw || '').trim())
-            .map(raw => domain.scalePortionText(String(raw), multiplier)).join(' / ');
-          return `<li>${escapeAdmin(ingredient.name || '—')}${doses ? ` — ${escapeAdmin(doses)}` : ''}</li>`;
+          const raw = ingredient.portions?.single;
+          const dose = String(raw || '').trim();
+          const scaled = dose ? domain.scalePortionText(dose, multiplier) : '';
+          return `<li>${escapeAdmin(ingredient.name || '—')}${scaled ? ` — ${escapeAdmin(scaled)}` : ''}</li>`;
         }).join('')
       : '';
     return `<div class="preview-option">${head} <em>ricetta</em>

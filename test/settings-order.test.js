@@ -2,11 +2,11 @@
 /* Sessione 1 — Impostazioni riordinate, via il nome mostrato, anagrafica nutrizionista.
  *
  * Contratto verificato senza rete, per sola lettura dei sorgenti e DOM minimale:
- *  - 4 sezioni con eyebrow in ordine: PROFILO NUTRIZIONALE, PROFESSIONISTA,
- *    ACCOUNT COLLEGATI, USCITA;
+ *  - sezioni con eyebrow in ordine: PROFILO NUTRIZIONALE, PROFESSIONISTA,
+ *    ACCOUNT COLLEGATI, LINEE GUIDA, ASPETTO, USCITA;
  *  - account-card rimossa, profile-name-form rimosso;
  *  - USCITA contiene logoutCurrentUser() e nessun altro logout duplicato;
- *  - Preferenze e manuale alimentare + LINEE GUIDA restano intatti.
+ *  - il toggle tema è penultimo, prima di USCITA.
  */
 const test = require('node:test');
 const assert = require('node:assert/strict');
@@ -134,32 +134,41 @@ initFirebase();
 observeAuthState(() => {});
 appState.user = { uid: 'u1', email: 'mario@utenti.pianonutrizionale.app' };
 appState.deviceSettings = {
-  portionProfile: 'man', darkMode: false, lastOpenDate: null,
+  portionProfile: 'single', darkMode: false, lastOpenDate: null,
   recipeLibraryState: { searchQuery: '', openSections: {} }, shopCategoryOrder: []
 };
 appState.household = null;
 appState.saasContext = { state: 'unassigned' };
 appState.clientLink = { requests: [], link: { organizationId: 'org-1', organizationName: 'Studio A', clientId: 'c1', firstName: 'Mario', lastName: 'Rossi', email: 'mario@esempio.it', emailVerified: true, nutritionistUsername: 'nutri1', nutritionistDisplayName: 'Dott. Bianchi' } };
 
-test('Impostazioni: 4 sezioni nell’ordine corretto con eyebrow', () => {
+test('Impostazioni: tema penultimo e uscita davvero ultima', () => {
   renderSettings();
   const html = document.getElementById('view-settings').innerHTML;
   const idxProfilo = html.indexOf('PROFILO NUTRIZIONALE');
   const idxProfessionista = html.indexOf('PROFESSIONISTA');
   const idxAccount = html.indexOf('ACCOUNT COLLEGATI');
+  const idxFaq = html.indexOf('Altre informazioni e FAQ');
+  const idxAspetto = html.indexOf('ASPETTO');
   const idxUscita = html.indexOf('USCITA');
   assert.ok(idxProfilo >= 0, 'manca PROFILO NUTRIZIONALE');
   assert.ok(idxProfessionista >= 0, 'manca PROFESSIONISTA');
   assert.ok(idxAccount >= 0, 'manca ACCOUNT COLLEGATI');
+  assert.ok(idxFaq >= 0, 'manca Altre informazioni e FAQ');
+  assert.ok(idxAspetto >= 0, 'manca ASPETTO');
   assert.ok(idxUscita >= 0, 'manca USCITA');
   assert.ok(idxProfilo < idxProfessionista, 'PROFILO NUTRIZIONALE prima di PROFESSIONISTA');
   assert.ok(idxProfessionista < idxAccount, 'PROFESSIONISTA prima di ACCOUNT COLLEGATI');
-  assert.ok(idxAccount < idxUscita, 'ACCOUNT COLLEGATI prima di USCITA');
+  assert.ok(idxAccount < idxFaq, 'ACCOUNT COLLEGATI prima delle FAQ');
+  assert.ok(idxFaq < idxAspetto, 'FAQ prima di ASPETTO');
+  assert.ok(idxAspetto < idxUscita, 'ASPETTO prima di USCITA');
   // Ogni sezione ha eyebrow
   assert.match(html, /<p class="eyebrow">PROFILO NUTRIZIONALE<\/p>/);
   assert.match(html, /<p class="eyebrow">PROFESSIONISTA<\/p>/);
   assert.match(html, /<p class="eyebrow">ACCOUNT COLLEGATI<\/p>/);
+  assert.match(html, /<p class="eyebrow">ASPETTO<\/p>/);
   assert.match(html, /<p class="eyebrow">USCITA<\/p>/);
+  assert.match(html, /Tema scuro/);
+  assert.match(html, /settings-dark-mode-toggle/);
   // Preferenze e manuale alimentare in testata
   assert.match(html, /Preferenze e manuale alimentare/);
   assert.match(html, /LINEE GUIDA/);

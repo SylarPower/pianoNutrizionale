@@ -130,7 +130,7 @@ initFirebase();
 observeAuthState(() => {});
 appState.user = { uid: 'u1', email: 'mario@utenti.pianonutrizionale.app' };
 appState.deviceSettings = {
-  portionProfile: 'man', darkMode: false, lastOpenDate: null,
+  portionProfile: 'single', darkMode: false, lastOpenDate: null,
   recipeLibraryState: { searchQuery: '', openSections: {} }, shopCategoryOrder: []
 };
 appState.household = null;
@@ -141,7 +141,7 @@ const STRUCTURE = [
 ];
 const RECIPE = {
   id: 'L1', slot: 'lunch', name: 'Pasta al pomodoro', emoji: '🍝',
-  ingredients: [{ name: 'Pasta di semola', portions: { man: '200 g', ipo: '200 g' } }],
+  ingredients: [{ name: 'Pasta di semola', portions: { single: '200 g' } }],
   steps: []
 };
 
@@ -218,8 +218,8 @@ test('batch cooking: le quantità seguono lo stesso interruttore', () => {
   plan.batchTemplates = templates;
   PianoDomain.activateGuideRuleSet(STRUCTURE, []);
   const recipes = { L1: RECIPE };
-  const on = PianoDomain.activeBatch('monday', plan, templates, recipes, 'man', { applyGuide: true });
+  const on = PianoDomain.activeBatch('monday', plan, templates, recipes, 'single', { applyGuide: true });
   assert.equal(on[0].tasks[0].quantity, '120 g', 'batch con dosi del cliente');
-  const off = PianoDomain.activeBatch('monday', plan, templates, recipes, 'man', { applyGuide: false });
+  const off = PianoDomain.activeBatch('monday', plan, templates, recipes, 'single', { applyGuide: false });
   assert.equal(off[0].tasks[0].quantity, '200 g', 'batch con quantità originali');
 });
