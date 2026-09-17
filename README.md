@@ -23,7 +23,7 @@ WebApp PWA privata per gestire colazioni, spuntini, pranzi, cene, batch cooking 
 - **suggerimento batch cooking nella sostituzione**: cambiando un pranzo viene evidenziata la cena del giorno prima (e cambiando una cena il pranzo del giorno dopo), così un tocco attiva la "doppia porzione";
 - generatore automatico della settimana con parametri strutturali (slot da rigenerare, **accoppiate cena → pranzo per il batch**, tetto ripetizioni, cross-slot pranzo ↔ cena, frequenze proteiche min–max), vincoli nutrizionali, blocchi pasto/giornata che contano nelle frequenze, seed riproducibile, anteprima e diff;
 - batch cooking dinamico basato su `batchTemplates` strutturati (cena di oggi → pranzo futuro): la colonna del giorno nella vista **Settimana** mostra la chip cliccabile "Batch cooking disponibile", che apre direttamente una modale con ingredienti, dosi e preparazione completi delle ricette coinvolte; per la stessa ricetta a cena e pranzo viene mostrato un solo riquadro con dosi totali, senza informazioni ridondanti né note di conservazione;
-- backup precedente (`users/{uid}/backups/previous`) e **Annulla ultima modifica** prima delle operazioni distruttive;
+- backup precedente automatico (`users/{uid}/backups/previous`) prima delle operazioni distruttive (meccanismo interno, senza UI);
 - lista della spesa aggregata per `ingredientId` con profili Uomo, Donna IPO e Coppia, ordine delle categorie locale e **ordine degli alimenti dentro ogni categoria condiviso nell'household** (salvato nel documento spesa come mappa `itemOrder` categoria → ingredientId, con frecce ↑/↓ e scorciatoie A→Z / Ripristina);
 - PWA offline con shell versionata, aggiornamento one-tap e fallback offline comprensibile;
 - alternative alimentari di Guide sempre consultabili nelle Impostazioni;
@@ -36,13 +36,14 @@ WebApp PWA privata per gestire colazioni, spuntini, pranzi, cene, batch cooking 
 - **operazioni sul pasto dal dettaglio ricetta**: aprendo una ricetta da una casella della Settimana, il foglio "Altro" offre anche "Sostituisci con una ricetta", "Scambia con altro pasto" e "Copia in altro giorno" (gruppo *Questo pasto nel piano*), che riusano lo stesso flusso del menu ⋯ della griglia; dal Ricettario, dove non c'è un pasto a cui applicarle, il gruppo non compare;
 - **registro prezzi condiviso** (scheda Prezzi): un unico database tra tutti gli utenti per registrare i prezzi nei negozi (con barcode Open Food Facts), confrontare il prezzo normalizzato €/kg tra negozi con indicazione del migliore (ricerca prodotto con suggerimenti live mentre si digita, prodotti recenti a un tocco, navigazione da tastiera), giudizio rispetto allo storico (minimo storico / affare / caro), suggerimento del nome prodotto già in archivio quando quello scannerizzato è una variante più lunga ("Cereali di grano duro" → "Cereali"), archivio con modifica delle proprie voci e importazione/esportazione di backup JSON (incluso il vecchio formato "Spesa Smart");
 - **pagina negozio** (Prezzi → Negozi): per ogni negozio l'ultimo prezzo registrato di ogni prodotto, con indicazione di dove quel prodotto costa meno (🏆 miglior prezzo, scostamento % rispetto al migliore, "solo qui");
+- **Sezione Prezzi al momento nascosta**: la tab e la rotta `#prices` non vengono mostrate (`PRICES_FEATURE_ENABLED = false` in `js/app.js`); vista, logica e dati restano integri. Attivazione globale: `PRICES_FEATURE_ENABLED = true`; attivazione solo per account specifici: `pricesEnabledForUids` in `js/saas-config.js` (flag di visibilità, non sicurezza).
 - nessuna funzionalità di notifica (né push né locali).
 
 ## Console SaaS (organizzazione singola)
 
 La prima slice SaaS è disponibile in [`admin.html`](admin.html): coda ingredienti, proposta/pubblicazione mapping e assegnazione versionata cliente → rule set. Le operazioni privilegiate passano dalle Cloud Functions in `functions/`; Firestore rifiuta le scritture SaaS dirette dal browser.
 
-Il client usa una feature flag pubblica in `js/saas-config.js`, attiva (`enabled: true`) e limitata all'organizzazione `pianoNutrizionale`. Con SaaS attivo, un cliente senza assegnazione valida usa soltanto le dosi originali; un cambio di versione richiede conferma e salva `clientProfileId`, assignment, versione e checksum nel piano. La Lista della spesa è predisposta per uno sblocco pubblicitario di 24 ore, ma provider e verifica server-side restano disattivati finché non saranno scelti e approvati.
+Il client usa una feature flag pubblica in `js/saas-config.js`, attiva (`enabled: true`) e limitata all'organizzazione `pianoNutrizionale`. Con SaaS attivo, un cliente senza assegnazione valida usa soltanto le dosi originali; un cambio di versione richiede conferma e salva `clientProfileId`, assignment, versione e checksum nel piano. La Lista della spesa è predisposta per uno sblocco pubblicitario di 24 ore: finché il provider ads non è configurato in `js/saas-config.js` (`shoppingRewardedAds.enabled` + `provider`) la spesa resta accessibile a tutti senza gate; solo con provider configurato l'utente senza assegnazione passa dal gate con sblocco 24h (verifica server-side inclusa).
 
 Architettura e operatività:
 
@@ -123,7 +124,7 @@ Il catalogo è un unico documento: 62 ricette non generano 62 letture. Per gli a
 
 Le interazioni con la lista della spesa (spunte dei pasti, quantità personalizzate, esclusioni, riordino degli alimenti dentro le categorie) aggiornano subito interfaccia e `localStorage`, ma la scrittura del documento Firestore è accorpata con un **debounce di ~800 ms**: configurare l'intera settimana produce una manciata di scritture invece di 50-100. La scrittura pendente viene forzata su `visibilitychange` (pagina nascosta) e `pagehide`, così chiudere la scheda non perde nulla. L'ordine degli alimenti (`itemOrder`) vive nel documento spesa condiviso: l'altro account collegato lo riceve in tempo reale dal listener esistente, mentre l'ordine delle categorie resta una preferenza locale del dispositivo.
 
-La casella delle condivisioni viene interrogata solo quando si preme **Ricevute**, con **una sola query** su `recipeShares` ripartita lato client tra condivisioni ricette e inviti di collegamento account (quei documenti incorporano interi cataloghi: la query unica dimezza anche il traffico in uscita).
+Il centro notifiche (campanella nell'header) interroga le richieste in arrivo con **una sola query** su `recipeShares`, ripartita lato client tra condivisioni ricette e inviti di collegamento account (quei documenti incorporano interi cataloghi: la query unica dimezza anche il traffico in uscita).
 
 Operazioni indicative (catalogo medio ~60 ricette):
 
@@ -134,7 +135,6 @@ Operazioni indicative (catalogo medio ~60 ricette):
 - accettazione condivisione: catalogo, piano (se incluso) e rimozione richiesta in un **unico batch**;
 - accettazione collegamento: backup del destinatario + membership, tre documenti condivisi quando necessari e rimozione invito in un **unico batch**;
 - rifiuto: una cancellazione della richiesta;
-- **Annulla ultima modifica**: una **transazione atomica** (legge backup, riscrive catalogo/piano/spesa, elimina il backup);
 - generatore: solo letture locali; l'applicazione scrive il piano (1) preceduta dal backup (1);
 - migrazione schema 3/4 → 5: una sola scrittura per documento, al primo avvio che rileva la versione precedente (rimuove `frequency` dalle ricette).
 
@@ -357,9 +357,8 @@ L'esportazione non usa chiamate Firestore aggiuntive.
 
 Il destinatario deve:
 
-1. aprire **Ricettario**;
-2. premere **Ricevute**;
-3. scegliere una delle opzioni:
+1. premere la **campanella** nell'header (centro notifiche, con il badge delle richieste in sospeso);
+2. scegliere una delle opzioni:
    - **Aggiungi**: conserva il proprio catalogo e aggiunge le ricette ricevute;
    - **Sostituisci tutte**: conserva esclusivamente quelle ricevute;
    - **Rifiuta**: elimina la richiesta senza modificare il catalogo.
@@ -552,7 +551,7 @@ Comportamento:
 - le durate migrate sono prudenti (0 per il fresco, 1 giorno per il migrato), configurabili nei dati e **da validare per la sicurezza alimentare**;
 - per batch con ricette diverse la UI mostra giorno target e testo “tra N giorni”; per cena e pranzo successivo con la stessa ricetta omette queste indicazioni ridondanti e mostra direttamente le dosi totali.
 
-# Backup precedente e annullamento
+# Backup precedente
 
 Prima di ogni operazione distruttiva (importazione **Sostituisci tutte**, accettazione condivisione **Sostituisci ricette**/**Importa tutto**, applicazione del generatore) viene salvato un unico documento:
 
@@ -571,7 +570,7 @@ users/{uid}/backups/previous
 }
 ```
 
-Nelle **Impostazioni** è disponibile **Annulla ultima modifica**, con conferma, ultima operazione e data del backup. Il ripristino è **atomico** (transazione Firestore), **utilizzabile una sola volta** e cancella il backup dopo il ripristino, aggiornando anche cache locale e UI.
+Il backup è un meccanismo **interno** dell'app: non esiste un'azione "annulla" nella UI. La funzione di ripristino a livello data layer (`restoreBackupAtomic`, transazione Firestore, **utilizzabile una sola volta** e cancella il backup dopo il ripristino) resta disponibile per un ripristino di emergenza ed è coperta dai test (`test/account-link.test.js`).
 
 # Copia e scambio pasti
 
@@ -720,7 +719,7 @@ Anteprima prima dell'accettazione con: mittente, numero di ricette, ricette nuov
 
 # PWA offline
 
-`sw.js` (cache versionata `piano-nutrizionale-shell-v<CACHE_VERSION>`, attualmente v88):
+`sw.js` (cache versionata `piano-nutrizionale-shell-v<CACHE_VERSION>`, attualmente v93):
 
 - shell dell'app: `index.html`, CSS, JS, manifest, icone, `offline.html`;
 - navigazione **network-first** con fallback in cache (e pagina offline comprensibile);
