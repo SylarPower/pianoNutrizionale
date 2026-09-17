@@ -15,7 +15,8 @@ const SHOP_CATEGORY_ORDER = ["🥩 Carne", "🐟 Pesce", "🥚 Uova e latticini"
 const RECIPE_LIBRARY_SECTION_DEFAULTS = Object.fromEntries(MEAL_SLOTS.map(slot => [slot.id, false]));
 // Feature flag Sezione Prezzi (momentaneamente DISATTIVATA): la vista, logica
 // e dati NON vengono cancellati, soltanto il menu e la rotta vengono nascosti.
-// Per riattivare: PRICES_FEATURE_ENABLED = true.
+// Riattivazione globale: PRICES_FEATURE_ENABLED = true.
+// Riattivazione mirata per account: pricesEnabledForUids in js/saas-config.js.
 const PRICES_FEATURE_ENABLED = false;
 
 // ---- Catalogo globale ingredienti (autocomplete editor) ----
@@ -1705,7 +1706,13 @@ function renderWeekAnalysis() {
 // derivata viene memorizzata). Con SaaS attivo, senza una struttura assegnata
 // e confermata la vista resta comunque sulle quantità originali.
 function pricesFeatureEnabled() {
-  return PRICES_FEATURE_ENABLED;
+  if (PRICES_FEATURE_ENABLED) return true;
+  // Attivazione mirata: la sezione resta chiusa a tutti tranne gli UID
+  // elencati in js/saas-config.js (flag di visibilità, non sicurezza).
+  const uid = appState.user?.uid || null;
+  if (!uid) return false;
+  const enabledFor = window.PIANO_SAAS_CONFIG?.pricesEnabledForUids || [];
+  return Array.isArray(enabledFor) && enabledFor.includes(uid);
 }
 function planAdaptedQuantitiesEffective() {
   if (!window.PianoDomain) return true;
@@ -3280,43 +3287,17 @@ function stopNotificationsSync() {
 }
 
 // ---- Backup precedente (users/{uid}/backups/previous) ----
-// Meccanismo INTERNO di sicurezza: non è più esposto in una sezione dedicata
-// delle Impostazioni, ma i backup automatici continuano a proteggere le
+// Meccanismo INTERNO di sicurezza senza UI: i backup automatici proteggono le
 // operazioni distruttive (importazioni sostitutive, condivisioni,
-// collegamento account, generatore settimana, eliminazioni) e il ripristino
-// atomico resta disponibile a livello applicativo.
+// collegamento account, generatore settimana, eliminazioni). La funzione di
+// annullamento esposta (undoLastModification) è stata rimossa insieme alla
+// sezione Impostazioni; il ripristino atomico resta disponibile a livello di
+// dati (restoreBackupAtomic, coperto dai test) ma non è più richiamabile
+// dall'interfaccia.
 
 async function createBackup(catalog, plan, shopping, operation, description) {
-  const snapshot = await saveBackup(catalog, plan, shopping, operation, description);
-  writeLocalJson("backup_meta", {
-    operation: snapshot.operation,
-    description: snapshot.description,
-    createdAt: snapshot.createdAt
-  });
-  return snapshot;
+  return saveBackup(catalog, plan, shopping, operation, description);
 }
-
-window.undoLastModification = async function() {
-  if (!confirm("Ripristinare l'ultimo stato salvato prima dell'ultima modifica? Il ripristino è disponibile una sola volta.")) return;
-  setLoading("Ripristino dell'ultimo backup…");
-  try {
-    const restored = await restoreBackupAtomic();
-    setRecipes(restored.catalog.recipes || []);
-    appState.plan = restored.plan;
-    appState.shopping = restored.shoppingList || getDefaultShoppingList();
-    appState.household = getCurrentHousehold();
-    writeLocalJson("backup_meta", null);
-    renderGlobalHeader();
-    startAccountRealtimeSync();
-    handleRoute();
-    showToast("Ultima modifica annullata ✅");
-  } catch (error) {
-    console.error(error);
-    showToast(error.message || "Ripristino non riuscito", true);
-  } finally {
-    clearLoading();
-  }
-};
 
 function cleanRecipeForTransfer(recipe) {
   const clean = normalizeRecipeSchema(recipe);
@@ -6609,6 +6590,29 @@ window.exportPriceBackup = async function() {
 };
 
 // ---- Barcode: fotocamera, foto o digitazione manuale ----
+// Il lettore è caricato in lazy: non al boot, ma al primo bisogno (apertura
+// della modale di scansione). Con la sezione Prezzi nascosta nessuno dovrebbe
+// spendere ~110 KB di libreria CDN all'avvio; sw.js precarica comunque
+// l'URL versionato in cache per chi usa lo scanner anche offline.
+
+let html5QrcodePromise = null;
+function loadHtml5Qrcode() {
+  if (typeof Html5Qrcode !== "undefined") return Promise.resolve();
+  if (!html5QrcodePromise) {
+    html5QrcodePromise = new Promise((resolve, reject) => {
+      const script = document.createElement("script");
+      script.src = "https://unpkg.com/html5-qrcode@2.3.8/html5-qrcode.min.js";
+      script.async = true;
+      script.onload = () => resolve();
+      script.onerror = () => {
+        html5QrcodePromise = null;
+        reject(new Error("Lettore barcode non disponibile"));
+      };
+      document.head.appendChild(script);
+    });
+  }
+  return html5QrcodePromise;
+}
 
 function setupPriceModals() {
   if (document.getElementById("price-scan-modal")) return;
@@ -6647,6 +6651,10 @@ function setupPriceModals() {
 
 window.openPriceScanModal = function() {
   document.getElementById("price-scan-modal")?.classList.remove("hidden");
+  // Precarica il lettore in background: al momento del tasto Fotocamera
+  // (o dell'analisi di una foto) sarà già disponibile nella maggior parte
+  // dei casi; se fallisce, la ricerca manuale resta utilizzabile.
+  loadHtml5Qrcode().catch(() => {});
 };
 
 async function stopPriceScanner() {
@@ -6670,6 +6678,7 @@ function priceScannerAvailable() {
 }
 
 window.startPriceCameraScan = async function() {
+  await loadHtml5Qrcode().catch(() => {});
   if (!priceScannerAvailable()) return;
   await stopPriceScanner();
   const region = document.getElementById("price-scan-region");
@@ -6699,6 +6708,7 @@ window.startPriceCameraScan = async function() {
 window.scanPriceFromPhoto = async function(input) {
   const file = input?.files?.[0];
   if (!file) return;
+  await loadHtml5Qrcode().catch(() => {});
   if (!priceScannerAvailable()) return;
   await stopPriceScanner();
   showToast("Analisi della foto…");

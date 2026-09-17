@@ -965,11 +965,12 @@ assert.equal(
   true
 );
 
-// ---- Backup/ripristino: meccanica interna preservata, senza UI dedicata ----
+// ---- Backup: nessuna UI di ripristino esposta (funzione rimossa) ----
 // Gira dopo startupChecks, che sostituisce temporaneamente readLocalJson.
+// Il meccanismo dati (saveBackup/restoreBackupAtomic) resta coperto da
+// test/account-link.test.js; qui si verifica che l'app non esponga più
+// nulla dell'annullamento, neppure con un backup "pronto".
 backupChecks = startupChecks.then(async () => {
-  // La meta del backup è solo il supporto interno del ripristino: le
-  // Impostazioni non la mostrano mai, neppure quando un backup è pronto.
   writeLocalJson('backup_meta', {
     operation: 'Eliminazione ricette',
     description: '3 ricette eliminate',
@@ -980,35 +981,7 @@ backupChecks = startupChecks.then(async () => {
   assert.doesNotMatch(readyHtml, /Backup e annullamento/, 'sezione backup assente anche con backup pronto');
   assert.doesNotMatch(readyHtml, /Backup pronto/, 'badge di stato backup non esposto');
   assert.doesNotMatch(readyHtml, /Annulla ultima modifica/, 'pulsante di annullamento non esposto');
-
-  // Ripristino: restoreBackupAtomic riporta lo stato e consuma il punto di ripristino.
-  const originalRestore = global.restoreBackupAtomic;
-  const originalConfirm = global.confirm;
-  // Nello smoke non c'è un utente autenticato: i listener realtime non
-  // possono partire e non fanno parte di ciò che si sta verificando.
-  const originalSync = global.startAccountRealtimeSync;
-  const originalLocation = global.location;
-  global.startAccountRealtimeSync = () => {};
-  global.location = { hash: '#settings' };
-  global.confirm = () => true;
-  global.restoreBackupAtomic = async () => ({
-    catalog: { recipes: [R('L7', 'Ricetta ripristinata', 'lunch', 'Uova')] },
-    plan,
-    shoppingList: getDefaultShoppingList()
-  });
-  try {
-    await undoLastModification();
-    assert.equal(appState.recipes.some(recipe => recipe.id === 'L7'), true, 'catalogo ripristinato dal backup');
-    assert.equal(readLocalJson('backup_meta', null), null, 'punto di ripristino consumato');
-    renderSettings();
-    assert.doesNotMatch(document.getElementById('view-settings').innerHTML, /Annulla ultima modifica/, 'le Impostazioni non espongono il ripristino dopo l’annullamento');
-    assert.doesNotMatch(document.getElementById('view-settings').innerHTML, /Backup e annullamento/, 'la sezione dedicata non ricompare mai');
-  } finally {
-    global.restoreBackupAtomic = originalRestore;
-    global.startAccountRealtimeSync = originalSync;
-    global.location = originalLocation;
-    global.confirm = originalConfirm;
-  }
+  assert.equal(typeof undoLastModification, 'undefined', 'la funzione di annullamento non esiste più');
 });
 
 clearTimeout(priceHistoryTimer);

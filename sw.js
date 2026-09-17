@@ -5,7 +5,7 @@
  * (sottocartella /pianoNutrizionale/).
  */
 // IMPORTANTE: incrementare CACHE_VERSION a OGNI modifica di CSS, JS o index.html.
-const CACHE_VERSION = 88;
+const CACHE_VERSION = 93;
 const CACHE = `piano-nutrizionale-shell-v${CACHE_VERSION}`;
 const SHELL = [
   './',
@@ -121,12 +121,20 @@ self.addEventListener('fetch', event => {
   }
 
   // Navigazione: network-first, fallback alla shell in cache (o offline.html).
+  // Si mette in cache SOLO la root dell'app (./ oppure ./index.html): salvare
+  // qui altre pagine (es. offline.html) sovrascriverebbe la shell cached con
+  // contenuto sbagliato, servito poi a chi apre l'app offline.
   if (event.request.mode === 'navigate') {
+    // scopePath è sempre il percorso della scope del service worker, con slash finale.
+    const scopePath = new URL('.', self.location.href).pathname;
+    const isShell = url.pathname === scopePath || url.pathname === scopePath + 'index.html';
     event.respondWith(
       fetch(event.request)
         .then(response => {
-          const copy = response.clone();
-          caches.open(CACHE).then(cache => cache.put('./index.html', copy));
+          if (response && response.ok && isShell) {
+            const copy = response.clone();
+            caches.open(CACHE).then(cache => cache.put('./index.html', copy));
+          }
           return response;
         })
         .catch(() => caches.match('./index.html').then(cached => cached || caches.match('./offline.html')))

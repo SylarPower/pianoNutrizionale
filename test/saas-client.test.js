@@ -59,17 +59,44 @@ test('spesa: cliente con assegnazione attiva accede sempre, senza pubblicità', 
     const assigned = Saas.shoppingAccess(Date.now(), { state: 'assigned' });
     assert.equal(assigned.allowed, true);
     assert.equal(assigned.reason, 'assignment');
-    // Non associato: il gate rewarded resta dietro flag provider disattivato.
+    // Non associato e provider ads NON configurato (fase iniziale pre-ads):
+    // la spesa resta aperta a tutti, nessun gate "in arrivo".
     const guest = Saas.shoppingAccess(Date.now(), { state: 'unassigned' });
-    assert.equal(guest.allowed, false);
-    assert.equal(guest.reason, 'provider-unavailable');
-    // Contesto omesso: comportamento invariato (fallback legacy dei guest).
-    assert.equal(Saas.shoppingAccess(Date.now()).allowed, false);
+    assert.equal(guest.allowed, true);
+    assert.equal(guest.reason, 'ads-not-configured');
+    // Contesto omesso: stesso comportamento dei guest.
+    assert.equal(Saas.shoppingAccess(Date.now()).allowed, true);
     // Con la feature SaaS disattivata l'accesso resta libero (legacy).
     globalThis.PIANO_SAAS_CONFIG = { enabled: false };
     const legacy = Saas.shoppingAccess(Date.now(), { state: 'unassigned' });
     assert.equal(legacy.allowed, true);
     assert.equal(legacy.reason, 'feature-disabled');
+  } finally {
+    globalThis.PIANO_SAAS_CONFIG = previousConfig;
+    globalThis.localStorage = previousStorage;
+  }
+});
+
+test('spesa: con provider ads configurato il guest passa dal gate 24h', () => {
+  const previousConfig = globalThis.PIANO_SAAS_CONFIG;
+  const previousStorage = globalThis.localStorage;
+  const storage = { getItem: () => null, setItem: () => {} };
+  globalThis.localStorage = storage;
+  globalThis.PIANO_SAAS_CONFIG = { enabled: true, shoppingRewardedAds: { enabled: true, provider: 'example', unlockHours: 24 } };
+  try {
+    // Nessun reward in corso: gate attivo, sblocco disponibile.
+    const gated = Saas.shoppingAccess(Date.now(), { state: 'unassigned' });
+    assert.equal(gated.allowed, false);
+    assert.equal(gated.reason, 'reward-available');
+    // Reward in corso: accesso libero per 24h.
+    storage.getItem = key => (key === 'pn_shopping_reward_until' ? String(Date.now() + 60000) : null);
+    const rewarded = Saas.shoppingAccess(Date.now(), { state: 'unassigned' });
+    assert.equal(rewarded.allowed, true);
+    assert.equal(rewarded.reason, 'reward');
+    // Con assegnazione attiva il gate non si applica mai.
+    const assigned = Saas.shoppingAccess(Date.now(), { state: 'assigned' });
+    assert.equal(assigned.allowed, true);
+    assert.equal(assigned.reason, 'assignment');
   } finally {
     globalThis.PIANO_SAAS_CONFIG = previousConfig;
     globalThis.localStorage = previousStorage;

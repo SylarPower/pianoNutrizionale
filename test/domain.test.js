@@ -1296,9 +1296,16 @@ test('service worker: shell versionata derivata da una sola versione con asset e
     const filePath = path.join(ROOT, asset.replace(/^\.\//, ''));
     assert.ok(fs.existsSync(filePath), `asset shell mancante: ${asset}`);
   });
-  // Il lettore barcode esterno è versionato e precaricato come l'SDK Firebase.
+  // Il lettore barcode esterno è versionato e precaricato in cache come l'SDK Firebase.
   assert.match(sw, /html5-qrcode@2\.3\.8\/html5-qrcode\.min\.js/);
   assert.match(sw, /isCachedCdnAsset/);
+  // Ma NON è più caricato al boot: index.html non lo include più in modo
+  // statico; lo inietta js/app.js solo quando serve (modale di scansione).
+  const indexHtml = fs.readFileSync(path.join(ROOT, 'index.html'), 'utf8');
+  assert.doesNotMatch(indexHtml, /html5-qrcode/);
+  const appSource = fs.readFileSync(path.join(ROOT, 'js/app.js'), 'utf8');
+  assert.match(appSource, /function loadHtml5Qrcode\(\)/, 'lazy loader presente');
+  assert.match(appSource, /html5-qrcode@2\.3\.8\/html5-qrcode\.min\.js/, 'URL versionato nello stesso punto');
 });
 
 test('service worker: non intercetta Firebase, pulisce cache, gestisce SKIP_WAITING', () => {
@@ -1977,7 +1984,6 @@ test('CSS smartphone: titoli ricettario, profilo e tipo giornata non collassano'
   assert.match(css, /\.type-option \{[\s\S]*?min-height: 44px;/, 'selettori Allenamento e Riposo touch-safe');
   assert.match(mobile, /\.day-type-control \{ display: grid; width: 100%; min-width: 0; \}/, 'selettore giornata a piena larghezza su smartphone');
   assert.match(mobile, /\.recipe-toolbar \{ display: grid; grid-template-columns: repeat\(2, minmax\(0, 1fr\)\);/, 'azioni ricettario in griglia stabile');
-  assert.match(mobile, /\.profile-chip \{ margin-left: 0; \}/, 'profilo senza offset fragile');
   assert.match(mobile, /\.recipe-count-full \{ display: none; \}/, 'conteggio esteso nascosto su smartphone');
   assert.match(mobile, /\.recipe-count-compact \{ display: inline; \}/, 'conteggio compatto visibile su smartphone');
   assert.match(css, /\.recipe-library-section \{ margin: 8px 0 24px; \}/, 'categorie più compatte nel ricettario');

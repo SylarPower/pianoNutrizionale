@@ -6,50 +6,86 @@
   <title>Piano Nutrizionale — offline</title>
   <meta name="theme-color" content="#3d9970">
   <style>
+    /* Pagina offline: stesso design system dell'app (font Author, palette e
+       scala di misura condivisi con css/style.css). */
+    @font-face {
+      font-family: "Author";
+      font-style: normal;
+      font-weight: 300 800;
+      font-display: swap;
+      src: url("assets/fonts/Author-Variable.woff2") format("woff2");
+    }
+    :root {
+      --bg: #fbf6f0;
+      --surface: #ffffff;
+      --text: #2d3436;
+      --text-muted: #6b7b7d;
+      --line: #eadfd2;
+      --primary: #3d9970;
+      --primary-strong: #2f7a59;
+      --shadow: 0 2px 8px rgba(45, 52, 54, 0.06), 0 12px 32px rgba(45, 52, 54, 0.08);
+      --font-display: "Author", Verdana, "SF Pro Display", "Segoe UI", sans-serif;
+    }
+    * { box-sizing: border-box; margin: 0; padding: 0; }
     body {
-      margin: 0;
       min-height: 100vh;
       display: flex;
       align-items: center;
       justify-content: center;
-      font-family: system-ui, -apple-system, "Segoe UI", sans-serif;
-      background: #fbf6f0;
-      color: #1a1a1a;
+      font-family: "Author", Verdana, ui-sans-serif, -apple-system, "Segoe UI", sans-serif;
+      background: var(--bg);
+      color: var(--text);
+      font-size: 1rem;
+      line-height: 1.5;
+      letter-spacing: .25px;
+      padding: 24px;
     }
     .card {
-      max-width: 420px;
-      margin: 20px;
-      padding: 28px;
-      border-radius: 18px;
-      background: #fff;
-      border: 1px solid #e2e2e2;
+      width: min(100%, 420px);
+      padding: 32px;
+      border: 1px solid var(--line);
+      border-radius: 22px;
+      background: var(--surface);
+      box-shadow: var(--shadow);
       text-align: center;
     }
-     .emoji img { width: 56px; height: 56px; display: block; margin: 0 auto; }
-    .emoji { font-size: 44px; }
-    h1 { font-size: 1.3rem; margin: 14px 0 8px; }
-    p { color: #5c5c5c; font-size: .95rem; line-height: 1.5; margin: 0 0 18px; }
-    button {
-      min-height: 46px;
-      padding: 10px 22px;
-      border: 0;
-      border-radius: 12px;
-      background: #3d9970;
-      color: #fff;
-      font-size: 1rem;
+    .card .logo { width: 56px; height: 56px; margin: 0 auto 16px; display: block; }
+    h1 {
+      font-family: var(--font-display);
+      font-size: 1.375rem;
       font-weight: 700;
-      cursor: pointer;
+      letter-spacing: -.025em;
+      line-height: 1.2;
+      margin: 0 0 8px;
     }
+    p { color: var(--text-muted); font-size: 1rem; line-height: 1.5; margin: 0 0 24px; }
+    button {
+      min-height: 44px;
+      padding: 8px 16px;
+      border: 0;
+      border-radius: 11px;
+      background: var(--primary);
+      color: #fff;
+      font: inherit;
+      font-size: 1rem;
+      font-weight: 500;
+      letter-spacing: 1.25px;
+      cursor: pointer;
+      transition: background .2s;
+    }
+    button:hover { background: var(--primary-strong); }
     @media (prefers-color-scheme: dark) {
       body { background: #000; color: #fff; }
-      .card { background: #0d0d0d; border-color: #232323; }
-      p { color: #9a9a9a; }
+      .card { background: #000; border-color: #202020; box-shadow: none; }
+      p { color: #a3a3a3; }
+      button { background: #7dddb2; color: #04120b; }
+      button:hover { background: #93e6c2; }
     }
   </style>
 </head>
 <body>
   <div class="card">
-    <div class="emoji"><img src="assets/loghi/logo-app.svg" alt=""></div>
+    <img class="logo" src="assets/loghi/logo-app.svg" alt="">
     <h1>Sei offline</h1>
     <p>La connessione non è disponibile in questo momento. Se hai già effettuato l’accesso in precedenza, i dati salvati localmente restano consultabili; riconnettiti per sincronizzare le modifiche.</p>
     <button type="button" onclick="window.location.reload()">Riprova</button>
