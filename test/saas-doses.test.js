@@ -159,6 +159,48 @@ test('loadContext online v1 invariato, offline usa la cache verificata', async (
   }
 });
 
+// ---- cachedContext (cache-first per l'avvio rapido) ----
+
+test('cachedContext: profilo verificato in cache attiva il motore in sincrono', () => {
+  const activated = [];
+  const previous = Domain.activateGuideRuleSet;
+  Domain.activateGuideRuleSet = (rules, freeAliases) => { activated.push(rules); return true; };
+  try {
+    // Come scritto dal successo di loadContext: {...value, cachedAt}.
+    store['pn_saas_profile_u9'] = JSON.stringify({ state: 'assigned', profile: v1Profile(), cachedAt: '2026-09-18T10:00:00Z' });
+    const context = saas.cachedContext('u9');
+    assert.equal(context.state, 'assigned');
+    assert.equal(context.offline, true);
+    assert.equal(activated.length, 1, 'motore attivato prima della rete');
+    assert.equal(activated[0][0].slots.lunch.training, 90);
+  } finally {
+    Domain.activateGuideRuleSet = previous;
+    delete store['pn_saas_profile_u9'];
+  }
+});
+
+test('cachedContext: scaduto, incompatibile o assente → null (mai una regola stantia)', () => {
+  store['pn_saas_profile_e1'] = JSON.stringify({ state: 'assigned', profile: { ...v1Profile(), expiresAt: '2020-01-01T00:00:00Z' } });
+  assert.equal(saas.cachedContext('e1'), null, 'profilo scaduto mai usato');
+  delete store['pn_saas_profile_e1'];
+  store['pn_saas_profile_e2'] = JSON.stringify({ state: 'assigned', profile: { ...v1Profile(), rules: [] } });
+  assert.equal(saas.cachedContext('e2'), null, 'motore vuoto mai usato');
+  delete store['pn_saas_profile_e2'];
+  assert.equal(saas.cachedContext('assente'), null, 'nessuna cache: null');
+});
+
+test('cachedContext: SaaS disattivato → mai usato', () => {
+  const previous = global.PIANO_SAAS_CONFIG.enabled;
+  global.PIANO_SAAS_CONFIG.enabled = false;
+  try {
+    store['pn_saas_profile_d1'] = JSON.stringify({ state: 'assigned', profile: v1Profile() });
+    assert.equal(saas.cachedContext('d1'), null);
+    delete store['pn_saas_profile_d1'];
+  } finally {
+    global.PIANO_SAAS_CONFIG.enabled = previous;
+  }
+});
+
 test('override proteine e carboidrati indipendenti', () => {
   const engine = saas.applyDoseOverrides({ rules: [
     { family: 'pasta', slots: { lunch: { training: 90, rest: 70 } } },

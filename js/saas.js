@@ -153,6 +153,27 @@
 
   function cacheKey(uid) { return `pn_saas_profile_${uid}`; }
 
+  // Ultimo profilo VERIFICATO, letto in sincrono dalla cache: l'avvio rapido
+  // lo applica PRIMA della risposta delle funzioni cloud, così le dosi
+  // adattate sono corrette già al primo paint (niente balzo original→guide).
+  // Il refresh di background di loadContext lo conferma o lo corregge.
+  // Stesse validazioni del fallback offline: assegnazione attiva, non scaduta,
+  // motore compatibile; in caso contrario null (l'app resta su originale).
+  function cachedContext(uid) {
+    if (!config().enabled) return null;
+    try {
+      const cached = JSON.parse(localStorage.getItem(cacheKey(uid)) || 'null');
+      const expires = cached?.profile?.expiresAt ? new Date(cached.profile.expiresAt) : null;
+      if (cached?.state === 'assigned' && (!expires || expires > new Date())) {
+        const engine = engineRulesFor(cached.profile);
+        if (!engine) return null;
+        root.PianoDomain?.activateGuideRuleSet?.(engine.rules, engine.freeAliases);
+        return { ...cached, offline: true };
+      }
+    } catch (_) {}
+    return null;
+  }
+
   async function loadContext(uid, call = root.callSaasFunction) {
     if (!config().enabled) return { state: 'feature-disabled', fallback: 'legacy' };
     try {
@@ -170,16 +191,8 @@
       return value;
     } catch (error) {
       // Offline: usa solo l'ultima versione verificata, non una regola nuova.
-      try {
-        const cached = JSON.parse(localStorage.getItem(cacheKey(uid)) || 'null');
-        const expires = cached?.profile?.expiresAt ? new Date(cached.profile.expiresAt) : null;
-        if (cached?.state === 'assigned' && (!expires || expires > new Date())) {
-          const engine = engineRulesFor(cached.profile);
-          if (!engine) throw new Error('Profilo in cache non compatibile');
-          root.PianoDomain?.activateGuideRuleSet?.(engine.rules, engine.freeAliases);
-          return { ...cached, offline: true };
-        }
-      } catch (_) {}
+      const cached = cachedContext(uid);
+      if (cached) return cached;
       return { state: 'unavailable', fallback: 'original-only', error: error?.message || 'offline' };
     }
   }
@@ -221,5 +234,5 @@
     return grant;
   }
 
-  return { config, originalOnlyPlan, snapshotFor, snapshotMatches, engineRulesFor, applyDoseOverrides, saasPersonalScope, applyPolicy, loadContext, shoppingAccess, requestShoppingReward };
+  return { config, originalOnlyPlan, snapshotFor, snapshotMatches, engineRulesFor, applyDoseOverrides, saasPersonalScope, applyPolicy, loadContext, cachedContext, shoppingAccess, requestShoppingReward };
 });

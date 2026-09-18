@@ -166,8 +166,13 @@ async function ensureFirebaseReady() {
   if (!db || !auth) throw new Error("Servizio dati non disponibile");
 }
 
-async function callSaasFunction(name, data = {}) {
-  window.PianoLoading?.start("Aggiornamento in corso…");
+async function callSaasFunction(name, data = {}, options = {}) {
+  // `silent`: i refresh di background (avvio, ricalcolo non richiesto
+  // esplicitamente dall'utente) non toccano l'overlay: l'app è già visibile
+  // con i dati in cache e il refresh la allinea in sottofondo. Senza il flag
+  // il comportamento resta quello attuale (spinner oltre la soglia).
+  const showOverlay = !options?.silent;
+  if (showOverlay) window.PianoLoading?.start("Aggiornamento in corso…");
   try {
     await ensureFirebaseReady();
     if (!functionsService) throw new Error("Servizio SaaS non disponibile");
@@ -180,7 +185,7 @@ async function callSaasFunction(name, data = {}) {
     const response = await fb.httpsCallable(functionsService, name)(cleanData);
     return response.data;
   } finally {
-    window.PianoLoading?.stop();
+    if (showOverlay) window.PianoLoading?.stop();
   }
 }
 
