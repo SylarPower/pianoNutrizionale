@@ -342,3 +342,172 @@ test('errore collegamento non viene attribuito alla modalità offline e consente
     window.location = previousLocation;
   }
 });
+
+test('observer household: gli snapshot identici non riapplicano lo stato', () => {
+  const previousObserve = global.observeSharedDataChanges;
+  const previousUser = appState.user;
+  const previousPlan = appState.plan;
+  const previousRecipes = appState.recipes;
+  let sharedCallback = null;
+  global.observeSharedDataChanges = callback => { sharedCallback = callback; return () => {}; };
+  const planA = createEmptyWeeklyPlan();
+  const recipesA = [{ id: 'r1', name: 'Primo piatto', slot: 'lunch', ingredients: [], steps: [] }];
+  try {
+    appState.user = { uid: 'u1', email: 'mario@utenti.pianonutrizionale.app' };
+    bindSharedDataObserver();
+    assert.equal(typeof sharedCallback, 'function', 'callback registrato');
+    // Primo snapshot: applicato.
+    sharedCallback("plan", planA);
+    const planRef = appState.plan;
+    assert.notEqual(planRef, previousPlan);
+    // Snapshot con contenuto IDENTICO (oggetto nuovo): niente riapplicazione.
+    sharedCallback("plan", JSON.parse(JSON.stringify(planA)));
+    assert.equal(appState.plan, planRef, 'contenuto identico: non riapplicato');
+    // Ricette: primo snapshot applicato, il secondo identico salta.
+    sharedCallback("recipes", recipesA);
+    const recipesRef = appState.recipes;
+    const recipesByIdRef = appState.recipesById;
+    sharedCallback("recipes", JSON.parse(JSON.stringify(recipesA)));
+    assert.equal(appState.recipes, recipesRef, 'contenuto identico: non riapplicato');
+    assert.equal(appState.recipesById, recipesByIdRef, 'indice non ricostruito');
+    // Cambio reale (monday parte "training" nel piano vuoto): applicato.
+    const planB = { ...planA, days: { ...planA.days, monday: { ...planA.days.monday, type: 'rest' } } };
+    sharedCallback("plan", planB);
+    assert.notEqual(appState.plan, planRef, 'cambio reale applicato');
+  } finally {
+    global.observeSharedDataChanges = previousObserve;
+    appState.user = previousUser;
+    appState.plan = previousPlan;
+    appState.recipes = previousRecipes;
+  }
+});
+
+test('avvio rapido: dati e contesto invariati → nessuna riapplicazione né re-render', async () => {
+  const previousLocation = window.location;
+  window.location = { hash: '#week' };
+  const previousUser = appState.user;
+  const previousContext = appState.saasContext;
+  const previousPolicy = appState.saasPolicy;
+  const previousPlan = appState.plan;
+  const previousRecipes = appState.recipes;
+  const previousShopping = appState.shopping;
+  const previousHeader = renderGlobalHeader;
+  const previousRoute = handleRoute;
+  const previousPrepare = global.prepareDataScope;
+  const previousRecipesFn = global.getRecipeCatalog;
+  const previousPlanFn = global.getWeeklyPlan;
+  const previousShoppingFn = global.getShoppingListCloud;
+  const previousSaasFn = global.callSaasFunction;
+  const user = { uid: 'u1', email: 'mario@utenti.pianonutrizionale.app' };
+  const profile = {
+    clientProfileId: 'c1', assignmentId: 'a1', schemaVersion: 1,
+    ruleSetId: 'r1', ruleSetVersion: '3', ruleSetChecksum: 'x', mappingCatalogChecksum: null,
+    rules: [{
+      family: 'pasta', group: 'carb', label: 'Pasta', aliases: ['pasta'],
+      slots: { lunch: { training: 90, rest: 70 }, dinner: { training: 40, rest: 40 } }
+    }], freeAliases: []
+  };
+  const recipesA = [{ id: 'r1', name: 'Primo piatto', slot: 'lunch', ingredients: [], steps: [] }];
+  const planA = createEmptyWeeklyPlan();
+  // Snapshot confermato: il contesto "assigned" non richiede mai nuova conferma.
+  planA.nutritionSnapshot = window.PianoSaas.snapshotFor(profile);
+  const shoppingA = { selectedMeals: { monday: ['breakfast'] }, includePantry: false, excludedItems: [], customQuantities: {}, itemOrder: {} };
+  let profileStub = { state: 'unassigned' };
+  const serverData = { recipes: recipesA, plan: planA, shopping: shoppingA };
+  let headerRenders = 0;
+  let routeRenders = 0;
+  // Il DOM minimale non ha addEventListener globale: serve a setupRouter.
+  const previousAddEventListener = global.addEventListener;
+  global.addEventListener = () => {};
+  renderGlobalHeader = () => { headerRenders += 1; };
+  handleRoute = () => { routeRenders += 1; };
+  global.prepareDataScope = async () => { clearDataScope(); return null; };
+  global.getRecipeCatalog = async () => serverData.recipes;
+  global.getWeeklyPlan = async () => serverData.plan;
+  global.getShoppingListCloud = async () => serverData.shopping;
+  global.callSaasFunction = async name => (name === 'getMyAssignedProfile' ? profileStub : { requests: [], link: null });
+  try {
+    // Avvio rapido: stato applicato dalla cache locale.
+    appState.saasContext = { state: 'unassigned' };
+    applyState(recipesA, planA, shoppingA);
+    assert.equal(headerRenders, 1);
+    const routesAfterBoot = routeRenders;
+    // Server identico alla cache + contesto invariato: niente ri-apply né re-render.
+    await loadUserData(user, { silent: true });
+    assert.equal(headerRenders, 1, 'niente cambiamenti: nessuna riapplicazione');
+    assert.equal(routeRenders, routesAfterBoot, 'niente cambiamenti: nessun re-render');
+    // Stessi dati ma contesto CAMBIATO (profilo assegnato): si riapplica.
+    profileStub = { state: 'assigned', profile };
+    await loadUserData(user, { silent: true });
+    assert.equal(headerRenders, 2, 'contesto cambiato: riapplicazione');
+    assert.equal(appState.saasPolicy.mode, 'assigned', 'policy del profilo confermato');
+    assert.equal(routeRenders, routesAfterBoot + 1, 're-render solo per il cambio reale');
+    // Tutto di nuovo invariato (dati e contesto): di nuovo skip.
+    await loadUserData(user, { silent: true });
+    assert.equal(headerRenders, 2, 'secondo refresh invariato: nessuna riapplicazione');
+    assert.equal(routeRenders, routesAfterBoot + 1, 'nessun re-render aggiuntivo');
+  } finally {
+    window.location = previousLocation;
+    appState.user = previousUser;
+    appState.saasContext = previousContext;
+    appState.saasPolicy = previousPolicy;
+    appState.plan = previousPlan;
+    appState.recipes = previousRecipes;
+    appState.shopping = previousShopping;
+    renderGlobalHeader = previousHeader;
+    handleRoute = previousRoute;
+    global.addEventListener = previousAddEventListener;
+    global.prepareDataScope = previousPrepare;
+    global.getRecipeCatalog = previousRecipesFn;
+    global.getWeeklyPlan = previousPlanFn;
+    global.getShoppingListCloud = previousShoppingFn;
+    global.callSaasFunction = previousSaasFn;
+    for (const key of Object.keys(localStorage._data)) delete localStorage._data[key];
+  }
+});
+
+test('stato collegamento: la cache per utente idrata l’avvio e il successo la aggiorna', async () => {
+  const previous = window.callSaasFunction;
+  const previousLocation = window.location;
+  const previousUser = appState.user;
+  const previousLink = appState.clientLink;
+  const key = 'pn_u1_client_link';
+  const storedKey = localStorage.getItem(key);
+  window.location = { hash: '#week' };
+  appState.user = { uid: 'u1', email: 'mario@utenti.pianonutrizionale.app' };
+  appState.clientLink = null;
+  const calls = [];
+  const pending = [];
+  window.callSaasFunction = (name, data, options) => {
+    calls.push({ name, silent: options?.silent });
+    return new Promise(resolve => pending.push({ name, resolve }));
+  };
+  const drain = value => pending.shift().resolve(value);
+  try {
+    // Sessione precedente: l'ultimo stato verificato è in cache locale.
+    localStorage.setItem(key, JSON.stringify({ requests: [{ id: 'r1', status: 'pending' }], link: null }));
+    // L'avvio idrata subito dalla cache (badge mai a zero) senza aspettare il server.
+    const bootRefresh = refreshClientLinkState({ silent: true });
+    assert.equal(appState.clientLink.requests.length, 1, 'idratazione istantanea dalla cache');
+    assert.equal(calls[0].silent, true, 'il refresh di avvio è silent');
+    // Il server risponde: lo stato fresco sostituisce la cache (write-through).
+    drain({ requests: [], link: { organizationId: 'org-9' } });
+    await bootRefresh;
+    assert.equal(appState.clientLink.link.organizationId, 'org-9');
+    assert.equal(JSON.parse(localStorage.getItem(key)).link.organizationId, 'org-9', 'write-through al successo');
+    // Riprova esplicita (senza opzioni): overlay abilitata, stessa cache riutilizzata.
+    appState.clientLink = null;
+    const explicitRefresh = refreshClientLinkState();
+    assert.equal(appState.clientLink.link.organizationId, 'org-9', 'riutilizza la cache appena scritta');
+    assert.notEqual(calls[1].silent, true, "l'operazione esplicita non è silent");
+    drain({ requests: [], link: null });
+    await explicitRefresh;
+  } finally {
+    window.callSaasFunction = previous;
+    window.location = previousLocation;
+    appState.user = previousUser;
+    appState.clientLink = previousLink;
+    if (storedKey === null) localStorage.removeItem(key);
+    else localStorage.setItem(key, storedKey);
+  }
+});

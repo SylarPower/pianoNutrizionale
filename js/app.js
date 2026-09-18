@@ -446,7 +446,13 @@ function normalizeRecipeSchema(recipe) {
   return window.PianoDomain ? PianoDomain.migrateRecipe(recipe) : clone(recipe);
 }
 
+// Raw JSON dell'ultimo stato applicato (applyState, snapshot realtime,
+// salvataggi): i refresh di avvio e gli snapshot lo confrontano per saltare
+// riapplicazioni e re-render quando il contenuto non è cambiato.
+const lastAppliedRaw = { recipes: null, plan: null, shopping: null };
+
 function setRecipes(recipes) {
+  lastAppliedRaw.recipes = JSON.stringify(recipes);
   const normalizedRecipes = recipes.map(normalizeRecipeSchema);
 
   appState.recipes = normalizedRecipes;
@@ -1123,12 +1129,21 @@ async function loadUserData(user, { silent = false } = {}) {
         getRecipeCatalog(), getWeeklyPlan(), getShoppingListCloud()
       ]);
     }
-    appState.saasContext = window.PianoSaas
-      ? await PianoSaas.loadContext(user.uid)
-      : { state: "feature-disabled", fallback: "legacy" };
+    // Letture SaaS di avvio: silent e PARALLELE. Sull'avvio rapido (dati già
+    // in cache, overlay chiusa) il refresh non deve mostrare "Aggiornamento in
+    // corso…" né far sommare in sequenza le due chiamate cloud: l'app resta
+    // interattiva e il refresh la allinea in sottofondo. Sul primo avvio
+    // l'overlay è comunque gestita dal caricamento dei dati (qui sopra).
+    const silentSaasCall = (name, data) => callSaasFunction(name, data, { silent: true });
+    const saasContextPromise = window.PianoSaas
+      ? PianoSaas.loadContext(user.uid, silentSaasCall)
+      : Promise.resolve({ state: "feature-disabled", fallback: "legacy" });
     // Lo stato del collegamento decide anche se tentare l'attivazione dopo la
     // verifica email (sotto): qui va atteso, non solo avviato.
-    await refreshClientLinkState();
+    const clientLinkPromise = refreshClientLinkState({ silent: true });
+    const previousContext = appState.saasContext;
+    appState.saasContext = await saasContextPromise;
+    await clientLinkPromise;
     renderEmailVerificationBanner(appState.user);
     // Accesso o ricarica con email appena verificata: il collegamento rimasto
     // in attesa viene attivato adesso (riscatto senza token, ID token forzato).
@@ -1136,9 +1151,21 @@ async function loadUserData(user, { silent = false } = {}) {
     // piano: il collegamento attivo può sbloccare un profilo assegnato.
     const linkActivation = await activateClientLinkAfterVerification({ user });
     if (linkActivation?.activated && window.PianoSaas) {
-      appState.saasContext = await PianoSaas.loadContext(user.uid);
+      appState.saasContext = await PianoSaas.loadContext(user.uid, silentSaasCall);
     }
-    applyState(recipes, plan, shopping);
+    // Avvio rapido: se l'app è già mostrata E dati E contesto sono identici a
+    // quelli già applicati dalla cache locale, non riapplicare: niente
+    // cambiamento di stato, niente re-render, niente doppio passaggio per le
+    // migrazioni. Il listener realtime (household) e il prossimo avvio
+    // riprenderanno da qui. `appStarted` è la guardia d'obbligo: senza l'app
+    // mostrata, applyState resta l'unico modo per eseguirne showApp/setup.
+    const dataUnchanged = JSON.stringify(recipes) === lastAppliedRaw.recipes
+      && JSON.stringify(plan) === lastAppliedRaw.plan
+      && JSON.stringify(shopping) === lastAppliedRaw.shopping;
+    const contextUnchanged = saasContextFingerprint(previousContext) === saasContextFingerprint(appState.saasContext);
+    const skipReapply = appStarted && dataUnchanged && contextUnchanged;
+    if (!skipReapply) applyState(recipes, plan, shopping);
+    else showApp();
     writeSessionCache({
       uid: user.uid,
       email: user.email,
@@ -1149,7 +1176,12 @@ async function loadUserData(user, { silent = false } = {}) {
     if (typeof isLegacyTestEmailAddress === "function" && isLegacyTestEmailAddress(user.email)) {
       ensureUsernameDirectory().catch(error => console.warn("Directory storica non disponibile", error));
     }
-    if (appStarted) handleRoute();
+    if (appStarted && !skipReapply) handleRoute();
+    else if (appStarted && window.location.hash === "#recipes") {
+      // Skippato il re-apply con il Ricettario aperto: si era mostrato lo
+      // scheletro "sincronizzazione" in apertura — lo si richiude subito.
+      renderRecipes();
+    }
   } catch (error) {
     console.error(error);
     if (silent) {
@@ -1166,7 +1198,16 @@ async function loadUserData(user, { silent = false } = {}) {
   }
 }
 
+// Impronta del contesto SaaS per il confronto "è cambiato?": contano stato e
+// profilo (decidono policy, dosi e nudge), non i campi solo-clienti del
+// cache (cachedAt, offline).
+function saasContextFingerprint(context) {
+  return JSON.stringify({ state: context?.state, profile: context?.profile, fallback: context?.fallback });
+}
+
 function applyState(recipes, plan, shopping) {
+  lastAppliedRaw.plan = JSON.stringify(plan);
+  lastAppliedRaw.shopping = JSON.stringify(shopping);
   // Migrazione schema 4 → 5: se il catalogo caricato contiene ancora il campo
   // legacy `frequency`, il catalogo normalizzato viene salvato una sola volta
   // per rimuoverlo definitivamente dai dati persistiti.
@@ -1218,6 +1259,12 @@ function bindSharedDataObserver() {
   stopSharedDataObserver?.();
   stopSharedDataObserver = observeSharedDataChanges((kind, value) => {
     if (!appState.user) return;
+    // Snapshot con contenuto già applicato (il primo all'avvio, o l'eco di
+    // uno write locale appena fatto): niente cambiamento di stato e niente
+    // re-render — è da qui che nasceva lo sfarfallio a ogni avvio.
+    const raw = JSON.stringify(value);
+    if (lastAppliedRaw[kind] === raw) return;
+    lastAppliedRaw[kind] = raw;
     if (kind === "recipes") setRecipes(value);
     if (kind === "plan") appState.plan = window.PianoDomain ? PianoDomain.migratePlan(value) : value;
     if (kind === "shopping") appState.shopping = value;
@@ -1295,6 +1342,12 @@ async function initApp() {
   if (canBoot) {
     appState.user = { uid: cachedSession.uid, email: cachedSession.email || "" };
     setLocalDataOwner(cachedSession.uid);
+    // Contesto SaaS cache-first: il profilo verificato nell'ultima sessione
+    // vale già al primo paint (dosi adattate corrette subito, niente balzo
+    // original→guide); loadUserData lo conferma o lo corregge in sottofondo.
+    if (window.PianoSaas?.config?.().enabled) {
+      appState.saasContext = window.PianoSaas.cachedContext(cachedSession.uid) || { state: "unassigned" };
+    }
     applyState(cachedRecipes, cachedPlan, cachedShopping || getDefaultShoppingList());
   } else {
     setLoading("Verifica accesso…");
@@ -2963,13 +3016,28 @@ function renderSaasProfileSection() {
 // finestra di conferma. Lo scollegamento revoca solo l'associazione
 // professionale: account, ricette, settimana e backup restano intatti.
 
-async function refreshClientLinkState() {
+// Ultimo stato VERIFICATO del collegamento, in cache locale per utente
+// (chiave `pn_<uid>_client_link`, coerente con writeLocalJson di firebase.js):
+// all'avvio badge e sezione Impostazioni partono subito dallo stato della
+// sessione precedente invece di aspettare il server. È un'anteprima, non lo
+// stato del server: il refresh di background la corregge, e un refresh
+// fallito torna a segnare l'errore (mai maschera i pendenti con cache stantia).
+const CLIENT_LINK_CACHE = "client_link";
+
+async function refreshClientLinkState({ silent = false } = {}) {
   if (!window.PianoSaas?.config().enabled || typeof callSaasFunction !== "function") {
     appState.clientLink = null;
     return;
   }
+  // Idratazione istantanea: primo refresh dell'avvio senza stato in memoria
+  // parte dall'ultimo valore noto, così il badge non parte mai a zero.
+  if (!appState.clientLink && appState.user?.uid) {
+    const cached = readLocalJsonFor(appState.user.uid, CLIENT_LINK_CACHE, null);
+    if (cached && !cached.error) appState.clientLink = cached;
+  }
   try {
-    appState.clientLink = await callSaasFunction("listMyClientLinkRequests", {});
+    appState.clientLink = await callSaasFunction("listMyClientLinkRequests", {}, { silent });
+    writeLocalJson(CLIENT_LINK_CACHE, appState.clientLink);
   } catch (_) {
     appState.clientLink = { requests: [], link: null, error: true };
   }
