@@ -6,22 +6,27 @@ global.PIANO_SAAS_CONFIG = { enabled: true, shoppingRewardedAds: { enabled: fals
 const Saas = require('../js/saas.js');
 
 function plan() {
-  return { guideModes: { monday: { lunch: 'guide', dinner: 'guide' } }, days: {} };
+  return { days: {}, alignedDosesEnabled: true };
 }
-const profile = { clientProfileId: 'client-a', assignmentId: 'asg-1', ruleSetId: 'base', ruleSetVersion: '3', ruleSetChecksum: 'a'.repeat(64) };
+const profile = {
+  schemaVersion: 1, clientProfileId: 'client-a', assignmentId: 'asg-1',
+  structureId: 'struttura-1', structureRevisionId: '3', structureChecksum: 'a'.repeat(64),
+  structureName: 'Base', ingredientCatalogVersion: 4
+};
 
 test('SaaS senza assegnazione forza original-only senza mutare il piano sorgente', () => {
   const source = plan();
   const result = Saas.applyPolicy(source, { state: 'unassigned' });
   assert.equal(result.mode, 'original-only');
-  assert.equal(result.plan.guideModes.monday.lunch, 'original');
-  assert.equal(source.guideModes.monday.lunch, 'guide');
+  assert.equal(result.plan, source, 'piano non toccato senza assegnazione');
+  assert.equal(source.alignedDosesEnabled, true);
 });
 
 test('assegnazione nuova richiede conferma e non ricalcola silenziosamente', () => {
   const result = Saas.applyPolicy(plan(), { state: 'assigned', profile });
+  assert.equal(result.mode, 'pending-confirmation');
   assert.equal(result.migrationRequired, true);
-  assert.equal(result.plan.guideModes.monday.dinner, 'original');
+  assert.equal(result.plan.alignedDosesEnabled, false, 'interruttore spento finché non conferma');
 });
 
 test('snapshot esatto conserva la modalità del piano', () => {
@@ -30,24 +35,24 @@ test('snapshot esatto conserva la modalità del piano', () => {
   assert.equal(Saas.snapshotMatches(source, profile), true);
   const result = Saas.applyPolicy(source, { state: 'assigned', profile });
   assert.equal(result.mode, 'assigned');
-  assert.equal(result.plan.guideModes.monday.lunch, 'guide');
+  assert.equal(result.plan.alignedDosesEnabled, true, 'confermato: dosi allineate attive');
 });
 
-test('nuovo catalogo mapping richiede conferma e non altera lo snapshot', () => {
-  const withCatalog = { ...profile, mappingCatalogChecksum: 'c'.repeat(64) };
+test('nuovo catalogo ingredienti richiede conferma e non altera lo snapshot', () => {
+  const withCatalog = { ...profile, ingredientCatalogVersion: 4 };
   const source = plan();
   source.nutritionSnapshot = Saas.snapshotFor(withCatalog);
-  assert.equal(Saas.snapshotMatches(source, { ...withCatalog, mappingCatalogChecksum: 'd'.repeat(64) }), false);
+  assert.equal(Saas.snapshotMatches(source, { ...withCatalog, ingredientCatalogVersion: 5 }), false);
 });
 
-test('versione 4 non modifica retroattivamente snapshot versione 3', () => {
+test('revisione successiva non modifica retroattivamente lo snapshot', () => {
   const source = plan();
   source.nutritionSnapshot = Saas.snapshotFor(profile);
-  const v4 = { ...profile, assignmentId: 'asg-2', ruleSetVersion: '4', ruleSetChecksum: 'b'.repeat(64) };
+  const v4 = { ...profile, structureRevisionId: '4', structureChecksum: 'b'.repeat(64) };
   assert.equal(Saas.snapshotMatches(source, v4), false);
   const result = Saas.applyPolicy(source, { state: 'assigned', profile: v4 });
   assert.equal(result.migrationRequired, true);
-  assert.equal(source.nutritionSnapshot.ruleSetVersion, '3');
+  assert.equal(source.nutritionSnapshot.structureRevisionId, '3', 'snapshot originale intatto');
 });
 
 test('spesa: cliente con assegnazione attiva accede sempre, senza pubblicità', () => {
@@ -103,60 +108,6 @@ test('spesa: con provider ads configurato il guest passa dal gate 24h', () => {
   }
 });
 
-test('snapshot v2: struttura + revisione + versione catalogo', () => {
-  const Domain = require('../js/domain.js');
-  const extract = require('fs').readFileSync(require('path').join(__dirname, '..', 'docs', 'catalogo-ingredienti.json'), 'utf8');
-  const seed = Domain.splitGuideSeed(JSON.parse(extract));
-  const profile = {
-    schemaVersion: 2, clientProfileId: 'client-a', assignmentId: 'asg-9',
-    structureId: 'struttura-1', structureRevisionId: '3', structureChecksum: 'e'.repeat(64),
-    structureName: 'Base', ingredientCatalogVersion: 4,
-    structureRevision: { revisionId: '3', rules: seed.structureSeed.rules, alternativeGroups: seed.structureSeed.alternativeGroups },
-    catalog: { catalogVersion: 4, ingredients: seed.ingredients, categories: seed.categories }
-  };
-  const source = plan();
-  source.nutritionSnapshot = Saas.snapshotFor(profile, new Date('2026-09-10T12:00:00Z'));
-  assert.equal(source.nutritionSnapshot.structureRevisionId, '3');
-  assert.equal(source.nutritionSnapshot.ingredientCatalogVersion, 4);
-  assert.equal(Saas.snapshotMatches(source, profile), true);
-  assert.equal(Saas.applyPolicy(source, { state: 'assigned', profile }).mode, 'assigned');
-  // Nuova revisione → conferma richiesta, snapshot intatto (non-retroattività).
-  const v4 = { ...profile, structureRevisionId: '4', structureChecksum: 'f'.repeat(64) };
-  assert.equal(Saas.snapshotMatches(source, v4), false);
-  assert.equal(Saas.applyPolicy(source, { state: 'assigned', profile: v4 }).migrationRequired, true);
-  assert.equal(source.nutritionSnapshot.structureRevisionId, '3');
-  // Solo il catalogo cambia → nudge (conferma) senza toccare lo snapshot.
-  const catalogBump = { ...profile, ingredientCatalogVersion: 5 };
-  assert.equal(Saas.snapshotMatches(source, catalogBump), false);
-  assert.equal(Saas.applyPolicy(source, { state: 'assigned', profile: catalogBump }).migrationRequired, true);
-  assert.equal(source.nutritionSnapshot.ingredientCatalogVersion, 4);
-  // Profili v1 e v2 non coincidono mai (contratti diversi).
-  assert.equal(Saas.snapshotMatches(source, { clientProfileId: 'client-a', assignmentId: 'asg-9', ruleSetId: 'base', ruleSetVersion: '3', ruleSetChecksum: 'a'.repeat(64) }), false);
-});
-
-test('engineRulesFor: v2 converte revisione+catalogo, v1 passa le regole motore', () => {
-  const Domain = require('../js/domain.js');
-  globalThis.PianoDomain = Domain;
-  const extract = require('fs').readFileSync(require('path').join(__dirname, '..', 'docs', 'catalogo-ingredienti.json'), 'utf8');
-  const seed = Domain.splitGuideSeed(JSON.parse(extract));
-  const v2 = {
-    schemaVersion: 2,
-    structureRevision: { revisionId: '1', rules: seed.structureSeed.rules },
-    catalog: { ingredients: seed.ingredients, categories: seed.categories }
-  };
-  const converted = Saas.engineRulesFor(v2);
-  assert.ok(converted.rules.length > 0);
-  assert.equal(converted.rules.find(rule => rule.family === 'pane').slots.lunch.training, 100);
-  assert.ok(converted.freeAliases.length > 0);
-  // Revisione senza regole valide → null (mai attivare un profilo vuoto).
-  assert.equal(Saas.engineRulesFor({ schemaVersion: 2, structureRevision: { rules: [] }, catalog: v2.catalog }), null);
-  // V1 legacy: passthrough delle regole motore.
-  const legacy = [{ family: 'pasta', slots: {} }];
-  assert.deepEqual(Saas.engineRulesFor({ schemaVersion: 1, rules: legacy, freeAliases: ['x'] }), { rules: legacy, freeAliases: ['x'] });
-  assert.equal(Saas.engineRulesFor({ schemaVersion: 1, rules: [] }), null);
-  assert.equal(Saas.engineRulesFor(null), null);
-});
-
 // ---- Export/import legacy (migrazione manuale JSON degli account storici) ----
 
 const fs = require('node:fs');
@@ -171,7 +122,7 @@ const dataSrc = fs.readFileSync(path.join(__dirname, '..', 'js', 'data.js'), 'ut
 test('export legacy: formato stabile piano-nutrizionale-recipes con schema corrente', () => {
   // Contratto del file JSON consegnato per la migrazione manuale dei dati legacy:
   // export dall'app e reimport nello stesso profilo niente script server.
-  assert.match(dataSrc, /const CATALOG_SCHEMA_VERSION = 5;/);
+  assert.match(dataSrc, /const CATALOG_SCHEMA_VERSION = 7;/);
   assert.match(appSrc, /format: "piano-nutrizionale-recipes"/);
   assert.match(appSrc, /schemaVersion: CATALOG_SCHEMA_VERSION/);
   assert.match(appSrc, /exportedAt: new Date\(\)\.toISOString\(\)/);
@@ -194,7 +145,7 @@ test('round-trip export → import: payload valido accettato, payload manomesso 
   assert.equal(typeof validateImportedDataset, 'function', 'validatore caricato nel sandbox');
   const recipe = id => ({
     id: `r-${id}`, name: `Ricetta ${id}`, slot: 'lunch',
-    ingredients: [{ name: 'Pasta', portions: { single: '90 g' } }],
+    ingredients: [{ name: 'Pasta', portions: { single: '90g' } }],
     steps: ['Porta a bollore, cuoci e scola.']
   });
   const days = {};
@@ -202,10 +153,10 @@ test('round-trip export → import: payload valido accettato, payload manomesso 
     days[day] = { type: day === 'sunday' ? 'rest' : 'training', breakfast: 'r-1', snack1: 'r-1', lunch: 'r-2', snack2: 'r-1', dinner: 'r-2' };
   });
   const payload = {
-    format: 'piano-nutrizionale-recipes', schemaVersion: 5,
-    exportedAt: new Date().toISOString(), exportedBy: 'gabriele',
+    format: 'piano-nutrizionale-recipes', schemaVersion: 7,
+    exportedAt: new Date().toISOString(), exportedBy: 'cliente-1',
     recipes: [recipe(1), recipe(2)],
-    plan: { schemaVersion: 5, days }
+    plan: { schemaVersion: 7, days }
   };
   assert.equal(validateImportedDataset(payload), true, 'export prodotto dall’app riimportabile');
   // File manomessi: nessun dato parziale nel profilo.

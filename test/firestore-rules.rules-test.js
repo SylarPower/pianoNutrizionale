@@ -25,18 +25,26 @@ before(async () => {
     await db.doc(`organizations/${orgId}/members/nutri-b`).set({ schemaVersion: 1, role: 'nutritionist', status: 'active' });
     await db.doc(`organizations/${orgId}/clients/client-a`).set({ schemaVersion: 1, authUid: 'patient-a', status: 'active', nutritionistUids: ['nutri-a'] });
     await db.doc(`organizations/${orgId}/clients/client-b`).set({ schemaVersion: 1, authUid: 'patient-b', status: 'active', nutritionistUids: ['nutri-b'] });
-    await db.doc(`organizations/${orgId}/clients/client-a/assignments/asg-a`).set({ schemaVersion: 1, status: 'active' });
-    await db.doc(`organizations/${orgId}/mappingReports/report-a`).set({ schemaVersion: 1, clientId: 'client-a', status: 'open' });
+    await db.doc(`organizations/${orgId}/clients/client-a/assignments/asg-a`).set({ schemaVersion: 1, status: 'active', structure: { structureId: 'struttura-a', revisionId: '1', checksum: 'x' } });
     await db.doc('accountClientLinks/patient-a').set({ organizationId: orgId, clientId: 'client-a', status: 'active' });
-    await db.doc('globalRuleSets/base/versions/3').set({ status: 'published' });
-    // Fase 2: strutture, inviti, link, catalogo.
+    // Strutture, template, coda richieste, inviti, link, catalogo.
     await db.doc(`organizations/${orgId}/dietStructures/struttura-a`).set({ schemaVersion: 1, name: 'Base', status: 'active', ownerUid: 'nutri-a', currentRevisionId: '1' });
-    await db.doc(`organizations/${orgId}/dietStructures/struttura-a/revisions/1`).set({ schemaVersion: 2, status: 'published', rules: [{ guideFamilyId: 'riso' }] });
+    await db.doc(`organizations/${orgId}/dietStructures/struttura-a/revisions/1`).set({
+      schemaVersion: 1, status: 'published', checksum: 'x', ingredientCatalogVersion: 1,
+      dietPlan: { schemaVersion: 1, generalNotes: '', days: [{ dayId: 'giorno-a', label: 'Giorno A', dayType: 'training',
+        meals: [{ mealId: 'lunch', time: '', note: '', options: [{ optionId: 'pranzo', type: 'family-block', note: '',
+          blocks: [{ blockId: 'amidi', referenceFamilyId: 'cereali', referenceIngredientId: 'riso', referenceAmount: { value: 80, unit: 'g' }, templateId: null, templateSnapshot: null, overrides: [] }] }] }],
+        supplements: '', hydration: '', note: '' }] }
+    });
+    await db.doc(`organizations/${orgId}/equivalenceTemplates/tpl-a`).set({ schemaVersion: 1, name: 'Amidi', status: 'active', ownerUid: 'nutri-a', currentRevisionId: '1' });
+    await db.doc(`organizations/${orgId}/catalogRequests/req-cat`).set({ schemaVersion: 1, status: 'pending', ingredientText: 'tonno al naturale', clientId: 'client-a' });
     await db.doc(`organizations/${orgId}/invitations/invite-a`).set({ schemaVersion: 1, type: 'client', targetUsername: 'cliente-x', tokenHash: 'h', status: 'pending', createdBy: 'nutri-a' });
     await db.doc(`organizations/${orgId}/clientLinkRequests/req-a`).set({ schemaVersion: 1, clientId: 'client-a', targetUid: 'patient-a', nutritionistUid: 'nutri-a', status: 'pending' });
-    await db.doc('globalIngredientCatalog/current/ingredients/riso').set({ schemaVersion: 2, displayName: 'Riso', status: 'active' });
+    await db.doc('globalIngredientCatalog/current/meta/summary').set({ schemaVersion: 1, catalogVersion: 1, checksum: 'x', ingredientCount: 1, familyCount: 1, categoryCount: 1 });
+    await db.doc('globalIngredientCatalog/current/families/cereali').set({ schemaVersion: 1, familyId: 'cereali', displayName: 'Cereali', categoryId: 'carb', sortOrder: 0, status: 'active' });
+    await db.doc('globalIngredientCatalog/current/ingredients/riso').set({ schemaVersion: 1, ingredientId: 'riso', displayName: 'Riso', categoryId: 'carb', familyId: 'cereali', dietaryFlags: { vegetarian: true, vegan: true }, status: 'active' });
     await db.doc('globalIngredientCatalog/config/docs/denylist').set({ ingredientIds: [] });
-    await db.doc('globalIngredientCatalog/versions/snapshots/0').set({ schemaVersion: 2, catalogVersion: 0 });
+    await db.doc('globalIngredientCatalog/versions/snapshots/0').set({ schemaVersion: 1, catalogVersion: 0 });
     // Org vecchia non valida più: per testare che non sia leggibile
     await db.doc('organizations/org-a').set({ schemaVersion: 1, name: 'Vecchia' });
     await db.doc('organizations/org-a/members/nutri-a').set({ schemaVersion: 1, role: 'nutritionist', status: 'active' });
@@ -64,10 +72,17 @@ test('cliente non legge né seleziona profili o assignment di altri clienti', as
   await assertFails(db('patient-a').doc('organizations/pianoNutrizionale/clients/client-a/state/activeAssignment').set({ assignmentId: 'asg-b' }));
 });
 
-test('link cliente, cataloghi globali e coda mapping passano soltanto da callable', async () => {
+test('link cliente, config catalogo e coda ingredienti passano soltanto da callable', async () => {
   await assertFails(db('patient-a').doc('accountClientLinks/patient-a').get());
-  await assertFails(db('patient-a').doc('globalRuleSets/base/versions/3').get());
-  await assertFails(db('creator-a').doc('organizations/pianoNutrizionale/mappingReports/report-a').get());
+  await assertFails(db('creator-a').doc('globalIngredientCatalog/config/docs/import').get());
+  await assertFails(db('creator-a').doc('organizations/pianoNutrizionale/catalogRequests/req-cat').get());
+  await assertFails(db('patient-a').doc('organizations/pianoNutrizionale/catalogRequests/req-cat').get());
+});
+
+test('template equivalenze: nessun accesso diretto, nemmeno al proprietario', async () => {
+  await assertFails(db('nutri-a').doc('organizations/pianoNutrizionale/equivalenceTemplates/tpl-a').get());
+  await assertFails(db('nutri-a').doc('organizations/pianoNutrizionale/equivalenceTemplates/tpl-a/revisions/1').get());
+  await assertFails(db('creator-a').doc('organizations/pianoNutrizionale/equivalenceTemplates/tpl-a').update({ name: 'X' }));
 });
 
 test('strutture dieta: nessun accesso diretto, privacy ownerUid solo via callable', async () => {

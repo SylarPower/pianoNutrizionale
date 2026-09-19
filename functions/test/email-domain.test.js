@@ -1,5 +1,5 @@
 'use strict';
-/* Validazioni del modello con EMAIL REALE (ADR 0004).
+/* Validazioni del modello con EMAIL REALE (ADR 0001).
  *
  * Regole coperte:
  *  - normalizzazione: trim, minuscole, divisione locale/dominio, lunghezze;

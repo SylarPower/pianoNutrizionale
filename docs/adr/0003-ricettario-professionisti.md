@@ -1,4 +1,4 @@
-# ADR 0006 — Ricettario professionisti con condivisioni di studio
+# ADR 0003 — Ricettario professionisti con condivisioni di studio
 
 - **Stato**: accettata (fase di building)
 - **Data**: 2026-09-14

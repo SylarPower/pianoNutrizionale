@@ -1,5 +1,5 @@
 'use strict';
-/* Attivazione del collegamento professionista dopo la verifica email (ADR 0004).
+/* Attivazione del collegamento professionista dopo la verifica email (ADR 0001).
  *
  * Riproduce il percorso reale con l'SDK compat stubbato e un "server" che
  * risponde come functions/src/index.js:
@@ -497,5 +497,5 @@ test('contratto server invariato: senza token risponde `link-active`/`no-pending
   assert.match(indexJs, /if \(snap\.empty\) return \{ status: 'no-pending-invite' \};/);
   assert.match(indexJs, /status: 'email-verification-required'/);
   // Versione della shell PWA aggiornata per servire il nuovo client.
-  assert.match(read('sw.js'), /const CACHE_VERSION = 95/);
+  assert.match(read('sw.js'), /const CACHE_VERSION = 1/);
 });

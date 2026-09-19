@@ -1121,16 +1121,6 @@ input[type="checkbox"], input[type="radio"] { accent-color: var(--primary); widt
 .shop-meal-checks { display: flex; flex-wrap: wrap; gap: 8px 16px; }
 .shop-meal-checks label { display: flex; align-items: center; gap: 4px; white-space: nowrap; }
 
-.manual-heading { margin: 32px 4px 16px; }
-.manual-heading h2 { margin: 4px 0 4px; font-size: var(--fs-h2); }
-.manual-heading > p:last-child { color: var(--text-muted); font-size: var(--fs-secondary); }
-.guide-accordion { padding: 0; overflow: hidden; }
-.guide-toggle { display: flex; align-items: center; justify-content: space-between; width: 100%; padding: 16px 24px; border: 0; background: transparent; color: var(--text); font-size: var(--fs-body); font-weight: 800; text-align: left; cursor: pointer; }
-.guide-toggle:hover { background: var(--surface-alt); }
-.guide-toggle b { color: var(--primary); font-size: var(--fs-h3); }
-.guide-content { padding: 0 24px 24px; border-top: 1px solid var(--line); }
-.guide-list { margin: 16px 0 0 24px; }
-.guide-list li { margin: 8px 0; color: var(--text-muted); }
 
 /* Accesso commerciale alla spesa: valore prima della richiesta, nessun dark
    pattern e informativa chiara sulla separazione dei dati nutrizionali. */
@@ -1154,20 +1144,10 @@ input[type="checkbox"], input[type="radio"] { accent-color: var(--primary); widt
 .shopping-access-gate small { display: block; color: var(--text-muted); line-height: 1.45; }
 .saas-profile-card { display: grid; grid-template-columns: 1fr auto; align-items: start; gap: 12px; }
 .saas-profile-card > p, .saas-profile-card > button { grid-column: 1 / -1; }
-.guide-day { margin-top: 16px; padding: 16px; border-left: 4px solid var(--accent); border-radius: 12px; background: var(--accent-soft); }
-.guide-day.rest { border-left-color: var(--rest); background: var(--rest-soft); }
-.guide-meal { margin-top: 16px; }
-.guide-meal h4 { margin-bottom: 4px; color: var(--primary); }
-.guide-meal ul { margin-left: 24px; }
-.guide-meal li { margin: 4px 0; font-size: var(--fs-secondary); }
-.guide-macro { margin-top: 16px; padding-top: 12px; border-top: 1px solid rgba(0,0,0,.08); font-size: var(--fs-secondary); }
-.alternatives-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; margin-top: 16px; }
 .alternative-table { overflow: hidden; border: 1px solid var(--line); border-radius: 12px; }
-.alternative-table h3 { padding: 12px; background: var(--primary-soft); color: var(--primary); }
 .alternative-table > div { display: flex; justify-content: space-between; gap: 16px; padding: 8px 12px; border-top: 1px solid var(--line); font-size: var(--fs-secondary); }
 .alternative-table > div span { flex: 1; }
 .alternative-table > div strong { text-align: right; }
-.frequency-table { margin-top: 16px; }
 .edit-ingredient > div.portion-edit-grid { display: grid; grid-template-columns: repeat(4, 1fr) 40px; gap: 8px; align-items: end; }
 
 /* Importazione, esportazione e condivisione */
@@ -1471,7 +1451,6 @@ body.dark-mode .batch-task-status.fresh {
   .week-grid { grid-template-columns: 1fr; }
   .recipe-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
   .shop-day-grid { grid-template-columns: 1fr; }
-  .alternatives-grid { grid-template-columns: 1fr; }
   .edit-meta-grid { grid-template-columns: 72px 110px; }
   .edit-meta-grid label:nth-child(n+3) { grid-column: 1 / -1; }
 }
@@ -1519,8 +1498,6 @@ body.dark-mode .batch-task-status.fresh {
   .recipe-count-compact { display: inline; }
   .recipe-section-count { min-width: 25px; padding-inline: 8px; }
   .recipe-card-emoji, .today-badge { animation: none; }
-  .guide-notice-list li { align-items: flex-start; flex-direction: column; gap: 4px; }
-  .guide-notice-list li strong { white-space: normal; overflow-wrap: anywhere; }
   .transfer-choice-grid { grid-template-columns: 1fr; }
   .shop-item { grid-template-columns: 1fr 34px; }
   .shop-amount-input { grid-column: 1; text-align: left; }
@@ -1611,7 +1588,7 @@ body.dark-mode .batch-task-status.fresh {
   .nav-label { font-size: var(--fs-bottom-nav); }
 }
 
-/* ===== Schema 4 / nuove funzionalità ===== */
+/* ===== Estensioni successive ===== */
 
 .recipe-section-heading {
   margin: 16px 0 12px;
@@ -1870,17 +1847,6 @@ body.dark-mode .batch-task-status.fresh {
 .generator-advanced summary { cursor: pointer; font-weight: 800; font-size: var(--fs-secondary); user-select: none; }
 .generator-advanced summary small { color: var(--text-muted); font-weight: 600; }
 .generator-advanced .text-muted { margin: 8px 0; font-size: var(--fs-caption); }
-.generator-constraints-grid { display: grid; gap: 8px; }
-.generator-constraint-row {
-  display: grid;
-  grid-template-columns: 1fr 58px 14px 58px;
-  align-items: center;
-  gap: 8px;
-  padding: 8px 0;
-  border-top: 1px dashed var(--line);
-  font-size: var(--fs-secondary);
-}
-.generator-constraint-row:first-child { border-top: 0; }
 .generator-constraint-row strong { font-size: var(--fs-secondary); }
 .generator-constraint-row input {
   min-height: 36px;
@@ -1905,16 +1871,12 @@ body.dark-mode .batch-task-status.fresh {
   border: 1px solid rgba(157, 95, 46, .18);
   font-weight: 700;
 }
-.generator-counts span.ok { background: var(--primary-soft); color: var(--primary-strong, var(--primary)); border-color: rgba(61, 153, 112, .18); }
-.generator-counts span.warning { background: var(--danger-soft); color: var(--danger); border-color: rgba(200, 70, 79, .22); font-weight: 800; }
+body.dark-mode .generator-param-grid select { background: #141414; border-color: #232323; color: var(--text); }
 
 body.dark-mode .generator-slot-toggle,
 body.dark-mode .generator-param-grid label,
 body.dark-mode .generator-advanced { background: var(--surface-alt); border-color: #232323; }
-body.dark-mode .generator-param-grid select,
-body.dark-mode .generator-constraint-row input { background: #141414; border-color: #232323; color: var(--text); }
-body.dark-mode .generator-counts span.ok { background: #2f7a59; color: #d9ede4; border-color: #23503c; }
-body.dark-mode .generator-counts span.warning { background: rgba(200, 70, 79, .18); color: #f2aca0; border-color: rgba(200, 70, 79, .35); }
+body.dark-mode .generator-param-grid select { background: #141414; border-color: #232323; color: var(--text); }
 body.dark-mode .generator-pair-chip { background: rgba(196, 112, 75, .16); color: #e7b49a; border-color: rgba(196, 112, 75, .3); }
 
 body.dark-mode .share-analysis-grid > div,
@@ -1925,22 +1887,20 @@ body.dark-mode .share-replace-note { background: rgba(200, 70, 79, .15); }
 body.dark-mode .share-plan-note { background: rgba(90, 136, 165, .15); }
 body.dark-mode .generator-warnings { background: rgba(200, 70, 79, .15); }
 
-/* A4 - Alternative Guide inline */
-.guide-ingredient { cursor: pointer; transition: background .15s; }
-.guide-ingredient:hover { background: var(--primary-soft); border-radius: 8px; }
-.guide-hint { color: var(--primary); font-size: var(--fs-label); font-weight: 800; opacity: .45; margin-left: 8px; vertical-align: middle; }
-.guide-ingredient:hover .guide-hint { opacity: 1; }
-.guide-footnote { border-bottom: 0 !important; padding: 12px 4px 4px !important; justify-content: center !important; background: transparent !important; }
-.guide-footnote small { color: var(--text-muted); font-size: var(--fs-caption); font-style: italic; }
-.guide-modal-content { max-width: 640px; }
-#guide-modal-subtitle { margin-top: 4px; font-size: var(--fs-secondary); }
-.guide-tables { display: grid; gap: 16px; margin-top: 16px; }
-.guide-tables .alternative-table { margin-top: 0; }
-.guide-highlight { background: var(--primary-soft) !important; border: 1px solid rgba(61,153,112,.25); border-radius: 8px; font-weight: 700; }
-.guide-highlight span { color: var(--primary-strong); }
-.guide-modal-note { margin-top: 16px; font-size: var(--fs-secondary); padding: 12px 12px; border-radius: 10px; background: var(--surface-alt); }
-body.dark-mode .guide-highlight { background: rgba(125,221,178,.14) !important; border-color: rgba(125,221,178,.3); }
-body.dark-mode .guide-modal-note { background: #0d0d0d; border: 1px solid #232323; }
+/* A4 - Equivalenze della dieta (inline) */
+.diet-ingredient { cursor: pointer; transition: background .15s; }
+.diet-ingredient:hover { background: var(--primary-soft); border-radius: 8px; }
+.diet-hint { color: var(--primary); font-size: var(--fs-label); font-weight: 800; opacity: .45; margin-left: 8px; vertical-align: middle; }
+.diet-ingredient:hover .diet-hint { opacity: 1; }
+.diet-footnote { border-bottom: 0 !important; padding: 12px 4px 4px !important; justify-content: center !important; background: transparent !important; }
+.diet-footnote small { color: var(--text-muted); font-size: var(--fs-caption); font-style: italic; }
+.diet-modal-content { max-width: 640px; }
+#diet-modal-subtitle { margin-top: 4px; font-size: var(--fs-secondary); }
+.diet-highlight { background: var(--primary-soft) !important; border: 1px solid rgba(61,153,112,.25); border-radius: 8px; font-weight: 700; }
+.diet-highlight span { color: var(--primary-strong); }
+.diet-modal-note { margin-top: 16px; font-size: var(--fs-secondary); padding: 12px 12px; border-radius: 10px; background: var(--surface-alt); }
+body.dark-mode .diet-highlight { background: rgba(125,221,178,.14) !important; border-color: rgba(125,221,178,.3); }
+body.dark-mode .diet-modal-note { background: #0d0d0d; border: 1px solid #232323; }
 
 @media (max-width: 640px) {
   .generator-diff { grid-template-columns: 1fr; }
@@ -2441,75 +2401,12 @@ body.dark-mode .store-status-badge.only { background: #101c24; color: #7fa8c2; }
 body.dark-mode .generator-lock-pill { background: #10281c; color: #6fc79e; }
 body.dark-mode .generator-slot-lock-badge { background: #141414; color: #b8b8b8; }
 
-/* ---- Banner grammature Guide ---- */
-.guide-notice { margin: 12px 0 4px; padding: 12px 16px; border: 1px solid rgba(186,118,40,.3); border-radius: 14px; background: var(--accent-soft); }
-.guide-notice-head { display: flex; align-items: flex-start; gap: 8px; }
-.guide-notice-head > span { font-size: var(--fs-subtitle); line-height: 1.2; }
-.guide-notice-head strong { display: block; font-size: var(--fs-secondary); color: #a05a3b; }
-.guide-notice-head small { display: block; margin-top: 0px; color: var(--text-muted); font-size: var(--fs-caption); }
-.guide-notice-list { margin: 8px 0 12px; padding: 0; list-style: none; }
-.guide-notice-list li { display: flex; align-items: baseline; justify-content: space-between; gap: 12px; padding: 4px 0; border-bottom: 1px dashed rgba(186,118,40,.22); font-size: var(--fs-secondary); }
-.guide-notice-list li:last-child { border-bottom: 0; }
-.guide-notice-list li span { color: var(--text); }
-.guide-notice-list li strong { color: var(--warning); white-space: nowrap; }
-.guide-notice-list li.guide-notice-more { border-bottom: 0; color: var(--text-muted); font-size: var(--fs-caption); }
-.guide-adapt-btn { width: 100%; border-color: var(--warning); color: var(--warning); }
-.guide-adapt-btn:hover { background: rgba(186,118,40,.1); border-color: var(--warning); }
-.guide-card-flag { position: absolute; top: 13px; right: 13px; display: grid; place-items: center; width: 20px; height: 20px; border-radius: 50%; background: var(--accent-soft); color: var(--warning); font-size: var(--fs-caption); }
-.guide-notice-success { background: var(--primary-soft); border-color: rgba(61,153,112,.24); }
-.guide-notice-success .guide-notice-head > span,
-.guide-notice-success .guide-notice-head strong { color: var(--primary-strong); }
-.guide-notice-blocked { border-color: rgba(185,61,68,.38); }
-.guide-notice-explanation { margin: 8px 0 4px; color: var(--text-muted); font-size: var(--fs-secondary); line-height: 1.45; }
-.guide-save-actions { display: flex; gap: 8px; margin-top: 12px; }
-.guide-save-actions .btn { flex: 1; min-width: 0; }
-.guide-plan-badge,
-.guide-blocked-badge { display: inline-grid; place-items: center; min-width: 18px; height: 18px; margin-left: 4px; padding: 0 4px; border-radius: 6px; background: var(--primary-soft); color: var(--primary-strong); font-size: var(--fs-badge); font-weight: 850; vertical-align: middle; }
-.guide-plan-badge.original { background: var(--surface-alt); color: var(--text-muted); }
-.guide-blocked-badge { background: var(--danger-soft); color: var(--danger); }
-.guide-mode-toggle { border: 1px solid var(--line); border-radius: 999px; padding: 8px 12px; background: var(--surface-alt); color: var(--text-muted); font: inherit; font-size: var(--fs-caption); font-weight: 800; cursor: pointer; }
-.guide-mode-toggle.active { border-color: rgba(61,153,112,.4); background: var(--primary-soft); color: var(--primary-strong); }
-.guide-mode-toggle.original { border-color: rgba(186,118,40,.35); color: var(--warning); }
-.guide-import-note { margin-top: 12px; padding-top: 12px; border-top: 1px solid var(--line); color: var(--warning); font-size: var(--fs-secondary); line-height: 1.45; }
-.guide-import-note small { color: var(--text-muted); }
-.guide-import-ok { color: var(--primary-strong); }
+/* ---- Badge dosi allineate (Settimana) ---- */
+.diet-plan-badge { display: inline-grid; place-items: center; min-width: 18px; height: 18px; margin-left: 4px; padding: 0 4px; border-radius: 6px; background: var(--primary-soft); color: var(--primary-strong); font-size: var(--fs-badge); font-weight: 850; vertical-align: middle; }
+.import-note { margin-top: 12px; padding-top: 12px; border-top: 1px solid var(--line); color: var(--warning); font-size: var(--fs-secondary); line-height: 1.45; }
+.import-note small { color: var(--text-muted); }
+.import-ok { color: var(--primary-strong); }
 
-body.dark-mode .guide-notice { background: #3a241a; border-color: #5f3a28; }
-body.dark-mode .guide-notice-success { background: #10281c; border-color: rgba(125,221,178,.28); }
-body.dark-mode .guide-notice-success .guide-notice-head > span,
-body.dark-mode .guide-notice-success .guide-notice-head strong { color: #6fc79e; }
-body.dark-mode .guide-mode-toggle { background: #141414; }
-body.dark-mode .guide-mode-toggle.active { background: rgba(125,221,178,.14); color: #6fc79e; }
-body.dark-mode .guide-mode-toggle.original { color: #d9987a; }
-body.dark-mode .guide-notice-head strong { color: #d9987a; }
-body.dark-mode .guide-notice-list li strong { color: #d9987a; }
-
-
-
-/* Tabelle equivalenze Guide: colonne stabili decise dalla classe `cols-N`
- * generata dal numero reale di intestazioni, non dalla lunghezza della riga.
- *   - popup di una giornata: Alimento | Pranzo A (o R) | Cena  → cols-3
- *   - Impostazioni (nessuna giornata): Alimento | Pranzo A | Pranzo R | Cena → cols-4
- *   - proteine (dose unica pranzo/cena): Alimento | Pranzo e cena → cols-2
- * Così una riga con un numero di celle diverso non sposta le colonne. */
-.alternative-table.cols-2 > div { display: grid; grid-template-columns: minmax(0, 1fr) 72px; gap: 16px; align-items: center; }
-.alternative-table.cols-3 > div { display: grid; grid-template-columns: minmax(0, 1fr) 72px 72px; gap: 16px; align-items: center; }
-.alternative-table.cols-4 > div { display: grid; grid-template-columns: minmax(0, 1fr) 66px 66px 66px; gap: 12px; align-items: center; }
-.alternative-table.guide-carbs > div strong,
-.alternative-table.guide-proteins > div strong { text-align: right; }
-/* Cella inattesa oltre le colonne previste: va a capo su tutta la larghezza. */
-.alternative-table.cols-2 > div > :nth-child(n+3),
-.alternative-table.cols-3 > div > :nth-child(n+4),
-.alternative-table.cols-4 > div > :nth-child(n+5) { grid-column: 1 / -1; text-align: left; }
-.alternative-table .alternative-head { background: var(--surface-alt); color: var(--text-muted); font-size: var(--fs-caption); text-transform: uppercase; letter-spacing: .04em; }
-.alternative-table .alternative-head strong:first-child { text-align: left; }
-@media (max-width: 520px) {
-  .alternative-table.cols-2 > div { grid-template-columns: minmax(0, 1fr) 56px; gap: 8px; padding-left: 8px; padding-right: 8px; }
-  .alternative-table.cols-3 > div { grid-template-columns: minmax(0, 1fr) 56px 56px; gap: 8px; padding-left: 8px; padding-right: 8px; }
-  .alternative-table.cols-4 > div { grid-template-columns: minmax(0, 1fr) 48px 48px 48px; gap: 8px; padding-left: 8px; padding-right: 8px; }
-  .alternative-table.guide-carbs > div span,
-  .alternative-table.guide-proteins > div span { overflow-wrap: anywhere; }
-}
 
 /* Sui dispositivi touch evita hover persistenti e animazioni decorative continue. */
 @media (hover: none) {
@@ -2646,7 +2543,7 @@ body.dark-mode .guide-notice-list li strong { color: #d9987a; }
   line-height: 1.35;
 }
 
-/* ---- Inviti con email reale e verifica email (ADR 0004) ---- */
+/* ---- Inviti con email reale e verifica email (ADR 0001) ---- */
 .login-reset { margin-top: 12px; }
 .invite-summary {
   margin: 12px 0 8px;

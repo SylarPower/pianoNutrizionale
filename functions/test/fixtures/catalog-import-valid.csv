@@ -1,3 +1,3 @@
-ingredientId;displayName;aliases;categoryId;mappingKind;guideFamilyId
-sorgo;Sorgo;sorgo bianco|sorgo decorticato;cereali-minori;guided;cereali
-free-finocchio-selvatico;Finocchio selvatico;finocchio selvatico;free;free;
+ingredientId;displayName;aliases;categoryId;familyId;vegetarian;vegan
+sorgo;Sorgo;sorgo bianco|sorgo decorticato;cereali-minori;sorgo-e-affini;true;true
+finocchio-selvatico;Finocchio selvatico;finocchio selvatico;free;erbe-aromatiche;true;true

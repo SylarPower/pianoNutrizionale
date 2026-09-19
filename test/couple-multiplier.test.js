@@ -45,9 +45,9 @@ test('stile: controllo coerente col tema (chiaro e scuro)', () => {
   assert.match(styleCss, /body\.dark-mode \.couple-mult \{/);
 });
 
-test('console: nessun campo moltiplicatore porzioni visibile', () => {
-  // Il valore salvato resta in round-trip ma come input nascosto.
-  assert.match(adminJs, /type="hidden" data-f="option-mult"/);
+test('console: nessun campo moltiplicatore porzioni (vista Dosi rimossa)', () => {
+  // La vista «Dosi clienti» e i suoi override sono stati rimossi: nessun
+  // campo moltiplicatore, visibile o nascosto, vive nella console.
+  assert.doesNotMatch(adminJs, /option-mult/, 'nessun campo moltiplicatore');
   assert.doesNotMatch(adminJs, /class="diet-mult"/, 'nessun campo visibile');
-  assert.doesNotMatch(adminJs, /data-f="option-mult"[^>]*type="number"/, 'nessun input numerico visibile');
 });

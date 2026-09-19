@@ -1,257 +1,147 @@
 'use strict';
+/* Console admin — contratto statico della v2 (catalogo globale, strutture a
+ * blocchi, template equivalenze, coda richieste):
+ *  - menu: Clienti, Strutture dieta, Template equivalenze, Ricette (visibili),
+ *    Catalogo e Richieste catalogo riservate al creatore;
+ *  - nessuna vista legacy (Dosi clienti, Mapping, Utenti, editor regole);
+ *  - callable v2 usate, callable rimosse assenti;
+ *  - dialog assegnazione senza campi v1; editor strutture dieta e dialog
+ *    template/richieste col contratto attuale.
+ * I percorsi DOM interattivi sono coperti da test/smoke-admin.js. */
 const test = require('node:test');
 const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const path = require('node:path');
+
 const root = path.join(__dirname, '..');
 const html = fs.readFileSync(path.join(root, 'admin.html'), 'utf8');
 const css = fs.readFileSync(path.join(root, 'css/admin.css'), 'utf8');
 const js = fs.readFileSync(path.join(root, 'js/admin.js'), 'utf8');
 
-test('console admin contiene una slice reale mapping e assegnazioni', () => {
-  for (const id of ['reports-list','mapping-form','clients-list','assignment-form']) {
-    assert.match(html, new RegExp(`id="${id}"`));
+test('menu console: viste operative visibili, Catalogo e Richieste riservate', () => {
+  for (const view of ['clients', 'structures', 'templates', 'recipes']) {
+    assert.match(html, new RegExp(`data-view="${view}"`), `voce ${view} presente`);
+    assert.doesNotMatch(html, new RegExp(`data-view="${view}"[^>]*class="nav-link hidden"`), `voce ${view} visibile`);
   }
-  // L'header non espone più alcun riferimento all'organizzazione (singola 'pianoNutrizionale').
-  assert.doesNotMatch(html, /organization-id|org-badge|tenant-field/);
-  assert.doesNotMatch(js, /saveOrg/);
-  for (const callable of ['listMappingReports','proposeMapping','publishMapping','listAuthorizedClients']) {
-    assert.match(js, new RegExp(`['"]${callable}['"]`));
-  }
-});
-
-test('modale assegnazione v2: solo Cliente, Struttura, Decorrenza, Scadenza/Senza scadenza, Note e Conferma', () => {
-  for (const id of ['assignment-structure','assignment-effective','assignment-expires','assignment-no-expiry','assignment-notes']) {
-    assert.match(html, new RegExp(`id="${id}"`));
-  }
-  // Campi v1 eliminati: niente Ambito/Versione/Strategia/checksum/anteprima.
-  for (const legacy of ['assignment-scope','assignment-version','assignment-strategy','assignment-checksum','assignment-preview','assignment-reason']) {
-    assert.doesNotMatch(html, new RegExp(`id="${legacy}"`), `il campo v1 ${legacy} non deve più esistere`);
-  }
-  // Il checksum non viene mai mostrato né richiesto nel flusso di assegnazione.
-  assert.doesNotMatch(html, /Checksum SHA-256/i);
-  assert.doesNotMatch(js, /previewClientRuleSet/);
-  assert.doesNotMatch(js, /listRuleSets/);
-  assert.doesNotMatch(js, /assignClientRuleSet/);
-  assert.match(js, /assignClientStructure/);
-  // Fase 2: il selettore usa le dietStructures (nome + ultima modifica).
-  assert.match(js, /listDietStructures/);
-  assert.match(js, /structureId: chosen.id/);
-  // Landing: la vista Clienti è la porta d'ingresso.
-  assert.match(html, /nav-link active" data-view="clients"/);
-  assert.match(js, /showView\('clients'\)/);
-  // Badge coda accessibile: stato anche senza colore.
-  assert.match(html, /id="nav-open-count" class="badge-zero"/);
-  assert.match(js, /aria-label.*Coda ingredienti/);
+  // Catalogo e Richieste catalogo: nascosti di default, visibili solo al creatore.
+  assert.match(html, /id="nav-catalog" class="nav-link hidden" data-view="catalog"/);
+  assert.match(html, /id="nav-requests" class="nav-link hidden" data-view="requests"/);
+  // Badge della coda: conteggio in sospeso, leggibile anche senza colore.
+  assert.match(html, /id="nav-open-count" class="badge-zero" aria-label="Richieste catalogo in sospeso"/);
   assert.match(css, /\.nav-link b\.badge-zero/);
   assert.match(css, /\.nav-link b\.badge-count/);
 });
 
-test('console admin è responsive, accessibile e non indicizzabile', () => {
-  assert.match(html, /name="robots" content="noindex,nofollow"/);
-  assert.match(html, /aria-modal="true"/);
-  assert.match(css, /@media\(max-width:840px\)/);
-  assert.match(css, /@media\(max-width:1100px\) and \(min-width:841px\)/, 'tabella passa a due colonne sui tablet');
-  assert.match(css, /\.form-grid>label,[^{]+\{min-width:0\}/, 'i campi tecnici non forzano la griglia');
-  assert.match(css, /\.dialog-actions\{flex-direction:column-reverse\}/, 'azioni modale impilate sugli schermi stretti');
-  assert.match(css, /prefers-reduced-motion/);
+test('console admin: nessuna vista legacy', () => {
+  // Le viste rimosse non devono lasciare tracce né nel menu né nel JS.
+  for (const legacy of ['data-view="doses"', 'data-view="mapping"', 'data-view="users"', 'id="view-doses"', 'id="view-mapping"', 'id="view-users"', '>Utenti<']) {
+    assert.doesNotMatch(html, new RegExp(legacy.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')), `${legacy} non deve esistere`);
+  }
+  for (const legacyId of ['reports-list', 'mapping-form', 'structure-form', 'structure-rules', 'structure-groups', 'structure-add-group', 'catalog-picker']) {
+    assert.doesNotMatch(html, new RegExp(`id="${legacyId}"`), `l'id legacy ${legacyId} non deve esistere`);
+    assert.doesNotMatch(js, new RegExp(`getElementById\\("${legacyId}"\\)`), `il JS non deve usare ${legacyId}`);
+  }
 });
 
-test('sezione Strutture dieta: voce di menu dopo Clienti, editor a revisioni nuove, callable v2', () => {
-  assert.match(html, /data-view="structures"/);
-  assert.ok(html.indexOf('data-view="clients"') < html.indexOf('data-view="structures"'), 'Strutture dieta segue Clienti nel menu');
-  assert.match(html, /id="view-structures"/);
-  assert.match(html, /id="structure-form"/);
-  assert.match(html, /id="structure-rules"/);
-  assert.match(html, /id="structure-restore-field"/);
-  for (const callable of ['listDietStructures','getDietStructureRevision','createDietStructure','updateDietStructureRevision','archiveDietStructure']) {
+test('callable v2 usate, callable legacy assenti', () => {
+  for (const callable of [
+    'listAuthorizedClients', 'listDietStructures', 'getDietStructureRevision', 'createDietStructure',
+    'updateDietStructureRevision', 'archiveDietStructure', 'assignClientStructure', 'compareDietStructures',
+    'listEquivalenceTemplates', 'getEquivalenceTemplateRevision', 'saveEquivalenceTemplate', 'archiveEquivalenceTemplate',
+    'listCatalogRequests', 'resolveCatalogRequest', 'importGlobalIngredientCatalog'
+  ]) {
     assert.match(js, new RegExp(`['"]${callable}['"]`), `callable ${callable} usata`);
   }
-  // Nessun campo "Versione" operativo; date di sola lettura.
-  assert.doesNotMatch(html, /<label>Versione/i);
-  assert.doesNotMatch(js, /<input[^>]*structure-(created|updated)/);
-  assert.match(js, /1 e 2000/);
-  assert.match(js, /Famiglia duplicata/);
-  // Checksum solo nei "Dettagli tecnici" admin, mai al nutritionist: il
-  // markup esiste ma il JS lo mostra solo se il server lo espone (admin).
-  assert.match(html, /<details id="structure-tech-details"/);
-  assert.match(html, /<summary>Dettagli tecnici<\/summary>/);
-  assert.match(js, /if \(result\.structure\.latestChecksum\)/);
+  for (const legacy of ['listRuleSets', 'assignClientRuleSet', 'previewClientRuleSet', 'proposeMapping', 'publishMapping', 'listMappingReports', 'saveGrammatureTables', 'listClientDoseOverrides']) {
+    assert.doesNotMatch(js, new RegExp(`['"]${legacy}['"]`), `callable legacy ${legacy} assente`);
+  }
 });
 
-test('strutture dieta Fase 2: autocomplete catalogo, categorie, gruppi alternativi, confronto', () => {
-  // js/domain.js caricato in console per buildCatalogIndex/searchCatalog.
-  assert.match(html, /<script src="js\/domain\.js"><\/script>/);
+test('modale assegnazione: solo Cliente, Struttura, Decorrenza, Scadenza, Note', () => {
+  for (const id of ['assignment-structure', 'assignment-effective', 'assignment-expires', 'assignment-no-expiry', 'assignment-notes']) {
+    assert.match(html, new RegExp(`id="${id}"`));
+  }
+  // Campi v1 eliminati: niente Ambito/Versione/Strategia/checksum/anteprima.
+  for (const legacy of ['assignment-scope', 'assignment-version', 'assignment-strategy', 'assignment-checksum', 'assignment-preview', 'assignment-reason']) {
+    assert.doesNotMatch(html, new RegExp(`id="${legacy}"`), `il campo v1 ${legacy} non deve più esistere`);
+  }
+  assert.doesNotMatch(html, /Checksum SHA-256/i);
+  // Il selettore usa le strutture dieta (nome + ultima modifica).
+  assert.match(html, /id="assignment-structure-list"/);
+  // La landing resta la vista Clienti.
+  assert.match(html, /nav-link active" data-view="clients"/);
+  assert.match(js, /showView\('clients'\)/);
+});
+
+test('editor strutture dieta: giornate, pasti a opzioni, catalogo e anteprima', () => {
+  assert.ok(html.indexOf('data-view="clients"') < html.indexOf('data-view="structures"'), 'Strutture dieta segue Clienti nel menu');
+  assert.match(html, /id="view-structures"/);
+  assert.match(html, /id="new-diet-plan"/);
+  assert.match(html, /id="refresh-structures"/);
+  assert.match(html, /id="structures-list"/);
+  // Dialog editor a revisioni: restore, changelog, dettagli tecnici, anteprima.
+  for (const id of ['diet-plan-dialog', 'diet-plan-name', 'diet-plan-days', 'diet-plan-add-day', 'diet-plan-general-notes', 'diet-plan-changelog', 'diet-plan-restore-field', 'diet-plan-load-revision', 'diet-plan-preview', 'diet-plan-preview-toggle', 'diet-plan-error', 'diet-plan-submit']) {
+    assert.match(html, new RegExp(`id="${id}"`), `editor: ${id}`);
+  }
+  assert.match(html, /<details id="diet-plan-tech-details"/);
+  assert.match(html, /<summary>Dettagli tecnici<\/summary>/);
+  // Autocomplete dal catalogo globale (datalist condivisa).
+  assert.match(html, /id="diet-catalog-options"/);
   assert.match(js, /loadCatalogIndex/);
-  assert.match(js, /catalogSearch/);
-  assert.match(js, /rule-ing-search/);
-  assert.match(js, /fillCategorySelects/);
-  assert.match(js, /\.rule-cat/);
-  // Famiglia validata contro il motore (casing canonico, server rivalida).
-  assert.match(js, /engineFamilyId/);
-  assert.match(js, /non esiste nel motore/);
-  // Gruppi alternativi CRUD salvati nella revisione.
-  assert.match(html, /id="structure-groups"/);
-  assert.match(html, /id="structure-add-group"/);
-  assert.match(js, /collectStructureGroups/);
-  assert.match(js, /alternativeGroups/);
-  // CONFRONTA: checkbox card + dialog matrice responsive, sola lettura.
+  assert.match(js, /collectDietPlanFromEditor/);
+  assert.match(js, /renderDietPlanEditor/);
+  // Confronto strutture in sola lettura.
   assert.match(html, /id="compare-structures"/);
   assert.match(html, /id="compare-dialog"/);
   assert.match(html, /id="compare-matrix"/);
   assert.match(js, /compareDietStructures/);
-  assert.match(js, /data-compare-structure/);
   assert.match(js, /Sola lettura/);
-  assert.match(css, /\.compare-table/);
-  assert.match(css, /max-width:760px/);
-  // Differenze mai solo-colore: simbolo + parola.
-  assert.match(js, /≠.*=|diff-word/);
-  assert.match(css, /\.diff-mark/);
+  assert.match(css, /\.compare-table|\.compare-matrix/);
 });
 
-test('vista Clienti unificata: nessuna sezione Utenti separata, funzioni ricollocate', () => {
-  // Menu unico: Clienti, Dosi clienti, Strutture dieta, Catalogo (creatore),
-  // Coda ingredienti. Nessuna voce o vista "Utenti" duplicata.
-  assert.doesNotMatch(html, /data-view="users"/);
-  assert.doesNotMatch(html, /id="view-users"/);
-  assert.doesNotMatch(html, />Utenti</);
-  for (const view of ['clients', 'doses', 'structures', 'catalog', 'mapping']) {
-    assert.match(html, new RegExp(`data-view="${view}"`), `voce ${view} presente`);
+test('template equivalenze: famiglia di riferimento, importo ed equivalenti', () => {
+  assert.match(html, /data-view="templates"/);
+  assert.match(html, /id="view-templates"/);
+  for (const id of ['template-dialog', 'template-form', 'template-name', 'template-family', 'template-ingredient', 'template-ref-value', 'template-ref-unit', 'template-equivalents', 'template-add-equivalent', 'template-error']) {
+    assert.match(html, new RegExp(`id="${id}"`), `template: ${id}`);
   }
-  // Le funzioni davvero necessarie restano nella vista Clienti: il team è
-  // riservato all'admin, mentre inviti e richieste del cliente vivono nella
-  // scheda. Nessun percorso legacy o duplicato è esposto.
-  for (const id of ['members-list', 'invite-nutritionist-form', 'users-feedback', 'users-scope', 'invite-client-dialog', 'client-detail-dialog', 'team-panel']) {
-    assert.match(html, new RegExp(`id="${id}"`), `manca #${id}`);
-  }
-  const clientsView = html.match(/<main id="view-clients"[\s\S]*?<\/main>/)[0];
-  for (const id of ['members-list', 'invite-nutritionist-form', 'client-filter']) {
-    assert.match(clientsView, new RegExp(`id="${id}"`), `#${id} vive nella vista Clienti`);
-  }
-  assert.match(clientsView, /class="panel hidden"/, 'il team non è mostrato al nutrizionista');
-  assert.doesNotMatch(html, /Account di test|legacy-invite-details|id="links-list"/, 'nessun percorso test o elenco duplicato');
-  assert.doesNotMatch(clientsView, /refresh-users/, 'nessun aggiornamento separato ex-Utenti');
-  for (const callable of ['listOrganizationUsers', 'searchUserByUsername', 'inviteOrganizationUser', 'setMemberStatus', 'removeClientLink', 'removeNutritionist']) {
-    assert.match(js, new RegExp(`['"]${callable}['"]`), `callable ${callable} usata`);
-  }
-  // Verifica per username esatto: solo trovato/non trovato, mai PII o liste.
-  assert.match(html, /data-verify-username/);
-  assert.match(js, /Nessun account con questo username/);
-  // Rimozione cliente: SOLO dentro la scheda, con dialog che spiega gli effetti.
-  assert.match(html, /id="unlink-dialog"/);
-  assert.match(html, /L’account resta al sicuro/);
-  assert.match(html, /torna alle dosi originali/);
-  assert.match(html, /Rimuovi cliente/);
-  assert.match(js, /removeClientLink/);
-  assert.doesNotMatch(js, /data-unlink-client/, 'nessun pulsante di rimozione negli elenchi');
-  // Mai password/token nei form: solo username esatto + token mostrato una volta.
-  assert.doesNotMatch(html, /id="invite-.*password"/);
-  assert.match(js, /una sola volta/);
+  // L'ingrediente di riferimento è un input con datalist (non un campo libero).
+  assert.match(html, /id="template-ingredient"[^>]*list="diet-catalog-options"/);
+  assert.match(js, /referenceFamilyId/);
+  assert.match(js, /referenceAmount/);
+  assert.match(js, /equivalents/);
 });
 
-test('console Fase 2: font self-hosted e drawer mobile accessibile', () => {
-  assert.match(html, /rel="preload" href="assets\/fonts\/Author-Variable\.woff2"/);
-  assert.match(html, /aria-expanded="false" aria-controls="console-sidebar"/);
-  assert.match(html, /id="sidebar-backdrop"/);
-  assert.match(css, /@font-face\{font-family:"Author"/);
-  assert.match(css, /\.sidebar-backdrop/);
-  assert.match(js, /sidebar-backdrop/);
-  assert.match(js, /aria-expanded/);
+test('coda richieste catalogo: dialog di valutazione con identità e solo identità', () => {
+  for (const id of ['request-dialog', 'request-form', 'request-display-name', 'request-ingredient-id', 'request-category', 'request-family', 'request-vegetarian', 'request-vegan', 'request-aliases', 'request-reason', 'request-error', 'request-reject', 'request-accept']) {
+    assert.match(html, new RegExp(`id="${id}"`), `richieste: ${id}`);
+  }
+  // Il form raccoglie solo identità: niente dosi, porzioni o frequenze.
+  for (const legacy of ['request-quantity', 'request-grams', 'request-portions', 'request-frequency']) {
+    assert.doesNotMatch(html, new RegExp(`id="${legacy}"`), `nessun campo dose ${legacy}`);
+  }
+  assert.match(js, /resolveCatalogRequest/);
+  assert.match(js, /submitCatalogRequest|listMyCatalogRequests|listCatalogRequests/);
 });
 
-test('copy premium comunica valore e sicurezza senza promessa clinica assoluta e senza scritte invasive', () => {
-  assert.match(html, /Decisioni più sicure/);
-  assert.doesNotMatch(html, /Ambiente protetto/);
-  assert.doesNotMatch(html, /Ogni azione è tracciata/);
-  assert.doesNotMatch(html, /Sessione verificata/);
-  assert.doesNotMatch(html, /garantisce|cura|risultato garantito/i);
-});
-
-test('sezione Dosi clienti: vista, editor override e copia con anteprima', () => {
-  // Voce di menu dopo Clienti (landing invariata).
-  assert.match(html, /data-view="doses"/);
-  assert.match(html, /nav-link active" data-view="clients"/);
-  // Struttura vista: selettori, pannelli, azioni.
-  for (const id of ['view-doses', 'dose-client', 'doses-feedback', 'dose-assignment', 'dose-tables', 'save-doses', 'copy-from', 'copy-to', 'copy-feedback', 'copy-preview', 'preview-copy', 'confirm-copy', 'refresh-doses']) {
-    assert.match(html, new RegExp(`id="${id}"`));
-  }
-  // Callable dedicate (mai scritture dirette Firestore dalla console).
-  for (const callable of ['getClientDoses', 'updateClientDoseOverrides', 'copyClientDoses']) {
-    assert.match(js, new RegExp(`['"]${callable}['"]`));
-  }
-  // Concorrenza ottimistica e conferma cliente esplicita nei testi.
-  assert.match(js, /expectedRevision/);
-  assert.match(js, /dovrà confermare dall’app/);
-  // Anteprima copia: differenze prima della conferma, famiglie saltate esplicite.
-  assert.match(js, /previewDoseCopy/);
-  assert.match(js, /confirmDoseCopy/);
-  assert.match(js, /skipped/);
-  // Celle vuote = studio: validazione anti-refusi prima dell'invio.
-  assert.match(js, /data-dose-family/);
-  assert.match(js, /data-freq-key/);
-  assert.match(js, /Dosi 1–2000 g, frequenze 0–14/);
-  // Accessibilità e responsive della vista.
-  assert.match(js, /aria-label="\$\{escapeAdmin\(item\.label\)\}/);
-  assert.match(css, /\.dose-table/);
-  assert.match(css, /\.copy-grid/);
-});
-
-test('strutture dieta: picker catalogo multi-selezione e raggruppamento con dosi comuni', () => {
-  // Picker catalogo nel dialog struttura, con filtro, conteggio accessibile e CTA.
-  for (const id of ['catalog-picker', 'catalog-picker-search', 'catalog-picker-list', 'picker-count', 'picker-clear', 'picker-group', 'picker-feedback']) {
-    assert.match(html, new RegExp(`id="${id}"`));
-  }
-  assert.match(html, /Raggruppa selezionati/);
-  assert.match(html, /aria-label="Filtra alimenti del catalogo"/);
-  assert.match(html, /role="status">Nessun alimento selezionato/);
-  // Dialog di raggruppamento: due destinazioni (regola multi-famiglia o gruppo alternativo) e dosi comuni.
-  for (const id of ['group-dialog', 'group-form', 'group-dest-rule', 'group-dest-alt', 'group-family', 'group-target', 'group-new-id', 'group-new-name', 'group-la', 'group-lr', 'group-ca', 'group-cr', 'group-error']) {
-    assert.match(html, new RegExp(`id="${id}"`));
-  }
-  assert.match(html, /aria-labelledby="group-title"/);
-  assert.match(html, /data-close-group/);
-  // Logica JS: render raggruppato per categoria, selezione minima 2, validazione dosi come le regole.
-  for (const fn of ['renderCatalogPicker', 'updatePickerCount', 'resetCatalogPicker', 'openGroupDialog', 'collectGroupDoses', 'submitGrouping', 'toggleGroupDestination', 'toggleNewGroupFields']) {
-    assert.match(js, new RegExp(`function ${fn}\\b`));
-  }
-  // La categoria riservata 'free' è etichettata come nel resto della console.
-  assert.match(js, /categoryId === 'free'\) return 'Alimenti liberi'/);
-  assert.match(js, /pickerSelection/);
-  assert.match(js, /count < 2/);
-  assert.match(js, /numeri interi tra 1 e 2000/);
-  assert.match(js, /almeno una dose per pranzo o cena/);
-  // Il raggruppamento crea righe normali riusando i builder esistenti (server-validati al salvataggio).
-  assert.match(js, /addStructureRuleRow\(\{ guideFamilyId, ingredientIds, quantityGrams, enabled: true \}\)/);
-  assert.match(js, /groupItemRow\(\{ ingredientId, quantityGrams \}\)/);
-  assert.match(js, /resetCatalogPicker\(\)/);
-  // Reset del picker a ogni apertura del dialog struttura.
-  assert.match(js, /addEventListener\('click', openGroupDialog\)/);
-  assert.match(js, /role="group" aria-label=/);
-  // Stili e responsive (44px touch, stacking a colonna singola su mobile).
-  assert.match(css, /\.catalog-picker/);
-  assert.match(css, /\.picker-category-items/);
-  assert.match(css, /\.picker-item/);
-  assert.match(css, /\.group-doses/);
-});
-
-test('sezione Catalogo: import versionato solo per il platform admin', () => {
-  // La voce di menu esiste ma resta nascosta finché il server non conferma
-  // il ruolo di creatore (platformMembers admin).
-  assert.match(html, /id="nav-catalog"[^>]*class="nav-link hidden"[^>]*data-view="catalog"/);
+test('catalogo globale: import versionato riservato al platform admin', () => {
   assert.match(html, /id="view-catalog"/);
-  for (const id of ['catalog-status', 'catalog-feedback', 'catalog-file', 'catalog-dry-run', 'catalog-commit', 'catalog-report', 'refresh-catalog']) {
-    assert.match(html, new RegExp(`id="${id}"`));
-  }
-  // Due passaggi: dry-run (nessuna scrittura) e commit con lo stesso previewId.
-  assert.match(js, /'importGlobalIngredientCatalog'/);
-  assert.match(js, /mode: 'dry-run'/);
-  assert.match(js, /mode: 'commit'/);
-  assert.match(js, /confirm: true/);
-  assert.match(js, /previewId: preview\.previewId/);
-  // Il commit resta disabilitato finché l'analisi non è pulita.
-  assert.match(js, /catalog-commit'\)\.disabled = !clean/);
-  // Il ruolo è verificato dal server: la voce si mostra solo al creator.
-  assert.match(js, /\$\('nav-catalog'\)\.classList\.toggle\('hidden', !adminState\.isCreator\)/);
-  // Nessun token o secret nel flusso: solo il file scelto dall'operatore.
-  assert.doesNotMatch(html, /catalog-.*(token|secret|password)/i);
+  assert.match(html, /id="nav-catalog"/);
+  assert.match(js, /importGlobalIngredientCatalog/);
+  assert.match(js, /dry-run/);
+  // Nessuna grammatura nel catalogo: solo identità.
+  assert.doesNotMatch(js, /grammature/i);
+});
+
+test('console admin è responsive, accessibile e non indicizzabile', () => {
+  assert.match(html, /<meta name="viewport" content="width=device-width,initial-scale=1">/);
+  assert.match(html, /<meta name="robots" content="noindex,nofollow">/);
+  assert.match(html, /lang="it"/);
+  assert.match(css, /@media\(max-width:760px\)/);
+  assert.match(html, /aria-label="Chiudi editor"/);
+});
+
+test('copy premium: valore e sicurezza senza promesse cliniche', () => {
+  assert.doesNotMatch(html, /guarantee|garantito|100%|cur[aà]/i);
+  assert.match(html, /sicur/i);
 });

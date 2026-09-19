@@ -14,7 +14,7 @@ account che vuoi tenere:
 
 1. **prima** questa guida (Passi 1-6): se cancelli per primo, gli account
    restano senza appartenenza;
-2. **poi** la pulizia (organizzazioni vecchie tipo `prova`, `globalRuleSets`);
+2. **poi** la pulizia (organizzazioni vecchie tipo `prova` e collezioni del modello eliminato come `globalRuleSets`);
 3. **infine** la verifica (Passo 8).
 
 Tutti i passaggi si fanno **con il mouse**, senza terminale. Nessuna credenziale
@@ -168,7 +168,8 @@ salvataggio viene rifiutato perché gli alimenti non esistono in catalogo.
 3. Salva la pagina sul computer con nome `catalogo-import.json`
    (Ctrl+S / Cmd+S, formato "solo testo").
 
-Il file contiene 75 ingredienti e 6 categorie, con gli id del motore Guide. Per
+Il file contiene 229 ingredienti, 49 famiglie e 6 categorie (solo identità:
+nomi, alias, categoria, famiglia, flag vegetarian/vegan — nessuna dose). Per
 rigenerarlo identico in futuro c'è
 `node functions/scripts/generate-catalog-import.js` (con `--check` per la sola
 verifica).
@@ -279,8 +280,8 @@ Solo adesso passa a
 **[pulizia-dati-legacy.md](pulizia-dati-legacy.md)**, Passi 3 e 4:
 
 - cancella le organizzazioni diverse da `pianoNutrizionale` (nel tuo caso `prova`);
-- cancella `globalRuleSets` **solo** se il controllo del Passo 4a non trova
-  assegnazioni attive collegate;
+- cancella `globalRuleSets`, `mappingReports` e `mappingProposals` (collezioni
+  del modello eliminato: nessun controllo necessario);
 - **non** cancellare `users/...`, `households`, `usernames`, `accountClientLinks`,
   `platformMembers`, `globalIngredientCatalog` (la guida spiega perché);
 - in **Authentication** non si cancella nessun account.
@@ -317,7 +318,7 @@ mancante (Passo 5) e il catalogo non importato (Passo 6).
 4. Metti il tuo UID in `platformMembers` con `role: admin`, `status: active`.
 5. Fai entrare `nutrizionista` in `organizations/pianoNutrizionale/members`.
 6. Accendi `globalIngredientCatalog/config/docs/import = { enabled: true }`.
-7. Console → Catalogo → dry-run → Conferma import del file Guide.
+7. Console → Catalogo → dry-run → Conferma import di `catalogo-import.json`.
 8. Collega i clienti reali invitati e assegna loro una struttura.
 9. Re-importa le ricette eventualmente già presenti nel Ricettario.
 10. Pulisci le organizzazioni vecchie e verifica tutto.

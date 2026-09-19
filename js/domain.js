@@ -1,14 +1,15 @@
-/* Piano Nutrizionale — dominio puro (schema 5).
+/* Piano Nutrizionale — dominio puro (schema 7).
  *
  * Questo file contiene SOLO funzioni pure: nessun DOM, nessuna chiamata
  * Firebase, nessuna ricetta personale. I dati personali arrivano da Firestore
  * e vengono trasformati da questi servizi in modo idempotente.
  *
- * È inoltre la FONTE UNICA delle grammature di riferimento del manuale del
- * della tabella di riferimento (GUIDE_GRAMMATURE, frequenze proteiche, massimi per porzione):
- * da qui derivano i vincoli del generatore, il riferimento carboidrati e la
- * guida mostrata nella webapp. Sono
- * valori di riferimento del manuale, mai dosaggi di ricette personali.
+ * Il catalogo globale ingredienti (identità, alias, famiglie, categorie e
+ * classificazione vegetarian/vegan) è un dato esterno versionato: qui vivono
+ * solo i servizi che lo consumano (indice, autocomplete, riconoscimento) e il
+ * motore di lettura della dieta assegnata. NESSUNA quantità clinica è definita
+ * in questo file: grammature, equivalenze e proporzioni vivono esclusivamente
+ * nelle strutture dieta e nei template equivalenze del singolo professionista.
  */
 (function (root, factory) {
   const api = factory();
@@ -17,20 +18,34 @@
 })(typeof globalThis !== 'undefined' ? globalThis : window, () => {
   'use strict';
 
-  // Schema 6: quantità originale singola per ingrediente (porzioni v2),
-  // controllo piano «quantità adattate alle linee guida», catalogo globale e
-  // Strutture dieta v2.
-  const VERSION = 6;
+  // Schema 7: catalogo globale v2 (famiglie + dietaryFlags), strutture dieta
+  // a blocchi con equivalenze, riconoscimento ingredienti a stati espliciti.
+  const VERSION = 7;
   const SINGLE_ORGANIZATION_ID = 'pianoNutrizionale';
   const DAYS = ['monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday', 'sunday'];
   const SLOTS = ['breakfast', 'snack1', 'lunch', 'snack2', 'dinner'];
-  const GUIDE_MAIN_SLOTS = ['lunch', 'dinner'];
-  const GUIDE_MODE_GUIDE = 'guide';
-  const GUIDE_MODE_ORIGINAL = 'original';
-  const GUIDE_ADAPTATION_SCHEMA_VERSION = 1;
   const EMPTY_PORTION = '—';
   const PROFILE_SINGLE = 'single';
   const PROFILE_COUPLE = 'couple';
+
+  // Corrispondenza tra gli slot del piano settimanale (breakfast/snack1/lunch/
+  // snack2/dinner) e i pasti delle strutture dieta. «evening-snack» esiste solo
+  // nelle strutture: il piano non ha uno slot corrispondente.
+  const MEAL_ID_BY_SLOT = {
+    breakfast: 'breakfast',
+    snack1: 'morning-snack',
+    lunch: 'lunch',
+    snack2: 'afternoon-snack',
+    dinner: 'dinner'
+  };
+  const SLOT_BY_MEAL_ID = {
+    breakfast: 'breakfast',
+    'morning-snack': 'snack1',
+    lunch: 'lunch',
+    'afternoon-snack': 'snack2',
+    dinner: 'dinner',
+    'evening-snack': null
+  };
 
   const DAY_LABELS = {
     monday: 'Lunedì', tuesday: 'Martedì', wednesday: 'Mercoledì', thursday: 'Giovedì',
@@ -40,571 +55,6 @@
   const SLOT_LABELS = { breakfast: 'Colazione', snack1: 'Spuntino mattina', lunch: 'Pranzo', snack2: 'Merenda', dinner: 'Cena' };
   const SLOT_SHORT = { breakfast: 'COLAZ.', snack1: 'SPUNT.', lunch: 'PRANZO', snack2: 'MERENDA', dinner: 'CENA' };
 
-  // Alias comuni normalizzati verso ingredientId stabili. Estendibile.
-  const INGREDIENT_ALIASES = {
-    'uovo intero': 'whole-eggs',
-    'uova intere': 'whole-eggs',
-    'uova intere sode': 'whole-eggs',
-    'uova intere barzotte': 'whole-eggs',
-    'pomodorini': 'cherry-tomatoes',
-    'pomodoro ciliegino': 'cherry-tomatoes',
-    'salmone': 'salmon',
-    'tonno': 'tuna',
-    'tonno al naturale sgocciolato': 'tuna',
-    'tonno al naturale': 'tuna',
-    'yogurt greco': 'greek-yogurt',
-    'yogurt greco 0%': 'greek-yogurt',
-    'yogurt greco magro o skyr': 'greek-yogurt',
-    'pane': 'bread',
-    'pane integrale': 'bread',
-    'pane di segale': 'bread',
-    'pane integrale o di segale': 'bread',
-    'pane tostato': 'bread',
-    'limone': 'lemon',
-    'zucchina': 'zucchini',
-    'zucchine': 'zucchini'
-  };
-
-  // Etichette canoniche (solo visualizzazione; `name` resta l'etichetta).
-  const CANONICAL_INGREDIENTS = {
-    'whole-eggs': 'Uova intere',
-    'cherry-tomatoes': 'Pomodorini',
-    'salmon': 'Salmone',
-    'tuna': 'Tonno',
-    'greek-yogurt': 'Yogurt greco',
-    'bread': 'Pane',
-    'lemon': 'Limone',
-    'zucchini': 'Zucchine'
-  };
-
-  // =====================================================================
-  // Manuale delle linee guida — FONTE UNICA
-  //
-  // Tutti i valori alimentari del manuale vivono qui: famiglie, grammature per
-  // pasto e giorno A/R, frequenze proteiche settimanali e massimi per
-  // porzione. Da questa tabella derivano:
-  //   - i vincoli del generatore (DEFAULT_CONSTRAINTS);
-  //   - il riferimento carboidrati del travaso pranzo <-> cena (CARB_REFERENCE);
-  //   - le tabelle di alternative dei popup e delle Impostazioni (GUIDE_MANUAL);
-  //   - il riconoscimento carboidrati/proteine degli ingredienti (isGuide*).
-  // Modifica SOLO qui: gli altri file leggono da PianoDomain.
-  //
-  // L'ordine delle regole conta: la prima che combacia con il nome
-  // dell'ingrediente vince (es. "fiocchi di latte" prima di "formaggi").
-  //
-  // `group` è la classificazione canonica della famiglia (carb / protein /
-  // dairy / fat / sweet / fruit): decide quali famiglie entrano nelle tabelle
-  // delle alternative e nei popup. Nessuna classificazione è duplicata altrove.
-  // =====================================================================
-
-  const GUIDE_GROUP = {
-    CARB: 'carb',
-    PROTEIN: 'protein',
-    VEGETABLE: 'vegetable',
-    FAT: 'fat',
-    FRUIT: 'fruit',
-    DAIRY: 'dairy',
-    SWEET: 'sweet',
-    FREE: 'free'
-  };
-
-  const GUIDE_GRAMMATURE = [
-  // === GENERATO DA docs/guide-source-v3.json — NON MODIFICARE A MANO ===
-  // Ordine = priorità discendente (prima regex che matcha vince)
-  // Dosi esplicite Pranzo A/R e Cena A/R (cena esplicita, non derivata 2/3)
-    { family: 'patateDolci', group: 'carb', label: 'Patate dolci / Batata', match: /patata americana|patate dolci|patata dolce|sweet potato|batata/, slots: { lunch: { training: 300, rest: 220 }, dinner: { training: 160, rest: 160 } } },
-    { family: 'gnocchi', group: 'carb', label: 'Gnocchi di patate', match: /gnocchi|gnocco/, slots: { lunch: { training: 150, rest: 110 }, dinner: { training: 80, rest: 80 } } },
-    { family: 'polenta', group: 'carb', label: 'Polenta cotta', match: /polenta/, slots: { lunch: { training: 330, rest: 240 }, dinner: { training: 170, rest: 170 } } },
-    { family: 'mais', group: 'carb', label: 'Mais dolce (sgocciolato)', match: /mais dolce|mais/, slots: { lunch: { training: 300, rest: 210 }, dinner: { training: 150, rest: 150 } } },
-    { family: 'fiocchiAvena', group: 'carb', label: 'Fiocchi d\'avena / Porridge', match: /fiocchi di avena|fiocchi d avena|porridge|oats|oat/, slots: { lunch: { training: 70, rest: 50 }, dinner: { training: 40, rest: 40 } } },
-    { family: 'gallette', group: 'carb', label: 'Gallette di riso / mais', match: /gallette di riso|gallette di mais|galletta|gallette/, slots: { lunch: { training: 65, rest: 45 }, dinner: { training: 35, rest: 35 } } },
-    { family: 'crackers', group: 'carb', label: 'Crackers / Grissini / Crostini', match: /crackers|grissino|grissini|crostino|crostini|cracker/, slots: { lunch: { training: 60, rest: 45 }, dinner: { training: 30, rest: 30 } } },
-    { family: 'piadina', group: 'carb', label: 'Piadina / Tortilla / Wrap', match: /tortillas|tortilla|piadina|piadine|wraps|wrap/, slots: { lunch: { training: 80, rest: 55 }, dinner: { training: 40, rest: 40 } } },
-    { family: 'cerealiColazione', group: 'carb', label: 'Cereali da colazione (cornflakes, muesli)', match: /cereali integrali colazione|cereali da colazione|cereali colazione|cereali soffiati|fiocchi di mais|corn flakes|cornflakes|granola|muesli/, slots: { lunch: { training: 70, rest: 50 }, dinner: { training: 40, rest: 40 } } },
-    { family: 'cereali', group: 'carb', label: 'Cereali e derivati (pasta, riso, farro, orzo, ecc.)', match: /pasta di lenticchie|pasta integrale|pasta di legumi|riso integrale|grano saraceno|mezze maniche|pasta di ceci|tagliatelle|orecchiette|tortiglioni|riso venere|conchiglie|maccheroni|riso rosso|spaghetti|spaghetto|carnaroli|riso nero|cous cous|rigatoni|linguine|farfalle|pennette|paccheri|couscous|saraceno|amaranto|semolino|fusilli|lasagne|risotto|basmati|arborio|burghul|cereali|trofie|quinoa|miglio|bulgur|semola|pasta|penne|farro|kamut|riso|orzo/, slots: { lunch: { training: 70, rest: 50 }, dinner: { training: 40, rest: 40 } } },
-    { family: 'pane', group: 'carb', label: 'Pane e affini', match: /fette biscottate|fetta biscottata|pane integrale|pane di segale|pane di farro|pane carasau|cracotte|focaccia|focacce|pane|wasa/, slots: { lunch: { training: 100, rest: 70 }, dinner: { training: 50, rest: 50 } } },
-    { family: 'patate', group: 'carb', label: 'Patate', match: /patata|patate/, slots: { lunch: { training: 340, rest: 240 }, dinner: { training: 170, rest: 170 } } },
-    { family: 'salmoneAffumicato', group: 'protein', label: 'Salmone affumicato', match: /salmone affumicato/, slots: { lunch: { training: 150, rest: 150 }, dinner: { training: 150, rest: 150 } } },
-    { family: 'pesceScatolaNaturale', group: 'protein', label: 'Pesce in scatola al naturale', match: /pesce in scatola al naturale|sgombro al naturale|salmone al naturale|tonno al naturale|pesce al naturale/, slots: { lunch: { training: 220, rest: 220 }, dinner: { training: 220, rest: 220 } } },
-    { family: 'pesceSottOlio', group: 'protein', label: 'Pesce conservato sott\'olio (sgocciolato)', match: /sgombro in scatola|sgombro sott olio|sardine sott olio|sardina sott olio|salmone sott olio|tonno in scatola|tonno sott olio|pesce sott olio/, slots: { lunch: { training: 110, rest: 110 }, dinner: { training: 110, rest: 110 } } },
-    { family: 'pesceAzzurro', group: 'protein', label: 'Pesce azzurro (ricco di omega-3)', match: /pesce azzurro|tonno fresco|acciughe|salmone|sgombro|sardina|sardine|acciuga|aringhe|aringa|alice|alici|tonno/, slots: { lunch: { training: 130, rest: 130 }, dinner: { training: 130, rest: 130 } } },
-    { family: 'pesceBiancoMagro', group: 'protein', label: 'Pesce bianco magro', match: /pesce bianco|stoccafisso|pesce spada|merluzzo|sogliola|sogliole|platessa|branzino|nasello|spigola|baccala|orata|orate|trota|trote/, slots: { lunch: { training: 260, rest: 260 }, dinner: { training: 260, rest: 260 } } },
-    { family: 'crostaceiMolluschi', group: 'protein', label: 'Crostacei e Molluschi', match: /crostacei e molluschi|gamberetti|gamberoni|crostacei|molluschi|calamaro|calamari|aragosta|granchio|gambero|gamberi|vongole|granchi|totano|totani|seppia|seppie|polipo|mitili|scampi|astice|polpo|cozze/, slots: { lunch: { training: 310, rest: 310 }, dinner: { training: 310, rest: 310 } } },
-    { family: 'maiale', group: 'protein', label: 'Maiale (tagli magri)', match: /filetto di maiale|coscia di maiale|maiale|lonza|pork/, slots: { lunch: { training: 200, rest: 200 }, dinner: { training: 200, rest: 200 } } },
-    { family: 'polloTacchino', group: 'protein', label: 'Pollo e Tacchino', match: /sovracoscia di pollo|petto di tacchino|fesa di tacchino|coscia di pollo|petto di pollo|sovracoscia|tacchino|faraona|pollo/, slots: { lunch: { training: 200, rest: 200 }, dinner: { training: 200, rest: 200 } } },
-    { family: 'manzo', group: 'protein', label: 'Manzo (tagli magri) / Vitello', match: /hamburger di manzo|filetto di manzo|fesa di manzo|noce di manzo|roastbeef|sottofesa|girello|scamone|filetto|vitello|vitella|manzo/, slots: { lunch: { training: 190, rest: 190 }, dinner: { training: 190, rest: 190 } } },
-    { family: 'affettatiMagri', group: 'protein', label: 'Affettati magri', match: /prosciutto crudo|prosciutto cotto|prosciutto|affettati|bresaola|salumi|speck|fesa/, slots: { lunch: { training: 150, rest: 150 }, dinner: { training: 150, rest: 150 } } },
-    { family: 'mozzarellaLight', group: 'protein', label: 'Mozzarella Light', match: /santa lucia light|mozzarella light/, slots: { lunch: { training: 140, rest: 140 }, dinner: { training: 140, rest: 140 } } },
-    { family: 'formaggiFreschiMolli', group: 'protein', label: 'Formaggi freschi e molli', match: /formaggio fresco spalmabile|formaggio spalmabile|formaggi freschi|fior di latte|philadelphia|mozzarella|stracchino|crescenza|robiola|caprino/, slots: { lunch: { training: 80, rest: 80 }, dinner: { training: 80, rest: 80 } } },
-    { family: 'yogurtGreco', group: 'protein', label: 'Yogurt greco / Skyr', match: /yoghurt greco|yogurt greco|skyr/, slots: { lunch: { training: 400, rest: 400 }, dinner: { training: 400, rest: 400 } } },
-    { family: 'fiocchiLatte', group: 'protein', label: 'Fiocchi di latte', match: /fiocchi di latte|cottage cheese/, slots: { lunch: { training: 200, rest: 200 }, dinner: { training: 200, rest: 200 } } },
-    { family: 'montasio', group: 'protein', label: 'Montasio', match: /montasio/, slots: { lunch: { training: 60, rest: 60 }, dinner: { training: 60, rest: 60 } } },
-    { family: 'grana', group: 'protein', label: 'Grana Padano', match: /grana padano|grana/, slots: { lunch: { training: 55, rest: 55 }, dinner: { training: 55, rest: 55 } } },
-    { family: 'formaggiStagionati', group: 'protein', label: 'Formaggi stagionati', match: /parmigiano reggiano|formaggi stagionati|parmigiano|emmenthal|provolone|pecorino|emmental|scamorza|asiago/, slots: { lunch: { training: 55, rest: 55 }, dinner: { training: 55, rest: 55 } } },
-    { family: 'feta', group: 'protein', label: 'Feta', match: /feta/, slots: { lunch: { training: 85, rest: 85 }, dinner: { training: 85, rest: 85 } } },
-    { family: 'ricotta', group: 'protein', label: 'Ricotta', match: /ricotta/, slots: { lunch: { training: 150, rest: 150 }, dinner: { training: 150, rest: 150 } } },
-    { family: 'uova', group: 'protein', label: 'Uova di gallina', match: /albume|albumi|tuorlo|tuorli|uovo|uova/, slots: { lunch: { training: 180, rest: 180 }, dinner: { training: 180, rest: 180 } } },
-    { family: 'legumotti', group: 'protein', label: 'Legumotti (peso a crudo)', match: /legumotti|legumotto/, slots: { lunch: { training: 70, rest: 70 }, dinner: { training: 70, rest: 70 } } },
-    { family: 'legumiScatola', group: 'protein', label: 'Legumi cotti / in scatola (sgocciolati)', match: /fagioli di soia|cannellini|lenticchia|lenticchie|borlotti|fagiolo|fagioli|pisello|piselli|edamame|tempeh|legumi|azuki|ceci|fava|fave|tofu/, slots: { lunch: { training: 240, rest: 240 }, dinner: { training: 240, rest: 240 } } },
-    { family: 'lupini', group: 'protein', label: 'Lupini', match: /lupino|lupini/, slots: { lunch: { training: 200, rest: 200 }, dinner: { training: 200, rest: 200 } } },
-    { family: 'seitan', group: 'protein', label: 'Seitan', match: /seitan/, slots: { lunch: { training: 180, rest: 180 }, dinner: { training: 180, rest: 180 } } },
-    { family: 'burgerVegetali', group: 'protein', label: 'Burger vegetali', match: /hamburger vegetale|burger vegetale|burger vegetali|veggie burger/, slots: { lunch: { training: 100, rest: 100 }, dinner: { training: 100, rest: 100 } } },
-    { family: 'olio', group: 'fat', label: 'Olio extravergine d\'oliva', match: /olio extravergine|extravergine|olio evo|olio|evo/, slots: { lunch: { training: 10, rest: 10 }, dinner: { training: 10, rest: 10 } } },
-    { family: 'verdura', group: 'vegetable', label: 'Verdure', match: /passata di pomodoro|polpa di pomodoro|cavolo cappuccio|germogli di soia|erba cipollina|barba di frate|cime di rapa|barbabietola|barbabietole|cavolo nero|cavolfiore|cavolfiori|champignon|pomodorini|topinambur|fagiolino|fagiolini|finocchio|pleurotus|radicchio|valeriana|melanzana|melanzane|datterini|ciliegino|ciliegini|ravanello|ravanelli|germoglio|ortaggio|scalogno|scalogni|asparago|asparagi|broccolo|broccoli|cetriolo|cetrioli|finocchi|chiodini|insalata|insalate|radicchi|peperone|peperoni|pomodoro|pomodori|spinacio|carciofo|carciofi|pak choi|bok choy|germogli|verdura|verdure|ortaggi|cipolla|cipolle|bietola|bietole|porcini|lattuga|songino|indivia|cicoria|passata|spinaci|zucchin|cappero|capperi|agretti|cavolo|cavoli|carota|carote|funghi|rucola|pelati|sedano|aglio|porro|porri|coste|verza|fungo|zucca|rapa|rape/, slots: { lunch: { training: 200, rest: 200 }, dinner: { training: 200, rest: 200 } } },
-  ];
-
-
-
-
-  // Ingredienti che nel contesto pranzo/cena non hanno una grammatura Guide
-  // da adattare: verdure, aromi, spezie e condimenti privi di dose. L'elenco
-  // è intenzionalmente esplicito: un ingrediente sconosciuto non viene mai
-  // considerato libero per deduzione, altrimenti un errore di mapping potrebbe
-  // passare inosservato.
-  const GUIDE_FREE_INGREDIENT_PATTERNS = [
-    /latte parzialmente scremato/, /bevanda di mandorla/, /burro chiarificato/, /lievito alimentare/, /lievito in scaglie/, /burro di arachidi/,
-    /burro di mandorle/, /latte di mandorla/, /olio di girasole/, /olio di arachidi/, /semi di girasole/, /bevanda di avena/,
-    /bevanda di cocco/, /frutti di bosco/, /crema di sesamo/, /yogurt naturale/, /bevanda di soia/, /bevanda di riso/,
-    /aceto balsamico/, /erbe aromatiche/, /semi di sesamo/, /latte scremato/, /latte di avena/, /latte di cocco/,
-    /brodo vegetale/, /brodo di pollo/, /brodo di carne/, /olio di cocco/, /semi di zucca/, /yogurt bianco/,
-    /latte di soia/, /latte d avena/, /latte di riso/, /aceto di mele/, /aceto di vino/, /salsa di soia/,
-    /olio di semi/, /olio di mais/, /semi di chia/, /semi di lino/, /latte intero/, /yogurt magro/,
-    /coconut milk/, /noce moscata/, /coconut oil/, /almond milk/, /peperoncino/, /peperoncini/,
-    /clementina/, /clementine/, /albicocche/, /pistacchio/, /prezzemolo/, /coriandolo/,
-    /mandarino/, /mandarini/, /nettarina/, /nettarine/, /albicocca/, /melograno/,
-    /pistacchi/, /rice milk/, /rosmarino/, /zafferano/, /soy sauce/, /pompelmo/,
-    /pompelmi/, /mirtilli/, /ciliegia/, /ciliegie/, /cocomero/, /mandorla/,
-    /mandorle/, /nocciola/, /nocciole/, /anacardo/, /anacardi/, /arachide/,
-    /arachidi/, /soy milk/, /oat milk/, /basilico/, /cannella/, /arancia/,
-    /fragola/, /fragole/, /lamponi/, /anguria/, /dattero/, /datteri/,
-    /avocado/, /yoghurt/, /origano/, /curcuma/, /paprika/, /zenzero/,
-    /mustard/, /banana/, /banane/, /arance/, /pesche/, /prugna/,
-    /prugne/, /susina/, /susine/, /ananas/, /melone/, /meloni/,
-    /papaya/, /butter/, /sesamo/, /tahina/, /tahini/, /yogurt/,
-    /limone/, /limoni/, /salvia/, /alloro/, /ginger/, /cumino/,
-    /senape/, /tamari/, /spezie/, /spezia/, /ribes/, /pesca/,
-    /mango/, /fichi/, /cocco/, /burro/, /oliva/, /olive/,
-    /latte/, /aceto/, /acqua/, /brodo/, /menta/, /curry/,
-    /shoyu/, /avena/, /mela/, /mele/, /pera/, /pere/,
-    /more/, /kiwi/, /fico/, /ghee/, /noce/, /noci/,
-    /lime/, /sale/, /pepe/, /timo/, /uva/
-  ];
-
-
-
-  let activeGuideFreeIngredientPatterns = [];
-
-  function guideGrammatureFor(family) {
-    return GUIDE_GRAMMATURE.find(rule => rule.family === family) || null;
-  }
-
-  function isGuideFreeIngredient(name) {
-    const value = aliasKey(name);
-    return Boolean(value && GUIDE_FREE_INGREDIENT_PATTERNS.concat(activeGuideFreeIngredientPatterns).some(pattern => pattern.test(value)));
-  }
-
-  // Nome che COINCIDE ESATTAMENTE con un alimento libero del catalogo
-  // (es. "bevanda di riso", "olio di semi"): vince sulla famiglia generica
-  // che altrimenti lo assorbe via sottostringa ("riso", "olio").
-  function isExactGuideFreeIngredient(name) {
-    const value = aliasKey(name);
-    return Boolean(value && GUIDE_FREE_INGREDIENT_PATTERNS.concat(activeGuideFreeIngredientPatterns).some(pattern => pattern.source === value));
-  }
-
-  function guideLabelFamilyFor(name) {
-    return GUIDE_LABEL_FAMILY.get(aliasKey(name)) || null;
-  }
-
-  function guideMappingForIngredient(name) {
-    // Ordine: guidate prima (39 famiglie con dosi esplicite), poi libere.
-    // Verdura è ora guidata (200g), quindi fagiolini → verdura (guided), non
-    // legumi. Yogurt greco → guidato, non libero generico "yogurt".
-    // Eccezioni: il nome identico all'etichetta della tabella è sempre
-    // guidato; il nome libero ESATTO non viene mai assorbito da una famiglia
-    // che combacia solo per sottostringa.
-    const labelFamily = guideLabelFamilyFor(name);
-    const rule = labelFamily ? guideGrammatureFor(labelFamily) : guideRuleForIngredient(name);
-    if (rule && (labelFamily || !isExactGuideFreeIngredient(name))) return { kind: 'guided', rule };
-    if (isGuideFreeIngredient(name)) return { kind: 'free', rule: null };
-    return { kind: 'unknown', rule: null };
-  }
-
-  // Famiglie canoniche di un gruppo. `withLunchAndDinner` limita l'elenco alle
-  // famiglie che hanno sia la dose di pranzo sia quella di cena: sono quelle
-  // che entrano nelle tabelle delle alternative.
-  function guideFamiliesForGroup(group, { withLunchAndDinner = false } = {}) {
-    return GUIDE_GRAMMATURE
-      .filter(rule => rule.group === group)
-      .filter(rule => !withLunchAndDinner || (rule.slots.lunch && rule.slots.dinner))
-      .map(rule => rule.family);
-  }
-
-  // Etichetta canonica (minuscola) di una famiglia: i testi derivati dalla
-  // tabella la usano per mantenere nomi coerenti in tutta la guida.
-  function guideFamilyToken(family) {
-    return String(guideGrammatureFor(family)?.label || family).toLowerCase();
-  }
-
-  // Dose massima della famiglia in qualunque pasto/giorno (A o R).
-  function guideMaxAmount(family) {
-    const slots = guideGrammatureFor(family)?.slots || {};
-    const values = Object.values(slots)
-      .flatMap(byDayType => [byDayType?.training, byDayType?.rest])
-      .filter(value => Number.isFinite(value));
-    return values.length ? Math.max(...values) : null;
-  }
-
-  // Frequenze settimanali delle fonti proteiche (manuale delle linee guida). `max: 14`
-  // significa "almeno min volte"; `min: 0` significa "massimo max volte".
-  const GUIDE_PROTEIN_FREQUENCIES = [
-    { key: 'poultry', label: 'Pollame', min: 1, max: 2 },
-    { key: 'beef', label: 'Manzo e maiale', min: 0, max: 1 },
-    { key: 'curedMeats', label: 'Affettati e carni miste', min: 0, max: 1 },
-    { key: 'omega', label: 'Pesce ricco di omega-3', min: 2, max: 3 },
-    { key: 'otherFish', label: 'Altro pesce e prodotti ittici', min: 1, max: 2 },
-    { key: 'dairy', label: 'Latticini e formaggi', min: 1, max: 2 },
-    { key: 'eggs', label: 'Uova', min: 1, max: 2 },
-    { key: 'legumes', label: 'Legumi e derivati', min: 3, max: 14 },
-  ];
-
-
-
-
-  // Vincoli di default del generatore: derivano dalle frequenze proteiche.
-  function buildDefaultConstraints() {
-    return frequencyConstraintsFor(null);
-  }
-
-  // Vincoli del generatore con eventuali frequenze personalizzate del
-  // profilo cliente (override sparsi { key: { min?, max? } } sullo studio).
-  // Puro: non tocca i default, che restano la base per household e ospiti.
-  function frequencyConstraintsFor(overrides) {
-    const constraints = {};
-    GUIDE_PROTEIN_FREQUENCIES.forEach(item => {
-      const patch = overrides?.[item.key] || {};
-      constraints[`${item.key}Min`] = Number.isFinite(Number(patch.min)) ? Number(patch.min) : item.min;
-      constraints[`${item.key}Max`] = Number.isFinite(Number(patch.max)) ? Number(patch.max) : item.max;
-    });
-    return constraints;
-  }
-
-  const DEFAULT_CONSTRAINTS = buildDefaultConstraints();
-
-  // Carboidrati riconosciuti per il travaso pranzo <-> cena. Derivano dalle
-  // grammature: `match` e `label` possono essere specializzati e `dinner`
-  // sovrascritto quando il manuale prevede una dose di cena diversa.
-  // L'ordine conta: le voci più specifiche vengono prima (gnocchi di patate
-  // prima di patate).
-  // `label` e `match` qui sono SOLO eccezioni: si scrivono quando serve
-  // un'etichetta più specifica del manuale o un riconoscimento più stretto per
-  // il travaso, altrimenti si derivano dalla famiglia canonica. Le grammature
-  // non compaiono mai in questo elenco: arrivano da GUIDE_GRAMMATURE.
-  const CARB_FAMILIES = [
-    { key: 'patateDolci', family: 'patateDolci', label: 'Patate dolci', match: /patata americana|patate dolci|patata dolce|sweet potato|batata/ },
-    { key: 'gnocchi', family: 'gnocchi', label: 'Gnocchi', match: /gnocchi|gnocco/ },
-    { key: 'polenta', family: 'polenta', label: 'Polenta', match: /polenta/ },
-    { key: 'mais', family: 'mais', label: 'Mais', match: /mais dolce|mais/ },
-    { key: 'fiocchiAvena', family: 'fiocchiAvena', label: 'Avena', match: /fiocchi di avena|fiocchi d avena|porridge|oats|oat/ },
-    { key: 'gallette', family: 'gallette', label: 'Gallette', match: /gallette di riso|gallette di mais|galletta|gallette/ },
-    { key: 'crackers', family: 'crackers', label: 'Crackers e grissini', match: /crackers|grissino|grissini|crostino|crostini|cracker/ },
-    { key: 'piadina', family: 'piadina', label: 'Piadina e wrap', match: /tortillas|tortilla|piadina|piadine|wraps|wrap/ },
-    { key: 'cerealiColazione', family: 'cerealiColazione', label: 'Cereali colazione', match: /cereali integrali colazione|cereali da colazione|cereali soffiati|fiocchi di mais|corn flakes|cornflakes|granola|muesli/ },
-    { key: 'cereali', family: 'cereali', label: 'Cereali', match: /pasta di lenticchie|pasta integrale|pasta di legumi|riso integrale|grano saraceno|mezze maniche|pasta di ceci|tagliatelle|orecchiette|tortiglioni|riso venere|conchiglie|maccheroni|riso rosso|spaghetti|spaghetto|carnaroli|riso nero|cous cous|rigatoni|linguine|farfalle|pennette|paccheri|couscous|saraceno|amaranto|semolino|fusilli|lasagne|risotto|basmati|arborio|burghul|trofie|quinoa|miglio|bulgur|semola|pasta|penne|farro|kamut|riso|orzo/ },
-    { key: 'pane', family: 'pane', label: 'Pane', match: /fette biscottate|fetta biscottata|pane integrale|pane di segale|pane di farro|pane carasau|cracotte|focaccia|focacce|pane|wasa/ },
-    { key: 'patate', family: 'patate', label: 'Patate', match: /patata|patate/ },
-  ];
-
-
-
-
-  function buildCarbReference() {
-    return CARB_FAMILIES.map(item => {
-      const rule = guideGrammatureFor(item.family);
-      const lunch = rule?.slots?.lunch || null;
-      const dinner = rule?.slots?.dinner || null;
-      return {
-        key: item.key,
-        family: item.family,
-        match: item.match || rule?.match,
-        label: item.label || rule?.label || item.key,
-        pranzo: lunch ? { ...lunch } : null,
-        cena: dinner ? { ...dinner } : null
-      };
-    });
-  }
-
-  const CARB_REFERENCE = buildCarbReference();
-
-  // ---------------------------------------------------------------------
-  // Guida Guide mostrata nella webapp (js/data.js legge da qui).
-  //
-  // I testi di struttura, giornata tipo e FAQ sono contenuti narrativi del
-  // manuale; le tabelle delle alternative e le frequenze proteiche sono
-  // DERIVATI da GUIDE_GRAMMATURE e GUIDE_PROTEIN_FREQUENCIES.
-  //
-  // NOTA: nelle giornate tipo le righe di pranzo e cena (dose di riferimento ed
-  // elenco delle alternative) sono DERIVATE dalla tabella. Restano scritti a
-  // mano solo i contenuti che la tabella non copre: colazione, spuntino,
-  // merenda, macro medie e FAQ. Se cambi le grammature di avena, cereali,
-  // yogurt, latte, miele, marmellata o frutta vanno riallineati lì.
-  // ---------------------------------------------------------------------
-
-  // Etichette di presentazione agganciate alla fonte canonica: `label` è il
-  // nome del manuale, `family` (più l'eventuale `also`) sceglie i valori in
-  // tabella. Nessuna grammatura è scritta qui dentro.
-  const GUIDE_CARB_ALTERNATIVES = [
-    { label: 'Patate dolci', family: 'patateDolci' },
-    { label: 'Gnocchi', family: 'gnocchi' },
-    { label: 'Polenta', family: 'polenta' },
-    { label: 'Mais', family: 'mais' },
-    { label: 'Avena', family: 'fiocchiAvena' },
-    { label: 'Gallette', family: 'gallette' },
-    { label: 'Crackers e grissini', family: 'crackers' },
-    { label: 'Piadina e wrap', family: 'piadina' },
-    { label: 'Cereali colazione', family: 'cerealiColazione' },
-    { label: 'Cereali', family: 'cereali' },
-    { label: 'Pane', family: 'pane' },
-    { label: 'Patate', family: 'patate' },
-  ];
-
-
-
-
-  const GUIDE_PROTEIN_ALTERNATIVES = [
-    { label: 'Salmone affumicato', family: 'salmoneAffumicato' },
-    { label: 'Pesce al naturale', family: 'pesceScatolaNaturale' },
-    { label: 'Pesce sott\'olio', family: 'pesceSottOlio' },
-    { label: 'Pesce azzurro', family: 'pesceAzzurro' },
-    { label: 'Pesce bianco', family: 'pesceBiancoMagro' },
-    { label: 'Crostacei e molluschi', family: 'crostaceiMolluschi' },
-    { label: 'Maiale magro', family: 'maiale' },
-    { label: 'Pollo e tacchino', family: 'polloTacchino' },
-    { label: 'Manzo e vitello', family: 'manzo' },
-    { label: 'Affettati', family: 'affettatiMagri' },
-    { label: 'Mozzarella light', family: 'mozzarellaLight' },
-    { label: 'Formaggi freschi', family: 'formaggiFreschiMolli' },
-    { label: 'Yogurt greco', family: 'yogurtGreco' },
-    { label: 'Fiocchi di latte', family: 'fiocchiLatte' },
-    { label: 'Montasio', family: 'montasio' },
-    { label: 'Grana', family: 'grana' },
-    { label: 'Formaggi stagionati', family: 'formaggiStagionati' },
-    { label: 'Feta', family: 'feta' },
-    { label: 'Ricotta', family: 'ricotta' },
-    { label: 'Uova', family: 'uova' },
-    { label: 'Legumotti', family: 'legumotti' },
-    { label: 'Legumi', family: 'legumiScatola' },
-    { label: 'Lupini', family: 'lupini' },
-    { label: 'Seitan', family: 'seitan' },
-    { label: 'Burger vegetali', family: 'burgerVegetali' },
-  ];
-
-
-
-
-  // Riferimento della tabella proteine: nei popup sta nel titolo e nei testi
-  // narrativi resta la riga guida per il pollame con la sua grammatura.
-  const GUIDE_PROTEIN_REFERENCE = { label: 'Pollo e tacchino', family: 'polloTacchino' };
-
-
-
-
-  // UNICA derivazione di una voce alternativa dalla tabella canonica: usata sia
-  // dalle righe dei popup sia dai testi narrativi della guida.
-  // I carboidrati hanno pranzo A, pranzo R e cena (A === R); le proteine hanno
-  // una dose sola, identica a pranzo e a cena (scelta del manuale).
-  function describeAlternative(entry) {
-    const families = [entry.family, ...(entry.also || [])];
-    const rule = guideGrammatureFor(entry.family);
-    return {
-      label: entry.label,
-      families,
-      // Chiave testuale condivisa dai testi derivati dalla guida: usa le
-      // etichette canoniche delle famiglie (es. "pasta/riso", "farro/orzo").
-      token: families.map(guideFamilyToken).join('/'),
-      lunchTraining: rule?.slots?.lunch?.training ?? null,
-      lunchRest: rule?.slots?.lunch?.rest ?? null,
-      dinner: rule?.slots?.dinner?.rest ?? null
-    };
-  }
-
-  // Rappresentazione strutturata e completa delle alternative Guide.
-  function buildGuideAlternatives() {
-    return {
-      carbohydrates: GUIDE_CARB_ALTERNATIVES.map(describeAlternative),
-      proteins: [GUIDE_PROTEIN_REFERENCE, ...GUIDE_PROTEIN_ALTERNATIVES].map(describeAlternative)
-    };
-  }
-
-  const GUIDE_ALTERNATIVES = buildGuideAlternatives();
-
-  // Etichetta della tabella → famiglia: il nome scritto ESATTAMENTE come la
-  // riga della tabella (es. "Avena", "Affettati", "Pesce azzurro") è la
-  // famiglia stessa, anche quando la regex di famiglia non contiene la parola
-  // generica. Si ricostruisce in activateGuideRuleSet dopo un import.
-  const GUIDE_LABEL_FAMILY = new Map();
-  const rebuildGuideLabelFamily = () => {
-    GUIDE_LABEL_FAMILY.clear();
-    [GUIDE_PROTEIN_REFERENCE, ...GUIDE_CARB_ALTERNATIVES, ...GUIDE_PROTEIN_ALTERNATIVES].forEach(entry => {
-      const key = aliasKey(entry.label);
-      if (key && !GUIDE_LABEL_FAMILY.has(key)) GUIDE_LABEL_FAMILY.set(key, entry.family);
-    });
-  };
-  rebuildGuideLabelFamily();
-
-
-  // Righe delle tabelle delle alternative. `dayType` sceglie la colonna del
-  // pranzo: 'training' (giorno A), 'rest' (giorno R) oppure 'both' per le
-  // Impostazioni, dove non esiste una giornata di contesto e servono entrambe.
-  // La cena è identica nei due giorni, quindi resta una colonna sola.
-  function alternativeRows(entries, { dayType, includeDinner = false }) {
-    const gram = value => (Number.isFinite(value) ? `${value}g` : '—');
-    return entries.map(entry => {
-      const item = describeAlternative(entry);
-      const row = [entry.label];
-      if (dayType === 'both') row.push(gram(item.lunchTraining), gram(item.lunchRest));
-      else row.push(gram(dayType === 'training' ? item.lunchTraining : item.lunchRest));
-      if (includeDinner) row.push(gram(item.dinner));
-      return row;
-    });
-  }
-
-  // Etichette del giorno usate nei titoli delle tabelle.
-  const GUIDE_DAY_LABELS = { training: 'giorno di allenamento', rest: 'giorno di riposo' };
-
-  function normalizeGuideDayType(dayType) {
-    return dayType === 'rest' ? 'rest' : (dayType === 'both' ? 'both' : 'training');
-  }
-
-  // Tabelle delle alternative per la giornata che si sta visualizzando.
-  // A pranzo le dosi dei carboidrati cambiano tra giorno di allenamento (A) e
-  // giorno di riposo (R): il popup deve mostrare quelle del giorno aperto, non
-  // sempre quelle di riposo. La cena e tutte le proteine restano invariate.
-  // Con `dayType: 'both'` (Impostazioni, nessuna giornata di contesto) la
-  // tabella dei carboidrati mostra entrambe le colonne di pranzo.
-  // Pasti in cui le equivalenze Guide hanno senso. Il manuale costruisce le
-  // alternative sul rapporto pranzo/cena: negli spuntini e nelle merende le
-  // dosi sono fisse e non intercambiabili (crackers 30g nello spuntino non
-  // diventano 90g di pasta), quindi lì il popup non si apre.
-  const GUIDE_ALTERNATIVE_SLOTS = ['lunch', 'dinner'];
-
-  function guideSlotHasAlternatives(slot) {
-    return GUIDE_ALTERNATIVE_SLOTS.includes(String(slot || ''));
-  }
-
-  function guideAlternativeGroups(dayType) {
-    const day = normalizeGuideDayType(dayType);
-    const both = day === 'both';
-    // Il riferimento è Pasta/Riso (cereali), non la prima riga della tabella:
-    // l'ordine v3 è di priorità di riconoscimento (patate dolci prima di
-    // patate) e la prima voce non è più quella di riferimento.
-    const carbReference = GUIDE_ALTERNATIVES.carbohydrates.find(item => item.families.includes('cereali'))
-      || GUIDE_ALTERNATIVES.carbohydrates[0];
-    const proteinReference = GUIDE_ALTERNATIVES.proteins[0];
-    const carbLunch = day === 'rest' ? carbReference.lunchRest : carbReference.lunchTraining;
-    const dayNote = both ? '' : ` · ${GUIDE_DAY_LABELS[day]}`;
-    const carbReferenceText = both
-      ? `Pasta/Riso ${carbReference.lunchTraining}g a pranzo A, ${carbReference.lunchRest}g a pranzo R, ${carbReference.dinner}g a cena`
-      : `Pasta/Riso ${carbLunch}g a pranzo, ${carbReference.dinner}g a cena`;
-    const lunchColumns = both ? ['Pranzo A', 'Pranzo R'] : [day === 'training' ? 'Pranzo A' : 'Pranzo R'];
-    return {
-      carbohydrates: {
-        kind: 'carbs',
-        dayType: day,
-        columns: ['Alimento', ...lunchColumns, 'Cena'],
-        title: `Carboidrati${dayNote} · riferimento ${carbReferenceText}`,
-        subtitle: `Carboidrati equivalenti${dayNote} · riferimento ${carbReferenceText}`,
-        note: 'A cena è ammesso qualsiasi carboidrato di questa tabella, con la dose cena indicata.',
-        reference: { label: 'Pasta/Riso', families: carbReference.families },
-        rows: alternativeRows(GUIDE_CARB_ALTERNATIVES, { dayType: day, includeDinner: true })
-      },
-      proteins: {
-        kind: 'proteins',
-        dayType: day,
-        columns: ['Alimento', 'Pranzo e cena'],
-        title: `Proteine · riferimento ${proteinReference.label} ${proteinReference.lunchTraining}g`,
-        subtitle: `Proteine equivalenti · riferimento ${proteinReference.label} ${proteinReference.lunchTraining}g`,
-        note: 'Le proteine mantengono la stessa dose a pranzo e a cena, nel giorno di allenamento e in quello di riposo.',
-        reference: { label: proteinReference.label, families: proteinReference.families },
-        // Le dosi proteiche non cambiano mai: una sola colonna, identica in A e R.
-        rows: alternativeRows(GUIDE_PROTEIN_ALTERNATIVES, { dayType: 'training' })
-      }
-    };
-  }
-
-  function proteinFrequencyText(item) {
-    if (item.max >= 14) return `Almeno ${item.min} volte a settimana`;
-    if (item.min === 0) return `Massimo ${item.max} volta${item.max === 1 ? '' : 'e'} a settimana`;
-    return `${item.min}-${item.max} volte a settimana`;
-  }
-
-  function buildGuideManual() {
-    // Il riferimento della tabella carboidrati è la voce Pasta/Riso (cereali):
-    // NON la prima riga, perché l'ordine della tabella è di priorità di
-    // riconoscimento (v3: patate dolci prima di patate) e non di riferimento.
-    const carbReference = GUIDE_ALTERNATIVES.carbohydrates.find(item => item.families.includes('cereali'))
-      || GUIDE_ALTERNATIVES.carbohydrates[0];
-    const proteinReference = GUIDE_ALTERNATIVES.proteins[0];
-    // Alternative in forma compatta per i testi narrativi della guida: stesse
-    // famiglie e stesse grammature delle tabelle, DERIVATE dalla fonte unica
-    // (nessun elenco parziale scritto a mano).
-    const inline = (items, dose) => items.map(item => `${item.token} ${dose(item)}g`).join(', ');
-    const carbsExcept = family => GUIDE_ALTERNATIVES.carbohydrates.filter(item => !item.families.includes(family));
-    const carbAlternatives = dose => inline(carbsExcept(carbReference.families[0]), dose);
-    const proteinAlternatives = dose => inline(GUIDE_ALTERNATIVES.proteins.slice(1), dose);
-    const paneDinner = guideGrammatureFor('pane')?.slots?.dinner?.rest;
-    const carbDinnerLine = `Pane ${paneDinner}g (alternative: a cena è ammesso qualsiasi carboidrato della tabella, con la dose cena → ${inline(carbsExcept('pane'), item => item.dinner)})`;
-    const proteinLunchLine = withNote => `Pollame ${proteinReference.lunchTraining}g (alternative${withNote ? ', stessa dose del pranzo' : ''}: ${proteinAlternatives(item => item.lunchTraining)})`;
-    return {
-      structure: [
-        'Giorno di allenamento: dieta bilanciata e più ricca di carboidrati. Crackers nello spuntino mattutino e quota carboidrati maggiore a pranzo.',
-        'Giorno di riposo: pasti bilanciati, quota carboidrati ridotta a pranzo e niente crackers nello spuntino mattutino.',
-        'Preferire fonti di carboidrati non integrali prima e dopo un allenamento e nel carico; scelta libera negli altri momenti.'
-      ],
-      // Colazione, spuntini e merenda descrivono le giornate tipo del
-      // manuale: non sono riferimenti verificabili né dosi per l'adattamento.
-      trainingDay: {
-        title: '1° giorno · Allenamento',
-        macro: '1903 kcal · PRO 135g (28%) · FAT 55g (26%) · CHO 213g (44%)',
-        meals: [
-          { title: 'Colazione', lines: ['Avena 40g, yogurt greco 0% 100g, marmellata 15g', 'Alt. 1: kefir 100g oppure uova intere 60g; miele 10g', 'Alt. 2, pancake albume: albume 120g, yogurt 40g, avena 40g, marmellata 30g', 'Alt. 3: yogurt 200g, cereali 50g, marmellata 10g', 'Alt. 4: latte parzialmente scremato 250g, cereali 50g'] },
-          { title: 'Spuntino mattina', lines: ['Frutta fresca 250g, crackers 30g, proteine 30g'] },
-          { title: 'Pranzo', lines: [`Pasta/riso ${carbReference.lunchTraining}g (alternative: ${carbAlternatives(item => item.lunchTraining)})`, proteinLunchLine(false), 'Verdura 200g', 'Olio EVO 10g'] },
-          { title: 'Merenda', lines: ["Opzione 1: yogurt greco 0% 150g + miele/sciroppo d'acero 15g oppure marmellata 20g", 'Opzione 2: crackers 30g oppure frutta secca oleosa 20g'] },
-          { title: 'Cena', lines: [proteinLunchLine(true), carbDinnerLine, 'Verdura 200g', 'Olio EVO 10g'] }
-        ]
-      },
-      restDay: {
-        title: '2° giorno · Riposo',
-        macro: '1719 kcal · PRO 130g (30%) · FAT 52g (27%) · CHO 180g (42%)',
-        meals: [
-          { title: 'Colazione', lines: ['Avena 40g, yogurt greco 0% 100g, marmellata 15g', 'Per le alternative vedere il giorno di allenamento e il ricettario colazioni.'] },
-          { title: 'Spuntino mattina', lines: ['Frutta fresca 250g, proteine 30g; niente crackers'] },
-          { title: 'Pranzo', lines: [`Pasta/riso ${carbReference.lunchRest}g (alternative: ${carbAlternatives(item => item.lunchRest)})`, `Pollame ${proteinReference.lunchTraining}g`, 'Verdura 200g', 'Olio EVO 10g'] },
-          { title: 'Merenda', lines: ["Opzione 1: yogurt greco 0% 150g + miele/sciroppo d'acero 15g oppure marmellata 20g", 'Opzione 2: crackers 30g oppure frutta secca oleosa 20g'] },
-          { title: 'Cena', lines: [`Pollame ${proteinReference.lunchTraining}g`, carbDinnerLine, 'Verdura 200g', 'Olio EVO 10g'] }
-        ]
-      },
-      // Impostazioni: nessuna giornata di contesto, quindi la tabella dei
-      // carboidrati mostra entrambe le colonne di pranzo (A e R). I popup
-      // aperti da una giornata usano invece guideAlternativeGroups(dayType).
-      alternatives: guideAlternativeGroups('both'),
-      proteinFrequencies: GUIDE_PROTEIN_FREQUENCIES.map(item => [item.label, proteinFrequencyText(item)]),
-      faq: [
-        'Punta a un consumo di almeno 2-2,5 litri di acqua al giorno.',
-        'Usa solo sale iodato. Spezie, limone e aceto sono liberi.',
-        'È disponibile un pasto sociale a settimana.',
-        'Puoi combinare due alternative proteiche dimezzandone le quantità.',
-        'Non serve pesare la verdura.',
-        'Le opzioni sono intercambiabili: non è necessario seguire uno schema rigido.',
-        'I pesi si riferiscono agli alimenti a crudo.',
-        'A cena è ammesso qualsiasi carboidrato della tabella delle alternative, non solo pane, crackers e patate: la dose cena è circa 2/3 della dose del pranzo di riposo, arrotondata per difetto alla decina, ed è uguale nei giorni di allenamento e di riposo.',
-        'Le proteine mantengono a cena la stessa dose prevista a pranzo.',
-        'Quando mangi fuori scegli carboidrati non conditi, proteine magre e verdure scondite alla griglia o al vapore.'
-      ]
-    };
-  }
-
-  const GUIDE_MANUAL = buildGuideManual();
 
 
 
@@ -628,10 +78,12 @@
     return aliasKey(value).replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '');
   }
 
-  // ingredientId stabile: preferisce l'ID già presente, poi l'alias, poi lo slug.
+  // ingredientId stabile: preferisce l'ID già presente, poi lo slug del nome.
+  // La risoluzione verso il catalogo globale passa da recognizeIngredient:
+  // qui non esistono tabelle di alias locali.
   function ingredientIdFor(name, existing) {
     if (existing && typeof existing === 'string' && existing.trim()) return existing.trim();
-    return INGREDIENT_ALIASES[aliasKey(name)] || slug(name) || 'ingredient';
+    return slug(name) || 'ingredient';
   }
 
   // Porzioni v2 (schema 6): una sola quantità originale per ingrediente.
@@ -687,16 +139,14 @@
     return { ...rest, ingredients, notes: mergeRecipeNotes(specialNote, notes) };
   }
 
-  // Migrazione idempotente del documento catalogo (schema 3/4 → 5).
+  // Migrazione idempotente del documento catalogo ricette.
   function migrateCatalog(doc = {}) {
     const recipes = (doc.recipes || []).map(migrateRecipe);
     return {
       ...doc,
       schemaVersion: VERSION,
       recipes,
-      recipeCount: recipes.length,
-      ingredientAliases: { ...INGREDIENT_ALIASES, ...(doc.ingredientAliases || {}) },
-      canonicalIngredients: { ...CANONICAL_INGREDIENTS, ...(doc.canonicalIngredients || {}) }
+      recipeCount: recipes.length
     };
   }
 
@@ -741,50 +191,23 @@
       defaultDays: plan.defaultDays || deepClone(days),
       batchRules: plan.batchRules || {},
       batchTemplates: templates,
-      // Nuova informazione di contesto: la ricetta originale resta intatta,
-      // mentre il piano memorizza se il pasto usa le dosi Guide oppure quelle
-      // originali. I piani precedenti allo schema contestuale partono con
-      // Guide attivo nei soli pasti principali.
-      guideModes: normalizeGuideModes(planGuideModes(plan) || {}),
-      guideAdaptations: plan.guideAdaptations && typeof plan.guideAdaptations === 'object'
-        ? plan.guideAdaptations
-        : {},
-      // Controllo «Ricette con quantità adattate alle linee guida»: modalità
-      // del piano, non quantità derivate nelle ricette. Default attivo per
-      // nuovi piani e migrazione (decisione di prodotto approvata): disattivo
-      // solo se l'utente lo spegne esplicitamente.
-      adaptedQuantitiesEnabled: normalizeAdaptedQuantitiesEnabled(plan)
+      // Scelta unica del cliente: dosi originali delle ricette oppure dosi
+      // allineate alla dieta assegnata dal nutrizionista. È una preferenza di
+      // visualizzazione (Settimana, Ricettario, Spesa): le ricette originali
+      // non vengono mai riscritte. Il flag non esiste più come mappa per pasto.
+      alignedDosesEnabled: plan.alignedDosesEnabled !== false
     };
   }
 
   // Vero di default: il flag è false solo se il piano lo dichiara apertamente.
-  function normalizeAdaptedQuantitiesEnabled(plan) {
-    return (plan && typeof plan === 'object') ? plan.adaptedQuantitiesEnabled !== false : true;
+  function planAlignedDosesEnabled(plan) {
+    return (plan && typeof plan === 'object') ? plan.alignedDosesEnabled !== false : true;
   }
 
-  // Il flag del piano ("Quantità adattate alle linee guida") decide se anche i
-  // dati derivati (spesa, batch cooking) usano le dosi delle linee guida.
-  // L'app passa `override` con il valore EFFETTIVO, che tiene conto anche del
-  // profilo SaaS non ancora confermato: se manca, vale il flag del piano.
-  function planUsesGuideDoses(plan, override) {
-    if (planGuideModes(plan) === undefined) return false;
-    if (typeof override === 'boolean') return override;
-    return normalizeAdaptedQuantitiesEnabled(plan);
-  }
-
-  // Compatibilità piani legacy: la mappa delle modalità si chiamava
-  // `mellerModes` con valore 'meller' (oggi 'guide'). In lettura accettiamo
-  // il campo storico; in scrittura si usa sempre il nome attuale.
-  function planGuideModes(plan) {
-    const source = plan || {};
-    if (Object.prototype.hasOwnProperty.call(source, 'guideModes')) return source.guideModes;
-    if (Object.prototype.hasOwnProperty.call(source, 'mellerModes')) return source.mellerModes;
-    return undefined;
-  }
-
-  function setAdaptedQuantitiesEnabled(plan, enabled) {
-    const next = deepClone(plan || emptyPlan());
-    next.adaptedQuantitiesEnabled = Boolean(enabled);
+  // Imposta la preferenza «dosi allineate» del piano (scelta unica globale).
+  function setPlanAlignedDosesEnabled(plan, enabled) {
+    const next = { ...(plan || {}) };
+    next.alignedDosesEnabled = Boolean(enabled);
     return next;
   }
 
@@ -798,51 +221,6 @@
     return days;
   }
 
-  function emptyGuideModes() {
-    const modes = {};
-    DAYS.forEach(day => {
-      modes[day] = {};
-      SLOTS.forEach(slot => {
-        modes[day][slot] = GUIDE_MAIN_SLOTS.includes(slot)
-          ? GUIDE_MODE_GUIDE
-          : GUIDE_MODE_ORIGINAL;
-      });
-    });
-    return modes;
-  }
-
-  function normalizeGuideMode(mode, slot) {
-    if (!GUIDE_MAIN_SLOTS.includes(slot)) return GUIDE_MODE_ORIGINAL;
-    return mode === GUIDE_MODE_ORIGINAL ? GUIDE_MODE_ORIGINAL : GUIDE_MODE_GUIDE;
-  }
-
-  function normalizeGuideModes(rawModes = {}) {
-    const modes = emptyGuideModes();
-    DAYS.forEach(day => {
-      SLOTS.forEach(slot => {
-        modes[day][slot] = normalizeGuideMode(rawModes?.[day]?.[slot], slot);
-      });
-    });
-    return modes;
-  }
-
-  // Restituisce null per i piani legacy privi di guideModes: le funzioni pure
-  // che li ricevono direttamente mantengono il comportamento storico. I piani
-  // passati da migratePlan hanno invece sempre una modalità esplicita.
-  function guideModeForPlan(plan, day, slot) {
-    const modes = planGuideModes(plan);
-    if (modes === undefined) return null;
-    return normalizeGuideMode(modes?.[day]?.[slot], slot);
-  }
-
-  function setGuideModeForPlan(plan, day, slot, mode) {
-    const next = deepClone(plan || emptyPlan());
-    next.guideModes = normalizeGuideModes(planGuideModes(next) || {});
-    delete next.mellerModes; // non accumulare la chiave storica accanto alla nuova
-    if (next.guideModes[day]) next.guideModes[day][slot] = normalizeGuideMode(mode, slot);
-    return next;
-  }
-
   function emptyPlan() {
     return {
       schemaVersion: VERSION,
@@ -850,20 +228,11 @@
       defaultDays: emptyDays(),
       batchRules: {},
       batchTemplates: [],
-      guideModes: emptyGuideModes(),
-      guideAdaptations: {},
-      adaptedQuantitiesEnabled: true
+      alignedDosesEnabled: true
     };
   }
 
   // ----- Batch cooking dinamico -----
-
-  function dayDistance(from, to) {
-    const a = DAYS.indexOf(from);
-    const b = DAYS.indexOf(to);
-    if (a < 0 || b < 0) return null;
-    return (b - a + 7) % 7;
-  }
 
   // Ricerca del prossimo giorno (anche domenica → lunedì) in cui il piano
   // contiene la ricetta target in uno slot. Settimana ricorrente.
@@ -886,19 +255,12 @@
     return 'later';
   }
 
-  function portionFor(ingredient, profile, dayType, slot, recipeSlot) {
-    const p = normalizePortions(ingredient?.portions || {});
-
-    // Se è un carboidrato e la ricetta è di pranzo ma viene usata a cena
-    // (o viceversa), applica la trasformazione percentuale del contesto.
-    if (slot && recipeSlot && isPranzoCenaCross(recipeSlot, slot)) {
-      const adapted = crossSlotCarbPortions(ingredient, recipeSlot, slot, dayType);
-      if (adapted) return adapted.single;
-    }
-
-    // Quantità originale: un solo valore per ricetta, uguale in ogni contesto.
-    // Le dosi adattate (allenamento/riposo, pranzo/cena) sono derivate dal piano.
-    return p.single;
+  // Quantità originale dell'ingrediente: un solo valore per ricetta, uguale in
+  // ogni contesto. Le dosi allineate alla dieta assegnata sono una vista
+  // calcolata dal motore della struttura (alignRecipeToDiet), mai una porzione
+  // persistita: la ricetta originale resta sempre intatta.
+  function portionFor(ingredient) {
+    return normalizePortions(ingredient?.portions || {}).single;
   }
 
   function formatPortion(portion) {
@@ -906,22 +268,24 @@
     return value === '' ? EMPTY_PORTION : value;
   }
 
+  // Quantità di una preparazione batch. La vista «dosi allineate» è decisa
+  // dall'app (motore della dieta assegnata): qui arriva già risolta tramite
+  // options.resolveRecipe(recipe, slot, dayType) → ricetta effettiva, così il
+  // dominio resta puro e non conosce SaaS né strutture.
   function quantityForTask(task, plan, recipesById, profile, targetDay, targetSlot = 'lunch', options = {}) {
     const src = task?.quantitySource;
     if (!src?.ingredientId) return '';
     const recipe = recipesById?.[src.recipeId];
     if (!recipe) return '';
-    const contextualPlan = planUsesGuideDoses(plan, options.applyGuide);
-    const mode = contextualPlan
-      ? (guideModeForPlan(plan, targetDay, targetSlot) || (GUIDE_MAIN_SLOTS.includes(targetSlot) ? GUIDE_MODE_GUIDE : GUIDE_MODE_ORIGINAL))
-      : null;
     const dayType = plan?.days?.[targetDay]?.type || 'rest';
-    const effectiveRecipe = contextualPlan ? resolveRecipeForPlan(recipe, targetSlot, mode, dayType).recipe : recipe;
+    const effectiveRecipe = typeof options.resolveRecipe === 'function'
+      ? (options.resolveRecipe(recipe, targetSlot, dayType) || recipe)
+      : recipe;
     const ingredient = (effectiveRecipe?.ingredients || []).find(item =>
       (item.ingredientId || ingredientIdFor(item.name)) === src.ingredientId
     );
     if (!ingredient) return '';
-    const amount = portionFor(ingredient, profile, dayType);
+    const amount = portionFor(ingredient);
     const multiplier = portionMultiplierForProfile(profile, options.quantityMultiplier);
     const scaled = multiplier !== 1 ? scalePortionText(String(amount ?? ''), multiplier) : amount;
     return formatPortion(scaled);
@@ -1015,43 +379,28 @@
     const dinnerDayType = plan?.days?.[anchorDay]?.type || 'rest';
     const lunchDayType = plan?.days?.[target.day]?.type || 'rest';
     const storageMaxDays = 1;
-    const contextualPlan = planUsesGuideDoses(plan, options.applyGuide);
-    const dinnerMode = contextualPlan
-      ? (guideModeForPlan(plan, anchorDay, 'dinner') || GUIDE_MODE_GUIDE)
-      : null;
-    const lunchMode = contextualPlan
-      ? (guideModeForPlan(plan, target.day, 'lunch') || GUIDE_MODE_GUIDE)
-      : null;
-    const dinnerRecipe = contextualPlan ? resolveRecipeForPlan(recipe, 'dinner', dinnerMode, dinnerDayType).recipe : recipe;
-    const lunchRecipe = contextualPlan ? resolveRecipeForPlan(recipe, 'lunch', lunchMode, lunchDayType).recipe : recipe;
+    // Vista «dosi allineate» iniettata dall'app (motore della dieta assegnata):
+    // la stessa ricetta viene risolta nel contesto cena e nel contesto pranzo.
+    const resolve = typeof options.resolveRecipe === 'function' ? options.resolveRecipe : null;
+    const dinnerRecipe = resolve ? (resolve(recipe, 'dinner', dinnerDayType) || recipe) : recipe;
+    const lunchRecipe = resolve ? (resolve(recipe, 'lunch', lunchDayType) || recipe) : recipe;
     const ingredientById = (source, id) => (source?.ingredients || []).find(item =>
       (item.ingredientId || ingredientIdFor(item.name)) === id
     );
     const tasks = (recipe.ingredients || []).map(ingredient => {
       const baseId = ingredient.ingredientId || ingredientIdFor(ingredient.name);
-      const dinnerEffective = contextualPlan
-        ? (ingredientById(dinnerRecipe, baseId) || ingredient)
-        : (() => {
-            const adapted = adaptIngredientForSlot(ingredient, recipe.slot, 'dinner', dinnerDayType);
-            return adapted ? { ...ingredient, portions: adapted.portions } : ingredient;
-          })();
-      const lunchEffective = contextualPlan
-        ? (ingredientById(lunchRecipe, baseId) || ingredient)
-        : (() => {
-            const adapted = adaptIngredientForSlot(ingredient, recipe.slot, 'lunch', lunchDayType);
-            return adapted ? { ...ingredient, portions: adapted.portions } : ingredient;
-          })();
+      const dinnerEffective = ingredientById(dinnerRecipe, baseId) || ingredient;
+      const lunchEffective = ingredientById(lunchRecipe, baseId) || ingredient;
       const cenaName = dinnerEffective.name || ingredient.name;
       const pranzoName = lunchEffective.name || ingredient.name;
       const cenaId = dinnerEffective.ingredientId || baseId;
       const pranzoId = lunchEffective.ingredientId || baseId;
-      const cenaPortion = portionFor(dinnerEffective, profile, dinnerDayType);
-      const pranzoPortion = portionFor(lunchEffective, profile, lunchDayType);
-      // Con il travaso il carboidrato resta lo stesso ingrediente (es. pasta a
-      // pranzo -> dose cena Guide): le dosi di cena e pranzo si sommano senza
-      // creare voci parallele. Nei piani nuovi la stessa regola vale anche per
-      // proteine e condimenti: il contesto Guide viene applicato all'intera
-      // ricetta, non soltanto al carboidrato.
+      const cenaPortion = portionFor(dinnerEffective);
+      const pranzoPortion = portionFor(lunchEffective);
+      // L'ingrediente resta lo stesso nei due contesti (es. pasta a cena e a
+      // pranzo): le dosi dei due pasti si sommano senza creare voci parallele.
+      // Se la dieta assegnata sostituisce l'ingrediente in uno dei due pasti,
+      // le due dosi viaggiano affiancate.
       const sameIngredient = cenaId === pranzoId;
       const multiplier = portionMultiplierForProfile(profile, options.quantityMultiplier);
       let quantityStr;
@@ -1177,7 +526,7 @@
     return { value, unit };
   }
 
-  // Parser stretto delle quantità, usato dall'adattamento Guide e
+  // Parser stretto delle quantità, usato dall'allineamento delle dosi e
   // dall'editor ricette. A differenza di parseSimpleAmount (pensato per la
   // spesa, con intervalli→max e numeri nudi→pz), qui ogni forma non
   // rappresentabile resta esplicita e non viene mai reinterpretata:
@@ -1215,109 +564,10 @@
     return `${num}${unit || ''}`;
   }
 
-  // ----- Trasformazione percentuale carboidrati pranzo <-> cena -----
-
-  function carbSourceForName(name) {
-    const value = aliasKey(name);
-    if (!value) return null;
-    return CARB_REFERENCE.find(source => source.match.test(value)) || null;
-  }
-
-  function isPranzoCenaCross(nativeSlot, assignedSlot) {
-    return (nativeSlot === 'lunch' && assignedSlot === 'dinner') ||
-      (nativeSlot === 'dinner' && assignedSlot === 'lunch');
-  }
-
-  // Arrotonda alla decina per eccesso (235 -> 240, 45 -> 50, 464 -> 470).
-  function roundUpToTen(value) {
-    const n = Number(value);
-    if (!Number.isFinite(n) || n <= 0) return null;
-    return Math.ceil(n / 10) * 10;
-  }
-
-  function carbAmountText(value, unit) {
-    return unit === 'pz' ? `${value} pz` : `${value}${unit === 'ml' ? 'ml' : 'g'}`;
-  }
-
-  function parseCarbAmount(raw) {
-    if (!raw) return null;
-    // Solo grammi espliciti ("60 g", "60g"): numeri nudi ("250"), pezzi,
-    // cucchiai, ml, q.b. e note non sono una base adattabile. Niente più
-    // attribuzione di grammi a quantità senza unità.
-    const parsed = parseQuantity(raw);
-    if (!parsed || parsed.kind !== 'amount' || parsed.unit !== 'g') return null;
-    if (!Number.isFinite(parsed.value) || parsed.value <= 0) return null;
-    return { value: parsed.value, unit: 'g' };
-  }
-
-  // Quantità di partenza: prima la dose originale della ricetta quando è in
-  // grammi, poi — solo se manca davvero (vuota, "—", "-", zero) oppure non
-  // è numerica (q.b., note) — il riferimento delle linee guida per il pasto di
-  // origine. Numeri senza unità e unità diverse (pz, cucchiai, ml) restano
-  // testuali: né adattamento né fallback.
-  function carbBaseAmount(ingredient, source, nativeSlot) {
-    const p = normalizePortions(ingredient?.portions || {});
-    const native = parseCarbAmount(p.single);
-    if (native) return native;
-    const nativeKind = parseQuantity(p.single).kind;
-    if (nativeKind !== 'empty' && nativeKind !== 'free' && nativeKind !== 'opaque') return null;
-    const amountObj = nativeSlot === 'lunch' ? source.pranzo : (source.cena || source.pranzo);
-    if (amountObj && Number(amountObj.training) > 0) {
-      return { value: Number(amountObj.training), unit: 'g' };
-    }
-    return null;
-  }
-
-  // Trasforma le porzioni di un carboidrato tra pranzo e cena. La cena usa
-  // sempre la dose esplicita in GUIDE_GRAMMATURE e il ritorno rilegge pranzo
-  // A/R dalla stessa tabella (il floor dei 2/3 non è invertibile); il fallback
-  // per un alimento non ancora censito conserva le proporzioni storiche (2/3
-  // del pranzo R, oppure 200%/150% per il ritorno), arrotondate alla decina per
-  // eccesso.
-  // La dose derivata è calcolata per il contesto richiesto (pasto + giorno
-  // A/R) e restituita come quantità singola per profilo: la ricetta originale
-  // non viene mai riscritta.
-  function crossSlotCarbPortions(ingredient, nativeSlot, assignedSlot, dayType = 'training') {
-    if (!ingredient || !isPranzoCenaCross(nativeSlot, assignedSlot)) return null;
-    const source = carbSourceForName(ingredient.name);
-    if (!source) return null;
-    const base = carbBaseAmount(ingredient, source || { pranzo: null, cena: null }, nativeSlot);
-    if (!base) return null;
-
-    if (assignedSlot === 'dinner') {
-      const value = source?.cena?.rest ?? Math.floor((source?.pranzo?.rest ?? base.value) * 2 / 3 / 10) * 10;
-      if (!value) return null;
-      const amount = carbAmountText(value, base.unit);
-      return { single: amount };
-    }
-
-    const trainingValue = source?.pranzo?.training ?? roundUpToTen(base.value * 2);
-    const restValue = source?.pranzo?.rest ?? roundUpToTen(base.value * 1.5);
-    const value = dayType === 'rest' ? restValue : trainingValue;
-    if (!value) return null;
-    const amount = carbAmountText(value, base.unit);
-    return { single: amount };
-  }
-
-  // Adatta un ingrediente carboidrato quando la sua ricetta viene collocata nel
-  // pasto opposto (pranzo <-> cena). Restituisce { name, ingredientId, portions }
-  // solo per i carboidrati da adattare, altrimenti null (ingrediente invariato).
-  // Solo i carboidrati cambiano: proteine, uova, verdura e condimenti restano
-  // uguali.
-  function adaptIngredientForSlot(ingredient, nativeSlot, assignedSlot, dayType = 'training') {
-    const portions = crossSlotCarbPortions(ingredient, nativeSlot, assignedSlot, dayType);
-    if (!portions) return null;
-    return {
-      name: ingredient.name,
-      ingredientId: ingredient.ingredientId || ingredientIdFor(ingredient.name),
-      portions
-    };
-  }
-
   // Aggrega la lista della spesa per ingredientId. Le dosi "—" vengono saltate.
-  // Nei pasti incrociati i carboidrati vengono travasati da
-  // adaptIngredientForSlot con le dosi Guide della tabella (pranzo -> cena:
-  // dose cena; cena -> pranzo: pranzo A/R).
+  // La vista «dosi allineate» è decisa dall'app tramite options.resolveRecipe
+  // (recipe, slot, dayType) → ricetta effettiva: senza risolutore si aggregano
+  // le quantità originali delle ricette.
   function aggregateShopping(plan, recipesById, selectedMeals, profile = PROFILE_SINGLE, canonicalLabels = {}, options = {}) {
     const out = {};
     // Moltiplicatore porzioni (app clienti, profilo coppia): scala le dosi
@@ -1325,27 +575,16 @@
     // profilo "2 persone" dell'app clienti.
     const multiplierValue = portionMultiplierForProfile(profile, options.quantityMultiplier);
     const multiplier = normalizePortionProfileKey(profile) === PROFILE_COUPLE && multiplierValue !== 1 ? multiplierValue : null;
-    const contextualPlan = planUsesGuideDoses(plan, options.applyGuide);
+    const resolve = typeof options.resolveRecipe === 'function' ? options.resolveRecipe : null;
     DAYS.forEach(day => {
       const dayType = plan?.days?.[day]?.type || 'rest';
       (selectedMeals?.[day] || []).forEach(slot => {
         const recipe = recipesById?.[plan?.days?.[day]?.[slot]];
         if (!recipe) return;
-        let effectiveRecipe = recipe;
-        if (contextualPlan) {
-          const mode = guideModeForPlan(plan, day, slot) || (GUIDE_MAIN_SLOTS.includes(slot) ? GUIDE_MODE_GUIDE : GUIDE_MODE_ORIGINAL);
-          effectiveRecipe = resolveRecipeForPlan(recipe, slot, mode, dayType).recipe;
-        }
+        const effectiveRecipe = resolve ? (resolve(recipe, slot, dayType) || recipe) : recipe;
         (effectiveRecipe.ingredients || []).forEach(ingredient => {
-          // I piani nuovi applicano Guide a tutti gli ingredienti regolati,
-          // compresi proteine, grassi e carboidrati quando una ricetta viene
-          // spostata pranzo ↔ cena. I piani legacy privi di guideModes
-          // conservano invece il solo travaso carboidrati storico.
-          const adapted = contextualPlan ? null : adaptIngredientForSlot(ingredient, recipe.slot, slot, dayType);
-          const effective = adapted
-            ? { ...ingredient, name: adapted.name, ingredientId: adapted.ingredientId, portions: adapted.portions }
-            : ingredient;
-          const amount = portionFor(effective, profile, dayType);
+          const effective = ingredient;
+          const amount = portionFor(effective);
           const scaledAmount = multiplier && typeof amount === 'string' ? scalePortionText(amount, multiplier) : amount;
           const id = ingredientIdFor(effective.name, effective.ingredientId);
           const entry = out[id] || (out[id] = {
@@ -1383,10 +622,6 @@
     if (!plan?.days?.[dayA] || !plan?.days?.[dayB]) throw new Error('Giorno non valido');
     const next = deepClone(plan);
     [next.days[dayA][slotA], next.days[dayB][slotB]] = [next.days[dayB][slotB], next.days[dayA][slotA]];
-    if (Object.prototype.hasOwnProperty.call(plan, 'guideModes')) {
-      next.guideModes = normalizeGuideModes(plan.guideModes || {});
-      [next.guideModes[dayA][slotA], next.guideModes[dayB][slotB]] = [next.guideModes[dayB][slotB], next.guideModes[dayA][slotA]];
-    }
     return next;
   }
 
@@ -1394,10 +629,6 @@
     if (!plan?.days?.[fromDay] || !plan?.days?.[toDay]) throw new Error('Giorno non valido');
     const next = deepClone(plan);
     next.days[toDay][slot] = next.days[fromDay][slot];
-    if (Object.prototype.hasOwnProperty.call(plan, 'guideModes')) {
-      next.guideModes = normalizeGuideModes(plan.guideModes || {});
-      next.guideModes[toDay][slot] = next.guideModes[fromDay][slot];
-    }
     return next;
   }
 
@@ -1405,10 +636,6 @@
     if (!plan?.days?.[day]) throw new Error('Giorno non valido');
     const next = deepClone(plan);
     next.days[day][slot] = next.defaultDays?.[day]?.[slot] ?? null;
-    if (Object.prototype.hasOwnProperty.call(plan, 'guideModes')) {
-      next.guideModes = normalizeGuideModes(plan.guideModes || {});
-      next.guideModes[day][slot] = normalizeGuideMode(GUIDE_MODE_GUIDE, slot);
-    }
     return next;
   }
 
@@ -1448,13 +675,7 @@
       });
     });
     next.schemaVersion = VERSION;
-    if (Object.prototype.hasOwnProperty.call(source, 'guideModes') || Object.prototype.hasOwnProperty.call(next, 'guideModes')) {
-      next.guideModes = normalizeGuideModes(next.guideModes || {});
-      next.guideAdaptations = next.guideAdaptations && typeof next.guideAdaptations === 'object'
-        ? next.guideAdaptations
-        : {};
-      next.adaptedQuantitiesEnabled = normalizeAdaptedQuantitiesEnabled(next);
-    }
+    next.alignedDosesEnabled = planAlignedDosesEnabled(next);
     return next;
   }
 
@@ -1549,7 +770,7 @@
     return out.sort((a, b) => String(a.id).localeCompare(String(b.id), 'it', { numeric: true }));
   }
 
-  // Accettazione di una condivisione professionale (ADR 0006): il catalogo
+  // Accettazione di una condivisione professionale (ADR 0003): il catalogo
   // corrente è PRESERVATO e ogni ricetta ricevuta sostituisce quella con lo
   // STESSO id, marcata con fromProfessional (provenienza + sola lettura).
   // Pura e deterministica: receivedAt arriva dal chiamante.
@@ -1621,18 +842,11 @@
 
   // ----- Generatore settimanale (funzioni pure, nessun DOM) -----
 
-  // Categorie proteiche riconosciute dal generatore, con le chiavi min/max
+  // Categorie proteiche riconosciute dal generatore. Non esistono più range
+  // di frequenza minimi/massimi globali (erano dati clinici del vecchio
+  // manuale): il generatore lavora sui soli vincoli strutturali (ripetizioni,
+  // pesce giornaliero, distanza omega-3, accoppiate batch, blocchi).
   const PROTEIN_CATEGORIES = ['legumes', 'omega', 'otherFish', 'poultry', 'beef', 'curedMeats', 'dairy', 'eggs'];
-const PROTEIN_CONSTRAINT_KEYS = {
-  legumes: { min: 'legumesMin', max: 'legumesMax' },
-  omega: { min: 'omegaMin', max: 'omegaMax' },
-  otherFish: { min: 'otherFishMin', max: 'otherFishMax' },
-  poultry: { min: 'poultryMin', max: 'poultryMax' },
-  beef: { min: 'beefMin', max: 'beefMax' },
-  curedMeats: { min: 'curedMeatsMin', max: 'curedMeatsMax' },
-  dairy: { min: 'dairyMin', max: 'dairyMax' },
-  eggs: { min: 'eggsMin', max: 'eggsMax' }
-};
 const PROTEIN_CATEGORY_LABELS = {
   legumes: 'Legumi e derivati',
   omega: 'Pesce ricco di omega-3',
@@ -1697,11 +911,6 @@ const PROTEIN_CATEGORY_LABELS = {
     return Array.isArray(recipes) && recipes.some(recipe => recipe && Object.prototype.hasOwnProperty.call(recipe, 'frequency'));
   }
 
-  function isFishRecipe(recipe) {
-    const category = classifyProtein(recipe);
-    return category === 'omega' || category === 'otherFish';
-  }
-
   function mulberry32(seed) {
     let a = seed >>> 0;
     return function () {
@@ -1737,18 +946,16 @@ const PROTEIN_CATEGORY_LABELS = {
   }
 
   // Genera una proposta di settimana "solida e ottimizzata": rispetta i tipi
-  // A/R e i blocchi, insegue min E max delle frequenze proteiche, limita le
-  // ripetizioni della stessa ricetta, distanzia gli omega-3 (mai in giorni
-  // consecutivi, salvo le accoppiate cena → pranzo richieste con batchPairs,
-  // dove l'adiacenza è intrinseca) e può programmare accoppiate cena →
-  // pranzo per il batch cooking "doppia porzione". Non modifica mai i dosaggi.
-  // Il risultato è riproducibile con lo stesso seed.
+  // A/R e i blocchi, limita le ripetizioni della stessa ricetta, distanzia gli
+  // omega-3 (mai in giorni consecutivi, salvo le accoppiate cena → pranzo
+  // richieste con batchPairs, dove l'adiacenza è intrinseca) e può programmare
+  // accoppiate cena → pranzo per il batch cooking "doppia porzione". Non
+  // modifica mai i dosaggi. Il risultato è riproducibile con lo stesso seed.
   //
   // Opzioni (tutte facoltative):
   //   plan            piano attuale (tipi A/R, blocchi batch, pasti mantenuti)
   //   seed            numero/stringa per la riproducibilità
   //   blocks          come prima: blocco singolo pasto o intera giornata
-  //   constraints     min/max per categoria (uniti ai DEFAULT_CONSTRAINTS)
   //   templates       batchTemplates strutturali (bonus accoppiata anchor/target)
   //   batchPairs      n. di accoppiate cena → pranzo del giorno dopo (0-7)
   //   maxRepeats      apparizioni massime della stessa ricetta (default 2)
@@ -1760,7 +967,6 @@ const PROTEIN_CATEGORY_LABELS = {
     const rand = seededRandom(seedUsed);
     const currentPlan = options.plan && options.plan.days ? options.plan : emptyPlan();
     const blocks = options.blocks || {};
-    const constraints = { ...DEFAULT_CONSTRAINTS, ...(options.constraints || {}) };
     const warnings = [];
     const recipes = (catalog || []).map(migrateRecipe);
     const recipesById = Object.fromEntries(recipes.map(recipe => [recipe.id, recipe]));
@@ -1773,19 +979,8 @@ const PROTEIN_CATEGORY_LABELS = {
     const maxRepeats = Math.max(1, Math.min(7, Math.floor(Number(options.maxRepeats) || 2)));
     const allowCrossSlot = Boolean(options.allowCrossSlot);
 
-    const minFor = category => {
-      const key = PROTEIN_CONSTRAINT_KEYS[category]?.min;
-      const value = key ? Number(constraints[key]) : 0;
-      return Number.isFinite(value) ? Math.max(0, value) : 0;
-    };
-    const maxFor = category => {
-      const key = PROTEIN_CONSTRAINT_KEYS[category]?.max;
-      const value = key ? Number(constraints[key]) : NaN;
-      return Number.isFinite(value) ? Math.max(minFor(category), value) : Infinity;
-    };
-
     if (!recipes.length) warnings.push('Catalogo vuoto: nessuna settimana generabile.');
-    else if (recipes.length < 14) warnings.push(`Catalogo ridotto (${recipes.length} ricette): potrebbe non essere possibile rispettare tutte le frequenze.`);
+    else if (recipes.length < 14) warnings.push(`Catalogo ridotto (${recipes.length} ricette): la settimana potrebbe ripetersi più del previsto.`);
 
     const bySlot = {};
     SLOTS.forEach(slot => { bySlot[slot] = recipes.filter(recipe => recipe.slot === slot); });
@@ -1926,7 +1121,6 @@ const PROTEIN_CATEGORY_LABELS = {
       const category = classifyProtein(recipe);
       // La stessa ricetta occupa due posti: deve starci nei suoi tetti.
       if ((usage[recipe.id] || 0) + 2 > maxRepeats) return false;
-      if (category && counts[category] + 2 > maxFor(category)) return false;
       if (isFishy(recipe) && (fishCountOn(anchorDay) >= 1 || fishCountOn(targetDay) >= 1)) return false;
       // Un'accoppiata omega cena → pranzo è adiacente a se stessa per
       // costruzione (è ciò che l'utente ha chiesto), ma non deve mai toccare
@@ -1937,11 +1131,9 @@ const PROTEIN_CATEGORY_LABELS = {
       if (chosen[targetDay]?.dinner === recipe.id || previousSlotValue(targetDay, 'lunch') === recipe.id) return false;
       return true;
     };
-    const pairScore = (recipe, anchorDay, targetDay) => {
-      const category = classifyProtein(recipe);
+    const pairScore = (recipe) => {
       let score = rand() * 2;
-      if (category && counts[category] < minFor(category)) score += 7;
-      if (!category) score -= 1;
+      if (!classifyProtein(recipe)) score -= 1;
       score -= (usage[recipe.id] || 0) * 3;
       return score;
     };
@@ -1975,30 +1167,26 @@ const PROTEIN_CATEGORY_LABELS = {
     // giorno, tetto ripetizioni, omega-3 mai in giorni consecutivi. Se il pool
     // si svuota si rilassano a gradini (con un unico avviso per pasto) anziché
     // lasciare il pasto vuoto.
-    const candidateHardOk = (recipe, day, { relaxMax = false, relaxRepeats = false, relaxFish = false, relaxOmegaSpacing = false } = {}) => {
-      const category = classifyProtein(recipe);
-      if (!category) return true;
-      if (!relaxMax && counts[category] >= maxFor(category)) return false;
+    const candidateHardOk = (recipe, day, { relaxRepeats = false, relaxFish = false, relaxOmegaSpacing = false } = {}) => {
+      if (!classifyProtein(recipe)) return true;
       if (isFishy(recipe) && !relaxFish && fishCountOn(day) >= 1) return false;
       if (!relaxRepeats && (usage[recipe.id] || 0) >= maxRepeats) return false;
       // Omega-3 distanziati: l'unica adiacenza ammessa è quella costruita
       // dall'utente con un'accoppiata batch (stessa ricetta a cena e a pranzo
       // del giorno dopo), che però viene piazzata al passo 1 e qui non passa
       // mai da questo filtro perché i suoi slot sono già occupati.
-      if (!relaxOmegaSpacing && category === 'omega' && (omegaToday[prevDayOf(day)] || omegaToday[nextDayOf(day)])) return false;
+      if (!relaxOmegaSpacing && classifyProtein(recipe) === 'omega' && (omegaToday[prevDayOf(day)] || omegaToday[nextDayOf(day)])) return false;
       return true;
     };
     const candidateScore = (recipe, day, slot) => {
-      const category = classifyProtein(recipe);
       let score = rand() * 2;
-      if (category && counts[category] < minFor(category)) score += 8;
       score += templatePairBonus(recipe, day, slot) * 4;
-      if (!category) score -= 1;
+      if (!classifyProtein(recipe)) score -= 1;
       score -= 3 * (usage[recipe.id] || 0);
       if (previousSlotValue(day, slot) === recipe.id) score -= 5;
       // La penalità guida la scelta anche quando il vincolo è rilassato
       // (ultimo gradino): a parità di condizioni resta preferita la distanza.
-      if (category === 'omega') {
+      if (classifyProtein(recipe) === 'omega') {
         if (omegaToday[prevDayOf(day)]) score -= 6;
         if (omegaToday[nextDayOf(day)]) score -= 6;
       }
@@ -2009,13 +1197,12 @@ const PROTEIN_CATEGORY_LABELS = {
       if (!pool.length) return null;
       const levels = [
         {}, // tutti i vincoli duri
-        { relaxMax: true },
-        { relaxMax: true, relaxRepeats: true },
-        { relaxMax: true, relaxRepeats: true, relaxFish: true },
+        { relaxRepeats: true },
+        { relaxRepeats: true, relaxFish: true },
         // Ultima spiaggia (catalogi irrisolvibili): si accetta anche un
         // omega-3 adiacente pur di non lasciare il pasto vuoto; l'adiacenza
         // residua viene poi segnalata tra i warning finali.
-        { relaxMax: true, relaxRepeats: true, relaxFish: true, relaxOmegaSpacing: true }
+        { relaxRepeats: true, relaxFish: true, relaxOmegaSpacing: true }
       ];
       for (let index = 0; index < levels.length; index++) {
         const candidates = pool.filter(recipe => candidateHardOk(recipe, day, levels[index]));
@@ -2028,59 +1215,16 @@ const PROTEIN_CATEGORY_LABELS = {
       return null;
     };
 
-    const generatedProteinSlots = [];
     DAYS.forEach(day => {
       ['lunch', 'dinner'].forEach(slot => {
         if (!freeSlot(day, slot)) return;
         const pick = pickProtein(day, slot);
         chosen[day][slot] = pick ? pick.id : null;
-        if (pick) {
-          registerMeal(day, slot, pick);
-          generatedProteinSlots.push({ day, slot });
-        }
+        if (pick) registerMeal(day, slot, pick);
       });
     });
 
-    // --- Passo 3: riparazione delle frequenze minime non raggiunte ---
-    // Scambia un pasto generato (mai bloccato, mai dentro una coppia batch)
-    // con una ricetta della categoria mancante, senza violare massimi, limite
-    // di pesce giornaliero né spingere l'altra categoria sotto il suo minimo.
-    PROTEIN_CATEGORIES.forEach(category => {
-      while (counts[category] < minFor(category)) {
-        let applied = false;
-        const slotsInRandomOrder = shuffle(generatedProteinSlots, rand);
-        for (const { day, slot } of slotsInRandomOrder) {
-          const currentRecipe = recipesById[chosen[day][slot]];
-          const currentCategory = currentRecipe ? classifyProtein(currentRecipe) : null;
-          if (!currentRecipe || currentCategory === category) continue;
-          if (currentCategory && minFor(currentCategory) > 0 && counts[currentCategory] <= minFor(currentCategory)) continue;
-          const pool = poolFor(slot).filter(recipe => classifyProtein(recipe) === category);
-          const replacementOk = recipe => {
-            if (!recipe || recipe.id === currentRecipe.id) return false;
-            if (counts[category] + 1 > maxFor(category)) return false;
-            if ((usage[recipe.id] || 0) >= maxRepeats) return false;
-            if (isFishy(recipe) && fishCountOn(day) - (isFishy(currentRecipe) ? 1 : 0) + 1 > 1) return false;
-            // Anche la riparazione delle frequenze minime rispetta la distanza
-            // degli omega-3: se il minimo resta irraggiungibile prevale il
-            // warning esplicito sulla frequenza mancante, non l'adiacenza.
-            if (category === 'omega' && (omegaToday[prevDayOf(day)] || omegaToday[nextDayOf(day)])) return false;
-            return true;
-          };
-          const replacement = pool.filter(replacementOk)
-            .map(recipe => ({ recipe, score: candidateScore(recipe, day, slot) }))
-            .sort((a, b) => b.score - a.score)[0]?.recipe;
-          if (replacement) {
-            unregisterMeal(day, slot, currentRecipe);
-            chosen[day][slot] = replacement.id;
-            registerMeal(day, slot, replacement);
-            applied = true;
-            break;
-          }
-        }
-        if (!applied) break;
-      }
-    });
-
+    // --- Passo 3: colazione e spuntini (rotazione varia) ---
     // --- Passo 4: colazione e spuntini (rotazione varia; le frequenze
     // proteiche sono definite su pranzo/cena, qui non si conteggiano) ---
     const pickSimple = (day, slot) => {
@@ -2123,24 +1267,7 @@ const PROTEIN_CATEGORY_LABELS = {
       batchRules: deepClone(currentPlan.batchRules || {}),
       batchTemplates: templates
     };
-    if (Object.prototype.hasOwnProperty.call(currentPlan, 'guideModes')) {
-      nextPlan.guideModes = normalizeGuideModes(currentPlan.guideModes || {});
-      nextPlan.guideAdaptations = deepClone(currentPlan.guideAdaptations || {});
-    }
 
-    // Avvisi finali sulle frequenze: calcolati sul piano COMPLETO (generati +
-    // bloccati + mantenuti), coerenti col controllo mostrato nella Settimana.
-    PROTEIN_CATEGORIES.forEach(category => {
-      const count = counts[category];
-      const min = minFor(category);
-      const max = maxFor(category);
-    
-      if (count < min || count > max) {
-        warnings.push(
-          `${PROTEIN_CATEGORY_LABELS[category]}: ${count} pasti (obiettivo ${min}-${max}).`
-        );
-      }
-    });
     // Blocchi di giorni omega consecutivi, mostrati come intervalli completi
     // ("Mercoledì–Giovedì") anziché come solo primo giorno di ogni coppia.
     // La settimana è circolare: domenica e lunedì sono adiacenti.
@@ -2181,441 +1308,15 @@ const PROTEIN_CATEGORY_LABELS = {
     return { plan: nextPlan, counts, warnings, seed: seedUsed, pairs };
   }
 
-  // Riferimento Guide per un ingrediente (prima regola che combacia), oppure
-  // null quando l'alimento non ha una grammatura definita (verdura, spezie,
-  // q.b., ecc.). Verdura e alimenti liberi non vengono mai segnalati.
-  function guideRuleForIngredient(name) {
-    const value = aliasKey(name);
-    if (!value) return null;
-    // Nome identico all'etichetta della tabella → famiglia certa.
-    const labelFamily = GUIDE_LABEL_FAMILY.get(value);
-    if (labelFamily) return guideGrammatureFor(labelFamily);
-    return GUIDE_GRAMMATURE.find(rule => rule.match.test(value)) || null;
-  }
-
-  // Installa una versione server-side già autenticata e verificata dalla
-  // callable. Aggiorna in-place i derivati per conservare i riferimenti usati
-  // dal client vanilla e non modifica mai le ricette originali.
-  function activateGuideRuleSet(rules, freeAliases = []) {
-    if (!Array.isArray(rules) || !rules.length) return false;
-    const escapeRegex = value => String(value).replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-    activeGuideFreeIngredientPatterns = (Array.isArray(freeAliases) ? freeAliases : [])
-      .map(alias => aliasKey(alias)).filter(Boolean).map(alias => new RegExp(`^${escapeRegex(alias)}$`, 'i'));
-    const compiled = rules.map(rule => {
-      if (!rule?.family || !rule?.group || !rule?.label || !Array.isArray(rule.aliases) || !rule.aliases.length) {
-        throw new Error('Rule set Guide non compatibile');
-      }
-      const slots = deepClone(rule.slots || {});
-      Object.values(slots).forEach(byDay => ['training', 'rest'].forEach(dayType => {
-        const amount = Number(byDay?.[dayType]);
-        if (!Number.isFinite(amount) || amount <= 0) throw new Error('Grammatura Guide non valida');
-      }));
-      return {
-        family: String(rule.family), group: String(rule.group), label: String(rule.label),
-        match: new RegExp(rule.aliases.map(alias => escapeRegex(aliasKey(alias))).join('|'), 'i'),
-        slots
-      };
-    });
-    GUIDE_GRAMMATURE.splice(0, GUIDE_GRAMMATURE.length, ...compiled);
-    CARB_REFERENCE.splice(0, CARB_REFERENCE.length, ...buildCarbReference());
-    const nextAlternatives = buildGuideAlternatives();
-    Object.assign(GUIDE_ALTERNATIVES, nextAlternatives);
-    Object.assign(DEFAULT_CONSTRAINTS, buildDefaultConstraints());
-    Object.assign(GUIDE_MANUAL, buildGuideManual());
-    rebuildGuideLabelFamily();
-    return true;
-  }
-
-  // Gruppo canonico di un ingrediente ('carb', 'protein', 'dairy', …) oppure
-  // null quando non ha una grammatura Guide (verdura, spezie, q.b.).
-  function guideGroupForIngredient(name) {
-    return guideRuleForIngredient(name)?.group || null;
-  }
-
-  // Le etichette delle tabelle alternative sono riconoscibili da sole: toccare
-  // un ingrediente scritto come la riga della tabella (es. "Affettati",
-  // "Pesce azzurro", "Cereali") deve aprire il popup anche quando la regex di
-  // famiglia non contiene la parola generica dell'etichetta.
-  const GUIDE_CARB_LABEL_KEYS = new Set(GUIDE_CARB_ALTERNATIVES.map(entry => aliasKey(entry.label)).filter(Boolean));
-  const GUIDE_PROTEIN_LABEL_KEYS = new Set([GUIDE_PROTEIN_REFERENCE, ...GUIDE_PROTEIN_ALTERNATIVES].map(entry => aliasKey(entry.label)).filter(Boolean));
-
-  // Riconoscimento carboidrati/proteine usato dai popup delle equivalenze.
-  // Legge le `match` e i `group` della fonte canonica: popup, tabelle e guida
-  // classificano un ingrediente nello stesso identico modo.
-  function isGuideCarbIngredient(name) {
-    const key = aliasKey(name);
-    if (key && GUIDE_CARB_LABEL_KEYS.has(key)) return true;
-    return guideGroupForIngredient(name) === GUIDE_GROUP.CARB;
-  }
-
-  function isGuideProteinIngredient(name) {
-    const key = aliasKey(name);
-    if (key && GUIDE_PROTEIN_LABEL_KEYS.has(key)) return true;
-    const group = guideGroupForIngredient(name);
-    // Latte e yogurt sono fonti proteiche leggere di colazione e merenda: nei
-    // popup mostrano le alternative proteiche pur non avendo una riga propria.
-    return group === GUIDE_GROUP.PROTEIN || group === GUIDE_GROUP.DAIRY;
-  }
-
-  // Famiglia canonica di un ingrediente (es. 'gnocchi'), oppure null.
-  function guideFamilyForIngredient(name) {
-    return guideRuleForIngredient(name)?.family || null;
-  }
-
-  // Grammatura di riferimento per pasto + giorno A/R (training/rest).
-  function guideReferenceAmount(rule, slot, dayType) {
-    const bySlot = rule?.slots?.[slot];
-    if (!bySlot) return null;
-    const amount = bySlot[dayType];
-    return amount != null ? amount : (bySlot.training != null ? bySlot.training : null);
-  }
-
-  // Quantità numerica confrontabile per l'adattamento: solo grammi
-  // espliciti ("60 g", "60g"). Millilitri, pezzi, cucchiai, numeri senza
-  // unità, q.b. e valori opachi non sono confrontabili: restituiscono null
-  // e l'ingrediente resta testuale, senza adattamenti inventati.
-  function guideComparableAmount(raw) {
-    const parsed = parseQuantity(raw);
-    if (!parsed || parsed.kind !== 'amount' || parsed.unit !== 'g') return null;
-    if (!Number.isFinite(parsed.value) || parsed.value <= 0) return null;
-    return { value: parsed.value, unit: 'g' };
-  }
-
-  // Chiavi logiche del confronto contestuale: una dose originale singola per
-  // ricetta e due giorni A/R derivati dalla struttura.
-  const GUIDE_DAY_TYPES = ['training', 'rest'];
-
-  function guideSourceFingerprint(recipe) {
-    const source = {
-      slot: recipe?.slot || '',
-      ingredients: (recipe?.ingredients || []).map(ingredient => ({
-        ingredientId: ingredient.ingredientId || ingredientIdFor(ingredient.name),
-        name: ingredient.name || '',
-        portions: normalizePortions(ingredient.portions || {})
-      }))
-    };
-    return String(hashString(JSON.stringify(source)));
-  }
-
-  function guideContextSlot(slot) {
-    return GUIDE_MAIN_SLOTS.includes(slot) ? slot : null;
-  }
-
-  // Controllo contestuale e STRICT: quando l'utente attiva Guide non basta
-  // stare sotto un massimo, ogni ingrediente regolato deve coincidere con la
-  // dose esatta del pasto e del giorno A/R. Gli ingredienti liberi sono
-  // esplicitamente esclusi; quelli sconosciuti bloccano l'applicazione.
-  function checkGuideContext(recipe, assignedSlot = recipe?.slot) {
-    const slot = guideContextSlot(assignedSlot || recipe?.slot);
-    if (!slot) {
-      return {
-        status: 'not-applicable',
-        slot: null,
-        aligned: true,
-        readyToApply: true,
-        issues: [],
-        summary: [],
-        unknown: [],
-        ambiguous: [],
-        free: []
-      };
-    }
-
-    const mapped = (recipe?.ingredients || []).map((ingredient, index) => ({
-      ingredient,
-      index,
-      id: ingredient.ingredientId || ingredientIdFor(ingredient.name),
-      mapping: guideMappingForIngredient(ingredient.name)
-    }));
-    const guided = mapped.filter(item => item.mapping.kind === 'guided');
-    const unknown = mapped
-      .filter(item => item.mapping.kind === 'unknown')
-      .map(item => ({ ingredient: item.ingredient.name, ingredientId: item.id, index: item.index }));
-    const free = mapped
-      .filter(item => item.mapping.kind === 'free')
-      .map(item => ({ ingredient: item.ingredient.name, ingredientId: item.id, index: item.index }));
-
-    const groupCounts = {};
-    guided.forEach(item => {
-      const group = item.mapping.rule.group;
-      groupCounts[group] = (groupCounts[group] || 0) + 1;
-    });
-    const ambiguous = Object.entries(groupCounts)
-      .filter(([, count]) => count > 1)
-      .map(([group, count]) => ({ group, count }));
-
-    // Confronto STRICT sul contesto canonico (giorno di allenamento): la
-    // quantità originale è unica per ricetta; la dose di riposo è derivata
-    // dal piano e non è un difetto dell'originale.
-    const issues = [];
-    guided.forEach(item => {
-      const rule = item.mapping.rule;
-      const original = normalizePortions(item.ingredient?.portions || {});
-      ['training'].forEach(dayType => {
-        const expected = guideReferenceAmount(rule, slot, dayType);
-        if (expected == null) return;
-        const amount = guideComparableAmount(original.single);
-        if (!amount || amount.unit !== 'g' || amount.value !== expected) {
-          issues.push({
-            ingredient: item.ingredient.name,
-            ingredientId: item.id,
-            family: rule.family,
-            label: rule.label,
-            portion: 'single',
-            dayType,
-            expected,
-            actual: amount?.value ?? null,
-            unit: amount?.unit || 'g',
-            kind: amount ? (amount.value > expected ? 'above' : 'below') : 'unreadable'
-          });
-        }
-      });
-    });
-
-    const summary = [];
-    issues.forEach(issue => {
-      let entry = summary.find(item =>
-        item.ingredient === issue.ingredient && item.expected === issue.expected &&
-        item.unit === issue.unit
-      );
-      if (!entry) {
-        entry = {
-          ingredient: issue.ingredient,
-          ingredientId: issue.ingredientId,
-          label: issue.label,
-          family: issue.family,
-          actual: issue.actual,
-          expected: issue.expected,
-          unit: issue.unit,
-          dayTypes: [],
-          kinds: []
-        };
-        summary.push(entry);
-      }
-      if (issue.actual != null) entry.actual = Math.max(entry.actual ?? 0, issue.actual);
-      if (!entry.dayTypes.includes(issue.dayType)) entry.dayTypes.push(issue.dayType);
-      if (!entry.kinds.includes(issue.kind)) entry.kinds.push(issue.kind);
-    });
-    summary.forEach(entry => {
-      entry.dayTypeLabel = entry.dayTypes.length === 2
-        ? 'allenamento e riposo'
-        : (entry.dayTypes[0] === 'training' ? 'allenamento' : 'riposo');
-    });
-
-    const blocked = unknown.length > 0 || ambiguous.length > 0;
-    return {
-      status: blocked ? 'blocked' : (issues.length ? 'needs-adaptation' : 'aligned'),
-      slot,
-      aligned: !blocked && issues.length === 0,
-      readyToApply: !blocked,
-      issues,
-      summary,
-      unknown,
-      ambiguous,
-      free,
-      sourceFingerprint: guideSourceFingerprint(recipe)
-    };
-  }
-
-  function guideAmountText(value) {
-    return `${value} g`;
-  }
-
-  function buildGuideContextAdaptation(recipe, assignedSlot) {
-    const report = checkGuideContext(recipe, assignedSlot);
-    const context = {
-      schemaVersion: GUIDE_ADAPTATION_SCHEMA_VERSION,
-      slot: report.slot,
-      sourceFingerprint: guideSourceFingerprint(recipe),
-      status: report.status,
-      unknown: deepClone(report.unknown),
-      ambiguous: deepClone(report.ambiguous),
-      portions: {}
-    };
-    if (!report.readyToApply) return { context, report, changed: false };
-
-    const guided = (recipe?.ingredients || [])
-      .map((ingredient, index) => ({ ingredient, index, id: ingredient.ingredientId || ingredientIdFor(ingredient.name), mapping: guideMappingForIngredient(ingredient.name) }))
-      .filter(item => item.mapping.kind === 'guided');
-    const groupCounts = {};
-    guided.forEach(item => {
-      const group = item.mapping.rule.group;
-      groupCounts[group] = (groupCounts[group] || 0) + 1;
-    });
-    guided.forEach(item => {
-      const rule = item.mapping.rule;
-      // Solo grammi espliciti: se nessun profilo ha una dose in grammi
-      // leggibile, l'ingrediente resta testuale e non entra nel contesto
-      // (niente dosi inventate su pz, cucchiai, ml, numeri nudi, q.b., note).
-      const original = normalizePortions(item.ingredient?.portions || {});
-      if (!guideComparableAmount(original.single)) return;
-      const divisor = groupCounts[rule.group] || 1;
-      const portions = {};
-      GUIDE_DAY_TYPES.forEach(dayType => {
-        const expected = guideReferenceAmount(rule, report.slot, dayType);
-        if (expected != null) portions[dayType] = guideAmountText(expected / divisor);
-      });
-      context.portions[item.id] = portions;
-    });
-    context.status = 'ready';
-    // changed = almeno una dose effettivamente riscritta: le segnalazioni
-    // 'unreadable' (dosi non in grammi, lasciate testuali) non contano.
-    return { context, report, changed: report.issues.some(issue => issue.kind === 'above' || issue.kind === 'below') };
-  }
-
-  function buildGuideAdaptationMetadata(recipe) {
-    const sourceFingerprint = guideSourceFingerprint(recipe);
-    const contexts = {};
-    GUIDE_MAIN_SLOTS.forEach(slot => {
-      contexts[slot] = buildGuideContextAdaptation(recipe, slot).context;
-    });
-    return {
-      schemaVersion: GUIDE_ADAPTATION_SCHEMA_VERSION,
-      sourceFingerprint,
-      contexts
-    };
-  }
-
-  // Applica la matrice contestuale per il giorno A/R richiesto: la dose
-  // adattata è una quantità singola per profilo (le dosi Guide non sono
-  // distinte per uomo/donna) e non riscrive mai la ricetta originale.
-  function applyGuideContextAdaptation(recipe, context, dayType = 'training') {
-    const next = deepClone(recipe);
-    const portionsById = context?.portions || {};
-    const day = GUIDE_DAY_TYPES.includes(dayType) ? dayType : 'training';
-    next.ingredients = (next.ingredients || []).map(ingredient => {
-      const id = ingredient.ingredientId || ingredientIdFor(ingredient.name);
-      const adapted = portionsById[id];
-      if (!adapted) return ingredient;
-      const amount = adapted[day] ?? adapted.training;
-      if (amount == null) return ingredient;
-      return { ...ingredient, portions: { single: amount } };
-    });
-    return next;
-  }
-
-  function resolveRecipeForPlan(recipe, assignedSlot, mode = GUIDE_MODE_GUIDE, dayType = 'training') {
-    const slot = guideContextSlot(assignedSlot || recipe?.slot);
-    if (!recipe || mode !== GUIDE_MODE_GUIDE || !slot) {
-      return { recipe: deepClone(recipe), mode: mode === GUIDE_MODE_ORIGINAL ? mode : GUIDE_MODE_ORIGINAL, applied: false, blocked: false, report: null, context: null };
-    }
-
-    const fingerprint = guideSourceFingerprint(recipe);
-    const stored = recipe.guideAdaptations;
-    let context = stored?.sourceFingerprint === fingerprint ? stored.contexts?.[slot] : null;
-    let report;
-    if (!context || context.sourceFingerprint !== fingerprint) {
-      const built = buildGuideContextAdaptation(recipe, slot);
-      context = built.context;
-      report = built.report;
-    } else {
-      report = checkGuideContext(recipe, slot);
-    }
-    if (context.status === 'blocked' || !report.readyToApply) {
-      return { recipe: deepClone(recipe), mode: GUIDE_MODE_GUIDE, applied: false, blocked: true, report, context };
-    }
-    return {
-      recipe: applyGuideContextAdaptation(recipe, context, dayType),
-      mode: GUIDE_MODE_GUIDE,
-      applied: true,
-      blocked: false,
-      report,
-      context
-    };
-  }
-
-  // Verifica se una ricetta rispetta le grammature Guide del proprio pasto.
-  // Restituisce { adapted, issues, summary }: `adapted` è true quando nessuna
-  // dose supera il riferimento; `summary` aggrega le segnalazioni per
-  // ingrediente (pronta per la UI).
-  function checkGuideAdaptation(recipe) {
-    const slot = recipe?.slot && SLOTS.includes(recipe.slot) ? recipe.slot : 'lunch';
-    const issues = [];
-    (recipe?.ingredients || []).forEach(ingredient => {
-      const rule = guideRuleForIngredient(ingredient?.name);
-      if (!rule) return;
-      const portions = normalizePortions(ingredient?.portions || {});
-      // Massimale sul contesto canonico (allenamento): il riposo è derivato.
-      ['training'].forEach(dayType => {
-        const expected = guideReferenceAmount(rule, slot, dayType);
-        if (expected == null) return;
-        const amount = guideComparableAmount(portions.single);
-        if (!amount || amount.value <= expected) return;
-        issues.push({
-          ingredient: ingredient.name,
-          family: rule.family,
-          label: rule.label,
-          portion: 'single',
-          dayType,
-          expected,
-          actual: Math.round(amount.value * 100) / 100,
-          unit: amount.unit
-        });
-      });
-    });
-
-    const summary = [];
-    issues.forEach(issue => {
-      // Mantiene distinti scostamenti diversi dello stesso ingrediente sullo
-      // stesso contesto e aggrega solo le giornate equivalenti.
-      let entry = summary.find(item =>
-        item.ingredient === issue.ingredient && item.expected === issue.expected &&
-        item.unit === issue.unit
-      );
-      if (!entry) {
-        entry = {
-          ingredient: issue.ingredient, label: issue.label, family: issue.family,
-          actual: issue.actual, expected: issue.expected, unit: issue.unit,
-          dayTypes: []
-        };
-        summary.push(entry);
-      }
-      entry.actual = Math.max(entry.actual, issue.actual);
-      if (!entry.dayTypes.includes(issue.dayType)) entry.dayTypes.push(issue.dayType);
-    });
-    summary.forEach(entry => {
-      entry.dayTypeLabel = entry.dayTypes.length === 2
-        ? 'allenamento e riposo'
-        : (entry.dayTypes[0] === 'training' ? 'allenamento' : 'riposo');
-    });
-
-    return { adapted: issues.length === 0, issues, summary };
-  }
-
-  // Adatta con un click: riporta la quantità originale al riferimento del
-  // giorno di allenamento (contesto canonico della quantità originale); le
-  // dosi di riposo restano derivate dal piano. Le dosi già corrette o non
-  // numeriche restano invariate. Restituisce una copia della ricetta.
-  function adaptRecipeToGuide(recipe) {
-    const next = deepClone(recipe);
-    const report = [];
-    (next.ingredients || []).forEach(ingredient => {
-      const rule = guideRuleForIngredient(ingredient.name);
-      if (!rule) return;
-      const portions = normalizePortions(ingredient.portions || {});
-      const expected = guideReferenceAmount(rule, next.slot && SLOTS.includes(next.slot) ? next.slot : 'lunch', 'training');
-      if (expected == null) return;
-      const raw = String(portions.single ?? '');
-      const amount = guideComparableAmount(raw);
-      if (!amount || amount.value <= expected) return;
-      // guideComparableAmount accetta solo grammi: la correzione è in grammi.
-      const nextAmount = `${expected} g`;
-      report.push({ ingredient: ingredient.name, portion: 'single', from: raw, to: nextAmount });
-      portions.single = nextAmount;
-      ingredient.portions = portions;
-    });
-    return { recipe: next, report, changed: report.length > 0 };
-  }
-
   // =====================================================================
-  // Catalogo globale ingredienti v2 (schema catalogo/strutture 2)
+  // Catalogo globale ingredienti (v2)
   //
-  // Tre concetti separati (ADR 0002):
-  //   1. catalogo globale: identità, alias e categorie; MAI quantità;
-  //   2. famiglie/motore di dosaggio Guide: quantità adattate per ID;
-  //   3. Strutture dieta: revisioni organization-scoped private per ownerUid.
-  // Il catalogo è un dato esterno/versionato: queste funzioni lavorano su
-  // qualunque documento pubblicato, senza dati incorporati nella UI.
+  // FONTE UNICA di identità: ingredienti canonici, alias, search tokens,
+  // categoria, famiglia globale e classificazione vegetarian/vegan. Nessuna
+  // quantità, frequenza o regola clinica vive qui. È un dato esterno
+  // versionato: queste funzioni lavorano su qualunque copia pubblicata
+  // (indice in memoria per autocomplete, riconoscimento e persistenza
+  // dell'ingredientId).
   // =====================================================================
 
   // Token di ricerca normalizzati. Il server è autorevole nella loro
@@ -2631,36 +1332,58 @@ const PROTEIN_CATEGORY_LABELS = {
     return [...tokens].slice(0, 200);
   }
 
-  // Indice in memoria del catalogo pubblicato, per autocomplete e per la
-  // risoluzione ingrediente → famiglia Guide tramite ID stabili.
+  // Indice in memoria del catalogo pubblicato: fonte unica per autocomplete,
+  // riconoscimento ingredienti e metadati (famiglia, categoria, flag
+  // dietetici). Nessuna quantità clinica passa da qui.
   function buildCatalogIndex(catalogDoc = {}) {
     const categories = Array.isArray(catalogDoc.categories) ? catalogDoc.categories : [];
+    const families = Array.isArray(catalogDoc.families) ? catalogDoc.families : [];
     const ingredients = Array.isArray(catalogDoc.ingredients) ? catalogDoc.ingredients : [];
     const categoriesById = new Map(categories.filter(item => item?.categoryId).map(item => [item.categoryId, item]));
+    const familiesById = new Map(families.filter(item => item?.familyId).map(item => [item.familyId, item]));
     const items = ingredients
       .filter(item => item && item.ingredientId && item.status !== 'archived')
       .map(item => {
         const tokens = (Array.isArray(item.searchTokens) && item.searchTokens.length
           ? item.searchTokens
           : searchTokensFor(item.displayName, item.aliases)).map(token => aliasKey(token)).filter(Boolean);
+        const family = familiesById.get(item.familyId) || null;
         return {
           ingredient: item,
           category: categoriesById.get(item.categoryId) || null,
+          family,
           key: aliasKey(item.displayName),
           aliasKeys: (Array.isArray(item.aliases) ? item.aliases : []).map(aliasKey).filter(Boolean),
           tokens
         };
       });
     const byId = new Map(items.map(entry => [entry.ingredient.ingredientId, entry]));
-    return { items, byId, categoriesById };
+    // Chiave normalizzata (nome o alias) → voci: serve al riconoscimento
+    // esatto. Più voci con la stessa chiave restano distinte: nessuna scelta
+    // silenziosa, il chiamante decide come disambiguare.
+    const byAlias = new Map();
+    items.forEach(entry => {
+      [entry.key, ...entry.aliasKeys].forEach(key => {
+        if (!byAlias.has(key)) byAlias.set(key, []);
+        if (!byAlias.get(key).some(item => item.ingredient.ingredientId === entry.ingredient.ingredientId)) {
+          byAlias.get(key).push(entry);
+        }
+      });
+    });
+    const familiesByKey = new Map(
+      families
+        .filter(item => item.status !== 'archived')
+        .map(item => [aliasKey(item.displayName), item])
+    );
+    return { items, byId, byAlias, familiesByKey, categoriesById, familiesById };
   }
 
-  // Autocomplete tollerante a maiuscole, accenti e alias. La categoria viene
-  // restituita per disambiguare risultati omonimi. Ordinamento deterministico:
-  // corrispondenza esatta (nome/alias) > prefisso token > substring; a parità
-  // di punteggio, ordine alfabetico italiano. Mai una scelta silenziosa: i
-  // risultati multipli restano elencati e il testo non riconosciuto produce
-  // zero risultati (mapping mancante), non un'ipotesi.
+  // Autocomplete tollerante a maiuscole, accenti e alias. La categoria e la
+  // famiglia vengono restituite per disambiguare risultati omonimi.
+  // Ordinamento deterministico: corrispondenza esatta (nome/alias) > prefisso
+  // token > substring; a parità di punteggio, ordine alfabetico italiano.
+  // Mai una scelta silenziosa: i risultati multipli restano elencati e il
+  // testo non riconosciuto produce zero risultati, non un'ipotesi.
   function searchCatalog(index, query, { limit = 12 } = {}) {
     const q = aliasKey(query);
     if (!index || !q || q.length < 2) return [];
@@ -2692,8 +1415,9 @@ const PROTEIN_CATEGORY_LABELS = {
           displayName: entry.ingredient.displayName,
           categoryId: entry.ingredient.categoryId || null,
           categoryLabel: entry.category?.displayName || null,
-          mappingKind: entry.ingredient.mappingKind || 'guided',
-          guideFamilyId: entry.ingredient.guideFamilyId || null,
+          familyId: entry.ingredient.familyId || null,
+          familyLabel: entry.family?.displayName || null,
+          dietaryFlags: entry.ingredient.dietaryFlags || null,
           matchedAlias,
           score
         });
@@ -2703,287 +1427,327 @@ const PROTEIN_CATEGORY_LABELS = {
     return scored.slice(0, Math.max(1, Math.min(limit, 50)));
   }
 
-  // Converte la revisione pubblicata di una Struttura dieta nel formato motore
-  // consumato dal client (stesso shape del rule set v1): le quantità arrivano
-  // SOLO dalla struttura assegnata e confermata, gli alias dal catalogo
-  // globale. Le etichette/pattern legacy embedded restano come fallback di
-  // migrazione controllato per famiglie prive di ingredienti in catalogo; mai
-  // quantità inventate per ingredienti sconosciuti.
-  function structureRevisionToGuideRules(revision, index) {
-    const byId = index?.byId || new Map();
-    const fallbackFamilies = new Map(GUIDE_GRAMMATURE.map(rule => [rule.family, rule]));
-    const freeAliases = [];
-    const rules = [];
-    (revision?.rules || []).forEach(rule => {
-      if (!rule || rule.enabled === false) return;
-      // Le revisioni legacy usano la chiave storica mellerFamilyId.
-      const family = String(rule.guideFamilyId || rule.mellerFamilyId || rule.ruleId || '');
-      if (!family) return;
-      const fallback = fallbackFamilies.get(family) || null;
-      const ingredients = (Array.isArray(rule.ingredientIds) ? rule.ingredientIds : [])
-        .map(idValue => byId.get(idValue)?.ingredient).filter(Boolean);
-      const aliases = [...new Set(ingredients.flatMap(ingredient => [ingredient.displayName, ...(ingredient.aliases || [])]).map(value => String(value || '').trim()).filter(Boolean))];
-      if (!aliases.length && fallback) aliases.push(fallback.label);
-      if (!aliases.length) return;
-      rules.push({
-        family,
-        group: fallback?.group || (rule.categoryId && rule.categoryId !== 'free' ? String(rule.categoryId) : ingredients[0]?.categoryId) || 'carb',
-        label: fallback?.label || ingredients[0]?.displayName || family,
-        aliases,
-        slots: deepClone(rule.quantityGrams || {})
-      });
-    });
-    (index?.items || []).forEach(entry => {
-      if (entry.ingredient.mappingKind === 'free') {
-        freeAliases.push(entry.ingredient.displayName, ...(entry.ingredient.aliases || []));
-      }
-    });
-    return { rules, freeAliases: uniqueStrings(freeAliases) };
+  // ---------------------------------------------------------------------
+  // Riconoscimento ingredienti — pipeline a stati espliciti.
+  //
+  //   resolved            → termine noto, un solo ingrediente canonico
+  //   recognized-generic  → termine noto a livello di famiglia (es. un
+  //                         generico che copre più ingredienti della STESSA
+  //                         famiglia): famiglia certa, nessun ingredientId
+  //   ambiguous           → termine noto ma ambiguo tra più famiglie
+  //                         (es. «tonno»): candidati elencati, mai un
+  //                         ingredientId auto-canonizzato
+  //   unknown             → termine assente dal catalogo
+  //
+  // Mai auto-mappature aggressive: un termine noto non risulta mai
+  // «unknown» e un termine ambiguo non viene forzato su un ID.
+  // ---------------------------------------------------------------------
+  function recognitionCandidates(index, key) {
+    const lower = [];
+    for (const entry of index.items) {
+      const name = entry.key;
+      const alias = entry.aliasKeys.find(value => value.includes(key) || key.includes(value));
+      const token = entry.tokens.find(value => value.startsWith(key) || key.startsWith(value));
+      if (alias || token || name.includes(key) || key.includes(name)) lower.push(entry);
+    }
+    return lower.slice(0, 8);
   }
 
-  // Nomi di visualizzazione editoriali per gli alimenti liberi del seed
-  // (verdura, aromi, spezie): completano gli stem del manuale delle linee guida, non
-  // contengono quantità né dosi e saranno sostituiti dal catalogo approvato
-  // dal professionista tramite il flusso di import versionato.
-  const GUIDE_FREE_DISPLAY_LABELS = {
-    'zucchin': 'Zucchine', 'pomodor': 'Pomodori', 'melanzan': 'Melanzane',
-    'peperon': 'Peperoni', 'broccol': 'Broccoli', 'cavolfior': 'Cavolfiore',
-    'cavol': 'Cavolo', 'asparag': 'Asparagi', 'bietol': 'Bietole',
-    'radicch': 'Radicchio', 'ravanell': 'Ravanelli', 'zucca': 'Zucca',
-    'verza': 'Verza', 'spinac': 'Spinaci', 'rucola': 'Rucola',
-    'lattug': 'Lattuga', 'insalat': 'Insalata', 'cetriol': 'Cetriolo',
-    'carot': 'Carote', 'sedan': 'Sedano', 'cipoll': 'Cipolla',
-    'finocch': 'Finocchi', 'fagiolin': 'Fagiolini', 'fungh': 'Funghi',
-    'verdura': 'Verdure', 'ortaggi': 'Ortaggi', 'basilic': 'Basilico',
-    'prezzemol': 'Prezzemolo', 'rosmarin': 'Rosmarino', 'salvia': 'Salvia',
-    'origano': 'Origano', 'timo': 'Timo', 'menta': 'Menta',
-    'erbe aromatiche': 'Erbe aromatiche', 'spezi': 'Spezie', 'pepe': 'Pepe',
-    'paprika': 'Paprika', 'curcuma': 'Curcuma', 'curry': 'Curry',
-    'noce moscata': 'Noce moscata', 'aglio': 'Aglio', 'zenzero': 'Zenzero',
-    'sale': 'Sale', 'limon': 'Limone', 'lime': 'Lime', 'aceto': 'Aceto',
-    'acqua': 'Acqua', 'brodo': 'Brodo',
-    'passata di pomodoro': 'Passata di pomodoro', 'passata': 'Passata'
-  };
-
-  // Divide il JSON monolitico estratto da GUIDE_GRAMMATURE nei tre concetti:
-  // catalogo globale (ingredienti/categorie, senza quantità), famiglie del
-  // motore di dosaggio (con quantità e pattern legacy) e seed della Struttura
-  // dieta base. Funzione pura usata da migrazione e test: NON importa il 58
-  // ingredienti del lotto provvisorio né inventa quantità mancanti.
-  function splitGuideSeed(extract = {}) {
-    // Supporto nuovo formato: catalogo-ingredienti.json v3 con categories[] e ingredients[]
-    // Se presente ingredients[], usa direttamente quel catalogo e deriva famiglie/regole da GUIDE_GRAMMATURE
-    if (Array.isArray(extract.ingredients) && extract.ingredients.length) {
-      const rawCategories = Array.isArray(extract.categories) ? extract.categories : [];
-      const categories = rawCategories.map((cat, idx) => ({
-        categoryId: String(cat.categoryId || cat.id || `cat-${idx}`),
-        displayName: String(cat.displayName || cat.label || cat.categoryId),
-        normalizedName: aliasKey(cat.displayName || cat.label || cat.categoryId),
-        description: cat.description || null,
-        sortOrder: typeof cat.sortOrder === 'number' ? cat.sortOrder : idx,
-        status: 'active'
-      }));
-      // Assicura categoria free presente
-      if (!categories.some(c => c.categoryId === 'free')) {
-        categories.push({
-          categoryId: 'free',
-          displayName: 'Alimenti liberi',
-          normalizedName: 'alimenti liberi',
-          description: 'Verdura, aromi, spezie e condimenti senza quantità adattata.',
-          sortOrder: categories.length,
-          status: 'active'
-        });
-      }
-      const ingredients = extract.ingredients.map(item => ({
-        ingredientId: String(item.ingredientId),
-        displayName: String(item.displayName),
-        normalizedName: aliasKey(item.displayName),
-        categoryId: String(item.categoryId || 'free'),
-        aliases: Array.isArray(item.aliases) ? item.aliases.slice() : [String(item.displayName)],
-        searchTokens: searchTokensFor(item.displayName, item.aliases || []),
-        mappingKind: String(item.mappingKind || (item.guideFamilyId ? 'guided' : 'free')),
-        guideFamilyId: item.guideFamilyId || null,
-        status: 'active'
-      }));
-      // Famiglie da GUIDE_GRAMMATURE (fonte unica)
-      const families = (typeof GUIDE_GRAMMATURE !== 'undefined' ? GUIDE_GRAMMATURE : []).map(rule => {
-        const qty = {
-          lunch: rule.slots?.lunch ? { training: rule.slots.lunch.training, rest: rule.slots.lunch.rest } : null,
-          dinner: rule.slots?.dinner ? { training: rule.slots.dinner.training, rest: rule.slots.dinner.rest } : null
-        };
-        // Rimuove nulli per compatibilità con shape v2 (lunch/dinner opzionali)
-        const quantityGrams = {};
-        if (qty.lunch) quantityGrams.lunch = qty.lunch;
-        if (qty.dinner) quantityGrams.dinner = qty.dinner;
-        if (!qty.lunch && !qty.dinner) {
-          // proteine con stessa dose: usa lunch come riferimento unico
-          const any = rule.slots?.lunch || rule.slots?.dinner;
-          if (any) quantityGrams.lunch = { training: any.training, rest: any.rest };
-        }
-        return {
-          familyId: String(rule.family),
-          label: String(rule.label || rule.family),
-          categoryId: String(rule.group === 'carb' ? 'carb' : rule.group === 'protein' ? 'protein' : rule.group || 'free'),
-          quantityGrams,
-          legacyPattern: '',
-          alternativeTableLabels: []
-        };
-      });
-      const rules = families.map(fam => ({
-        ruleId: `rule-${fam.familyId}`,
-        guideFamilyId: fam.familyId,
-        ingredientIds: ingredients.filter(ing => ing.guideFamilyId === fam.familyId).map(ing => ing.ingredientId),
-        categoryId: fam.categoryId,
-        quantityGrams: deepClone(fam.quantityGrams),
-        enabled: true
-      }));
-      // Alternative groups derivati da GUIDE_ALTERNATIVES se disponibili
-      const alternativeGroups = [];
-      try {
-        const toItems = list => (Array.isArray(list) ? list : []).map(entry => {
-          const famId = entry.families && entry.families[0] ? entry.families[0] : entry.family;
-          const qty = families.find(f => f.familyId === famId)?.quantityGrams;
-          return qty ? { ingredientId: String(famId), quantityGrams: deepClone(qty) } : null;
-        }).filter(Boolean);
-        if (typeof GUIDE_ALTERNATIVES !== 'undefined') {
-          const carbItems = toItems(GUIDE_ALTERNATIVES.carbohydrates || []);
-          if (carbItems.length) alternativeGroups.push({ alternativeGroupId: 'carboidrati', displayName: 'Alternative carboidrati', items: carbItems });
-          const proteinItems = toItems(GUIDE_ALTERNATIVES.proteins || []);
-          if (proteinItems.length) alternativeGroups.push({ alternativeGroupId: 'proteine', displayName: 'Alternative proteiche', items: proteinItems });
-        }
-      } catch {}
+  function recognizeIngredient(index, text) {
+    const key = aliasKey(text);
+    const none = { status: 'unknown', ingredientId: null, familyId: null, categoryId: null, candidates: [] };
+    if (!index || !key) return none;
+    const exact = index.byAlias.get(key) || [];
+    const toCandidate = entry => ({
+      ingredientId: entry.ingredient.ingredientId,
+      displayName: entry.ingredient.displayName,
+      categoryId: entry.ingredient.categoryId || null,
+      familyId: entry.ingredient.familyId || null
+    });
+    if (exact.length === 1) {
+      const entry = exact[0];
       return {
-        categories,
-        ingredients,
-        families,
-        proteinWeeklyFrequencies: deepClone(extract.proteinWeeklyFrequencies || []),
-        structureSeed: {
-          name: 'Struttura dieta base',
-          description: 'Seed iniziale dalle linee guida v3, senza modificare le grammature originali.',
-          rules,
-          alternativeGroups
-        }
+        status: 'resolved',
+        ingredientId: entry.ingredient.ingredientId,
+        familyId: entry.ingredient.familyId || null,
+        categoryId: entry.ingredient.categoryId || null,
+        candidates: [toCandidate(entry)]
       };
     }
-    // Fallback legacy v2: guidedRules + categories object
-    const guided = Array.isArray(extract.guidedRules) ? extract.guidedRules : [];
-    const categoryNames = extract.categories && typeof extract.categories === 'object' && !Array.isArray(extract.categories) ? extract.categories : {};
-
-    const categories = Object.entries(categoryNames).map(([categoryId, displayName], indexCategory) => ({
-      categoryId: String(categoryId),
-      displayName: String(displayName),
-      normalizedName: aliasKey(displayName),
-      description: null,
-      sortOrder: indexCategory,
-      status: 'active'
-    }));
-    categories.push({
-      categoryId: 'free',
-      displayName: 'Alimenti liberi',
-      normalizedName: 'alimenti liberi',
-      description: 'Verdura, aromi, spezie e condimenti senza quantità adattata.',
-      sortOrder: categories.length,
-      status: 'active'
-    });
-
-    const patternAliases = source => [...new Set(String(source || '')
-      .split('|')
-      .map(part => aliasKey(part
-        .replace(/\\b/g, ' ')
-        .replace(/[()]/g, ' ')
-        .replace(/\?/g, '')
-        .replace(/\\\./g, '.')))
-      .filter(Boolean))];
-
-    const ingredients = [];
-    const families = [];
-    const rules = [];
-    const familyQuantities = new Map();
-    guided.forEach(rule => {
-      const family = String(rule.family);
-      const label = String(rule.label || rule.family);
-      const quantities = deepClone(rule.quantitiesGrams || {});
-      familyQuantities.set(family, quantities);
-      const aliases = [...new Set([label, ...patternAliases(rule.recognizedPattern)])].filter(Boolean);
-      ingredients.push({
-        ingredientId: family,
-        displayName: label,
-        normalizedName: aliasKey(label),
-        categoryId: String(rule.category || 'carb'),
-        aliases,
-        searchTokens: searchTokensFor(label, aliases),
-        mappingKind: 'guided',
-        guideFamilyId: family,
-        status: 'active'
-      });
-      families.push({
-        familyId: family,
-        label,
-        categoryId: String(rule.category || 'carb'),
-        quantityGrams: quantities,
-        legacyPattern: String(rule.recognizedPattern || ''),
-        alternativeTableLabels: Array.isArray(rule.alternativeTableLabels) ? rule.alternativeTableLabels.slice() : []
-      });
-      rules.push({
-        ruleId: `rule-${family}`,
-        guideFamilyId: family,
-        ingredientIds: [family],
-        categoryId: String(rule.category || 'carb'),
-        quantityGrams: deepClone(quantities),
-        enabled: true
-      });
-    });
-
-    guided.length && (extract.freeIngredientPatterns || []).forEach(source => {
-      const key = patternAliases(source)[0] || aliasKey(source);
-      if (!key) return;
-      const ingredientId = `free-${slug(key) || 'ingrediente'}`;
-      if (ingredients.some(item => item.ingredientId === ingredientId)) return;
-      const displayName = GUIDE_FREE_DISPLAY_LABELS[key] || key.charAt(0).toUpperCase() + key.slice(1);
-      ingredients.push({
-        ingredientId,
-        displayName,
-        normalizedName: aliasKey(displayName),
-        categoryId: 'free',
-        aliases: [key],
-        searchTokens: searchTokensFor(displayName, [key]),
-        mappingKind: 'free',
-        guideFamilyId: null,
-        status: 'active'
-      });
-    });
-
-    const alternativeGroups = [];
-    const toAlternativeItems = entries => (Array.isArray(entries) ? entries : [])
-      .filter(entry => entry?.family && familyQuantities.has(entry.family))
-      .map(entry => ({
-        ingredientId: String(entry.family),
-        quantityGrams: deepClone(familyQuantities.get(entry.family))
-      }));
-    const carbItems = toAlternativeItems(extract.carbohydrateAlternatives);
-    if (carbItems.length) {
-      alternativeGroups.push({ alternativeGroupId: 'carboidrati', displayName: 'Alternative carboidrati', items: carbItems });
+    if (exact.length > 1) {
+      const familyIds = [...new Set(exact.map(entry => entry.ingredient.familyId || null))];
+      if (familyIds.length === 1 && familyIds[0]) {
+        return {
+          status: 'recognized-generic',
+          ingredientId: null,
+          familyId: familyIds[0],
+          categoryId: exact[0].ingredient.categoryId || null,
+          candidates: exact.map(toCandidate)
+        };
+      }
+      return {
+        status: 'ambiguous',
+        ingredientId: null,
+        familyId: null,
+        categoryId: null,
+        candidates: exact.map(toCandidate)
+      };
     }
-    const proteinItems = toAlternativeItems(extract.proteinAlternatives);
-    if (proteinItems.length) {
-      alternativeGroups.push({ alternativeGroupId: 'proteine', displayName: 'Alternative proteiche', items: proteinItems });
+    const family = index.familiesByKey.get(key) || null;
+    if (family) {
+      return {
+        status: 'recognized-generic',
+        ingredientId: null,
+        familyId: family.familyId,
+        categoryId: family.categoryId || null,
+        candidates: []
+      };
     }
+    const approx = recognitionCandidates(index, key);
+    if (approx.length) {
+      const familyIds = [...new Set(approx.map(entry => entry.ingredient.familyId || null).filter(Boolean))];
+      if (familyIds.length === 1) {
+        return {
+          status: 'recognized-generic',
+          ingredientId: null,
+          familyId: familyIds[0],
+          categoryId: approx[0].ingredient.categoryId || null,
+          candidates: approx.map(toCandidate)
+        };
+      }
+      return {
+        status: 'ambiguous',
+        ingredientId: null,
+        familyId: null,
+        categoryId: null,
+        candidates: approx.map(toCandidate)
+      };
+    }
+    return none;
+  }
 
+  // Regola di conservazione dell'ingredientId durante la modifica del testo:
+  // un ID valido già persistito NON si perde per una semplice editatura del
+  // testo. Si aggiorna solo quando il nuovo testo si risolve in un ingrediente
+  // certo; negli stati generic/ambiguo l'ID resta se il testo è ancora
+  // compatibile con quell'ingrediente (condivisione di parole/alias), altrimenti
+  // si azzera. L'autocomplete aiuta a canonicalizzare senza corrompere il dato.
+  function ingredientIdAfterEdit(index, text, currentId) {
+    const recognition = recognizeIngredient(index, text);
+    if (recognition.status === 'resolved') return recognition.ingredientId;
+    if (!currentId || !index?.byId?.has(currentId)) return null;
+    const key = aliasKey(text);
+    if (!key) return null;
+    const entry = index.byId.get(currentId);
+    const relatable = [entry.key, ...entry.aliasKeys, ...entry.tokens]
+      .some(value => value === key || key.includes(value) || value.includes(key));
+    return relatable ? currentId : null;
+  }
+
+  // ---------------------------------------------------------------------
+  // Motore della dieta assegnata (vista cliente).
+  //
+  // Costruito dal profilo assegnato (revisione struttura + snapshot catalogo):
+  // le quantità arrivano SOLO dai blocchi della struttura del nutrizionista.
+  // Nessun fallback globale: senza assegnazione non esiste allineamento.
+  // ---------------------------------------------------------------------
+  function dietOptionCoverage(option, recipeIngredients) {
+    if (!option || option.type === 'recipe') return 0;
+    if (option.type === 'ingredients') {
+      const ids = new Set((option.items || []).map(item => item?.ingredientId).filter(Boolean));
+      return recipeIngredients.filter(item => ids.has(item.ingredientId)).length;
+    }
+    const blocks = option.blocks || [];
+    return recipeIngredients.filter(item => blocks.some(block =>
+      block?.referenceFamilyId && block.referenceFamilyId === item.familyId
+    )).length;
+  }
+
+  function buildDietEngine(profile) {
+    if (!profile || !profile.structureRevision?.dietPlan) return null;
+    const index = buildCatalogIndex(profile.catalog || {});
+    const plan = profile.structureRevision.dietPlan;
+    const meals = new Map();
+    (Array.isArray(plan.days) ? plan.days : []).forEach(day => {
+      const dayType = DIET_PLAN_DAY_TYPES.includes(day?.dayType) ? day.dayType : 'other';
+      (Array.isArray(day?.meals) ? day.meals : []).forEach(meal => {
+        if (!meal || !Array.isArray(meal.options) || !meal.options.length) return;
+        if (!DIET_PLAN_MEALS.some(item => item.id === meal.mealId)) return;
+        if (!meals.has(meal.mealId)) meals.set(meal.mealId, { byDayType: new Map(), first: meal.options });
+        const record = meals.get(meal.mealId);
+        if (!record.byDayType.has(dayType)) record.byDayType.set(dayType, meal.options);
+      });
+    });
+    if (!meals.size) return null;
     return {
-      categories,
-      ingredients,
-      families,
-      proteinWeeklyFrequencies: deepClone(extract.proteinWeeklyFrequencies || []),
-    structureSeed: {
-      name: 'Struttura dieta base',
-      description: 'Seed iniziale dalle linee guida, senza modificare le grammature originali.',
-        rules,
-        alternativeGroups
+      index,
+      structureId: profile.structureId || null,
+      structureRevisionId: profile.structureRevisionId ?? profile.structureRevision.revisionId ?? null,
+      structureName: profile.structureName || null,
+      plan,
+      familiesById: index.familiesById,
+      mealIds: [...meals.keys()],
+      optionsFor(mealId, dayType) {
+        const record = meals.get(mealId);
+        if (!record) return null;
+        return record.byDayType.get(dayType) || record.byDayType.get('other') || record.first;
       }
     };
   }
 
-  // =====================================================================
+  // Equivalenti di un blocco: gli import del template sono scalati alla
+  // quantità di riferimento del blocco (proporzionalità) e gli override
+  // espliciti della struttura prevalgono. Il template è fissato nella
+  // revisione pubblicata (snapshot): mai retroattività silenziosa.
+  function dietBlockEquivalents(block) {
+    const snapshot = block?.templateSnapshot;
+    if (!snapshot || !Array.isArray(snapshot.equivalents)) return [];
+    const baseValue = Number(snapshot.referenceAmount?.value);
+    const blockValue = Number(block?.referenceAmount?.value);
+    const factor = Number.isFinite(baseValue) && baseValue > 0 && Number.isFinite(blockValue) && blockValue > 0
+      ? blockValue / baseValue
+      : 1;
+    const overrides = new Map((Array.isArray(block.overrides) ? block.overrides : [])
+      .map(override => [`${override.familyId}|${override.ingredientId || ''}`, override.amount]));
+    return snapshot.equivalents
+      .filter(equivalent => equivalent && equivalent.familyId)
+      .map(equivalent => {
+        const key = `${equivalent.familyId}|${equivalent.ingredientId || ''}`;
+        const overridden = overrides.get(key) || null;
+        const source = overridden || equivalent.amount;
+        const value = Number(source?.value);
+        const scaled = !overridden && factor !== 1 && Number.isFinite(value)
+          ? { value: Math.round(value * factor * 10) / 10, unit: source?.unit || 'g' }
+          : source;
+        return {
+          familyId: equivalent.familyId,
+          ingredientId: equivalent.ingredientId || null,
+          amount: scaled,
+          overridden: Boolean(overridden)
+        };
+      });
+  }
+
+  // Vista «dosi allineate» di una ricetta personale nel contesto di un pasto
+  // della dieta assegnata. NON modifica la ricetta: restituisce una vista con
+  // dosi aumentate/diminuite, ingredienti aggiunti (blocchi della dieta non
+  // presenti nella ricetta) e ingredienti omessi (non previsti dalla dieta per
+  // quel pasto). I soli alimenti delle categorie libere (spezie, erbe,
+  // condimenti, bevande) restano sempre con le dosi originali.
+  function alignRecipeToDiet(recipe, engine, mealId, dayType) {
+    if (!engine || !recipe) return null;
+    const options = (engine.optionsFor(mealId, dayType) || []).filter(option => option && option.type !== 'recipe');
+    if (!options.length) return null;
+    const recipeIngredients = (recipe.ingredients || []).map(ingredient => {
+      const ingredientId = ingredient.ingredientId && engine.index.byId.has(ingredient.ingredientId)
+        ? ingredient.ingredientId
+        : null;
+      const entry = ingredientId
+        ? engine.index.byId.get(ingredientId)
+        : recognizeIngredient(engine.index, ingredient.name).ingredientId
+          ? engine.index.byId.get(recognizeIngredient(engine.index, ingredient.name).ingredientId)
+          : null;
+      return {
+        name: ingredient.name,
+        ingredientId: entry ? entry.ingredient.ingredientId : null,
+        familyId: entry ? (entry.ingredient.familyId || null) : null,
+        categoryId: entry ? (entry.ingredient.categoryId || null) : null,
+        original: portionFor(ingredient)
+      };
+    });
+    // Opzione con la miglior copertura degli ingredienti della ricetta; a
+    // parità vince la prima (deterministico).
+    let chosen = options[0];
+    let bestScore = -1;
+    options.forEach(option => {
+      const score = dietOptionCoverage(option, recipeIngredients);
+      if (score > bestScore) {
+        bestScore = score;
+        chosen = option;
+      }
+    });
+    const freeCategory = ingredient => ingredient.categoryId === 'free'
+      || ['spezie', 'erbe-aromatiche', 'condimenti', 'bevande'].includes(ingredient.familyId);
+    const ingredients = [];
+    const added = [];
+    const omitted = [];
+    const used = new Set();
+    const amountText = amount => (amount && Number.isFinite(Number(amount.value))
+      ? formatAmount(Number(amount.value), amount.unit)
+      : EMPTY_PORTION);
+    if (chosen.type === 'ingredients') {
+      (chosen.items || []).forEach(item => {
+        const entry = item?.ingredientId ? engine.index.byId.get(item.ingredientId) : null;
+        const match = recipeIngredients.find(candidate =>
+          !used.has(candidate) && candidate.ingredientId && candidate.ingredientId === item.ingredientId
+        );
+        if (match) {
+          used.add(match);
+          ingredients.push({
+            name: match.name,
+            ingredientId: match.ingredientId,
+            amountText: amountText(item.amount),
+            original: match.original,
+            aligned: true
+          });
+        } else {
+          added.push({
+            name: entry ? entry.ingredient.displayName : item.ingredientId,
+            ingredientId: item.ingredientId,
+            amountText: amountText(item.amount)
+          });
+        }
+      });
+    } else {
+      (chosen.blocks || []).forEach(block => {
+        if (!block || !block.referenceFamilyId) return;
+        const match = recipeIngredients.find(candidate =>
+          !used.has(candidate) && (
+            (block.referenceIngredientId && candidate.ingredientId === block.referenceIngredientId)
+            || candidate.familyId === block.referenceFamilyId
+          )
+        );
+        if (match) {
+          used.add(match);
+          ingredients.push({
+            name: match.name,
+            ingredientId: match.ingredientId,
+            amountText: amountText(block.referenceAmount),
+            original: match.original,
+            aligned: true
+          });
+        } else {
+          const entry = block.referenceIngredientId ? engine.index.byId.get(block.referenceIngredientId) : null;
+          const family = engine.familiesById.get(block.referenceFamilyId);
+          added.push({
+            name: entry ? entry.ingredient.displayName : (family?.displayName || block.referenceFamilyId),
+            ingredientId: block.referenceIngredientId || null,
+            familyId: block.referenceFamilyId,
+            amountText: amountText(block.referenceAmount)
+          });
+        }
+      });
+    }
+    recipeIngredients.forEach(candidate => {
+      if (used.has(candidate)) return;
+      if (freeCategory(candidate)) {
+        ingredients.push({
+          name: candidate.name,
+          ingredientId: candidate.ingredientId,
+          amountText: candidate.original,
+          original: candidate.original,
+          aligned: false
+        });
+      } else {
+        omitted.push({ name: candidate.name, ingredientId: candidate.ingredientId });
+      }
+    });
+    const changed = added.length > 0
+      || omitted.length > 0
+      || ingredients.some(item => item.aligned && String(item.amountText) !== String(item.original ?? ''));
+    return { optionId: chosen.optionId || null, type: chosen.type, ingredients, added, omitted, changed };
+  }
+
   // Console professionisti — stati operativi dei clienti (vista unificata)
   //
   // La vista «Clienti» mostra tre stati operativi (Attivo, Inattivo,
@@ -3055,14 +1819,20 @@ const PROTEIN_CATEGORY_LABELS = {
   }
 
   // =====================================================================
-  // Dieta guidata — modello descrittivo versionato (dietPlan v1)
+  // Strutture dieta — piano a blocchi (dietPlan schema 1)
   //
-  // Il piano guidato descrive la dieta come la deve leggere il cliente
-  // (giornate, pasti, opzioni A/B/C/D, quantità con unità, note): non
-  // esegue alcun calcolo clinico, non deriva macro né dosi. I valori
-  // nutrizionali della giornata sono appunti manuali del professionista.
-  // Viaggia come campo opzionale `dietPlan` della revisione struttura
-  // (schema revisione 3); le revisioni 1/2 restano leggibili come prima.
+  // Il piano descrive la dieta come la deve leggere il cliente: giornate
+  // (allenamento/riposo/altra), pasti e opzioni. Non esegue alcun calcolo
+  // clinico. Tre tipi di opzione, mutuamente esclusivi:
+  //   - «family-block»: blocchi con famiglia di riferimento, ingrediente di
+  //     riferimento facoltativo, quantità di riferimento e template equivalenze
+  //     collegato (con snapshot non retroattivo + override espliciti);
+  //   - «ingredients»: elenco di ingredienti del catalogo con quantità;
+  //   - «recipe»: ricetta del ricettario professionale con moltiplicatore.
+  // I dati restano sempre `options: [...]`; con una sola opzione la UI non
+  // mostra etichette A/B/C (l'etichetta è derivata, mai persistita).
+  // Le quantità sono quantificate {value, unit}; i testi descrittivi restano
+  // tali (note, integrazione, idratazione).
   // =====================================================================
 
   const DIET_PLAN_SCHEMA_VERSION = 1;
@@ -3080,23 +1850,6 @@ const PROTEIN_CATEGORY_LABELS = {
     { id: 'dinner', label: 'Cena' },
     { id: 'evening-snack', label: 'Spuntino serale' }
   ];
-  const DIET_PLAN_FOOD_GROUPS = [
-    { id: 'cereali', label: 'Cereali, pane, pasta e riso' },
-    { id: 'pseudo-cereali', label: 'Pseudo-cereali (quinoa, amaranto, grano saraceno)' },
-    { id: 'legumi', label: 'Legumi' },
-    { id: 'carne', label: 'Carne' },
-    { id: 'pesce', label: 'Pesce' },
-    { id: 'uova', label: 'Uova' },
-    { id: 'latticini', label: 'Latte, yogurt e formaggi' },
-    { id: 'verdura', label: 'Verdura e ortaggi' },
-    { id: 'frutta', label: 'Frutta fresca' },
-    { id: 'frutta-secca', label: 'Frutta secca e semi' },
-    { id: 'grassi', label: 'Oli e grassi da condimento' },
-    { id: 'dolci', label: 'Dolci e prodotti da forno' },
-    { id: 'bevande', label: 'Bevande' },
-    { id: 'integratori', label: 'Integratori' },
-    { id: 'altro', label: 'Altro' }
-  ];
   const DIET_PLAN_UNITS = [
     { id: 'g', label: 'g' }, { id: 'kg', label: 'kg' },
     { id: 'ml', label: 'ml' }, { id: 'l', label: 'l' },
@@ -3106,24 +1859,20 @@ const PROTEIN_CATEGORY_LABELS = {
     { id: 'porzioni', label: 'porzioni' }, { id: 'scatolette', label: 'scatolette' },
     { id: 'misurini', label: 'misurini' }, { id: 'qb', label: 'q.b.' }
   ];
-  // Due tipi di opzione mutuamente esclusivi: una lista di alimenti liberi
-  // oppure una ricetta del ricettario professionale (con moltiplicatore).
   const DIET_PLAN_OPTION_TYPES = [
-    { id: 'free-foods', label: 'Alimenti liberi' },
+    { id: 'family-block', label: 'Famiglia di riferimento' },
+    { id: 'ingredients', label: 'Ingredienti' },
     { id: 'recipe', label: 'Ricetta' }
   ];
+  // Etichette di visualizzazione SOLO quando ci sono più opzioni: con una
+  // sola opzione non esiste rumore A/B/C (decisione di prodotto).
   const DIET_PLAN_OPTION_LABELS = ['A', 'B', 'C', 'D'];
   const DIET_PLAN_LIMITS = {
     days: 14, mealsPerDay: 10, optionsPerMeal: 4, itemsPerOption: 20,
-    choiceGroupsPerOption: 3, alternativesPerChoiceGroup: 30,
+    blocksPerOption: 8, equivalentsPerTemplate: 30,
     recipeMultiplierMin: 0.1, recipeMultiplierMax: 10,
-    choiceGroupTitle: 200,
-    label: 80, description: 200, note: 1000, quantity: 5000
+    label: 80, note: 1000, quantity: 5000, title: 200
   };
-  // Pesi sempre al netto degli scarti e a crudo: non esistono più i campi
-  // quantityState (crudo/cotto), netOfWaste e alternative («oppure»).
-  // Le revisioni salvate prima dell'evoluzione del contratto restano leggibili:
-  // la normalizzazione (createDietPlanItem/Option) ignora i campi rimossi.
 
   function dietPlanDayLabel(dayType) {
     return DIET_PLAN_DAY_TYPE_LABELS[dayType] || 'Giornata';
@@ -3131,71 +1880,94 @@ const PROTEIN_CATEGORY_LABELS = {
 
   function dietPlanMealLabel(mealId) {
     const found = DIET_PLAN_MEALS.find(item => item.id === mealId);
-    return found ? found.label : 'Pasto';
-  }
-
-  function dietPlanFoodGroupLabel(groupId) {
-    const found = DIET_PLAN_FOOD_GROUPS.find(item => item.id === groupId);
-    return found ? found.label : 'Altro';
+    return found ? found.label : (mealId || 'Pasto');
   }
 
   function dietPlanUnitLabel(unitId) {
     const found = DIET_PLAN_UNITS.find(item => item.id === unitId);
-    return found ? found.label : String(unitId || '');
+    return found ? found.label : (unitId || '');
+  }
+
+  // Quantità strutturata {value, unit}: numero 0–5000 + unità del catalogo
+  // chiuso. Restituisce null quando il dato non è una quantità valida.
+  function normalizeDietAmount(source) {
+    if (!source || typeof source !== 'object') return null;
+    const value = Number(source.value);
+    const unit = String(source.unit || '');
+    if (!Number.isFinite(value) || value < 0 || value > DIET_PLAN_LIMITS.quantity) return null;
+    if (!DIET_PLAN_UNITS.some(item => item.id === unit)) return null;
+    return { value, unit };
+  }
+
+  function createDietAmount(source) {
+    return normalizeDietAmount(source) || { value: null, unit: 'g' };
+  }
+
+  // Blocco famiglia: la categoria NON è duplicata (deriva dalla famiglia nel
+  // catalogo al momento del rendering/validazione).
+  function createDietPlanBlock(detail) {
+    const source = detail || {};
+    return {
+      blockId: String(source.blockId || `block-${Math.random().toString(36).slice(2, 8)}`),
+      referenceFamilyId: String(source.referenceFamilyId || ''),
+      referenceIngredientId: source.referenceIngredientId || null,
+      referenceAmount: createDietAmount(source.referenceAmount),
+      templateId: source.templateId || null,
+      templateSnapshot: source.templateSnapshot || null,
+      overrides: Array.isArray(source.overrides)
+        ? source.overrides
+            .filter(override => override && override.familyId && normalizeDietAmount(override.amount))
+            .map(override => ({
+              familyId: String(override.familyId),
+              ingredientId: override.ingredientId || null,
+              amount: normalizeDietAmount(override.amount)
+            }))
+        : []
+    };
   }
 
   function createDietPlanItem(detail) {
     const source = detail || {};
-    // Migrazione silenziosa: quantityState/netOfWaste/alternative delle
-    // revisioni precedenti vengono ignorati (pesi sempre al netto e a crudo).
     return {
-      foodGroup: typeof source.foodGroup === 'string' ? source.foodGroup : 'altro',
-      description: typeof source.description === 'string' ? source.description : '',
-      quantity: source.quantity == null || source.quantity === '' ? null : Number(source.quantity),
-      unit: typeof source.unit === 'string' ? source.unit : 'g'
-    };
-  }
-
-  function createDietPlanChoiceGroup(detail) {
-    const source = detail || {};
-    const alternatives = Array.isArray(source.alternatives) && source.alternatives.length
-      ? source.alternatives.map(item => createDietPlanItem(item))
-      : [createDietPlanItem()];
-    return {
-      title: typeof source.title === 'string' ? source.title : '',
-      optional: source.optional !== false,
-      alternatives
+      itemId: String(source.itemId || `item-${Math.random().toString(36).slice(2, 8)}`),
+      ingredientId: String(source.ingredientId || ''),
+      amount: createDietAmount(source.amount)
     };
   }
 
   function dietPlanOptionType(source) {
-    if (source.type === 'recipe' || source.type === 'free-foods') return source.type;
-    return source.recipeId ? 'recipe' : 'free-foods';
+    if (!source || typeof source !== 'object') return 'family-block';
+    if (DIET_PLAN_OPTION_TYPES.some(item => item.id === source.type)) return source.type;
+    return 'family-block';
   }
 
-  function createDietPlanOption(label, detail) {
+  function createDietPlanOption(detail) {
     const source = detail || {};
     const type = dietPlanOptionType(source);
-    const multiplier = Number(source.recipeMultiplier);
-    return {
-      label: DIET_PLAN_OPTION_LABELS.includes(source.label) ? source.label : (label || 'A'),
+    const option = {
+      optionId: String(source.optionId || `opt-${Math.random().toString(36).slice(2, 8)}`),
       type,
-      recipeId: type === 'recipe' && typeof source.recipeId === 'string' && source.recipeId ? source.recipeId : null,
-      recipeMultiplier: type === 'recipe'
-        ? (Number.isFinite(multiplier)
-          ? Math.min(DIET_PLAN_LIMITS.recipeMultiplierMax, Math.max(DIET_PLAN_LIMITS.recipeMultiplierMin, multiplier))
-          : 1)
-        : null,
-      items: type === 'free-foods'
-        ? (Array.isArray(source.items) && source.items.length
-          ? source.items.map(item => createDietPlanItem(item))
-          : [createDietPlanItem()])
-        : [],
-      choiceGroups: type === 'free-foods' && Array.isArray(source.choiceGroups)
-        ? source.choiceGroups.map(group => createDietPlanChoiceGroup(group))
-        : [],
       note: typeof source.note === 'string' ? source.note : ''
     };
+    if (type === 'recipe') {
+      option.recipeId = source.recipeId || null;
+      option.recipeMultiplier = (() => {
+        const multiplier = Number(source.recipeMultiplier);
+        if (!Number.isFinite(multiplier)) return 1;
+        return Math.min(DIET_PLAN_LIMITS.recipeMultiplierMax, Math.max(DIET_PLAN_LIMITS.recipeMultiplierMin, multiplier));
+      })();
+      return option;
+    }
+    if (type === 'ingredients') {
+      option.items = (Array.isArray(source.items) ? source.items : [])
+        .filter(item => item && item.ingredientId)
+        .map(item => createDietPlanItem(item));
+      return option;
+    }
+    option.blocks = (Array.isArray(source.blocks) ? source.blocks : [])
+      .filter(block => block && block.referenceFamilyId)
+      .map(block => createDietPlanBlock(block));
+    return option;
   }
 
   function createDietPlanMeal(mealId, detail) {
@@ -3204,44 +1976,33 @@ const PROTEIN_CATEGORY_LABELS = {
     return {
       mealId: known ? mealId : 'lunch',
       time: typeof source.time === 'string' ? source.time : '',
-      options: Array.isArray(source.options) && source.options.length
-        ? source.options.map((option, index) => createDietPlanOption(DIET_PLAN_OPTION_LABELS[index] || 'A', option))
-        : [createDietPlanOption('A')],
+      options: (Array.isArray(source.options) && source.options.length
+        ? source.options
+        : [{}]).map(option => createDietPlanOption(option)),
       note: typeof source.note === 'string' ? source.note : ''
     };
   }
 
-  // Ordine fisso dei pasti (colazione → spuntino mattina → pranzo → merenda →
-  // cena → spuntino serale). L'editor non consente di riordinare i pasti né di
-  // aggiungere due volte lo stesso tipo: il sort qui sotto resta comunque
-  // stabile, quindi eventuali dati legacy con tipi ripetuti non si mescolano.
-  function dietPlanMealOrder(mealId) {
+  function mealSortIndex(mealId) {
     const index = DIET_PLAN_MEALS.findIndex(item => item.id === mealId);
     return index >= 0 ? index : DIET_PLAN_MEALS.length;
   }
 
   function sortDietPlanMeals(meals) {
     return (Array.isArray(meals) ? meals : [])
-      .map((meal, index) => ({ meal, index }))
-      .sort((a, b) => dietPlanMealOrder(a.meal?.mealId) - dietPlanMealOrder(b.meal?.mealId) || a.index - b.index)
-      .map(entry => entry.meal);
+      .slice()
+      .sort((a, b) => mealSortIndex(a.mealId) - mealSortIndex(b.mealId));
   }
 
   function createDietPlanDay(dayType, detail) {
     const source = detail || {};
-    const target = source.target || {};
-    const readTarget = key => (target[key] == null || target[key] === '' ? null : Number(target[key]));
     return {
-      dayId: typeof source.dayId === 'string' && source.dayId ? source.dayId : null,
+      dayId: String(source.dayId || `day-${Math.random().toString(36).slice(2, 8)}`),
       label: typeof source.label === 'string' ? source.label : '',
       dayType: DIET_PLAN_DAY_TYPES.includes(dayType) ? dayType : 'training',
-      target: {
-        kcal: readTarget('kcal'), proteinG: readTarget('proteinG'),
-        carbsG: readTarget('carbsG'), fatG: readTarget('fatG'), waterMl: readTarget('waterMl')
-      },
       meals: sortDietPlanMeals(Array.isArray(source.meals) && source.meals.length
-        ? source.meals.map(meal => createDietPlanMeal(meal?.mealId, meal))
-        : [createDietPlanMeal('breakfast'), createDietPlanMeal('lunch'), createDietPlanMeal('dinner')]),
+        ? source.meals.map(meal => createDietPlanMeal(meal.mealId, meal))
+        : []),
       supplements: typeof source.supplements === 'string' ? source.supplements : '',
       hydration: typeof source.hydration === 'string' ? source.hydration : '',
       note: typeof source.note === 'string' ? source.note : ''
@@ -3259,15 +2020,24 @@ const PROTEIN_CATEGORY_LABELS = {
     };
   }
 
-  // Pre-validazione lato console: raccoglie gli errori in italiano senza
-  // mai lanciare. Il server rivalida comunque ogni campo.
-  function validateDietPlanSoft(plan) {
+  // Pre-validazione lato console: raccoglie gli errori in italiano senza mai
+  // lanciare. Il server rivalida comunque ogni campo (catalogo incluso).
+  // `catalogIndex` è facoltativo: quando presente verifica che ingredienti e
+  // famiglie esistano nel catalogo pubblicato.
+  function validateDietPlanSoft(plan, catalogIndex = null) {
     const errors = [];
     const limits = DIET_PLAN_LIMITS;
     if (!plan || typeof plan !== 'object') return { valid: false, errors: ['Piano dieta non valido.'] };
     if (Number(plan.schemaVersion) !== DIET_PLAN_SCHEMA_VERSION) {
       errors.push('Versione del piano non supportata da questa console.');
     }
+    const familyExists = familyId => (catalogIndex ? catalogIndex.familiesById?.has(familyId) : true);
+    const ingredientExists = ingredientId => (catalogIndex ? catalogIndex.byId?.has(ingredientId) : true);
+    const ingredientInFamily = (ingredientId, familyId) => {
+      if (!catalogIndex || !ingredientId) return true;
+      const entry = catalogIndex.byId.get(ingredientId);
+      return Boolean(entry && entry.ingredient.familyId === familyId);
+    };
     const days = Array.isArray(plan.days) ? plan.days : [];
     if (!days.length || days.length > limits.days) {
       errors.push(`Il piano deve contenere da 1 a ${limits.days} giornate.`);
@@ -3276,122 +2046,100 @@ const PROTEIN_CATEGORY_LABELS = {
     days.forEach((day, dayIndex) => {
       const where = `Giornata ${dayIndex + 1}`;
       if (!day || typeof day !== 'object') { errors.push(`${where}: dati mancanti.`); return; }
-      if (day.dayId != null && day.dayId !== '') {
+      if (day.dayId) {
         if (seenDayIds.has(day.dayId)) errors.push(`${where}: identificativo duplicato.`);
         seenDayIds.add(day.dayId);
       }
       if (!DIET_PLAN_DAY_TYPES.includes(day.dayType)) errors.push(`${where}: tipo giornata non valido.`);
       if (String(day.label || '').length > limits.label) errors.push(`${where}: titolo troppo lungo.`);
-      ['kcal', 'proteinG', 'carbsG', 'fatG', 'waterMl'].forEach(key => {
-        const value = day.target?.[key];
-        if (value == null || value === '') return;
-        if (!Number.isFinite(Number(value)) || Number(value) < 0 || Number(value) > 50000) {
-          errors.push(`${where}: valore energetico «${key}» non valido.`);
-        }
-      });
       const meals = Array.isArray(day.meals) ? day.meals : [];
       if (!meals.length || meals.length > limits.mealsPerDay) {
         errors.push(`${where}: servono da 1 a ${limits.mealsPerDay} pasti.`);
       }
+      const seenMealIds = new Set();
       meals.forEach((meal, mealIndex) => {
         const mealWhere = `${where}, pasto ${mealIndex + 1}`;
         if (!meal || typeof meal !== 'object') { errors.push(`${mealWhere}: dati mancanti.`); return; }
         if (!DIET_PLAN_MEALS.some(item => item.id === meal.mealId)) errors.push(`${mealWhere}: tipo di pasto non valido.`);
+        if (seenMealIds.has(meal.mealId)) errors.push(`${mealWhere}: pasto duplicato.`);
+        seenMealIds.add(meal.mealId);
+        if (String(meal.time || '').length > 10) errors.push(`${mealWhere}: orario non valido.`);
+        if (String(meal.note || '').length > limits.note) errors.push(`${mealWhere}: nota troppo lunga.`);
         const options = Array.isArray(meal.options) ? meal.options : [];
         if (!options.length || options.length > limits.optionsPerMeal) {
           errors.push(`${mealWhere}: servono da 1 a ${limits.optionsPerMeal} opzioni.`);
         }
-        const seenOptions = new Set();
         options.forEach((option, optionIndex) => {
-          const optionWhere = `${mealWhere}, opzione ${DIET_PLAN_OPTION_LABELS[optionIndex] || optionIndex + 1}`;
+          const optionWhere = `${mealWhere}, opzione ${options.length > 1 ? (DIET_PLAN_OPTION_LABELS[optionIndex] || optionIndex + 1) : 'unica'}`;
           if (!option || typeof option !== 'object') { errors.push(`${optionWhere}: dati mancanti.`); return; }
-          if (option.label && !DIET_PLAN_OPTION_LABELS.includes(option.label)) errors.push(`${optionWhere}: etichetta non valida (A–D).`);
-          if (option.label) {
-            if (seenOptions.has(option.label)) errors.push(`${mealWhere}: opzione ${option.label} duplicata.`);
-            seenOptions.add(option.label);
+          if (!DIET_PLAN_OPTION_TYPES.some(item => item.id === option.type)) {
+            errors.push(`${optionWhere}: tipo opzione non valido.`);
+            return;
           }
-          const type = dietPlanOptionType(option);
-          if (option.type != null && option.type !== '' && !DIET_PLAN_OPTION_TYPES.some(item => item.id === option.type)) {
-            errors.push(`${optionWhere}: tipo opzione non valido (ricetta o alimenti liberi).`);
-          }
-          if (type === 'recipe') {
-            if (!String(option.recipeId || '').trim()) errors.push(`${optionWhere}: Seleziona la ricetta.`);
+          if (String(option.note || '').length > limits.note) errors.push(`${optionWhere}: nota troppo lunga.`);
+          if (option.type === 'recipe') {
+            if (!String(option.recipeId || '').trim()) errors.push(`${optionWhere}: seleziona la ricetta.`);
             const multiplier = Number(option.recipeMultiplier);
             if (option.recipeMultiplier != null && option.recipeMultiplier !== '' && (!Number.isFinite(multiplier) || multiplier < limits.recipeMultiplierMin || multiplier > limits.recipeMultiplierMax)) {
-              errors.push(`${optionWhere}: Moltiplicatore ricetta non valido (tra ${String(limits.recipeMultiplierMin).replace('.', ',')} e ${String(limits.recipeMultiplierMax).replace('.', ',')}).`);
+              errors.push(`${optionWhere}: moltiplicatore ricetta non valido (tra ${String(limits.recipeMultiplierMin).replace('.', ',')} e ${String(limits.recipeMultiplierMax).replace('.', ',')}).`);
             }
             return;
           }
-          const items = Array.isArray(option.items) ? option.items : [];
-          const choiceGroups = Array.isArray(option.choiceGroups) ? option.choiceGroups : [];
-          if (items.length > limits.itemsPerOption) {
-            errors.push(`${optionWhere}: massimo ${limits.itemsPerOption} alimenti per opzione.`);
-          }
-          if (!items.length && !choiceGroups.length) {
-            errors.push(`${optionWhere}: aggiungi almeno un alimento o un gruppo scelta.`);
-          }
-          items.forEach((item, itemIndex) => {
-            validateDietPlanItemSoft(item, `${optionWhere}, alimento ${itemIndex + 1}`, errors);
-          });
-          if (choiceGroups.length > limits.choiceGroupsPerOption) {
-            errors.push(`${optionWhere}: massimo ${limits.choiceGroupsPerOption} gruppi scelta per opzione.`);
-          }
-          choiceGroups.forEach((group, groupIndex) => {
-            const groupWhere = `${optionWhere}, gruppo scelta ${groupIndex + 1}`;
-            if (!group || typeof group !== 'object') { errors.push(`${groupWhere}: dati mancanti.`); return; }
-            if (!String(group.title || '').trim()) errors.push(`${groupWhere}: dai un titolo al gruppo (es. «Scegli 1 carboidrato tra:»).`);
-            if (String(group.title || '').length > limits.choiceGroupTitle) errors.push(`${groupWhere}: titolo troppo lungo.`);
-            const alternatives = Array.isArray(group.alternatives) ? group.alternatives : [];
-            if (!alternatives.length || alternatives.length > limits.alternativesPerChoiceGroup) {
-              errors.push(`${groupWhere}: da 1 a ${limits.alternativesPerChoiceGroup} alternative.`);
-            }
-            alternatives.forEach((alternative, alternativeIndex) => {
-              validateDietPlanItemSoft(alternative, `${groupWhere}, alternativa ${alternativeIndex + 1}`, errors);
+          if (option.type === 'ingredients') {
+            const items = Array.isArray(option.items) ? option.items : [];
+            if (!items.length) errors.push(`${optionWhere}: aggiungi almeno un ingrediente.`);
+            if (items.length > limits.itemsPerOption) errors.push(`${optionWhere}: massimo ${limits.itemsPerOption} ingredienti per opzione.`);
+            items.forEach((item, itemIndex) => {
+              const itemWhere = `${optionWhere}, ingrediente ${itemIndex + 1}`;
+              if (!item?.ingredientId) { errors.push(`${itemWhere}: seleziona l'alimento dal catalogo.`); return; }
+              if (!ingredientExists(item.ingredientId)) errors.push(`${itemWhere}: alimento non presente nel catalogo.`);
+              if (!normalizeDietAmount(item.amount)) errors.push(`${itemWhere}: quantità non valida (numero + unità).`);
             });
+            return;
+          }
+          const blocks = Array.isArray(option.blocks) ? option.blocks : [];
+          if (!blocks.length) errors.push(`${optionWhere}: aggiungi almeno un blocco con famiglia di riferimento.`);
+          if (blocks.length > limits.blocksPerOption) errors.push(`${optionWhere}: massimo ${limits.blocksPerOption} blocchi per opzione.`);
+          blocks.forEach((block, blockIndex) => {
+            const blockWhere = `${optionWhere}, blocco ${blockIndex + 1}`;
+            if (!block?.referenceFamilyId) { errors.push(`${blockWhere}: seleziona la famiglia di riferimento.`); return; }
+            if (!familyExists(block.referenceFamilyId)) errors.push(`${blockWhere}: famiglia non presente nel catalogo.`);
+            if (block.referenceIngredientId && !ingredientExists(block.referenceIngredientId)) {
+              errors.push(`${blockWhere}: ingrediente di riferimento non presente nel catalogo.`);
+            } else if (block.referenceIngredientId && !ingredientInFamily(block.referenceIngredientId, block.referenceFamilyId)) {
+              errors.push(`${blockWhere}: l'ingrediente di riferimento non appartiene alla famiglia.`);
+            }
+            if (!normalizeDietAmount(block.referenceAmount)) errors.push(`${blockWhere}: quantità di riferimento non valida (numero + unità).`);
           });
-          if (String(option.note || '').length > limits.note) errors.push(`${optionWhere}: nota troppo lunga.`);
         });
-        if (String(meal.note || '').length > limits.note) errors.push(`${mealWhere}: nota troppo lunga.`);
       });
       if (String(day.supplements || '').length > limits.note) errors.push(`${where}: integrazione troppo lunga.`);
       if (String(day.hydration || '').length > limits.note) errors.push(`${where}: idratazione troppo lunga.`);
       if (String(day.note || '').length > limits.note) errors.push(`${where}: nota troppo lunga.`);
     });
-    if (String(plan.generalNotes || '').length > limits.note * 2) errors.push('Note generali troppo lunghe.');
+    if (String(plan.generalNotes || '').length > 2000) errors.push('Note generali troppo lunghe.');
     return { valid: errors.length === 0, errors };
-  }
-
-  function validateDietPlanItemSoft(item, itemWhere, errors) {
-    const limits = DIET_PLAN_LIMITS;
-    if (!item || typeof item !== 'object') { errors.push(`${itemWhere}: dati mancanti.`); return; }
-    if (!DIET_PLAN_FOOD_GROUPS.some(group => group.id === item.foodGroup)) errors.push(`${itemWhere}: gruppo alimentare non valido.`);
-    if (!String(item.description || '').trim()) errors.push(`${itemWhere}: descrivi l’alimento.`);
-    if (String(item.description || '').length > limits.description) errors.push(`${itemWhere}: descrizione troppo lunga.`);
-    if (item.quantity != null && item.quantity !== '') {
-      if (!Number.isFinite(Number(item.quantity)) || Number(item.quantity) < 0 || Number(item.quantity) > limits.quantity) {
-        errors.push(`${itemWhere}: quantità non valida.`);
-      }
-      if (!DIET_PLAN_UNITS.some(unit => unit.id === item.unit)) errors.push(`${itemWhere}: unità di misura non valida.`);
-    }
   }
 
   function dietPlanSummary(plan) {
     const days = Array.isArray(plan?.days) ? plan.days : [];
     let meals = 0;
     let options = 0;
+    let blocks = 0;
     let items = 0;
-    let choiceGroups = 0;
+    let recipes = 0;
     days.forEach(day => {
       (Array.isArray(day?.meals) ? day.meals : []).forEach(meal => {
         meals += 1;
         (Array.isArray(meal?.options) ? meal.options : []).forEach(option => {
           options += 1;
+          if (option?.type === 'recipe') recipes += 1;
+          blocks += Array.isArray(option?.blocks) ? option.blocks.length : 0;
           items += Array.isArray(option?.items) ? option.items.length : 0;
-          choiceGroups += Array.isArray(option?.choiceGroups) ? option.choiceGroups.length : 0;
         });
       });
     });
-    return { dayCount: days.length, mealCount: meals, optionCount: options, itemCount: items, choiceGroupCount: choiceGroups };
+    return { dayCount: days.length, mealCount: meals, optionCount: options, blockCount: blocks, itemCount: items, recipeOptionCount: recipes };
   }
 
   // Moltiplica i numeri presenti in un testo di dose ("80 g", "1/2 panino",
@@ -3422,98 +2170,47 @@ const PROTEIN_CATEGORY_LABELS = {
     });
   }
 
-  // Alternative di un gruppo scelta precompilate dalla tabella di riferimento
-  // (le tabelle carboidrati/proteine della guida). kind: 'carb' | 'protein';
-  // la dose segue il pasto (pranzo: colonna A/R della giornata, cena: dose
-  // serale) e le alternative restano tutte editabili dopo il precompilamento.
-  const DIET_PLAN_REFERENCE_FOOD_GROUPS = {
-    carb: 'cereali',
-    protein: 'altro',
-    vegetable: 'verdura',
-    fat: 'grassi'
-  };
-  const DIET_PLAN_REFERENCE_FOOD_GROUP_OVERRIDES = {
-    uova: 'uova', legumotti: 'legumi', legumiScatola: 'legumi', lupini: 'legumi',
-    salmoneAffumicato: 'pesce', pesceScatolaNaturale: 'pesce', pesceSottOlio: 'pesce',
-    pesceAzzurro: 'pesce', pesceBiancoMagro: 'pesce', crostaceiMolluschi: 'pesce',
-    mozzarellaLight: 'latticini', formaggiFreschiMolli: 'latticini', yogurtGreco: 'latticini',
-    fiocchiLatte: 'latticini', montasio: 'latticini', grana: 'latticini',
-    formaggiStagionati: 'latticini', feta: 'latticini', ricotta: 'latticini',
-    maiale: 'carne', polloTacchino: 'carne', manzo: 'carne', affettatiMagri: 'carne',
-    seitan: 'carne', burgerVegetali: 'carne'
-  };
+  // ---------------------------------------------------------------------
+  // Template equivalenze (organization-scoped) — funzioni pure di supporto.
+  // Il template vive in organizations/{orgId}/equivalenceTemplates con
+  // revisioni immutabili: famiglia di riferimento, eventuale ingrediente di
+  // riferimento, quantità di riferimento ed equivalenti proporzionali.
+  // ---------------------------------------------------------------------
+  const EQUIVALENCE_TEMPLATE_SCHEMA_VERSION = 1;
 
-  function dietPlanReferenceAlternatives(kind, mealId, dayType) {
-    const entries = kind === 'protein'
-      ? [GUIDE_PROTEIN_REFERENCE, ...GUIDE_PROTEIN_ALTERNATIVES]
-      : GUIDE_CARB_ALTERNATIVES;
-    return entries.map(entry => {
-      const item = describeAlternative(entry);
-      const isDinner = mealId === 'dinner';
-      const quantity = isDinner
-        ? (item.dinner ?? item.lunchTraining ?? item.lunchRest)
-        : (dayType === 'rest' ? (item.lunchRest ?? item.lunchTraining) : (item.lunchTraining ?? item.lunchRest));
-      if (!Number.isFinite(quantity)) return null;
-      const family = entry.family;
-      return createDietPlanItem({
-        foodGroup: DIET_PLAN_REFERENCE_FOOD_GROUP_OVERRIDES[family] || DIET_PLAN_REFERENCE_FOOD_GROUPS[kind] || 'altro',
-        description: entry.label,
-        quantity,
-        unit: 'g'
+  // Quantità proporzionali del template per una nuova quantità di riferimento:
+  // base del calcolo riutilizzabile in console e in anteprima cliente.
+  function equivalenceTemplateScaled(template, referenceValue) {
+    const base = Number(template?.referenceAmount?.value);
+    const target = Number(referenceValue);
+    if (!Number.isFinite(base) || base <= 0 || !Number.isFinite(target) || target <= 0) return [];
+    const factor = target / base;
+    return (Array.isArray(template?.equivalents) ? template.equivalents : [])
+      .filter(equivalent => equivalent && equivalent.familyId)
+      .map(equivalent => {
+        const value = Number(equivalent.amount?.value);
+        return {
+          familyId: equivalent.familyId,
+          ingredientId: equivalent.ingredientId || null,
+          amount: Number.isFinite(value)
+            ? { value: Math.round(value * factor * 10) / 10, unit: equivalent.amount?.unit || 'g' }
+            : equivalent.amount
+        };
       });
-    }).filter(Boolean);
-  }
-
-  // Titolo suggerito per un gruppo scelta precompilato dalla tabella.
-  function dietPlanReferenceGroupTitle(kind) {
-    return kind === 'protein' ? 'Scegli 1 fonte proteica tra:' : 'Scegli 1 carboidrato tra:';
-  }
-
-  // Alternative precompilate da una tabella grammature del nutrizionista
-  // (stessa forma della tabella di riferimento: righe con gruppo carb/protein
-  // e dosi pranzo/cena per giorno di allenamento e riposo). Le righe senza
-  // dose per il pasto richiesto vengono saltate.
-  function dietPlanTableAlternatives(table, kind, mealId, dayType) {
-    const rows = Array.isArray(table?.rows) ? table.rows : [];
-    const fallbackDay = dayType === 'rest' ? 'training' : 'rest';
-    return rows
-      .filter(row => row && row.group === kind && String(row.description || '').trim())
-      .map(row => {
-        const doses = row.doses || {};
-        const isDinner = mealId === 'dinner';
-        const slot = isDinner ? doses.dinner : doses.lunch;
-        const otherSlot = isDinner ? doses.lunch : doses.dinner;
-        const candidates = [slot?.[dayType], slot?.[fallbackDay], otherSlot?.[dayType], otherSlot?.[fallbackDay]];
-        const quantity = candidates.find(value => Number.isFinite(Number(value)) && Number(value) > 0);
-        if (!Number.isFinite(Number(quantity))) return null;
-        return createDietPlanItem({
-          foodGroup: typeof row.foodGroup === 'string' && row.foodGroup ? row.foodGroup : 'altro',
-          description: String(row.description).trim(),
-          quantity: Number(quantity),
-          unit: 'g'
-        });
-      })
-      .filter(Boolean);
   }
 
   return {
     VERSION,
     DAYS,
     SLOTS,
-    GUIDE_MAIN_SLOTS,
-    GUIDE_MODE_GUIDE,
-    GUIDE_MODE_ORIGINAL,
-    GUIDE_ADAPTATION_SCHEMA_VERSION,
+    MEAL_ID_BY_SLOT,
+    SLOT_BY_MEAL_ID,
     DAY_LABELS,
     DAY_SHORT,
     SLOT_LABELS,
     SLOT_SHORT,
     EMPTY_PORTION,
-    INGREDIENT_ALIASES,
-    CANONICAL_INGREDIENTS,
-    DEFAULT_CONSTRAINTS,
-    GUIDE_PROTEIN_FREQUENCIES,
-    frequencyConstraintsFor,
+    SINGLE_ORGANIZATION_ID,
     deepClone,
     aliasKey,
     slug,
@@ -3525,14 +2222,9 @@ const PROTEIN_CATEGORY_LABELS = {
     migratePlan,
     emptyDay,
     emptyDays,
-    emptyGuideModes,
-    normalizeGuideMode,
-    normalizeGuideModes,
-    guideModeForPlan,
-    planUsesGuideDoses,
-    setGuideModeForPlan,
+    planAlignedDosesEnabled,
+    setPlanAlignedDosesEnabled,
     emptyPlan,
-    dayDistance,
     futureTarget,
     batchTaskStatus,
     portionFor,
@@ -3549,14 +2241,6 @@ const PROTEIN_CATEGORY_LABELS = {
     parseSimpleAmount,
     parseQuantity,
     formatAmount,
-    CARB_REFERENCE,
-    CARB_FAMILIES,
-    carbSourceForName,
-    isPranzoCenaCross,
-    parseCarbAmount,
-    carbBaseAmount,
-    crossSlotCarbPortions,
-    adaptIngredientForSlot,
     aggregateShopping,
     swapMeals,
     copyMeal,
@@ -3573,59 +2257,23 @@ const PROTEIN_CATEGORY_LABELS = {
     diffPlans,
     buildBackup,
     PROTEIN_CATEGORIES,
-    PROTEIN_CONSTRAINT_KEYS,
     PROTEIN_CATEGORY_LABELS,
     classifyProtein,
     inferProteinCategoryFromIngredients,
     catalogHasLegacyFrequency,
-    isFishRecipe,
-    GUIDE_GRAMMATURE,
-    GUIDE_GROUP,
-    GUIDE_MANUAL,
-    GUIDE_PROTEIN_FREQUENCIES,
-    GUIDE_CARB_ALTERNATIVES,
-    GUIDE_PROTEIN_ALTERNATIVES,
-    GUIDE_PROTEIN_REFERENCE,
-    GUIDE_ALTERNATIVES,
-    guideGrammatureFor,
-    guideFamiliesForGroup,
-    guideFamilyToken,
-    guideMaxAmount,
-    guideAlternativeGroups,
-    guideSlotHasAlternatives,
-    GUIDE_ALTERNATIVE_SLOTS,
-    guideRuleForIngredient,
-    activateGuideRuleSet,
-    guideGroupForIngredient,
-    guideFamilyForIngredient,
-    isGuideFreeIngredient,
-    guideMappingForIngredient,
-    guideSourceFingerprint,
-    checkGuideContext,
-    buildGuideContextAdaptation,
-    buildGuideAdaptationMetadata,
-    applyGuideContextAdaptation,
-    resolveRecipeForPlan,
-    isGuideCarbIngredient,
-    isGuideProteinIngredient,
-    guideReferenceAmount,
-    guideComparableAmount,
-    checkGuideAdaptation,
-    adaptRecipeToGuide,
     mulberry32,
     hashString,
     generateWeek,
-    // Piano v2: controllo «quantità adattate alle linee guida»
-    normalizeAdaptedQuantitiesEnabled,
-    setAdaptedQuantitiesEnabled,
-    // Catalogo globale v2 e Strutture dieta
+    // Catalogo globale (v2): fonte unica di identità ingredienti
     searchTokensFor,
     buildCatalogIndex,
     searchCatalog,
-    structureRevisionToGuideRules,
-    GUIDE_FREE_DISPLAY_LABELS,
-    splitGuideSeed,
-    SINGLE_ORGANIZATION_ID,
+    recognizeIngredient,
+    ingredientIdAfterEdit,
+    // Motore della dieta assegnata (vista «dosi allineate»)
+    buildDietEngine,
+    dietBlockEquivalents,
+    alignRecipeToDiet,
     // Console professionisti — stati operativi dei clienti
     CLIENT_OPERATIONAL_STATUSES,
     CLIENT_STATUS_LABELS,
@@ -3635,24 +2283,24 @@ const PROTEIN_CATEGORY_LABELS = {
     maskEmailClient,
     clientDisplayTitle,
     clientInitials,
-    // Dieta guidata — modello descrittivo versionato
+    // Strutture dieta — piano a blocchi (dietPlan schema 1)
     DIET_PLAN_SCHEMA_VERSION,
     DIET_PLAN_DAY_TYPES,
     DIET_PLAN_DAY_TYPE_LABELS,
     DIET_PLAN_MEALS,
-    DIET_PLAN_FOOD_GROUPS,
     DIET_PLAN_UNITS,
     DIET_PLAN_OPTION_TYPES,
     DIET_PLAN_OPTION_LABELS,
     DIET_PLAN_LIMITS,
     dietPlanDayLabel,
     dietPlanMealLabel,
-    dietPlanFoodGroupLabel,
     dietPlanUnitLabel,
-    dietPlanMealOrder,
+    mealSortIndex,
     sortDietPlanMeals,
+    normalizeDietAmount,
+    createDietAmount,
+    createDietPlanBlock,
     createDietPlanItem,
-    createDietPlanChoiceGroup,
     createDietPlanOption,
     createDietPlanMeal,
     createDietPlanDay,
@@ -3660,8 +2308,8 @@ const PROTEIN_CATEGORY_LABELS = {
     validateDietPlanSoft,
     dietPlanSummary,
     scalePortionText,
-    dietPlanReferenceAlternatives,
-    dietPlanReferenceGroupTitle,
-    dietPlanTableAlternatives
+    // Template equivalenze (organization-scoped)
+    EQUIVALENCE_TEMPLATE_SCHEMA_VERSION,
+    equivalenceTemplateScaled
   };
 });

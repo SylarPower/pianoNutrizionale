@@ -171,7 +171,7 @@ test('dry-run sul file Guide: 234 creazioni, zero errori, nessuna scrittura', as
   const { api, writes } = harness(base());
   const result = await dryRun(api);
   assert.equal(result.mode, 'dry-run');
-  assert.equal(result.counts.create, 235, '230 ingredienti + 5 categorie (free esclusa)');
+  assert.equal(result.counts.create, 284, '229 ingredienti + 49 famiglie + 6 categorie');
   assert.equal(result.counts.errors, 0);
   assert.deepEqual(result.errors, []);
   assert.match(result.previewId, /^[a-f0-9]{64}$/, 'previewId esadecimale');
@@ -187,13 +187,15 @@ test('commit con conferma: versione 1, riepilogo, snapshot v0 e audit', async ()
   assert.equal(result.catalogVersion, 1);
   const summary = store.get('globalIngredientCatalog/current/meta/summary');
   assert.equal(summary.catalogVersion, 1);
-  assert.equal(summary.ingredientCount, 230);
-  assert.equal(summary.categoryCount, 5);
+  assert.equal(summary.ingredientCount, 229);
+  assert.equal(summary.categoryCount, 6);
+  assert.equal(summary.familyCount, 49);
   assert.equal(summary.checksum, result.checksum, 'checksum restituito = checksum scritto');
-  assert.equal(keysWith(store, 'globalIngredientCatalog/current/ingredients/').length, 230);
-  assert.equal(keysWith(store, 'globalIngredientCatalog/current/categories/').length, 5);
-  assert.equal(keysWith(store, 'globalIngredientCatalog/current/categories/').some(key => key.endsWith('/free')), false,
-    'nessuna categoria free: la riservata la crea il server, non si importa');
+  assert.equal(keysWith(store, 'globalIngredientCatalog/current/ingredients/').length, 229);
+  assert.equal(keysWith(store, 'globalIngredientCatalog/current/categories/').length, 6);
+  assert.equal(keysWith(store, 'globalIngredientCatalog/current/families/').length, 49);
+  assert.equal(keysWith(store, 'globalIngredientCatalog/current/categories/').some(key => key.endsWith('/free')), true,
+    'la categoria free è una categoria come le altre: si importa col file');
   const snapshotV0 = store.get('globalIngredientCatalog/versions/snapshots/0');
   assert.ok(snapshotV0, 'snapshot della versione precedente in versions/snapshots/0 (4 segmenti)');
   assert.equal(snapshotV0.catalogVersion, 0);
@@ -227,18 +229,20 @@ test('guardie senza scritture: conferma mancante, previewId sbagliato, flag disa
   assert.deepEqual(off.writes, [], 'flag disabilitato: nessuna scrittura');
 });
 
-test('file con errore (guideFamilyId inesistente): dry-run lo segnala, commit rifiutato', async () => {
+test('file con errore (familyId inesistente): dry-run lo segnala, commit rifiutato', async () => {
   const { api, writes } = harness(base());
   const payload = JSON.stringify({
     categories: [],
+    families: [],
     ingredients: [{
-      ingredientId: 'fantasia', displayName: 'Ingrediente fantasia', categoryId: 'free',
-      mappingKind: 'guided', guideFamilyId: 'famiglia-inesistente'
+      ingredientId: 'ingrediente-fantasia', displayName: 'Ingrediente fantasia',
+      aliases: [], categoryId: 'free', familyId: 'famiglia-inesistente',
+      dietaryFlags: { vegetarian: true, vegan: true }
     }]
   });
   const dry = await dryRun(api, payload);
   assert.equal(dry.errors.length, 1);
-  assert.match(dry.errors[0], /guideFamilyId inesistente/);
+  assert.match(dry.errors[0], /familyId inesistente \("famiglia-inesistente"\)/);
   await assert.rejects(
     commit(api, dry.previewId, payload),
     error => error.code === 'failed-precondition' && /Import bloccato/.test(error.message)
@@ -270,17 +274,20 @@ test('ripristino della versione 0: versione 2, catalogo svuotato, snapshot v1 pr
   // Il catalogo corrente torna al contenuto dello snapshot v0 (vuoto).
   assert.deepEqual(keysWith(store, 'globalIngredientCatalog/current/ingredients/'), []);
   assert.deepEqual(keysWith(store, 'globalIngredientCatalog/current/categories/'), []);
+  assert.deepEqual(keysWith(store, 'globalIngredientCatalog/current/families/'), []);
   const summary = store.get('globalIngredientCatalog/current/meta/summary');
   assert.equal(summary.catalogVersion, 2);
   assert.equal(summary.ingredientCount, 0);
   assert.equal(summary.categoryCount, 0);
+  assert.equal(summary.familyCount, 0);
   assert.equal(summary.checksum, result.checksum);
   // Lo snapshot della v1 (corrente prima del ripristino) è presente.
   const snapshotV1 = store.get('globalIngredientCatalog/versions/snapshots/1');
   assert.ok(snapshotV1, 'snapshot v1 in versions/snapshots/1 (4 segmenti)');
   assert.equal(snapshotV1.catalogVersion, 1);
-  assert.equal(snapshotV1.ingredients.length, 230);
-  assert.equal(snapshotV1.categories.length, 5);
+  assert.equal(snapshotV1.ingredients.length, 229);
+  assert.equal(snapshotV1.categories.length, 6);
+  assert.equal(snapshotV1.families.length, 49);
   assert.equal(snapshotV1.supersededBy, 2);
   assert.ok(store.get('globalIngredientCatalog/versions/snapshots/0'), 'lo snapshot v0 resta');
   const audits = keysWith(store, 'platformAuditLog/').map(key => store.get(key));

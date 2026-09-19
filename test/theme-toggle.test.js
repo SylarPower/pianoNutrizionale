@@ -41,7 +41,7 @@ test('app: il tema è nelle Impostazioni e non più nell’header', () => {
   assert.match(settingsView, /renderClientLinkSection\(\)/);
   assert.match(settingsView, /renderLinkedAccountsSection\(\)/);
   assert.match(settingsView, /USCITA/);
-  assert.match(settingsView, /Dieta e alternative/);
+  assert.match(settingsView, /renderMyDietSettingsSection\(\)/);
   assert.doesNotMatch(settingsView, /account-card/);
   assert.doesNotMatch(settingsView, /profile-name-form/);
 });

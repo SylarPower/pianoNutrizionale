@@ -182,8 +182,9 @@ service cloud.firestore {
     // Le membership sono la fonte autorevole; i custom claims non bastano.
     // Tutte le mutazioni SaaS passano da Cloud Functions/Admin SDK. Il client
     // può leggere direttamente soltanto la propria membership e i clienti che
-    // il tenant gli ha assegnato. Profilo attivo, regole e coda mapping vengono
-    // restituiti da callable per impedire IDOR e selezione autonoma del ruleSet.
+    // il tenant gli ha assegnato. Profilo dieta assegnato, strutture, template
+    // equivalenze e coda richieste catalogo arrivano SOLO da callable, per
+    // impedire IDOR e selezioni autonome.
     // Unica organizzazione: 'pianoNutrizionale'. Ruolo org: solo nutritionist. Creatore:
     // platformMembers/{uid} role admin.
 
@@ -222,14 +223,6 @@ service cloud.firestore {
     }
 
     match /accountClientLinks/{userId} {
-      allow read, write: if false;
-    }
-
-    match /globalRuleSets/{ruleSetId}/{document=**} {
-      allow read, write: if false;
-    }
-
-    match /globalMappings/{mappingId}/{document=**} {
       allow read, write: if false;
     }
 
@@ -282,6 +275,25 @@ service cloud.firestore {
       allow read, write: if false;
     }
 
+    // Template equivalenze e revisioni: NESSUN accesso diretto. La console
+    // passa da listEquivalenceTemplates/getEquivalenceTemplateRevision/
+    // saveEquivalenceTemplate; il cliente riceve solo lo snapshot nei blocchi
+    // del proprio profilo dieta.
+    match /organizations/{organizationId}/equivalenceTemplates/{templateId} {
+      allow read, write: if false;
+    }
+
+    match /organizations/{organizationId}/equivalenceTemplates/{templateId}/revisions/{revisionId} {
+      allow read, write: if false;
+    }
+
+    // Coda richieste catalogo (cliente → admin): NESSUN accesso diretto.
+    // Il cliente usa submitCatalogRequest/listMyCatalogRequests, l'admin
+    // listCatalogRequests/resolveCatalogRequest.
+    match /organizations/{organizationId}/catalogRequests/{requestId} {
+      allow read, write: if false;
+    }
+
     // Inviti monouso: lettura al creatore + chi ha creato l'invito.
     // Il token in chiaro non è mai nel documento (solo hash); riscatto via
     // callable con binding allo username invitato.
@@ -309,7 +321,7 @@ service cloud.firestore {
       allow write: if false;
     }
 
-    // Proposte di cambio email (ADR 0004): documento server-only sia per le
+    // Proposte di cambio email (ADR 0001): documento server-only sia per le
     // scritture sia per le letture. Il cliente vede la proposta solo tramite
     // le callable autorizzate (listMyClientLinkRequests), che la legano al suo
     // UID; il professionista la vede in console tramite listAuthorizedClients.

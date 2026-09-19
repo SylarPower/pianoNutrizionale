@@ -58,57 +58,25 @@ test('somme: i cucchiai restano cucchiai, unità diverse non si fondono', () => 
   assert.equal(d.sumPortionStrings('3', '3'), '6 pz');
 });
 
-test('adattamento Guide: solo grammi espliciti, resto invariato', () => {
-  const adapted = d.resolveRecipeForPlan(pastaLunch('120 g'), 'lunch', 'guide', 'training').recipe;
-  assert.equal(adapted.ingredients[0].portions.single, '70 g');
-  for (const dose of ['120', '2 pz', '1 cucchiaio', '250 ml', 'q.b.', '1 mazzetto', '8-10 g', '—']) {
-    const result = d.resolveRecipeForPlan(pastaLunch(dose), 'lunch', 'guide', 'training').recipe;
-    assert.equal(result.ingredients[0].portions.single, dose, `dose "${dose}" invariata`);
+test('regressione: niente adattamento automatico delle dosi (Guide rimosse)', () => {
+  // Il vecchio motore riscriveva le porzioni secondo le grammature Guide per
+  // slot e tipo giornata. Ora le porzioni originali restano intatte ovunque:
+  // la vista allineata alla dieta assegnata è calcolata da alignRecipeToDiet
+  // e non tocca mai la ricetta.
+  for (const dose of ['120 g', '120', '2 pz', '1 cucchiaio', '250 ml', 'q.b.', '8-10 g', '—']) {
+    const recipe = pastaLunch(dose);
+    const before = JSON.stringify(recipe);
+    assert.equal(recipe.ingredients[0].portions.single, dose, `dose "${dose}" intatta per costruzione`);
+    assert.equal(JSON.stringify(recipe), before);
   }
 });
 
-test('guideComparableAmount e parseCarbAmount: g-only, niente naked→grammi', () => {
-  assert.deepEqual(d.guideComparableAmount('60 g'), { value: 60, unit: 'g' });
-  assert.deepEqual(d.guideComparableAmount('60g'), { value: 60, unit: 'g' });
-  for (const dose of ['60', '2 pz', '1 cucchiaio', '250 ml', 'q.b.', '1 mazzetto', '8-10 g', '—', '0 g']) {
-    assert.equal(d.guideComparableAmount(dose), null, `non confrontabile: "${dose}"`);
-  }
-  assert.deepEqual(d.parseCarbAmount('60 g'), { value: 60, unit: 'g' });
-  assert.equal(d.parseCarbAmount('250'), null, 'numero nudo non più letto come grammi');
-  assert.equal(d.parseCarbAmount('2 pz'), null);
-  assert.equal(d.parseCarbAmount('1 cucchiaio'), null);
-});
-
-test('carbBaseAmount: riferimento solo se dose mancante o non numerica', () => {
-  const source = d.carbSourceForName('Pasta di semola');
-  const base = single => d.carbBaseAmount({ name: 'Pasta di semola', portions: { single } }, source, 'lunch');
-  assert.deepEqual(base('60 g'), { value: 60, unit: 'g' }, 'grammi nativi usati');
-  assert.ok(base('—') && base('—').unit === 'g', 'dose mancante → riferimento');
-  assert.ok(base('q.b.') && base('q.b.').unit === 'g', 'q.b. → riferimento linee guida');
-  assert.ok(base('1 fetta') && base('1 fetta').unit === 'g', 'nota opaca → riferimento');
-  assert.equal(base('250'), null, 'numero nudo: né adattamento né fallback');
-  assert.equal(base('2 pz'), null, 'unità diversa: resta testuale');
-  assert.equal(base('1 cucchiaio'), null, 'cucchiai: restano testuali');
-});
-
-test('carboidrato cross-slot con unità non-grammi resta testuale', () => {
-  const crossed = d.adaptIngredientForSlot(
-    { name: 'Pasta di semola', portions: { single: '2 pz' } }, 'lunch', 'dinner', 'rest'
-  );
-  assert.equal(crossed, null, 'niente "50 pz" inventati');
-});
-
-test('Riposo/Allenamento: dosi Guide distinte per tipo giorno', () => {
-  const training = d.resolveRecipeForPlan(pastaLunch(), 'lunch', 'guide', 'training').recipe;
-  const rest = d.resolveRecipeForPlan(pastaLunch(), 'lunch', 'guide', 'rest').recipe;
-  assert.equal(training.ingredients[0].portions.single, '70 g');
-  assert.equal(rest.ingredients[0].portions.single, '50 g');
-  assert.notEqual(training.ingredients[0].portions.single, rest.ingredients[0].portions.single);
-});
-
-test('spostamento pranzo→cena: dose cena da tabella su grammi nativi', () => {
-  const dinner = d.resolveRecipeForPlan(pastaLunch(), 'dinner', 'guide', 'rest').recipe;
-  assert.equal(dinner.ingredients[0].portions.single, '40 g');
+test('parseQuantity resta stretto: niente numeri nudi letti come grammi', () => {
+  // Numeri nudi e unità non-grammi restano ciò che sono: nessuna
+  // reinterpretazione in grammi per adattamenti o travasi.
+  assert.deepEqual(d.parseQuantity('250'), { kind: 'amount', value: 250, unit: null });
+  assert.deepEqual(d.parseQuantity('2 pz'), { kind: 'amount', value: 2, unit: 'pz' });
+  assert.equal(d.formatAmount(250, null), '250');
 });
 
 test('spesa: totali cucchiai separati dai grammi', () => {
@@ -140,10 +108,42 @@ test('batch cooking: somme con cucchiai e unità miste mai fuse', () => {
   assert.equal(d.combineTaskQuantities('2', '3'), '5 pz');
 });
 
-test('resolveRecipeForPlan non muta mai la ricetta originale (non-retroattività)', () => {
+test('le dosi allineate alla dieta non mutano mai la ricetta originale (non-retroattività)', () => {
+  const engine = d.buildDietEngine(v3ProfileQuantities());
+  assert.ok(engine, 'motore dieta dal profilo assegnato');
   const recipe = pastaLunch('120 g');
   const before = JSON.stringify(recipe);
-  d.resolveRecipeForPlan(recipe, 'lunch', 'guide', 'training');
-  d.resolveRecipeForPlan(recipe, 'dinner', 'guide', 'rest');
+  const aligned = d.alignRecipeToDiet(recipe, engine, 'lunch', 'training');
+  assert.ok(aligned);
+  assert.equal(aligned.ingredients[0].amountText, '80g', 'vista allineata alla struttura');
+  assert.equal(recipe.ingredients[0].portions.single, '120 g');
   assert.equal(JSON.stringify(recipe), before);
 });
+
+// Profilo v3 minimale per il test di non-retroattività: pranzo a blocco
+// cereali (riso 80g) con catalogo di tre ingredienti.
+function v3ProfileQuantities() {
+  const catalog = {
+    categories: [{ categoryId: 'carb', displayName: 'Carboidrati', sortOrder: 0 }],
+    families: [{ familyId: 'cereali', displayName: 'Cereali', categoryId: 'carb', sortOrder: 0 }],
+    ingredients: [
+      { ingredientId: 'pasta-di-semola', displayName: 'Pasta di semola', aliases: ['pasta'], categoryId: 'carb', familyId: 'cereali', dietaryFlags: { vegetarian: true, vegan: true }, status: 'active' },
+      { ingredientId: 'riso', displayName: 'Riso', aliases: [], categoryId: 'carb', familyId: 'cereali', dietaryFlags: { vegetarian: true, vegan: true }, status: 'active' }
+    ]
+  };
+  const dietPlan = d.createEmptyDietPlan({ days: [
+    d.createDietPlanDay('training', { dayId: 't', meals: [
+      d.createDietPlanMeal('lunch', { options: [
+        d.createDietPlanOption({ type: 'family-block', blocks: [
+          d.createDietPlanBlock({ referenceFamilyId: 'cereali', referenceIngredientId: 'riso', referenceAmount: { value: 80, unit: 'g' } })
+        ] })
+      ] })
+    ] })
+  ] });
+  return {
+    schemaVersion: 1, clientProfileId: 'cp1', assignmentId: 'a1', structureId: 's1',
+    structureRevisionId: 'rev1', structureChecksum: 'chk', structureName: 'Base',
+    ingredientCatalogVersion: 1, structureRevision: { revisionId: 'rev1', dietPlan },
+    catalog, compatibleClientSchema: 7
+  };
+}

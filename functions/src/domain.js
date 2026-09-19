@@ -4,25 +4,7 @@ const crypto = require('node:crypto');
 
 const SINGLE_ORGANIZATION_ID = 'pianoNutrizionale';
 const ROLES = new Set(['nutritionist']);
-const REPORT_STATUSES = new Set(['open', 'triaged', 'needs-review', 'resolved', 'rejected', 'duplicate']);
 const ASSIGNMENT_STATUSES = new Set(['scheduled', 'active', 'suspended', 'revoked', 'expired']);
-const ASSIGNMENT_STRATEGIES = new Set(['freeze', 'migrate-on-confirmation', 'original-only']);
-const MAPPING_KINDS = new Set(['guided', 'free']);
-const GROUPS = new Set(['carb', 'protein', 'vegetable', 'dairy', 'fat', 'sweet', 'fruit', 'free']);
-
-// ID delle 39 famiglie del motore delle linee guida (js/domain.js → GUIDE_GRAMMATURE).
-// SOLO identificativi: nessuna quantità, nessuna dose, nessuna regola di
-// riconoscimento. Il server li usa per rifiutare strutture/catalogo che
-// puntano a famiglie inesistenti nel motore; la parità con il client è
-// verificata dai test (functions/test/domain.test.js). Se il manuale aggiunge
-// una famiglia, aggiornare qui + engine + catalogo nello stesso deploy.
-// Generato da docs/guide-source-v3.json — ordine priorità motore.
-const GUIDE_FAMILY_IDS = new Set([
-  'patateDolci', 'patate', 'gnocchi', 'polenta', 'mais', 'fiocchiAvena', 'gallette', 'crackers', 'piadina', 'cerealiColazione', 'cereali', 'pane',
-  'salmoneAffumicato', 'pesceScatolaNaturale', 'pesceSottOlio', 'pesceAzzurro', 'pesceBiancoMagro', 'crostaceiMolluschi', 'maiale', 'polloTacchino', 'manzo',
-  'affettatiMagri', 'mozzarellaLight', 'formaggiFreschiMolli', 'yogurtGreco', 'fiocchiLatte', 'montasio', 'grana', 'formaggiStagionati', 'feta', 'ricotta',
-  'uova', 'legumotti', 'legumiScatola', 'lupini', 'seitan', 'burgerVegetali', 'olio', 'verdura'
-]);
 
 const MEMBER_STATUSES = new Set(['active', 'suspended', 'removed']);
 
@@ -127,7 +109,7 @@ function hashToken(token) {
 }
 
 // ---------------------------------------------------------------------
-// Email reali vs account tecnici legacy (ADR 0004)
+// Email reali vs account tecnici legacy (ADR 0001)
 //
 // `LEGACY_TEST_EMAIL_DOMAINS` è una LISTA CHIUSA e documentata: solo gli
 // indirizzi su questi domini sono considerati "account tecnici di test".
@@ -205,112 +187,12 @@ const EMAIL_CHANGE_STATUSES = new Set(['pending', 'accepted', 'rejected', 'cance
 // Stati di un invito email: il documento resta sempre come traccia storica.
 const CLIENT_EMAIL_INVITE_STATUSES = new Set(['pending', 'accepted', 'expired', 'revoked', 'superseded']);
 
-function reportKey({ organizationId, fingerprint, ruleSetId, ruleSetVersion, errorType }) {
-  return checksum({
-    organizationId: id(organizationId, 'organizationId'),
-    fingerprint: text(fingerprint, 'fingerprint', { max: 128 }),
-    ruleSetId: id(ruleSetId, 'ruleSetId'),
-    ruleSetVersion: id(String(ruleSetVersion), 'ruleSetVersion'),
-    errorType: text(errorType, 'errorType', { pattern: /^(unknown|ambiguous)$/ })
-  });
-}
-
-function validateReport(input) {
-  exactObject(input, ['clientProfileId', 'fingerprint', 'ingredientText', 'slot', 'errorType', 'ruleSetId', 'ruleSetVersion']);
-  return {
-    clientProfileId: id(input.clientProfileId, 'clientProfileId'),
-    fingerprint: text(input.fingerprint, 'fingerprint', { max: 128 }),
-    ingredientText: text(input.ingredientText, 'ingredientText', { max: 120 }),
-    normalizedIngredient: normalizeIngredient(input.ingredientText),
-    slot: text(input.slot, 'slot', { pattern: /^(lunch|dinner)$/ }),
-    errorType: text(input.errorType, 'errorType', { pattern: /^(unknown|ambiguous)$/ }),
-    ruleSetId: id(input.ruleSetId, 'ruleSetId'),
-    ruleSetVersion: id(String(input.ruleSetVersion), 'ruleSetVersion')
-  };
-}
-
-function validateMapping(input) {
-  exactObject(input, ['kind', 'canonicalIngredientId', 'aliases', 'family', 'group', 'doses']);
-  const kind = text(input.kind, 'mapping.kind');
-  if (!MAPPING_KINDS.has(kind)) fail('invalid-argument', 'mapping.kind non valido');
-  const aliases = Array.isArray(input.aliases) ? [...new Set(input.aliases.map(normalizeIngredient))] : [];
-  if (!aliases.length || aliases.length > 30) fail('invalid-argument', 'mapping.aliases non valido');
-  const mapping = {
-    kind,
-    canonicalIngredientId: id(input.canonicalIngredientId, 'mapping.canonicalIngredientId'),
-    aliases,
-    family: kind === 'guided' ? id(input.family, 'mapping.family') : 'free',
-    group: kind === 'guided' ? text(input.group, 'mapping.group') : 'free',
-    doses: kind === 'guided' ? input.doses : null
-  };
-  if (!GROUPS.has(mapping.group)) fail('invalid-argument', 'mapping.group non valido');
-  if (kind === 'guided') validateDoses(mapping.doses);
-  return mapping;
-}
-
-function validateDoses(doses) {
-  exactObject(doses, ['lunch', 'dinner'], 'mapping.doses');
-  for (const slot of ['lunch', 'dinner']) {
-    exactObject(doses[slot], ['training', 'rest'], `mapping.doses.${slot}`);
-    for (const day of ['training', 'rest']) {
-      const value = doses[slot][day];
-      if (!Number.isFinite(value) || value <= 0 || value > 5000) fail('invalid-argument', `Dose ${slot}/${day} non valida`);
-    }
-  }
-}
-
-function validateRuleSetRules(input) {
-  if (!Array.isArray(input) || !input.length || input.length > 300) fail('invalid-argument', 'rules non valide');
-  const families = new Set();
-  return input.map((rule, index) => {
-    exactObject(rule, ['family', 'group', 'label', 'aliases', 'slots'], `rules[${index}]`);
-    const family = id(rule.family, `rules[${index}].family`);
-    if (families.has(family)) fail('invalid-argument', `Famiglia duplicata: ${family}`);
-    families.add(family);
-    const group = text(rule.group, `rules[${index}].group`);
-    if (!GROUPS.has(group) || group === 'free') fail('invalid-argument', `Gruppo non valido: ${group}`);
-    const aliases = Array.isArray(rule.aliases) ? [...new Set(rule.aliases.map(normalizeIngredient))] : [];
-    if (!aliases.length || aliases.length > 30) fail('invalid-argument', `Alias non validi: ${family}`);
-    validateDoses(rule.slots);
-    return { family, group, label: text(rule.label, `rules[${index}].label`, { max: 100 }), aliases, slots: rule.slots };
-  });
-}
-
-function validateAssignment(input) {
-  exactObject(input, ['organizationId', 'clientId', 'ruleSet', 'effectiveAt', 'expiresAt', 'strategy', 'reason', 'idempotencyKey']);
-  exactObject(input.ruleSet, ['scope', 'ruleSetId', 'version', 'checksum'], 'ruleSet');
-  const effectiveAt = isoDate(input.effectiveAt, 'effectiveAt');
-  const expiresAt = isoDate(input.expiresAt, 'expiresAt', true);
-  if (expiresAt && expiresAt <= effectiveAt) fail('invalid-argument', 'expiresAt deve essere successiva a effectiveAt');
-  const strategy = text(input.strategy, 'strategy');
-  if (!ASSIGNMENT_STRATEGIES.has(strategy)) fail('invalid-argument', 'strategy non valida');
-  return {
-    organizationId: id(input.organizationId, 'organizationId'),
-    clientId: id(input.clientId, 'clientId'),
-    ruleSet: {
-      scope: text(input.ruleSet.scope, 'ruleSet.scope', { pattern: /^(global|tenant)$/ }),
-      ruleSetId: id(input.ruleSet.ruleSetId, 'ruleSet.ruleSetId'),
-      version: id(String(input.ruleSet.version), 'ruleSet.version'),
-      checksum: text(input.ruleSet.checksum, 'ruleSet.checksum', { min: 64, max: 64, pattern: /^[a-f0-9]{64}$/ })
-    },
-    effectiveAt,
-    expiresAt,
-    strategy,
-    reason: text(input.reason, 'reason', { min: 3, max: 500 }),
-    idempotencyKey: id(input.idempotencyKey, 'idempotencyKey')
-  };
-}
-
-// Contratto assegnazione v2: il cliente sceglie solo Cliente, Struttura dieta,
+// Contratto assegnazione: il cliente sceglie solo Cliente, Struttura dieta,
 // Decorrenza, Scadenza (o il flag "Senza scadenza") e Note. Revisione e
 // checksum della struttura sono risolti server-side; Ambito/Versione/
 // Strategia/anteprima non esistono più nel payload.
-//
-// Fase 2: il campo operativo è `structureId` (dietStructures). `ruleSetId` è
-// accettato SOLO come alias legacy per retrocompatibilità (console/client già
-// rilasciati): esattamente uno dei due deve essere presente.
 function validateStructureAssignment(input) {
-  exactObject(input, ['organizationId', 'clientId', 'structureId', 'ruleSetId', 'effectiveAt', 'expiresAt', 'withoutExpiration', 'notes', 'idempotencyKey']);
+  exactObject(input, ['organizationId', 'clientId', 'structureId', 'effectiveAt', 'expiresAt', 'withoutExpiration', 'notes', 'idempotencyKey']);
   const withoutExpiration = input.withoutExpiration === true;
   const effectiveAt = isoDate(input.effectiveAt, 'effectiveAt');
   const expiresAt = isoDate(input.expiresAt, 'expiresAt', true);
@@ -322,15 +204,13 @@ function validateStructureAssignment(input) {
   }
   if (expiresAt && expiresAt <= effectiveAt) fail('invalid-argument', 'expiresAt deve essere successiva a effectiveAt');
   const hasStructure = input.structureId != null && input.structureId !== '';
-  const hasLegacy = input.ruleSetId != null && input.ruleSetId !== '';
-  if (hasStructure === hasLegacy) {
+  if (!hasStructure) {
     fail('invalid-argument', 'Indica la struttura dieta da assegnare (structureId)');
   }
   return {
     organizationId: id(input.organizationId, 'organizationId'),
     clientId: id(input.clientId, 'clientId'),
-    structureId: hasStructure ? id(input.structureId, 'structureId') : null,
-    ruleSetId: hasLegacy ? id(input.ruleSetId, 'ruleSetId') : null,
+    structureId: id(input.structureId, 'structureId'),
     effectiveAt,
     expiresAt: withoutExpiration ? null : expiresAt,
     withoutExpiration,
@@ -351,353 +231,395 @@ function effectiveAssignment(assignment, now = new Date()) {
   return { valid: assignment.status === 'active', reason: assignment.status === 'active' ? null : assignment.status };
 }
 
-// Regole di una revisione struttura dieta (schema v2): famiglie Guide con
-// dosi per pasto (pranzo/cena) × giorno (allenamento/riposo). Le quantità sono
-// interi in grammi tra 1 e 2000; un pasto può essere `null` se non gestito,
-// mai entrambi. Schema esatto: docs/schema-catalogo-strutture-v2.json.
-function grams(value, name) {
-  if (value == null || value === '') return null;
-  const number = Number(value);
-  if (!Number.isInteger(number) || number < 1 || number > 2000) fail('invalid-argument', `${name} deve essere un intero tra 1 e 2000`);
-  return number;
-}
-
-// Blocco dosi pranzo/cena × allenamento/riposo condiviso da regole famiglia e
-// voci dei gruppi alternativi: stessi vincoli, stessi messaggi.
-function validateContextQuantity(value, name) {
+// Quantità strutturata {value, unit} di blocchi, override, voci e template:
+// numero 0–5000 + unità del vocabolario chiuso dei piani dieta. Nessuna dose
+// vive fuori dalle strutture o dai template equivalenze del singolo
+// professionista. Schema esatto: docs/schema-catalogo-strutture.json.
+function validateDietAmount(value, name) {
   if (!value || typeof value !== 'object') fail('invalid-argument', `${name} mancante`);
-  exactObject(value, ['lunch', 'dinner'], name);
-  const quantityGrams = {};
-  for (const meal of ['lunch', 'dinner']) {
-    const slot = value[meal];
-    if (slot == null) { quantityGrams[meal] = null; continue; }
-    exactObject(slot, ['training', 'rest'], `${name}.${meal}`);
-    quantityGrams[meal] = {
-      training: grams(slot.training, `${name}.${meal}.training`),
-      rest: grams(slot.rest, `${name}.${meal}.rest`)
-    };
-    if (quantityGrams[meal].training == null && quantityGrams[meal].rest == null) quantityGrams[meal] = null;
+  exactObject(value, ['value', 'unit'], name);
+  const number = value.value;
+  if (typeof number !== 'number' || !Number.isFinite(number) || number < 0 || number > 5000) {
+    fail('invalid-argument', `${name}.value deve essere un numero tra 0 e 5000`);
   }
-  if (quantityGrams.lunch == null && quantityGrams.dinner == null) {
-    fail('invalid-argument', `${name}: almeno una dose per pranzo o cena`);
-  }
-  return quantityGrams;
+  const unit = text(value.unit, `${name}.unit`, { max: 16 });
+  if (!DIET_PLAN_UNITS.has(unit)) fail('invalid-argument', `${name}.unit non valida`);
+  return { value: number, unit };
 }
 
-function validateDietStructureRules(rules, { allowEmpty = false } = {}) {
-  // Le strutture con piano guidato possono nascere senza regole classiche
-  // (il piano descrittivo non alimenta il motore dosi): in quel caso la
-  // callable passa allowEmpty e la revisione diventa schema 3.
-  if (!Array.isArray(rules) || rules.length > 40 || (!allowEmpty && rules.length === 0)) {
-    fail('invalid-argument', allowEmpty
-      ? 'rules deve contenere al massimo 40 famiglie'
-      : 'rules deve contenere tra 1 e 40 famiglie');
-  }
-  const seen = new Set();
-  return rules.map((rawRule, index) => {
-    // Compatibilità: le revisioni salvate prima del cambio nome usano la
-    // chiave storica `mellerFamilyId`. Viene accettata in ingresso, rivalidata
-    // e riscritta con il nome attuale nella nuova revisione.
-    let rule = rawRule;
-    if (rule && typeof rule === 'object' && rule.guideFamilyId == null && rule.mellerFamilyId != null) {
-      rule = { ...rule, guideFamilyId: rule.mellerFamilyId };
-      delete rule.mellerFamilyId;
-    }
-    exactObject(rule, ['guideFamilyId', 'ingredientIds', 'quantityGrams', 'enabled', 'categoryId'], `rules[${index}]`);
-    const guideFamilyId = id(rule.guideFamilyId, `rules[${index}].guideFamilyId`);
-    if (seen.has(guideFamilyId)) fail('invalid-argument', `Famiglia duplicata: ${guideFamilyId}`);
-    seen.add(guideFamilyId);
-    // La famiglia deve esistere nel motore: niente regole orfane che il
-    // client convertirebbe in silenzio in "nessuna dose".
-    if (!GUIDE_FAMILY_IDS.has(guideFamilyId)) {
-      fail('invalid-argument', `rules[${index}].guideFamilyId non esiste nel motore delle famiglie`);
-    }
-    const quantityGrams = validateContextQuantity(rule.quantityGrams, `rules[${index}].quantityGrams`);
-    const ingredientIds = Array.isArray(rule.ingredientIds)
-      ? rule.ingredientIds.map((value, i) => id(value, `rules[${index}].ingredientIds[${i}]`))
-      : [];
-    if (ingredientIds.length > 100) fail('invalid-argument', `rules[${index}].ingredientIds: massimo 100 ingredienti`);
-    if (rule.enabled !== undefined && typeof rule.enabled !== 'boolean') {
-      fail('invalid-argument', `rules[${index}].enabled deve essere booleano`);
-    }
-    return {
-      guideFamilyId,
-      ingredientIds,
-      quantityGrams,
-      enabled: rule.enabled === undefined ? true : rule.enabled,
-      categoryId: rule.categoryId == null || rule.categoryId === '' ? null : id(rule.categoryId, `rules[${index}].categoryId`)
-    };
-  });
-}
+// Checksum della revisione struttura. Schema 1 (modello a blocchi): copre
+// solo il dietPlan; le regole classiche per famiglie e i gruppi alternativi
+// non esistono più. Le revisioni 1–3 sono state eliminate col reset
+// pre-lancio: non restano documenti da verificare.
+const STRUCTURE_REVISION_SCHEMA_VERSION = 1;
 
-// Gruppi alternativi della revisione (schema v2: carboidrati/proteine/...):
-// voci con ingrediente globale + dosi proprie. L'esistenza degli ingredienti
-// in catalogo è verificata dalla callable (serve Firestore); qui solo forma.
-function validateAlternativeGroups(groups) {
-  if (groups == null) return [];
-  if (!Array.isArray(groups) || groups.length > 20) {
-    fail('invalid-argument', 'alternativeGroups deve contenere al massimo 20 gruppi');
-  }
-  const seen = new Set();
-  return groups.map((group, index) => {
-    exactObject(group, ['alternativeGroupId', 'displayName', 'items'], `alternativeGroups[${index}]`);
-    const alternativeGroupId = text(group.alternativeGroupId, `alternativeGroups[${index}].alternativeGroupId`, { max: 96, pattern: /^[a-z0-9][a-z0-9-]{1,95}$/ });
-    if (seen.has(alternativeGroupId)) fail('invalid-argument', `Gruppo alternativo duplicato: ${alternativeGroupId}`);
-    seen.add(alternativeGroupId);
-    const displayName = text(group.displayName, `alternativeGroups[${index}].displayName`, { max: 160 });
-    if (!Array.isArray(group.items) || group.items.length === 0 || group.items.length > 50) {
-      fail('invalid-argument', `alternativeGroups[${index}].items deve contenere tra 1 e 50 voci`);
-    }
-    const seenItems = new Set();
-    const items = group.items.map((item, itemIndex) => {
-      exactObject(item, ['ingredientId', 'quantityGrams'], `alternativeGroups[${index}].items[${itemIndex}]`);
-      const ingredientId = id(item.ingredientId, `alternativeGroups[${index}].items[${itemIndex}].ingredientId`);
-      if (seenItems.has(ingredientId)) fail('invalid-argument', `alternativeGroups[${index}]: ingrediente duplicato ${ingredientId}`);
-      seenItems.add(ingredientId);
-      return {
-        ingredientId,
-        quantityGrams: validateContextQuantity(item.quantityGrams, `alternativeGroups[${index}].items[${itemIndex}].quantityGrams`)
-      };
-    });
-    return { alternativeGroupId, displayName, items };
-  });
-}
-
-// Checksum della revisione struttura. Schema 2 (Fase 2): copre rules +
-// alternativeGroups. Schema 1 legacy: solo rules (compatibilità di verifica
-// per le revisioni pubblicate prima della Fase 2). Schema 3 (dieta guidata):
-// copre anche dietPlan (null quando assente, così le revisioni 2 restano
-// verificabili senza riscritture).
-const STRUCTURE_REVISION_SCHEMA_VERSION = 2;
-const STRUCTURE_REVISION_SCHEMA_VERSION_WITH_PLAN = 3;
-
-function structureRevisionChecksum({ schemaVersion, rules, alternativeGroups, dietPlan }) {
-  if (Number(schemaVersion) === 1) return checksum({ schemaVersion: 1, rules });
-  if (Number(schemaVersion) === 3) {
-    return checksum({
-      schemaVersion: 3,
-      rules: rules || [],
-      alternativeGroups: alternativeGroups || [],
-      dietPlan: dietPlan === undefined ? null : dietPlan
-    });
-  }
-  return checksum({ schemaVersion: 2, rules, alternativeGroups: alternativeGroups || [] });
+function structureRevisionChecksum({ schemaVersion, dietPlan }) {
+  return checksum({ schemaVersion, dietPlan: dietPlan === undefined ? null : dietPlan });
 }
 
 function verifyStructureRevision(value) {
-  if (!value || value.status !== 'published' || !Array.isArray(value.rules)) return false;
-  const schemaVersion = Number(value.schemaVersion || 1);
-  // Le revisioni con piano guidato possono non avere regole classiche; senza
-  // piano guidato serve almeno una regola come prima.
-  if (!value.rules.length && !(schemaVersion === 3 && value.dietPlan)) return false;
-  const expected = structureRevisionChecksum({
-    schemaVersion,
-    rules: value.rules,
-    alternativeGroups: value.alternativeGroups || [],
-    dietPlan: value.dietPlan === undefined ? null : value.dietPlan
-  });
-  return value.checksum === expected;
+  if (!value || value.status !== 'published') return false;
+  const schemaVersion = Number(value.schemaVersion || 0);
+  if (schemaVersion !== STRUCTURE_REVISION_SCHEMA_VERSION) return false;
+  if (!value.dietPlan || !Array.isArray(value.dietPlan.days) || !value.dietPlan.days.length) return false;
+  return value.checksum === structureRevisionChecksum({ schemaVersion, dietPlan: value.dietPlan });
 }
 
 // ---------------------------------------------------------------------
-// Dieta guidata — modello descrittivo versionato (dietPlan v1)
-// Lo stesso vocabolario vive in js/domain.js per l'editor della console;
-// qui la validazione è bloccante (fail) e ogni campo ha un limite.
-// Nessun calcolo clinico: i target energetici sono appunti manuali.
+// Strutture dieta — piano a blocchi (dietPlan schema 1)
+// Lo stesso vocabolario vive in js/domain.js per la console; qui la
+// validazione è bloccante (fail) e ogni campo ha un limite. L'esistenza di
+// famiglie/ingredienti/template nel catalogo è verificata dalla callable
+// (serve Firestore): qui solo forma e coerenza interna.
 // ---------------------------------------------------------------------
 
 const DIET_PLAN_SCHEMA_VERSION = 1;
 const DIET_PLAN_DAY_TYPES = new Set(['training', 'rest', 'other']);
 const DIET_PLAN_MEAL_IDS = new Set(['breakfast', 'morning-snack', 'lunch', 'afternoon-snack', 'dinner', 'evening-snack']);
-const DIET_PLAN_FOOD_GROUPS = new Set(['cereali', 'pseudo-cereali', 'legumi', 'carne', 'pesce', 'uova', 'latticini', 'verdura', 'frutta', 'frutta-secca', 'grassi', 'dolci', 'bevande', 'integratori', 'altro']);
 const DIET_PLAN_UNITS = new Set(['g', 'kg', 'ml', 'l', 'pz', 'fette', 'cucchiai', 'cucchiaini', 'tazze', 'bicchieri', 'porzioni', 'scatolette', 'misurini', 'qb']);
-// Legacy: le revisioni pubblicate prima dell'evoluzione del contratto usano
-// quantityState (crudo/cotto), netOfWaste e alternative («oppure»). Restano
-// valide in lettura e round-trip, ma i nuovi piani non le producono più.
-const DIET_PLAN_QUANTITY_STATES = new Set(['crudo', 'cotto']);
-const DIET_PLAN_OPTION_LABELS = new Set(['A', 'B', 'C', 'D']);
-const DIET_PLAN_OPTION_TYPES = new Set(['free-foods', 'recipe']);
+const DIET_PLAN_OPTION_TYPES = new Set(['family-block', 'ingredients', 'recipe']);
+// Le etichette A/B/C/D NON si persistono più: sono una derivazione di UI
+// quando un pasto ha più opzioni (decisione di prodotto).
 const DIET_PLAN_LIMITS = {
   days: 14, mealsPerDay: 10, optionsPerMeal: 4, itemsPerOption: 20,
-  choiceGroupsPerOption: 3, alternativesPerChoiceGroup: 30, choiceGroupTitle: 200
+  blocksPerOption: 8, label: 80, note: 1000, generalNotes: 2000
 };
 
-function dietPlanNumber(value, name, { max }) {
-  if (value == null || value === '') return null;
-  const number = Number(value);
-  if (!Number.isFinite(number) || number < 0 || number > max) {
-    fail('invalid-argument', `${name} non valido`);
+function dietPlanText(value, name, { max, optional = false } = {}) {
+  if (optional && (value == null || value === '')) return '';
+  return text(value, name, { max });
+}
+
+function validateDietPlanBlock(block, name) {
+  exactObject(block, ['blockId', 'referenceFamilyId', 'referenceIngredientId', 'referenceAmount', 'templateId', 'templateSnapshot', 'overrides'], name);
+  const blockId = text(block.blockId, `${name}.blockId`, { max: 64, pattern: /^[a-z0-9][a-z0-9-]{0,63}$/ });
+  const referenceFamilyId = id(block.referenceFamilyId, `${name}.referenceFamilyId`);
+  const referenceIngredientId = block.referenceIngredientId == null || block.referenceIngredientId === ''
+    ? null
+    : id(block.referenceIngredientId, `${name}.referenceIngredientId`);
+  const referenceAmount = validateDietAmount(block.referenceAmount, `${name}.referenceAmount`);
+  // Il template è fissato nella revisione pubblicata: snapshot non
+  // retroattivo + override espliciti della struttura. La coerenza col
+  // template corrente (famiglia, ingredienti) è verificata in callable.
+  let templateSnapshot = null;
+  if (block.templateId != null && block.templateId !== '') {
+    const templateId = id(block.templateId, `${name}.templateId`);
+    if (!block.templateSnapshot || typeof block.templateSnapshot !== 'object') {
+      fail('invalid-argument', `${name}.templateSnapshot mancante per il template ${templateId}`);
+    }
+    exactObject(block.templateSnapshot, ['revisionId', 'referenceAmount', 'equivalents'], `${name}.templateSnapshot`);
+    templateSnapshot = {
+      revisionId: text(block.templateSnapshot.revisionId, `${name}.templateSnapshot.revisionId`, { max: 32 }),
+      referenceAmount: validateDietAmount(block.templateSnapshot.referenceAmount, `${name}.templateSnapshot.referenceAmount`),
+      equivalents: validateTemplateSnapshotEquivalents(block.templateSnapshot.equivalents, `${name}.templateSnapshot.equivalents`)
+    };
+    if (Number(templateSnapshot.referenceAmount.value) <= 0) {
+      fail('invalid-argument', `${name}.templateSnapshot.referenceAmount deve essere maggiore di zero`);
+    }
+  } else if (block.templateSnapshot != null) {
+    fail('invalid-argument', `${name}.templateSnapshot presente senza templateId`);
   }
-  return number;
+  const overrides = validateDietPlanOverrides(block.overrides, referenceFamilyId, `${name}.overrides`);
+  return { blockId, referenceFamilyId, referenceIngredientId, referenceAmount, templateId: templateSnapshot ? block.templateId : null, templateSnapshot, overrides };
+}
+
+function validateTemplateSnapshotEquivalents(input, name) {
+  if (!Array.isArray(input) || input.length === 0 || input.length > 30) {
+    fail('invalid-argument', `${name}: da 1 a 30 equivalenti`);
+  }
+  const seen = new Set();
+  return input.map((equivalent, index) => {
+    exactObject(equivalent, ['familyId', 'ingredientId', 'amount'], `${name}[${index}]`);
+    const familyId = id(equivalent.familyId, `${name}[${index}].familyId`);
+    if (seen.has(familyId)) fail('invalid-argument', `${name}: famiglia equivalente duplicata (${familyId})`);
+    seen.add(familyId);
+    return {
+      familyId,
+      ingredientId: equivalent.ingredientId == null || equivalent.ingredientId === ''
+        ? null
+        : id(equivalent.ingredientId, `${name}[${index}].ingredientId`),
+      amount: validateDietAmount(equivalent.amount, `${name}[${index}].amount`)
+    };
+  });
+}
+
+function validateDietPlanOverrides(input, blockFamilyId, name) {
+  if (input == null) return [];
+  if (!Array.isArray(input) || input.length > 30) fail('invalid-argument', `${name}: massimo 30 override`);
+  const seen = new Set();
+  return input.map((override, index) => {
+    exactObject(override, ['familyId', 'ingredientId', 'amount'], `${name}[${index}]`);
+    const familyId = id(override.familyId, `${name}[${index}].familyId`);
+    if (familyId === blockFamilyId) fail('invalid-argument', `${name}[${index}]: la famiglia di riferimento del blocco non è un override`);
+    const key = `${familyId}|${override.ingredientId || ''}`;
+    if (seen.has(key)) fail('invalid-argument', `${name}: override duplicato (${key})`);
+    seen.add(key);
+    return {
+      familyId,
+      ingredientId: override.ingredientId == null || override.ingredientId === ''
+        ? null
+        : id(override.ingredientId, `${name}[${index}].ingredientId`),
+      amount: validateDietAmount(override.amount, `${name}[${index}].amount`)
+    };
+  });
 }
 
 function validateDietPlanItem(item, name) {
-  // I campi legacy (quantityState, netOfWaste, alternative) sono ammessi solo
-  // per le revisioni salvate prima della rimozione: se presenti vengono
-  // rivalidati e conservati, così il round-trip dell'editor classico non
-  // riscrive le revisioni. I nuovi piani non li producono.
-  exactObject(item, ['foodGroup', 'description', 'quantity', 'unit', 'quantityState', 'netOfWaste', 'alternative'], name);
-  if (!DIET_PLAN_FOOD_GROUPS.has(item.foodGroup)) fail('invalid-argument', `${name}.foodGroup non valido`);
-  const description = text(item.description, `${name}.description`, { max: 200 });
-  const quantity = dietPlanNumber(item.quantity, `${name}.quantity`, { max: 5000 });
-  let unit = null;
-  if (quantity != null) {
-    if (!DIET_PLAN_UNITS.has(item.unit)) fail('invalid-argument', `${name}.unit non valida`);
-    unit = item.unit;
-  }
-  const clean = { foodGroup: item.foodGroup, description, quantity, unit };
-  if (item.quantityState != null && item.quantityState !== '') {
-    if (!DIET_PLAN_QUANTITY_STATES.has(item.quantityState)) fail('invalid-argument', `${name}.quantityState non valido`);
-    clean.quantityState = item.quantityState;
-  }
-  if (item.netOfWaste === true) clean.netOfWaste = true;
-  const alternative = optionalText(item.alternative, `${name}.alternative`, 200);
-  if (alternative != null) clean.alternative = alternative;
-  return clean;
-}
-
-function validateDietPlanChoiceGroup(group, name) {
-  exactObject(group, ['title', 'optional', 'alternatives'], name);
-  const title = text(group.title, `${name}.title`, { max: DIET_PLAN_LIMITS.choiceGroupTitle });
-  if (!Array.isArray(group.alternatives) || !group.alternatives.length || group.alternatives.length > DIET_PLAN_LIMITS.alternativesPerChoiceGroup) {
-    fail('invalid-argument', `${name}.alternatives deve contenere da 1 a ${DIET_PLAN_LIMITS.alternativesPerChoiceGroup} alternative`);
-  }
+  exactObject(item, ['itemId', 'ingredientId', 'amount'], name);
+  text(item.itemId, `${name}.itemId`, { max: 64, pattern: /^[a-z0-9][a-z0-9-]{0,63}$/ });
   return {
-    title,
-    optional: group.optional !== false,
-    alternatives: group.alternatives.map((alternative, index) => validateDietPlanItem(alternative, `${name}.alternatives[${index}]`))
+    itemId: item.itemId,
+    ingredientId: id(item.ingredientId, `${name}.ingredientId`),
+    amount: validateDietAmount(item.amount, `${name}.amount`)
   };
 }
 
 function validateDietPlanOption(option, name) {
-  // Due tipi mutuamente esclusivi: «free-foods» (lista alimenti + gruppi
-  // scelta) oppure «recipe» (ricetta del ricettario con moltiplicatore).
-  // Le opzioni senza `type` sono legacy e restano «free-foods».
-  exactObject(option, ['label', 'items', 'note', 'type', 'recipeId', 'recipeMultiplier', 'choiceGroups'], name);
-  if (!DIET_PLAN_OPTION_LABELS.has(option.label)) fail('invalid-argument', `${name}.label non valido (A–D)`);
-  if (option.type != null && option.type !== '' && !DIET_PLAN_OPTION_TYPES.has(option.type)) {
-    fail('invalid-argument', `${name}.type non valido (recipe|free-foods)`);
-  }
-  const type = option.type === 'recipe' || (!option.type && option.recipeId) ? 'recipe' : 'free-foods';
-  const note = optionalText(option.note, `${name}.note`, 1000);
+  exactObject(option, ['optionId', 'type', 'recipeId', 'recipeMultiplier', 'blocks', 'items', 'note'], name);
+  text(option.optionId, `${name}.optionId`, { max: 64, pattern: /^[a-z0-9][a-z0-9-]{0,63}$/ });
+  const type = text(option.type, `${name}.type`);
+  if (!DIET_PLAN_OPTION_TYPES.has(type)) fail('invalid-argument', `${name}.type non valido`);
+  const note = dietPlanText(option.note, `${name}.note`, { max: DIET_PLAN_LIMITS.note, optional: true });
   if (type === 'recipe') {
-    if (!option.recipeId || typeof option.recipeId !== 'string') fail('invalid-argument', `${name}.recipeId mancante per opzione ricetta`);
-    const recipeId = id(option.recipeId, `${name}.recipeId`);
-    const multiplierRaw = dietPlanNumber(option.recipeMultiplier ?? 1, `${name}.recipeMultiplier`, { max: 10 });
-    if (multiplierRaw == null || multiplierRaw < 0.1) fail('invalid-argument', `${name}.recipeMultiplier non valido (0,1–10)`);
-    if (Array.isArray(option.items) && option.items.length) fail('invalid-argument', `${name}: opzione ricetta non ammette items`);
-    if (Array.isArray(option.choiceGroups) && option.choiceGroups.length) fail('invalid-argument', `${name}: opzione ricetta non ammette choiceGroups`);
-    return { label: option.label, type: 'recipe', recipeId, recipeMultiplier: multiplierRaw, items: [], choiceGroups: [], note };
+    if (option.recipeId == null || option.recipeId === '') fail('invalid-argument', `${name}.recipeId obbligatorio`);
+    const multiplier = option.recipeMultiplier == null ? 1 : Number(option.recipeMultiplier);
+    if (!Number.isFinite(multiplier) || multiplier < 0.1 || multiplier > 10) {
+      fail('invalid-argument', `${name}.recipeMultiplier deve essere tra 0,1 e 10`);
+    }
+    if (option.blocks?.length || option.items?.length) {
+      fail('invalid-argument', `${name}: le opzioni ricetta non contengono blocchi né ingredienti`);
+    }
+    return { optionId: option.optionId, type, recipeId: id(option.recipeId, `${name}.recipeId`), recipeMultiplier: multiplier, note };
   }
-  if (option.recipeId != null && option.recipeId !== '') fail('invalid-argument', `${name}: recipeId ammesso solo con type "recipe"`);
-  if (option.recipeMultiplier != null && option.recipeMultiplier !== '') fail('invalid-argument', `${name}: recipeMultiplier ammesso solo con type "recipe"`);
-  const items = Array.isArray(option.items) ? option.items.map((item, index) => validateDietPlanItem(item, `${name}.items[${index}]`)) : [];
-  if (items.length > DIET_PLAN_LIMITS.itemsPerOption) {
-    fail('invalid-argument', `${name}.items può contenere al massimo ${DIET_PLAN_LIMITS.itemsPerOption} alimenti`);
+  if (option.recipeId != null) fail('invalid-argument', `${name}.recipeId non ammesso fuori dalle opzioni ricetta`);
+  if (type === 'ingredients') {
+    if (!Array.isArray(option.items) || !option.items.length) fail('invalid-argument', `${name}.items: serve almeno un ingrediente`);
+    if (option.items.length > DIET_PLAN_LIMITS.itemsPerOption) fail('invalid-argument', `${name}.items: massimo ${DIET_PLAN_LIMITS.itemsPerOption}`);
+    if (option.blocks?.length) fail('invalid-argument', `${name}: tipi di opzione mutuamente esclusivi`);
+    return {
+      optionId: option.optionId, type, note,
+      items: option.items.map((item, index) => validateDietPlanItem(item, `${name}.items[${index}]`))
+    };
   }
-  const choiceGroups = Array.isArray(option.choiceGroups)
-    ? option.choiceGroups.map((group, index) => validateDietPlanChoiceGroup(group, `${name}.choiceGroups[${index}]`))
-    : [];
-  if (choiceGroups.length > DIET_PLAN_LIMITS.choiceGroupsPerOption) {
-    fail('invalid-argument', `${name}.choiceGroups può contenere al massimo ${DIET_PLAN_LIMITS.choiceGroupsPerOption} gruppi`);
-  }
-  if (!items.length && !choiceGroups.length) {
-    fail('invalid-argument', `${name}: serve almeno un alimento o un gruppo scelta`);
-  }
-  return { label: option.label, type: 'free-foods', recipeId: null, recipeMultiplier: null, items, choiceGroups, note };
+  if (!Array.isArray(option.blocks) || !option.blocks.length) fail('invalid-argument', `${name}.blocks: serve almeno un blocco`);
+  if (option.blocks.length > DIET_PLAN_LIMITS.blocksPerOption) fail('invalid-argument', `${name}.blocks: massimo ${DIET_PLAN_LIMITS.blocksPerOption}`);
+  if (option.items?.length) fail('invalid-argument', `${name}: tipi di opzione mutuamente esclusivi`);
+  return {
+    optionId: option.optionId, type, note,
+    blocks: option.blocks.map((block, index) => validateDietPlanBlock(block, `${name}.blocks[${index}]`))
+  };
 }
 
 function validateDietPlanMeal(meal, name) {
   exactObject(meal, ['mealId', 'time', 'options', 'note'], name);
-  if (!DIET_PLAN_MEAL_IDS.has(meal.mealId)) fail('invalid-argument', `${name}.mealId non valido`);
+  const mealId = text(meal.mealId, `${name}.mealId`);
+  if (!DIET_PLAN_MEAL_IDS.has(mealId)) fail('invalid-argument', `${name}.mealId non valido`);
+  const time = meal.time == null || meal.time === '' ? '' : text(meal.time, `${name}.time`, { max: 10, pattern: /^\d{1,2}[:.]\d{2}$/ });
   if (!Array.isArray(meal.options) || !meal.options.length || meal.options.length > DIET_PLAN_LIMITS.optionsPerMeal) {
-    fail('invalid-argument', `${name}.options deve contenere da 1 a ${DIET_PLAN_LIMITS.optionsPerMeal} opzioni`);
+    fail('invalid-argument', `${name}.options: da 1 a ${DIET_PLAN_LIMITS.optionsPerMeal} opzioni`);
   }
-  const seen = new Set();
-  const options = meal.options.map((option, index) => {
-    const clean = validateDietPlanOption(option, `${name}.options[${index}]`);
-    if (seen.has(clean.label)) fail('invalid-argument', `${name}: opzione ${clean.label} duplicata`);
-    seen.add(clean.label);
-    return clean;
+  const optionIds = new Set();
+  meal.options.forEach((option, index) => {
+    if (optionIds.has(option?.optionId)) fail('invalid-argument', `${name}: optionId duplicato (${option?.optionId})`);
+    optionIds.add(option?.optionId);
   });
   return {
-    mealId: meal.mealId,
-    time: optionalText(meal.time, `${name}.time`, 20),
-    options,
-    note: optionalText(meal.note, `${name}.note`, 1000)
+    mealId,
+    time,
+    options: meal.options.map((option, index) => validateDietPlanOption(option, `${name}.options[${index}]`)),
+    note: dietPlanText(meal.note, `${name}.note`, { max: DIET_PLAN_LIMITS.note, optional: true })
   };
 }
 
 function validateDietPlanDay(day, name) {
-  exactObject(day, ['dayId', 'label', 'dayType', 'target', 'meals', 'supplements', 'hydration', 'note'], name);
-  if (!DIET_PLAN_DAY_TYPES.has(day.dayType)) fail('invalid-argument', `${name}.dayType non valido`);
-  const target = day.target == null ? {} : day.target;
-  if (target && typeof target === 'object' && !Array.isArray(target)) exactObject(target, ['kcal', 'proteinG', 'carbsG', 'fatG', 'waterMl'], `${name}.target`);
-  else fail('invalid-argument', `${name}.target non valido`);
+  exactObject(day, ['dayId', 'label', 'dayType', 'meals', 'supplements', 'hydration', 'note'], name);
+  const dayId = text(day.dayId, `${name}.dayId`, { max: 64, pattern: /^[a-z0-9][a-z0-9-]{0,63}$/ });
+  const dayType = text(day.dayType, `${name}.dayType`);
+  if (!DIET_PLAN_DAY_TYPES.has(dayType)) fail('invalid-argument', `${name}.dayType non valido`);
+  const label = dietPlanText(day.label, `${name}.label`, { max: DIET_PLAN_LIMITS.label, optional: true });
   if (!Array.isArray(day.meals) || !day.meals.length || day.meals.length > DIET_PLAN_LIMITS.mealsPerDay) {
-    fail('invalid-argument', `${name}.meals deve contenere da 1 a ${DIET_PLAN_LIMITS.mealsPerDay} pasti`);
+    fail('invalid-argument', `${name}.meals: da 1 a ${DIET_PLAN_LIMITS.mealsPerDay} pasti`);
   }
+  const mealIds = new Set();
+  day.meals.forEach(meal => {
+    if (mealIds.has(meal?.mealId)) fail('invalid-argument', `${name}: pasto duplicato (${meal?.mealId})`);
+    mealIds.add(meal?.mealId);
+  });
   return {
-    dayId: day.dayId == null || day.dayId === '' ? null : text(day.dayId, `${name}.dayId`, { max: 60, pattern: /^[a-zA-Z0-9._:-]+$/ }),
-    label: optionalText(day.label, `${name}.label`, 80),
-    dayType: day.dayType,
-    target: {
-      kcal: dietPlanNumber(target.kcal, `${name}.target.kcal`, { max: 50000 }),
-      proteinG: dietPlanNumber(target.proteinG, `${name}.target.proteinG`, { max: 50000 }),
-      carbsG: dietPlanNumber(target.carbsG, `${name}.target.carbsG`, { max: 50000 }),
-      fatG: dietPlanNumber(target.fatG, `${name}.target.fatG`, { max: 50000 }),
-      waterMl: dietPlanNumber(target.waterMl, `${name}.target.waterMl`, { max: 50000 })
-    },
+    dayId,
+    label,
+    dayType,
     meals: day.meals.map((meal, index) => validateDietPlanMeal(meal, `${name}.meals[${index}]`)),
-    supplements: optionalText(day.supplements, `${name}.supplements`, 1000),
-    hydration: optionalText(day.hydration, `${name}.hydration`, 1000),
-    note: optionalText(day.note, `${name}.note`, 1000)
+    supplements: dietPlanText(day.supplements, `${name}.supplements`, { max: DIET_PLAN_LIMITS.note, optional: true }),
+    hydration: dietPlanText(day.hydration, `${name}.hydration`, { max: DIET_PLAN_LIMITS.note, optional: true }),
+    note: dietPlanText(day.note, `${name}.note`, { max: DIET_PLAN_LIMITS.note, optional: true })
   };
 }
 
-// Piano descrittivo opzionale della revisione struttura. Ritorna null quando
-// assente (strutture classiche 1/2); altrimenti il piano normalizzato.
 function validateDietPlan(plan) {
-  if (plan == null) return null;
+  if (!plan || typeof plan !== 'object') fail('invalid-argument', 'dietPlan mancante');
   exactObject(plan, ['schemaVersion', 'days', 'generalNotes'], 'dietPlan');
   if (Number(plan.schemaVersion) !== DIET_PLAN_SCHEMA_VERSION) {
-    fail('invalid-argument', 'dietPlan.schemaVersion non supportata');
+    fail('invalid-argument', `dietPlan.schemaVersion non supportata (${plan.schemaVersion})`);
   }
   if (!Array.isArray(plan.days) || !plan.days.length || plan.days.length > DIET_PLAN_LIMITS.days) {
-    fail('invalid-argument', `dietPlan.days deve contenere da 1 a ${DIET_PLAN_LIMITS.days} giornate`);
+    fail('invalid-argument', `dietPlan.days: da 1 a ${DIET_PLAN_LIMITS.days} giornate`);
   }
-  const seenDayIds = new Set();
-  const days = plan.days.map((day, index) => {
-    const clean = validateDietPlanDay(day, `dietPlan.days[${index}]`);
-    if (clean.dayId) {
-      if (seenDayIds.has(clean.dayId)) fail('invalid-argument', `dietPlan.days[${index}]: identificativo giornata duplicato`);
-      seenDayIds.add(clean.dayId);
-    }
-    return clean;
+  const dayIds = new Set();
+  plan.days.forEach(day => {
+    if (dayIds.has(day?.dayId)) fail('invalid-argument', `dietPlan: dayId duplicato (${day?.dayId})`);
+    dayIds.add(day?.dayId);
   });
-  return { schemaVersion: DIET_PLAN_SCHEMA_VERSION, days, generalNotes: optionalText(plan.generalNotes, 'dietPlan.generalNotes', 2000) };
+  return {
+    schemaVersion: DIET_PLAN_SCHEMA_VERSION,
+    days: plan.days.map((day, index) => validateDietPlanDay(day, `dietPlan.days[${index}]`)),
+    generalNotes: dietPlanText(plan.generalNotes, 'dietPlan.generalNotes', { max: DIET_PLAN_LIMITS.generalNotes, optional: true })
+  };
 }
 
 // ---------------------------------------------------------------------
-// Import catalogo globale ingredienti — docs/catalog-import-format.md
-// Contratto puro (nessun Firestore): parsing JSON/CSV, validazione bloccante,
-// dry-run senza scritture. La callable aggiunge: platform-admin, feature flag
-// CATALOG_IMPORT_ENABLED, lettura catalogo corrente, transazione atomica.
+// Template equivalenze (organization-scoped, revisioni immutabili).
+// Famiglia di riferimento obbligatoria (mai categorie vaghe), eventuale
+// ingrediente di riferimento, quantità di riferimento ed equivalenti
+// proporzionali. L'esistenza di famiglie/ingredienti nel catalogo è
+// verificata dalla callable: qui solo forma e coerenza.
+// ---------------------------------------------------------------------
+
+const EQUIVALENCE_TEMPLATE_SCHEMA_VERSION = 1;
+const EQUIVALENCE_TEMPLATE_LIMITS = { name: 80, equivalents: 30, changelog: 500 };
+
+function validateEquivalenceTemplateRevision(input) {
+  if (!input || typeof input !== 'object') fail('invalid-argument', 'template mancante');
+  exactObject(input, ['name', 'referenceFamilyId', 'referenceIngredientId', 'referenceAmount', 'equivalents'], 'template');
+  const name = text(input.name, 'template.name', { min: 3, max: EQUIVALENCE_TEMPLATE_LIMITS.name });
+  const referenceFamilyId = id(input.referenceFamilyId, 'template.referenceFamilyId');
+  const referenceIngredientId = input.referenceIngredientId == null || input.referenceIngredientId === ''
+    ? null
+    : id(input.referenceIngredientId, 'template.referenceIngredientId');
+  const referenceAmount = validateDietAmount(input.referenceAmount, 'template.referenceAmount');
+  if (Number(referenceAmount.value) <= 0) fail('invalid-argument', 'template.referenceAmount deve essere maggiore di zero');
+  if (!Array.isArray(input.equivalents) || !input.equivalents.length || input.equivalents.length > EQUIVALENCE_TEMPLATE_LIMITS.equivalents) {
+    fail('invalid-argument', `template.equivalents: da 1 a ${EQUIVALENCE_TEMPLATE_LIMITS.equivalents}`);
+  }
+  const seen = new Set();
+  const equivalents = input.equivalents.map((equivalent, index) => {
+    exactObject(equivalent, ['familyId', 'ingredientId', 'amount'], `template.equivalents[${index}]`);
+    const familyId = id(equivalent.familyId, `template.equivalents[${index}].familyId`);
+    if (familyId === referenceFamilyId) {
+      fail('invalid-argument', `template.equivalents[${index}]: la famiglia di riferimento non è un equivalente`);
+    }
+    const key = `${familyId}|${equivalent.ingredientId || ''}`;
+    if (seen.has(key)) fail('invalid-argument', `template.equivalents: equivalente duplicato (${key})`);
+    seen.add(key);
+    return {
+      familyId,
+      ingredientId: equivalent.ingredientId == null || equivalent.ingredientId === ''
+        ? null
+        : id(equivalent.ingredientId, `template.equivalents[${index}].ingredientId`),
+      amount: validateDietAmount(equivalent.amount, `template.equivalents[${index}].amount`)
+    };
+  });
+  return { schemaVersion: EQUIVALENCE_TEMPLATE_SCHEMA_VERSION, name, referenceFamilyId, referenceIngredientId, referenceAmount, equivalents };
+}
+
+function equivalenceTemplateRevisionChecksum(revision) {
+  return checksum({
+    schemaVersion: EQUIVALENCE_TEMPLATE_SCHEMA_VERSION,
+    name: revision.name,
+    referenceFamilyId: revision.referenceFamilyId,
+    referenceIngredientId: revision.referenceIngredientId,
+    referenceAmount: revision.referenceAmount,
+    equivalents: revision.equivalents
+  });
+}
+
+function verifyEquivalenceTemplateRevision(value) {
+  if (!value || value.status !== 'published') return false;
+  if (Number(value.schemaVersion) !== EQUIVALENCE_TEMPLATE_SCHEMA_VERSION) return false;
+  return value.checksum === equivalenceTemplateRevisionChecksum(value);
+}
+
+// ---------------------------------------------------------------------
+// Richieste catalogo (flusso cliente → admin). Il cliente propone categoria
+// e famiglia globale per un ingrediente non riconosciuto; l'amministratore
+// accetta (con inserimento nel catalogo), modifica o rifiuta. Nessuna dose.
+// ---------------------------------------------------------------------
+
+const CATALOG_REQUEST_STATUSES = new Set(['pending', 'accepted', 'rejected', 'superseded']);
+
+function validateCatalogRequestSubmit(input) {
+  exactObject(input, ['ingredientText', 'proposedCategoryId', 'proposedFamilyId', 'idempotencyKey']);
+  const ingredientText = text(input.ingredientText, 'ingredientText', { min: 2, max: 120 });
+  return {
+    ingredientText,
+    normalizedIngredient: normalizeIngredient(input.ingredientText),
+    proposedCategoryId: id(input.proposedCategoryId, 'proposedCategoryId'),
+    proposedFamilyId: id(input.proposedFamilyId, 'proposedFamilyId'),
+    idempotencyKey: id(input.idempotencyKey, 'idempotencyKey')
+  };
+}
+
+// Payload di risoluzione admin: accept usa la proposta (con eventuali
+// correzioni), edit impone l'ingrediente corretto, reject richiede un motivo.
+function validateCatalogRequestResolve(input) {
+  exactObject(input, ['requestId', 'action', 'ingredient', 'reason', 'idempotencyKey']);
+  const requestId = id(input.requestId, 'requestId');
+  const action = text(input.action, 'action', { pattern: /^(accept|edit|reject)$/ });
+  const idempotencyKey = id(input.idempotencyKey, 'idempotencyKey');
+  if (action === 'reject') {
+    const reason = text(input.reason, 'reason', { min: 3, max: 500 });
+    if (input.ingredient != null) fail('invalid-argument', 'ingredient non ammesso con action reject');
+    return { requestId, action, ingredient: null, reason, idempotencyKey };
+  }
+  const raw = input.ingredient;
+  if (!raw || typeof raw !== 'object') fail('invalid-argument', 'ingredient obbligatorio');
+  exactObject(raw, ['ingredientId', 'displayName', 'aliases', 'categoryId', 'familyId', 'vegetarian', 'vegan'], 'ingredient');
+  const ingredientId = String(raw.ingredientId || '').trim();
+  if (!CATALOG_INGREDIENT_ID_PATTERN.test(ingredientId)) fail('invalid-argument', 'ingredient.ingredientId non valido');
+  const displayName = text(raw.displayName, 'ingredient.displayName', { max: 160 });
+  const aliases = Array.isArray(raw.aliases)
+    ? [...new Set(raw.aliases.map(alias => normalizeIngredient(alias)).filter(Boolean))].slice(0, 100)
+    : [];
+  const categoryId = id(raw.categoryId, 'ingredient.categoryId');
+  const familyId = id(raw.familyId, 'ingredient.familyId');
+  if (typeof raw.vegetarian !== 'boolean' || typeof raw.vegan !== 'boolean') {
+    fail('invalid-argument', 'ingredient: vegetarian e vegan devono essere booleani');
+  }
+  return {
+    requestId,
+    action,
+    ingredient: {
+      ingredientId,
+      displayName,
+      aliases,
+      categoryId,
+      familyId,
+      dietaryFlags: { vegetarian: raw.vegetarian, vegan: raw.vegan }
+    },
+    reason: optionalText(input.reason, 'reason', 500) || '',
+    idempotencyKey
+  };
+}
+
+// ---------------------------------------------------------------------
+// Catalogo ingredienti globale — import v2 (identità e solo identità).
+// Ingredienti, categorie e FAMIGLIE con flag dietetici; nessuna dose, nessun
+// mapping clinico: qualsiasi chiave che somigli a una quantità rifiuta il
+// file. Le dosi appartengono a template equivalenze e strutture, mai al
+// catalogo.
 // ---------------------------------------------------------------------
 
 const CATALOG_IMPORT_FORMATS = new Set(['json', 'csv']);
 const CATALOG_IMPORT_MODES = new Set(['dry-run', 'commit', 'restore']);
-const CATALOG_CSV_COLUMNS = ['ingredientId', 'displayName', 'aliases', 'categoryId', 'mappingKind', 'guideFamilyId'];
+const CATALOG_CSV_COLUMNS = ['ingredientId', 'displayName', 'aliases', 'categoryId', 'familyId', 'vegetarian', 'vegan'];
 const CATALOG_INGREDIENT_ID_PATTERN = /^[a-z0-9][a-z0-9-]{1,95}$/;
 const CATALOG_CATEGORY_ID_PATTERN = /^[a-z0-9][a-z0-9-]{1,63}$/;
-// Zero quantità: qualsiasi chiave che somigli a una dose rifiuta il file.
-// Le dosi appartengono a famiglie/strutture, mai al catalogo ingredienti.
+const CATALOG_FAMILY_ID_PATTERN = /^[a-z0-9][a-z0-9-]{1,63}$/;
 const CATALOG_DOSE_KEY_PATTERN = /(quantit|grams?|doses?|slots?|portions?|kgs?|millilit|calor)/i;
-const CATALOG_RESERVED_CATEGORY = 'free';
 
-function assertNoDoseKeys(value, where, seen = null) {
+function assertNoDoseKeys(value, where) {
   if (Array.isArray(value)) {
-    value.forEach((item, index) => assertNoDoseKeys(item, `${where}[${index}]`, seen));
+    value.forEach((item, index) => assertNoDoseKeys(item, `${where}[${index}]`));
     return;
   }
   if (value && typeof value === 'object') {
@@ -705,7 +627,7 @@ function assertNoDoseKeys(value, where, seen = null) {
       if (CATALOG_DOSE_KEY_PATTERN.test(key)) {
         fail('invalid-argument', `${where}: campo dose vietato nel catalogo ("${key}")`);
       }
-      assertNoDoseKeys(item, `${where}.${key}`, seen);
+      assertNoDoseKeys(item, `${where}.${key}`);
     });
   }
 }
@@ -715,21 +637,14 @@ function parseCatalogCsv(payload) {
   const lines = source.split(/\r?\n/).map(line => line.trim()).filter(line => line.length > 0);
   if (!lines.length) fail('invalid-argument', 'CSV vuoto o senza intestazione');
   const separator = lines[0].includes(';') ? ';' : ',';
-  // Legacy: i file esportati prima dell'evoluzione del contratto intestano
-  // la colonna famiglia "mellerFamilyId": viene accettata e mappata sul
-  // nome attuale. Presenti entrambe, il file è ambiguo e viene rifiutato.
-  const rawHeader = lines[0].split(separator).map(cell => cell.trim());
-  if (rawHeader.includes('mellerFamilyId') && rawHeader.includes('guideFamilyId')) {
-    fail('invalid-argument', 'CSV: colonne guideFamilyId e mellerFamilyId insieme non ammesse');
-  }
-  const header = rawHeader.map(column => (column === 'mellerFamilyId' ? 'guideFamilyId' : column));
+  const header = lines[0].split(separator).map(cell => cell.trim());
   const unknown = header.filter(column => !CATALOG_CSV_COLUMNS.includes(column));
   const doseColumns = unknown.filter(column => CATALOG_DOSE_KEY_PATTERN.test(column));
   if (doseColumns.length) {
     fail('invalid-argument', `CSV: colonna dose vietata nel catalogo ("${doseColumns[0]}")`);
   }
   if (unknown.length) fail('invalid-argument', `CSV: colonna non riconosciuta ("${unknown[0]}")`);
-  for (const required of ['ingredientId', 'displayName', 'categoryId', 'mappingKind']) {
+  for (const required of ['ingredientId', 'displayName', 'categoryId', 'familyId']) {
     if (!header.includes(required)) fail('invalid-argument', `CSV: intestazione obbligatoria mancante ("${required}")`);
   }
   return lines.slice(1).map((line, index) => {
@@ -742,7 +657,18 @@ function parseCatalogCsv(payload) {
     const row = {};
     header.forEach((column, position) => { row[column] = cells[position]; });
     row.aliases = String(row.aliases || '').split('|').map(part => part.trim()).filter(Boolean);
-    row.guideFamilyId = row.guideFamilyId === '' || row.guideFamilyId == null ? null : row.guideFamilyId;
+    // Le colonne dietetiche diventano subito `dietaryFlags`: la riga esce dal
+    // parser già nella forma canonica accettata da validateCatalogIngredient.
+    if ('vegetarian' in row || 'vegan' in row) {
+      const vegetarian = row.vegetarian === '' ? undefined : row.vegetarian === 'true' || row.vegetarian === '1';
+      const vegan = row.vegan === '' ? undefined : row.vegan === 'true' || row.vegan === '1';
+      row.dietaryFlags = {
+        ...(vegetarian !== undefined ? { vegetarian } : {}),
+        ...(vegan !== undefined ? { vegan } : {})
+      };
+      delete row.vegetarian;
+      delete row.vegan;
+    }
     row.__line = index + 2;
     return row;
   });
@@ -751,7 +677,9 @@ function parseCatalogCsv(payload) {
 function parseCatalogPayload(format, payload) {
   const clean = text(format, 'format');
   if (!CATALOG_IMPORT_FORMATS.has(clean)) fail('invalid-argument', 'format non valido (json|csv)');
-  if (clean === 'csv') return { ingredients: parseCatalogCsv(payload), categories: [] };
+  if (clean === 'csv') {
+    return { ingredients: parseCatalogCsv(payload), categories: [], families: [] };
+  }
   let parsed;
   try {
     parsed = JSON.parse(String(payload || ''));
@@ -759,14 +687,19 @@ function parseCatalogPayload(format, payload) {
     fail('invalid-argument', 'JSON non valido');
   }
   assertNoDoseKeys(parsed, 'payload');
-  if (!Array.isArray(parsed)) exactObject(parsed, ['ingredients', 'categories'], 'payload');
+  if (!Array.isArray(parsed)) exactObject(parsed, ['ingredients', 'categories', 'families'], 'payload');
   const ingredients = Array.isArray(parsed) ? parsed : parsed?.ingredients;
   const categories = Array.isArray(parsed) ? [] : (parsed?.categories == null ? [] : parsed.categories);
+  const families = Array.isArray(parsed) ? [] : (parsed?.families == null ? [] : parsed.families);
   if (!Array.isArray(ingredients)) fail('invalid-argument', 'JSON: array radice o oggetto con chiave "ingredients"');
   if (!Array.isArray(categories)) fail('invalid-argument', 'JSON: "categories" deve essere un array');
-  if (ingredients.length === 0 && categories.length === 0) fail('invalid-argument', 'Import vuoto: niente da elaborare');
+  if (!Array.isArray(families)) fail('invalid-argument', 'JSON: "families" deve essere un array');
+  if (ingredients.length === 0 && categories.length === 0 && families.length === 0) {
+    fail('invalid-argument', 'Import vuoto: niente da elaborare');
+  }
   if (ingredients.length > 5000) fail('invalid-argument', 'Import troppo grande: massimo 5000 ingredienti per file');
-  return { ingredients, categories };
+  if (families.length > 500) fail('invalid-argument', 'Import troppo grande: massimo 500 famiglie per file');
+  return { ingredients, categories, families };
 }
 
 function catalogEntryKeys(entry) {
@@ -780,26 +713,62 @@ function catalogEntryKeys(entry) {
   return keys;
 }
 
-// Normalizza e valida un ingrediente del file. `knownCategories` unisce le
-// categorie del file + quelle del catalogo corrente + 'free'. Gli errori sono
+// Normalizza e valida una famiglia del file. `knownCategories` unisce le
+// categorie del file + quelle del catalogo corrente. Gli errori sono
 // raccolti (non lanciati) per produrre il report dry-run completo.
-function validateCatalogIngredient(raw, knownCategories, errors, where) {
-  const label = where || `ingredienti[${raw?.ingredientId || '?'}]`;
+function validateCatalogFamily(raw, knownCategories, errors, where) {
+  const label = where || `famiglie[${raw?.familyId || '?'}]`;
   const problems = [];
-  const push = message => { problems.push(`${label}: ${message}`); };
   if (!raw || typeof raw !== 'object' || Array.isArray(raw)) {
     errors.push(`${label}: voce non valida`);
     return null;
   }
   assertNoDoseKeys(raw, label);
-  // Legacy "mellerFamilyId" ammesso come chiave di ingresso e mappato sul
-  // nome attuale; i nuovi file usano solo guideFamilyId.
-  const familyRaw = raw.guideFamilyId != null ? raw.guideFamilyId : raw.mellerFamilyId;
-  const extra = Object.keys(raw).filter(key => !['ingredientId', 'displayName', 'aliases', 'categoryId', 'mappingKind', 'guideFamilyId', 'mellerFamilyId', '__line'].includes(key) && !key.startsWith('__'));
-  extra.forEach(key => push(`campo non riconosciuto ("${key}")`));
-  if (raw.guideFamilyId != null && raw.mellerFamilyId != null && String(raw.guideFamilyId).trim() !== String(raw.mellerFamilyId).trim()) {
-    push('guideFamilyId e mellerFamilyId insieme con valori diversi');
+  const extra = Object.keys(raw).filter(key => !['familyId', 'displayName', 'categoryId', 'sortOrder', 'status', '__line'].includes(key) && !key.startsWith('__'));
+  extra.forEach(key => problems.push(`campo non riconosciuto ("${key}")`));
+  const familyId = String(raw.familyId || '').trim();
+  if (!CATALOG_FAMILY_ID_PATTERN.test(familyId)) problems.push('familyId non valido (minuscolo, trattini, 2-64 caratteri)');
+  const displayName = String(raw.displayName || '').trim();
+  if (!displayName || displayName.length > 100) problems.push('displayName obbligatorio (max 100)');
+  const categoryId = String(raw.categoryId || '').trim();
+  if (!CATALOG_CATEGORY_ID_PATTERN.test(categoryId)) problems.push('categoryId non valido');
+  else if (!knownCategories.has(categoryId)) problems.push(`categoryId inesistente ("${categoryId}")`);
+  let sortOrder = 0;
+  if (raw.sortOrder != null && raw.sortOrder !== '') {
+    sortOrder = Number(raw.sortOrder);
+    if (!Number.isInteger(sortOrder) || sortOrder < 0) problems.push('sortOrder intero ≥ 0');
   }
+  const status = raw.status == null || raw.status === '' ? 'active' : String(raw.status);
+  if (!['active', 'archived'].includes(status)) problems.push('status non valido (active|archived)');
+  if (problems.length) {
+    errors.push(`${label}: ${problems.join('; ')}`);
+    return null;
+  }
+  return {
+    familyId,
+    displayName,
+    normalizedName: aliasKey(displayName),
+    categoryId,
+    sortOrder,
+    status
+  };
+}
+
+// Normalizza e valida un ingrediente del file. L'ingrediente dichiara la
+// famiglia globale; la categoria deve coincidere con quella della famiglia
+// (coerenza verificata in validateCatalogImport dopo il caricamento).
+// `searchTokens` sono SEMPRE rigenerati server-side, mai dal file.
+function validateCatalogIngredient(raw, knownCategories, knownFamilies, errors, where) {
+  const label = where || `ingredienti[${raw?.ingredientId || '?'}]`;
+  const problems = [];
+  const push = message => { problems.push(message); };
+  if (!raw || typeof raw !== 'object' || Array.isArray(raw)) {
+    errors.push(`${label}: voce non valida`);
+    return null;
+  }
+  assertNoDoseKeys(raw, label);
+  const extra = Object.keys(raw).filter(key => !['ingredientId', 'displayName', 'aliases', 'categoryId', 'familyId', 'dietaryFlags', 'status', '__line'].includes(key) && !key.startsWith('__'));
+  extra.forEach(key => push(`campo non riconosciuto ("${key}")`));
   const ingredientId = String(raw.ingredientId || '').trim();
   if (!CATALOG_INGREDIENT_ID_PATTERN.test(ingredientId)) push('ingredientId non valido (minuscolo, trattini, 2-96 caratteri)');
   const displayName = String(raw.displayName || '').trim();
@@ -819,16 +788,21 @@ function validateCatalogIngredient(raw, knownCategories, errors, where) {
   const categoryId = String(raw.categoryId || '').trim();
   if (!CATALOG_CATEGORY_ID_PATTERN.test(categoryId)) push('categoryId non valido');
   else if (!knownCategories.has(categoryId)) push(`categoryId inesistente ("${categoryId}")`);
-  const mappingKind = String(raw.mappingKind || '').trim();
-  if (!MAPPING_KINDS.has(mappingKind)) push('mappingKind non valido (guided|free)');
-  const guideFamilyId = familyRaw == null || familyRaw === '' ? null : String(familyRaw).trim();
-  if (mappingKind === 'guided') {
-    if (!guideFamilyId) push('guided richiede guideFamilyId');
-    else if (!GUIDE_FAMILY_IDS.has(guideFamilyId)) push(`guideFamilyId inesistente nel motore ("${guideFamilyId}")`);
-  }
-  if (mappingKind === 'free' && guideFamilyId) push('free non ammette guideFamilyId');
+  const familyId = String(raw.familyId || '').trim();
+  if (!CATALOG_FAMILY_ID_PATTERN.test(familyId)) push('familyId non valido');
+  else if (knownFamilies && !knownFamilies.has(familyId)) push(`familyId inesistente ("${familyId}")`);
+  // Flag dietetici: booleani, default false quando assenti (il flag dice cosa
+  // l'alimento È, non cosa contiene in minima parte).
+  const flagsRaw = raw.dietaryFlags && typeof raw.dietaryFlags === 'object' ? raw.dietaryFlags : {};
+  if (flagsRaw.vegetarian != null && typeof flagsRaw.vegetarian !== 'boolean') push('dietaryFlags.vegetarian deve essere booleano');
+  if (flagsRaw.vegan != null && typeof flagsRaw.vegan !== 'boolean') push('dietaryFlags.vegan deve essere booleano');
+  const vegetarian = flagsRaw.vegetarian === true;
+  const vegan = flagsRaw.vegan === true;
+  if (vegan && !vegetarian) push('dietaryFlags: vegan implica vegetarian');
+  const status = raw.status == null || raw.status === '' ? 'active' : String(raw.status);
+  if (!['active', 'archived'].includes(status)) push('status non valido (active|archived)');
   if (problems.length) {
-    errors.push(...problems);
+    errors.push(`${label}: ${problems.join('; ')}`);
     return null;
   }
   return {
@@ -836,12 +810,11 @@ function validateCatalogIngredient(raw, knownCategories, errors, where) {
     displayName,
     normalizedName: aliasKey(displayName),
     categoryId,
+    familyId,
     aliases,
-    // searchTokens SEMPRE rigenerati server-side, mai dal file.
     searchTokens: searchTokensFor(displayName, aliases),
-    mappingKind,
-    guideFamilyId: mappingKind === 'guided' ? guideFamilyId : null,
-    status: 'active'
+    dietaryFlags: { vegetarian, vegan },
+    status
   };
 }
 
@@ -854,10 +827,9 @@ function validateCatalogCategory(raw, errors, where) {
   assertNoDoseKeys(raw, label);
   const problems = [];
   Object.keys(raw).filter(key => !['categoryId', 'displayName', 'description', 'sortOrder', 'status'].includes(key))
-    .forEach(key => problems.push(`${label}: campo non riconosciuto ("${key}")`));
+    .forEach(key => problems.push(`campo non riconosciuto ("${key}")`));
   const categoryId = String(raw.categoryId || '').trim();
   if (!CATALOG_CATEGORY_ID_PATTERN.test(categoryId)) problems.push(`${label}: categoryId non valido`);
-  if (categoryId === CATALOG_RESERVED_CATEGORY) problems.push(`${label}: la categoria riservata "free" non si importa`);
   const displayName = String(raw.displayName || '').trim();
   if (!displayName || displayName.length > 100) problems.push(`${label}: displayName obbligatorio (max 100)`);
   const description = raw.description == null || raw.description === '' ? null : String(raw.description);
@@ -883,20 +855,30 @@ function validateCatalogCategory(raw, errors, where) {
 
 function sameCatalogEntry(a, b) {
   return canonicalJson({
-    displayName: a.displayName, categoryId: a.categoryId, aliases: [...(a.aliases || [])].sort(),
-    mappingKind: a.mappingKind, guideFamilyId: a.guideFamilyId || null
+    displayName: a.displayName, categoryId: a.categoryId, familyId: a.familyId,
+    aliases: [...(a.aliases || [])].sort(),
+    dietaryFlags: a.dietaryFlags, status: a.status
   }) === canonicalJson({
-    displayName: b.displayName, categoryId: b.categoryId, aliases: [...(b.aliases || [])].sort(),
-    mappingKind: b.mappingKind, guideFamilyId: b.guideFamilyId || null
+    displayName: b.displayName, categoryId: b.categoryId, familyId: b.familyId,
+    aliases: [...(b.aliases || [])].sort(),
+    dietaryFlags: b.dietaryFlags, status: b.status
+  });
+}
+
+function sameCatalogFamily(a, b) {
+  return canonicalJson({
+    displayName: a.displayName, categoryId: a.categoryId, sortOrder: a.sortOrder, status: a.status
+  }) === canonicalJson({
+    displayName: b.displayName, categoryId: b.categoryId, sortOrder: b.sortOrder, status: b.status
   });
 }
 
 // Validazione completa del file contro il catalogo corrente. Ritorna sempre
 // il report (conteggi + diff ≤200 + errori); il commit è consentito solo con
-// zero errori. `existing` = {ingredients: Map|Object, categories: Set|Array},
-// `denylist` = array di ingredientId provvisori bloccati (configurazione
-// server-side, mai nel repository).
-function validateCatalogImport(parsed, { existingIngredients = {}, existingCategories = [], denylist = [] } = {}) {
+// zero errori. `existing` = {ingredients, categories, families} del catalogo
+// corrente, `denylist` = array di ingredientId provvisori bloccati
+// (configurazione server-side, mai nel repository).
+function validateCatalogImport(parsed, { existingIngredients = {}, existingCategories = [], existingFamilies = {}, denylist = [] } = {}) {
   const errors = [];
   const diff = [];
   const blocked = new Set((Array.isArray(denylist) ? denylist : []).map(entry => String(entry || '').trim()).filter(Boolean));
@@ -917,14 +899,40 @@ function validateCatalogImport(parsed, { existingIngredients = {}, existingCateg
     fileCategories.push(normalized);
     diff.push({ categoryId: normalized.categoryId, change: 'create', detail: 'nuova categoria' });
   });
-  const knownCategories = new Set([...(existingCategories || []), ...fileCategoryIds, CATALOG_RESERVED_CATEGORY]);
-  // Ingredienti: normalizzazione, dedup, denylist, collisioni alias.
+  const knownCategories = new Set([...(existingCategories || []), ...fileCategoryIds]);
+  // Famiglie: stesse regole delle categorie, con categoria nota.
+  const fileFamilies = [];
+  const fileFamilyIds = new Set();
+  const familyById = new Map(Object.entries(existingFamilies || {}));
+  (parsed.families || []).forEach((raw, index) => {
+    const normalized = validateCatalogFamily(raw, knownCategories, errors, `famiglie[${index}]`);
+    if (!normalized) return;
+    const existing = familyById.get(normalized.familyId);
+    if (existing) {
+      diff.push({
+        familyId: normalized.familyId,
+        change: sameCatalogFamily(existing, normalized) ? 'identical' : 'update',
+        detail: sameCatalogFamily(existing, normalized) ? 'famiglia già identica' : 'aggiorna metadati famiglia'
+      });
+    } else {
+      diff.push({ familyId: normalized.familyId, change: 'create', detail: 'nuova famiglia' });
+    }
+    if (fileFamilyIds.has(normalized.familyId)) {
+      errors.push(`famiglie[${normalized.familyId}]: familyId duplicato nel file`);
+      return;
+    }
+    fileFamilyIds.add(normalized.familyId);
+    fileFamilies.push(normalized);
+    familyById.set(normalized.familyId, normalized);
+  });
+  // Ingredienti: normalizzazione, dedup, denylist, collisioni alias,
+  // coerenza categoria↔famiglia.
   const normalized = [];
   const seenIds = new Set();
   const fileKeysById = new Map();
   (parsed.ingredients || []).forEach((raw, index) => {
     const label = `ingredienti[${raw?.ingredientId || `riga ${raw?.__line || index + 1}`}]`;
-    const entry = validateCatalogIngredient(raw, knownCategories, errors, label);
+    const entry = validateCatalogIngredient(raw, knownCategories, familyById, errors, label);
     if (!entry) return;
     if (seenIds.has(entry.ingredientId)) {
       errors.push(`${label}: ingredientId duplicato nel file ("${entry.ingredientId}")`);
@@ -934,6 +942,11 @@ function validateCatalogImport(parsed, { existingIngredients = {}, existingCateg
     if (blocked.has(entry.ingredientId)) {
       errors.push(`${label}: ID provvisorio non importabile (denylist)`);
       diff.push({ ingredientId: entry.ingredientId, change: 'error', detail: 'ID in denylist provvisoria' });
+      return;
+    }
+    const family = familyById.get(entry.familyId);
+    if (family && family.categoryId !== entry.categoryId) {
+      errors.push(`${label}: categoryId (${entry.categoryId}) diverso da quello della famiglia ${entry.familyId} (${family.categoryId})`);
       return;
     }
     normalized.push(entry);
@@ -966,7 +979,7 @@ function validateCatalogImport(parsed, { existingIngredients = {}, existingCateg
     const previous = existingById.get(entry.ingredientId);
     if (!previous) diff.push({ ingredientId: entry.ingredientId, change: 'create', detail: 'nuovo ingrediente' });
     else if (sameCatalogEntry(previous, entry)) diff.push({ ingredientId: entry.ingredientId, change: 'identical', detail: 'già identico' });
-    else diff.push({ ingredientId: entry.ingredientId, change: 'update', detail: 'aggiorna metadati (mai quantità)' });
+    else diff.push({ ingredientId: entry.ingredientId, change: 'update', detail: 'aggiorna identità (mai quantità)' });
   });
   const counts = { create: 0, identical: 0, update: 0, conflicts: 0, errors: errors.length };
   diff.forEach(row => {
@@ -976,7 +989,7 @@ function validateCatalogImport(parsed, { existingIngredients = {}, existingCateg
     else if (row.change === 'conflict') counts.conflicts += 1;
   });
   return {
-    normalized: { ingredients: normalized, categories: fileCategories },
+    normalized: { ingredients: normalized, categories: fileCategories, families: fileFamilies },
     counts,
     diff: diff.slice(0, 200),
     diffTruncated: diff.length > 200,
@@ -990,7 +1003,8 @@ function catalogImportPreviewId(normalized, baseCatalogVersion) {
   return checksum({
     baseCatalogVersion: Number(baseCatalogVersion || 0),
     ingredients: [...(normalized?.ingredients || [])].sort((a, b) => String(a.ingredientId).localeCompare(String(b.ingredientId))),
-    categories: [...(normalized?.categories || [])].sort((a, b) => String(a.categoryId).localeCompare(String(b.categoryId)))
+    categories: [...(normalized?.categories || [])].sort((a, b) => String(a.categoryId).localeCompare(String(b.categoryId))),
+    families: [...(normalized?.families || [])].sort((a, b) => String(a.familyId).localeCompare(String(b.familyId)))
   });
 }
 
@@ -1031,7 +1045,7 @@ function validateInviteClientLink(input) {
   };
 }
 
-// Invito cliente con EMAIL REALE + nome + cognome (nuovo flusso, ADR 0004).
+// Invito cliente con EMAIL REALE + nome + cognome (nuovo flusso, ADR 0001).
 // Gli indirizzi tecnici legacy sono rifiutati qui: la creazione di account di
 // test passa solo dal flusso legacy esplicito (`inviteClientLink`).
 // Il link viene sempre consegnato a mano dalla console: il payload non ha più
@@ -1229,127 +1243,7 @@ function validateTransferStructureOwnership(input) {
   };
 }
 
-// ---- Dosi e frequenze personalizzate per cliente (console) ----
-// Le frequenze sono il mirror server-side di GUIDE_PROTEIN_FREQUENCIES in
-// js/domain.js (chiavi, etichette e default: allineamento verificato dai test
-// client). Max 14 = 7 giorni × 2 pasti principali (vincolo strutturale).
-const CLIENT_FREQUENCY_KEYS = ['poultry', 'beef', 'curedMeats', 'omega', 'otherFish', 'dairy', 'eggs', 'legumes'];
-const CLIENT_FREQUENCY_LABELS = {
-  poultry: 'Pollame',
-  beef: 'Manzo e maiale',
-  curedMeats: 'Affettati e carni miste',
-  omega: 'Pesce ricco di omega-3',
-  otherFish: 'Altro pesce e prodotti ittici',
-  dairy: 'Latticini e formaggi',
-  eggs: 'Uova',
-  legumes: 'Legumi e derivati'
-};
-const CLIENT_FREQUENCY_DEFAULTS = {
-  poultry: { min: 1, max: 2 },
-  beef: { min: 0, max: 1 },
-  curedMeats: { min: 0, max: 1 },
-  omega: { min: 2, max: 3 },
-  otherFish: { min: 1, max: 2 },
-  dairy: { min: 1, max: 2 },
-  eggs: { min: 1, max: 2 },
-  legumes: { min: 3, max: 14 }
-};
-const CLIENT_FREQUENCY_MAX = 14;
-// Solo le assegnazioni correnti o future sono personalizzabili: quelle
-// revocate, sospese o scadute restano immutabili (non-retroattività).
-const DOSE_EDITABLE_ASSIGNMENT_STATUSES = new Set(['active', 'scheduled']);
-
-function frequencyBound(value, name) {
-  if (value == null || value === '') return null;
-  const number = Number(value);
-  if (!Number.isInteger(number) || number < 0 || number > CLIENT_FREQUENCY_MAX) {
-    fail('invalid-argument', `${name} deve essere un intero tra 0 e ${CLIENT_FREQUENCY_MAX}`);
-  }
-  return number;
-}
-
-// Override sparsi { doses, frequencies }: solo le celle valorizzate (=
-// diverse dallo studio) vengono persistite; null/vuoto = default studio.
-// Le famiglie dose devono esistere nella struttura assegnata al cliente.
-function validateClientDoseOverrides(input, { families }) {
-  exactObject(input, ['doses', 'frequencies'], 'overrides');
-  const familySet = new Set(families || []);
-  if (!input.doses || typeof input.doses !== 'object' || Array.isArray(input.doses)) {
-    fail('invalid-argument', 'overrides.doses non valido');
-  }
-  const doses = {};
-  Object.entries(input.doses).forEach(([family, patch]) => {
-    if (!familySet.has(family)) fail('invalid-argument', `Famiglia non presente nella struttura assegnata: ${family}`);
-    exactObject(patch || {}, ['lunch', 'dinner'], `doses.${family}`);
-    const clean = {};
-    ['lunch', 'dinner'].forEach(meal => {
-      const slot = patch[meal];
-      if (slot == null) return;
-      exactObject(slot, ['training', 'rest'], `doses.${family}.${meal}`);
-      const cell = {};
-      const training = grams(slot.training, `doses.${family}.${meal}.training`);
-      const rest = grams(slot.rest, `doses.${family}.${meal}.rest`);
-      if (training != null) cell.training = training;
-      if (rest != null) cell.rest = rest;
-      if (Object.keys(cell).length) clean[meal] = cell;
-    });
-    if (Object.keys(clean).length) doses[family] = clean;
-  });
-  if (!input.frequencies || typeof input.frequencies !== 'object' || Array.isArray(input.frequencies)) {
-    fail('invalid-argument', 'overrides.frequencies non valido');
-  }
-  const frequencies = {};
-  Object.entries(input.frequencies).forEach(([key, patch]) => {
-    if (!CLIENT_FREQUENCY_KEYS.includes(key)) fail('invalid-argument', `Frequenza non valida: ${key}`);
-    exactObject(patch || {}, ['min', 'max'], `frequencies.${key}`);
-    const clean = {};
-    const min = frequencyBound(patch.min, `frequencies.${key}.min`);
-    const max = frequencyBound(patch.max, `frequencies.${key}.max`);
-    if (min != null) clean.min = min;
-    if (max != null) clean.max = max;
-    if (clean.min != null && clean.max != null && clean.min > clean.max) {
-      fail('invalid-argument', `frequencies.${key}: min non può superare max`);
-    }
-    if (Object.keys(clean).length) frequencies[key] = clean;
-  });
-  return { doses, frequencies };
-}
-
-function validateGetClientDoses(input) {
-  exactObject(input, ['organizationId', 'clientId', 'assignmentId']);
-  return {
-    organizationId: id(input.organizationId, 'organizationId'),
-    clientId: id(input.clientId, 'clientId'),
-    assignmentId: input.assignmentId == null || input.assignmentId === '' ? null : id(input.assignmentId, 'assignmentId')
-  };
-}
-
-function validateExpectedRevision(value) {
-  const revision = Number(value);
-  if (!Number.isInteger(revision) || revision < 0) fail('invalid-argument', 'expectedRevision non valida');
-  return revision;
-}
-
-function validateUpdateClientDoseOverrides(input) {
-  exactObject(input, ['organizationId', 'clientId', 'assignmentId', 'doses', 'frequencies', 'expectedRevision']);
-  const base = validateGetClientDoses({ organizationId: input.organizationId, clientId: input.clientId, assignmentId: input.assignmentId });
-  return { ...base, doses: input.doses, frequencies: input.frequencies, expectedRevision: validateExpectedRevision(input.expectedRevision) };
-}
-
-function validateCopyClientDoses(input) {
-  exactObject(input, ['organizationId', 'fromClientId', 'toClientId', 'expectedRevision']);
-  const fromClientId = id(input.fromClientId, 'fromClientId');
-  const toClientId = id(input.toClientId, 'toClientId');
-  if (fromClientId === toClientId) fail('invalid-argument', 'Cliente origine e destinazione devono essere diversi');
-  return {
-    organizationId: id(input.organizationId, 'organizationId'),
-    fromClientId, toClientId,
-    expectedRevision: validateExpectedRevision(input.expectedRevision)
-  };
-}
-
-
-// ---- Ricettario professionisti (ADR 0006) ----
+// ---- Ricettario professionisti (ADR 0003) ----
 // Slot pasti: stessi ID del client (js/domain.js SLOTS e MEAL_SLOTS in
 // js/app.js). La parità esatta è verificata dai test
 // (functions/test/domain.test.js). Le ricette restano server-only: nessun
@@ -1402,89 +1296,22 @@ function validateProfessionalRecipe(recipe) {
   };
 }
 
-// ---------------------------------------------------------------------
-// Tabelle grammature del nutrizionista (console professionisti).
-// Ogni tabella è personale (ownerUid): righe con descrizione, gruppo
-// (carboidrati o proteine) e dosi in grammi per pranzo/cena nei giorni di
-// allenamento e riposo. Le dosi mancanti sono null: la riga resta valida se
-// ha almeno una dose. Nessuna regola clinica: sono appunti di studio.
-// ---------------------------------------------------------------------
-
-const GRAMMATURE_TABLE_GROUPS = new Set(['carb', 'protein']);
-const GRAMMATURE_TABLE_LIMITS = {
-  name: 80, description: 500, rows: 120, rowDescription: 200, quantity: 5000
-};
-
-function grammatureDose(value, name) {
-  if (value == null || value === '') return null;
-  const number = Number(value);
-  if (!Number.isFinite(number) || number <= 0 || number > GRAMMATURE_TABLE_LIMITS.quantity) {
-    fail('invalid-argument', `${name} non valida`);
-  }
-  return number;
-}
-
-function validateGrammatureRow(row, name) {
-  exactObject(row, ['description', 'group', 'foodGroup', 'doses'], name);
-  const description = text(row.description, `${name}.description`, { max: GRAMMATURE_TABLE_LIMITS.rowDescription });
-  if (!GRAMMATURE_TABLE_GROUPS.has(row.group)) fail('invalid-argument', `${name}.group non valido`);
-  const foodGroup = row.foodGroup == null || row.foodGroup === '' ? 'altro' : row.foodGroup;
-  if (!DIET_PLAN_FOOD_GROUPS.has(foodGroup)) fail('invalid-argument', `${name}.foodGroup non valido`);
-  const doses = row.doses && typeof row.doses === 'object' && !Array.isArray(row.doses) ? row.doses : fail('invalid-argument', `${name}.doses non valide`);
-  const lunch = doses.lunch && typeof doses.lunch === 'object' ? doses.lunch : {};
-  const dinner = doses.dinner && typeof doses.dinner === 'object' ? doses.dinner : {};
-  const clean = {
-    description,
-    group: row.group,
-    foodGroup,
-    doses: {
-      lunch: {
-        training: grammatureDose(lunch.training, `${name}.doses.lunch.training`),
-        rest: grammatureDose(lunch.rest, `${name}.doses.lunch.rest`)
-      },
-      dinner: {
-        training: grammatureDose(dinner.training, `${name}.doses.dinner.training`),
-        rest: grammatureDose(dinner.rest, `${name}.doses.dinner.rest`)
-      }
-    }
-  };
-  const hasDose = [
-    clean.doses.lunch.training, clean.doses.lunch.rest,
-    clean.doses.dinner.training, clean.doses.dinner.rest
-  ].some(value => value != null);
-  if (!hasDose) fail('invalid-argument', `${name}: indica almeno una dose`);
-  return clean;
-}
-
-function validateGrammatureTable(table) {
-  exactObject(table, ['name', 'description', 'rows'], 'table');
-  const name = text(table.name, 'table.name', { min: 3, max: GRAMMATURE_TABLE_LIMITS.name });
-  const description = optionalText(table.description, 'table.description', GRAMMATURE_TABLE_LIMITS.description);
-  if (!Array.isArray(table.rows) || !table.rows.length || table.rows.length > GRAMMATURE_TABLE_LIMITS.rows) {
-    fail('invalid-argument', `table.rows deve contenere da 1 a ${GRAMMATURE_TABLE_LIMITS.rows} righe`);
-  }
-  return {
-    name,
-    description,
-    rows: table.rows.map((row, index) => validateGrammatureRow(row, `table.rows[${index}]`))
-  };
-}
-
 module.exports = {
   SINGLE_ORGANIZATION_ID,
-  ROLES, REPORT_STATUSES, ASSIGNMENT_STATUSES, ASSIGNMENT_STRATEGIES, MEMBER_STATUSES,
-  GUIDE_FAMILY_IDS, STRUCTURE_REVISION_SCHEMA_VERSION, STRUCTURE_REVISION_SCHEMA_VERSION_WITH_PLAN,
+  ROLES, ASSIGNMENT_STATUSES, MEMBER_STATUSES,
+  STRUCTURE_REVISION_SCHEMA_VERSION,
   fail, exactObject, text, optionalText, id, isoDate, canonicalJson, checksum,
   normalizeIngredient, aliasKey, searchTokensFor, normalizeUsername, hashToken,
-  reportKey, validateReport, validateMapping, validateRuleSetRules, validateAssignment,
-  validateStructureAssignment, validateDietStructureRules, validateAlternativeGroups,
-  validateContextQuantity, structureRevisionChecksum, verifyStructureRevision, effectiveAssignment,
-  DIET_PLAN_SCHEMA_VERSION, DIET_PLAN_DAY_TYPES, DIET_PLAN_MEAL_IDS, DIET_PLAN_FOOD_GROUPS,
-  DIET_PLAN_UNITS, DIET_PLAN_QUANTITY_STATES, DIET_PLAN_OPTION_LABELS, DIET_PLAN_LIMITS,
-  validateDietPlan,
-  CATALOG_IMPORT_FORMATS, CATALOG_IMPORT_MODES, CATALOG_CSV_COLUMNS, CATALOG_RESERVED_CATEGORY,
+  validateStructureAssignment, structureRevisionChecksum, verifyStructureRevision, effectiveAssignment,
+  DIET_PLAN_SCHEMA_VERSION, DIET_PLAN_DAY_TYPES, DIET_PLAN_MEAL_IDS, DIET_PLAN_UNITS,
+  DIET_PLAN_OPTION_TYPES, DIET_PLAN_LIMITS, validateDietPlan,
+  EQUIVALENCE_TEMPLATE_SCHEMA_VERSION, EQUIVALENCE_TEMPLATE_LIMITS,
+  validateEquivalenceTemplateRevision, equivalenceTemplateRevisionChecksum, verifyEquivalenceTemplateRevision,
+  CATALOG_REQUEST_STATUSES, validateCatalogRequestSubmit, validateCatalogRequestResolve,
+  CATALOG_IMPORT_MODES, CATALOG_CSV_COLUMNS,
+  CATALOG_CATEGORY_ID_PATTERN, CATALOG_FAMILY_ID_PATTERN,
   parseCatalogPayload, parseCatalogCsv, validateCatalogImport, validateCatalogIngredient,
-  validateCatalogCategory, catalogImportPreviewId,
+  validateCatalogFamily, catalogImportPreviewId,
   validateInviteOrganizationUser, validateInviteClientLink, validateRespondClientLink,
   validateRemoveClientLink, validateMemberStatus, validateRemoveNutritionist,
   validateTransferStructureOwnership,
@@ -1495,12 +1322,7 @@ module.exports = {
   validateGetInviteLink,
   validateCancelClientInvite, validateUpdateClientProfileByStaff, validateDeleteClientPermanently, validateUpdateMemberProfileByStaff,
   validateProposeClientEmailChange, validateRespondClientEmailChange, validateRedeemClientInvite,
-  CLIENT_FREQUENCY_KEYS, CLIENT_FREQUENCY_LABELS, CLIENT_FREQUENCY_DEFAULTS,
-  CLIENT_FREQUENCY_MAX, DOSE_EDITABLE_ASSIGNMENT_STATUSES,
-  frequencyBound, validateClientDoseOverrides, validateGetClientDoses,
-  validateExpectedRevision, validateUpdateClientDoseOverrides, validateCopyClientDoses,
   RECIPE_SLOTS, PROFESSIONAL_RECIPE_VISIBILITY, PROFESSIONAL_RECIPE_LIMITS,
-  validateProfessionalRecipePortions, validateProfessionalRecipeIngredient, validateProfessionalRecipe,
-  GRAMMATURE_TABLE_GROUPS, GRAMMATURE_TABLE_LIMITS, validateGrammatureTable
+  validateProfessionalRecipePortions, validateProfessionalRecipeIngredient, validateProfessionalRecipe
 };
 

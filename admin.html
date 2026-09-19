@@ -38,12 +38,11 @@
       <div class="brand-lockup" aria-hidden="true"><span><img src="assets/loghi/logo-console.svg" alt=""></span><div><strong>Piano</strong><small>Console professionale</small></div></div>
       <nav aria-label="Console">
         <button class="nav-link active" data-view="clients" id="nav-clients"><span>♙</span><span id="nav-clients-label">Clienti</span></button>
-        <button class="nav-link" data-view="doses"><span>⚖</span>Dosi clienti</button>
         <button class="nav-link" data-view="structures"><span>▦</span>Strutture dieta</button>
+        <button class="nav-link" data-view="templates"><span>≡</span>Template equivalenze</button>
         <button class="nav-link" data-view="recipes"><span>🍲</span>Ricette</button>
-        <button class="nav-link" data-view="tables"><span>▤</span>Tabelle grammature</button>
         <button id="nav-catalog" class="nav-link hidden" data-view="catalog"><span>⛁</span>Catalogo</button>
-        <button class="nav-link" data-view="mapping"><span>◫</span>Coda ingredienti <b id="nav-open-count" class="badge-zero" aria-label="Coda ingredienti: nessun caso in sospeso">0</b></button>
+        <button id="nav-requests" class="nav-link hidden" data-view="requests"><span>◫</span>Richieste catalogo <b id="nav-open-count" class="badge-zero" aria-label="Richieste catalogo in sospeso">0</b></button>
       </nav>
       <div class="sidebar-bottom"><button id="admin-logout" class="text-button">Esci</button></div>
     </aside>
@@ -55,18 +54,17 @@
         <div class="topbar-user"><span class="avatar" id="admin-avatar">A</span><div><strong id="admin-name">Professionista</strong></div></div>
       </header>
 
-      <main id="view-mapping" class="console-view">
-        <section class="hero-row"><div><p class="eyebrow">QUALITÀ DEL CATALOGO</p><h1>Ogni ingrediente risolto<br>rende il piano più affidabile.</h1><p>Parti dai casi più frequenti: riduci il blocco per più clienti con una sola decisione.</p></div><button id="refresh-reports" class="secondary">↻ Aggiorna coda</button></section>
-        <section class="metric-grid" aria-label="Riepilogo coda">
-          <article><span class="metric-icon warm">!</span><div><small>Da valutare</small><strong id="metric-open">—</strong></div></article>
-          <article><span class="metric-icon cool">◎</span><div><small>In lavorazione</small><strong id="metric-review">—</strong></div></article>
-          <article><span class="metric-icon green">✓</span><div><small>Risolti nella pagina</small><strong id="metric-resolved">—</strong></div></article>
+      <main id="view-requests" class="console-view">
+        <section class="hero-row"><div><p class="eyebrow">QUALITÀ DEL CATALOGO</p><h1>Ogni ingrediente riconosciuto<br>rende il piano più affidabile.</h1><p>Quando un cliente trova un alimento sconosciuto, propone categoria e famiglia: qui l'amministratore decide se inserirlo nel catalogo globale.</p></div><button id="refresh-requests" class="secondary">↻ Aggiorna coda</button></section>
+        <section class="metric-grid" aria-label="Riepilogo richieste">
+          <article><span class="metric-icon warm">!</span><div><small>In sospeso</small><strong id="metric-pending">—</strong></div></article>
+          <article><span class="metric-icon green">✓</span><div><small>Accettate</small><strong id="metric-accepted">—</strong></div></article>
+          <article><span class="metric-icon cool">◎</span><div><small>Rifiutate</small><strong id="metric-rejected">—</strong></div></article>
         </section>
         <section class="panel">
-          <div class="panel-head"><div><h2>Coda ingredienti</h2><p>Casi anonimizzati e ordinati per aggiornamento.</p></div><label>Stato<select id="report-status"><option value="">Tutti</option><option value="open">Da valutare</option><option value="needs-review">Proposta pronta</option><option value="resolved">Risolti</option><option value="rejected">Rifiutati</option></select></label></div>
-          <div id="report-feedback" class="feedback" role="status"></div>
-          <div id="reports-list" class="report-list"></div>
-          <button id="load-more-reports" class="secondary full hidden">Carica altri casi</button>
+          <div class="panel-head"><div><h2>Richieste catalogo</h2><p>Proposte dei clienti con categoria e famiglia indicata. Accetta per inserire l'ingrediente nel catalogo globale.</p></div><label>Stato<select id="request-status"><option value="pending">In sospeso</option><option value="">Tutte</option><option value="accepted">Accettate</option><option value="rejected">Rifiutate</option></select></label></div>
+          <div id="requests-feedback" class="feedback" role="status"></div>
+          <div id="requests-list" class="report-list"></div>
         </section>
       </main>
 
@@ -90,14 +88,8 @@
           <div id="clients-feedback" class="feedback" role="status"></div><div id="clients-list" class="client-grid"></div></section>
       </main>
 
-      <main id="view-doses" class="console-view hidden">
-        <section class="hero-row"><div><p class="eyebrow">PERSONALIZZAZIONE</p><h1>Dosi su misura,<br>per ogni cliente.</h1><p>Default della struttura assegnata, con override personali revisionati. Il cliente conferma ogni modifica dall’app.</p></div><button id="refresh-doses" class="secondary">↻ Aggiorna</button></section>
-        <section class="panel"><div class="panel-head"><div><h2>Dosi e frequenze per cliente</h2><p>Cella vuota = dose della struttura. Salva per creare una nuova revisione.</p></div><label>Cliente<select id="dose-client"><option value="">— Seleziona —</option></select></label></div><div id="doses-feedback" class="feedback" role="status"></div><div id="dose-assignment" class="dose-assignment"></div><div id="dose-tables"></div><div class="dose-actions"><button id="save-doses" class="primary" disabled>Salva dosi personalizzate →</button></div></section>
-        <section class="panel"><div class="panel-head"><div><h2>Copia dosi tra clienti</h2><p>Anteprima delle differenze prima della conferma.</p></div></div><div class="copy-grid"><label>Da cliente<select id="copy-from"><option value="">—</option></select></label><label>A cliente<select id="copy-to"><option value="">—</option></select></label></div><div id="copy-feedback" class="feedback" role="status"></div><div id="copy-preview"></div><div class="dose-actions"><button id="preview-copy" class="secondary">Anteprima differenze</button><button id="confirm-copy" class="primary" disabled>Conferma copia →</button></div></section>
-      </main>
-
       <main id="view-structures" class="console-view hidden">
-        <section class="hero-row"><div><p class="eyebrow">STRUTTURE DIETA</p><h1>Le tue strutture,<br>revisionate e tracciate.</h1><p>Ogni modifica crea una nuova revisione: le precedenti restano intatte e ripristinabili.</p></div><div class="hero-actions"><button id="new-diet-plan" class="primary small-primary">＋ Nuova dieta guidata</button><button id="refresh-structures" class="secondary">↻ Aggiorna</button></div></section>
+        <section class="hero-row"><div><p class="eyebrow">STRUTTURE DIETA</p><h1>Le tue strutture,<br>revisionate e tracciate.</h1><p>Ogni modifica crea una nuova revisione: le precedenti restano intatte e ripristinabili.</p></div><div class="hero-actions"><button id="new-diet-plan" class="primary small-primary">＋ Nuova struttura dieta</button><button id="refresh-structures" class="secondary">↻ Aggiorna</button></div></section>
         <section class="panel"><div class="panel-head"><div><h2>Strutture dieta</h2><p id="structures-scope">Vedi tutte le strutture che il tuo ruolo autorizza.</p></div><div class="hero-actions"><button id="compare-structures" class="secondary" disabled>Confronta (0)</button></div></div><div id="structures-feedback" class="feedback" role="status"></div><div id="compare-hint" class="feedback" role="status">Seleziona almeno 2 strutture per confrontarle.</div><div id="structures-list" class="client-grid"></div></section>
       </main>
 
@@ -107,9 +99,9 @@
         <section class="panel"><div class="panel-head"><div><h2>Invii in attesa</h2><p>Condivisioni professionali non ancora gestite dal cliente: annullabili finché pendenti.</p></div><div class="hero-actions"><button id="refresh-shares" class="secondary">↻ Aggiorna</button></div></div><div id="shares-feedback" class="feedback" role="status"></div><div id="shares-list" class="client-grid"></div></section>
       </main>
 
-      <main id="view-tables" class="console-view hidden">
-        <section class="hero-row"><div><p class="eyebrow">TABELLE GRAMMATURE</p><h1>Le tue tabelle di riferimento,<br>sempre a portata di mano.</h1><p>Definisci le grammature delle alternative di carboidrati e proteine: le ritrovi durante la compilazione della dieta guidata. Puoi modificarle, duplicarle, eliminarle o crearne di nuove.</p></div><div class="hero-actions"><button id="new-gram-table" class="primary small-primary">＋ Nuova tabella</button><button id="refresh-gram-tables" class="secondary">↻ Aggiorna</button></div></section>
-        <section class="panel"><div class="panel-head"><div><h2>Tabelle grammature</h2><p>Ogni tabella è personale: la vedi e la modifichi solo tu. Selezionala poi nell’editor della dieta guidata.</p></div></div><div id="gram-tables-feedback" class="feedback" role="status"></div><div id="gram-tables-list" class="client-grid"></div></section>
+      <main id="view-templates" class="console-view hidden">
+        <section class="hero-row"><div><p class="eyebrow">TEMPLATE EQUIVALENZE</p><h1>Equivalenti proporzionali,<br>per famiglia di riferimento.</h1><p>Ogni template dichiara una famiglia di riferimento, una quantità di riferimento e gli equivalenti proporzionali. Le strutture che lo citano ne portano uno snapshot: le modifiche non sono mai retroattive.</p></div><div class="hero-actions"><button id="new-template" class="primary small-primary">＋ Nuovo template</button><button id="refresh-templates" class="secondary">↻ Aggiorna</button></div></section>
+        <section class="panel"><div class="panel-head"><div><h2>Template equivalenze</h2><p id="templates-scope">Ogni template è personale: la vedi e la modifichi solo tu (l'admin vede tutti).</p></div></div><div id="templates-feedback" class="feedback" role="status"></div><div id="templates-list" class="client-grid"></div></section>
       </main>
 
       <main id="view-catalog" class="console-view hidden">
@@ -141,16 +133,17 @@
   </section></div>
 
   
-<div id="diet-plan-dialog" class="dialog hidden" role="dialog" aria-modal="true" aria-labelledby="diet-plan-title"><div class="dialog-backdrop" data-close-diet-plan></div><section class="dialog-card wide"><button class="dialog-close" data-close-diet-plan aria-label="Chiudi editor">×</button><p class="eyebrow">DIETA GUIDATA</p><h2 id="diet-plan-title">Nuova dieta guidata</h2><p id="diet-plan-subtitle" class="dialog-lead">Scegli i pasti e aggiungi gli alimenti dal catalogo per comporre una giornata chiara. Le alternative della tabella di riferimento sono già disponibili per velocizzare la compilazione.</p>
-    <form id="diet-plan-form"><input id="diet-plan-id" type="hidden">
+<div id="diet-plan-dialog" class="dialog hidden" role="dialog" aria-modal="true" aria-labelledby="diet-plan-title"><div class="dialog-backdrop" data-close-diet-plan></div><section class="dialog-card wide"><button class="dialog-close" data-close-diet-plan aria-label="Chiudi editor">×</button><p class="eyebrow">STRUTTURA DIETA</p><h2 id="diet-plan-title">Nuova struttura dieta</h2><p id="diet-plan-subtitle" class="dialog-lead">Componi giornate e pasti. Ogni pasto ha una o più opzioni: blocchi con famiglia di riferimento (e relativi equivalenti), elenchi di ingredienti oppure una ricetta con moltiplicatore. Con una sola opzione il cliente non vede etichette A/B/C.</p>
+    <form id="diet-plan-form">
       <label>Nome dieta<input id="diet-plan-name" required minlength="3" maxlength="80" placeholder="es. Piano iposodico — primavera"></label>
-      <label>Tabella grammature per le alternative<select id="diet-plan-gram-table" aria-label="Tabella grammature per le alternative"></select><small class="field-hint">Scegli da quale delle tue tabelle attingere le grammature quando precompili un gruppo scelta. Le tabelle le gestisci in «Tabelle grammature».</small></label>
-      <p id="diet-plan-classic-note" class="callout hidden"></p>
-      <p class="field-hint diet-catalog-hint">Scrivi il nome di un alimento e scegli il suggerimento che compare dal catalogo: la categoria viene dedotta in automatico. Puoi sempre correggere dose e unità.</p>
+      <p class="field-hint diet-catalog-hint">Nei blocchi scegli la famiglia di riferimento dal catalogo globale; la quantità di riferimento e gli equivalenti arrivano dal template che selezioni (snapshot non retroattivo, con override possibili per struttura). Negli elenchi ingredienti scrivi il nome e scegli il suggerimento dal catalogo.</p>
       <datalist id="diet-catalog-options"></datalist>
       <div id="diet-plan-days" class="diet-days"></div>
       <button type="button" id="diet-plan-add-day" class="secondary full">＋ Aggiungi giornata</button>
-      <label>Note generali<textarea id="diet-plan-general-notes" maxlength="2000" placeholder="Indicazioni valide per tutte le giornate (visibili allo staff)"></textarea></label>
+      <label>Note generali<textarea id="diet-plan-general-notes" maxlength="2000" placeholder="Indicazioni valide per tutte le giornate (visibili anche al cliente)"></textarea></label>
+      <label>Nota revisione<textarea id="diet-plan-changelog" maxlength="500" placeholder="Cosa cambia in questa revisione? (visibile solo allo staff)"></textarea></label>
+      <details id="diet-plan-tech-details" class="tech-details hidden"><summary>Dettagli tecnici</summary><dl><div><dt>Revisione corrente</dt><dd id="tech-revision">—</dd></div><div><dt>Checksum revisione</dt><dd id="tech-checksum" class="mono">—</dd></div><div><dt>Catalogo ingredienti</dt><dd id="tech-catalog">—</dd></div></dl><p class="field-hint">Sola lettura. Verificati e ricalcolati dal server a ogni salvataggio.</p></details>
+      <div id="diet-plan-restore-field" class="hidden"><label>Carica una revisione precedente<div class="restore-row"><input id="diet-plan-restore-rev" type="number" min="1" step="1" placeholder="N° revisione"><button type="button" id="diet-plan-load-revision" class="secondary">Carica N</button></div></label><small class="field-hint">Il salvataggio crea comunque una nuova revisione: le precedenti non vengono mai toccate.</small></div>
       <div class="dialog-actions"><button type="button" id="diet-plan-preview-toggle" class="secondary">Mostra anteprima</button></div>
       <div id="diet-plan-preview" class="diet-preview hidden" aria-live="polite"></div>
       <p id="diet-plan-error" class="error" role="alert"></p>
@@ -180,49 +173,25 @@
     </form>
   </section></div>
 
-  <div id="mapping-dialog" class="dialog hidden" role="dialog" aria-modal="true" aria-labelledby="mapping-title">
-    <div class="dialog-backdrop" data-close-dialog></div>
-    <section class="dialog-card"><button class="dialog-close" data-close-dialog aria-label="Chiudi">×</button><p class="eyebrow">RISOLUZIONE GUIDATA</p><h2 id="mapping-title">Approva il mapping</h2><p id="mapping-context" class="dialog-lead"></p>
-      <form id="mapping-form">
-        <input id="mapping-report-id" type="hidden">
-        <div class="form-grid"><label>Trattamento<select id="mapping-kind"><option value="guided">Ingrediente guidato</option><option value="free">Ingrediente libero</option></select></label><label>ID canonico<input id="mapping-canonical" required placeholder="es. riso-venere"></label></div>
-        <label>Alias riconosciuti<input id="mapping-aliases" required placeholder="Separali con una virgola"></label>
-        <div id="guided-fields"><div class="form-grid"><label>Famiglia<input id="mapping-family" placeholder="es. riso"></label><label>Gruppo<select id="mapping-group"><option value="carb">Carboidrati</option><option value="protein">Proteine</option><option value="dairy">Latticini</option><option value="fat">Grassi</option><option value="sweet">Dolci</option><option value="fruit">Frutta</option></select></label></div>
-          <fieldset><legend>Dosi a crudo</legend><div class="dose-grid"><label>Pranzo A<input id="dose-la" type="number" min="1"></label><label>Pranzo R<input id="dose-lr" type="number" min="1"></label><label>Cena A<input id="dose-da" type="number" min="1"></label><label>Cena R<input id="dose-dr" type="number" min="1"></label></div></fieldset></div>
-        <label>Motivazione clinica/operativa<textarea id="mapping-rationale" required maxlength="500" placeholder="Perché questo mapping è affidabile?"></textarea></label>
-        <label class="check-row"><input id="mapping-global" type="checkbox"><span><strong>Pubblica nel catalogo globale</strong><small>Disponibile solo ai platform admin. Altrimenti resta nell’organizzazione.</small></span></label>
-        <p id="mapping-error" class="error" role="alert"></p><div class="dialog-actions"><button type="button" class="secondary" data-close-dialog>Annulla</button><button id="mapping-submit" type="submit" class="primary">Pubblica mapping <span>→</span></button></div>
-      </form>
-    </section>
-  </div>
-
-  <div id="structure-dialog" class="dialog hidden" role="dialog" aria-modal="true" aria-labelledby="structure-title"><div class="dialog-backdrop" data-close-structure></div><section class="dialog-card wide"><button class="dialog-close" data-close-structure aria-label="Chiudi">×</button><p class="eyebrow">STRUTTURA DIETA</p><h2 id="structure-title">Nuova struttura</h2><p id="structure-subtitle" class="dialog-lead"></p>
-    <form id="structure-form"><input id="structure-id" type="hidden">
-      <label>Nome struttura<input id="structure-name" required minlength="3" maxlength="80" placeholder="es. Base proteine"></label>
-      <p id="structure-plan-note" class="callout hidden"></p>
-      <details id="catalog-picker" class="catalog-picker" open>
-        <summary>Catalogo alimenti <span class="picker-hint">— spunta più alimenti con le stesse dosi e raggruppali in una regola o in un gruppo alternativo</span></summary>
-        <div class="picker-toolbar">
-          <input id="catalog-picker-search" type="search" placeholder="Filtra per nome o alias…" aria-label="Filtra alimenti del catalogo" autocomplete="off">
-          <div class="picker-bar"><span id="picker-count" role="status">Nessun alimento selezionato</span><button type="button" id="picker-clear" class="text-button">Azzera selezione</button><button type="button" id="picker-group" class="secondary" disabled>Raggruppa selezionati</button></div>
+  <div id="request-dialog" class="dialog hidden" role="dialog" aria-modal="true" aria-labelledby="request-title"><div class="dialog-backdrop" data-close-request></div><section class="dialog-card wide"><button class="dialog-close" data-close-request aria-label="Chiudi">×</button><p class="eyebrow">RICHIESTA CATALOGO</p><h2 id="request-title">Ingrediente non riconosciuto</h2><p id="request-subtitle" class="dialog-lead"></p>
+      <form id="request-form">
+        <div class="form-grid">
+          <label>Nome visualizzato<input id="request-display-name" required maxlength="160" autocomplete="off" placeholder="es. Tonno al naturale"></label>
+          <label>ID ingrediente (minuscolo, trattini)<input id="request-ingredient-id" required maxlength="96" autocomplete="off" placeholder="es. tonno-naturale"></label>
         </div>
-        <div id="catalog-picker-list" class="picker-list"></div>
-        <p id="picker-feedback" class="feedback" role="status"></p>
-      </details>
-      <fieldset><legend>Dosi per famiglia (grammi a crudo, vuoto = pasto non gestito)</legend>
-        <div id="structure-rules" class="structure-rules"></div>
-        <button type="button" id="structure-add-rule" class="secondary full">＋ Aggiungi famiglia</button>
-      </fieldset>
-      <fieldset><legend>Gruppi alternativi (es. carboidrati, proteine)</legend>
-        <div id="structure-groups" class="structure-groups"></div>
-        <button type="button" id="structure-add-group" class="secondary full">＋ Aggiungi gruppo</button>
-      </fieldset>
-      <details id="structure-tech-details" class="tech-details hidden"><summary>Dettagli tecnici</summary><dl><div><dt>Revisione corrente</dt><dd id="tech-revision">—</dd></div><div><dt>Checksum revisione</dt><dd id="tech-checksum" class="mono">—</dd></div><div><dt>Catalogo ingredienti</dt><dd id="tech-catalog">—</dd></div></dl><p class="field-hint">Sola lettura, visibili solo all’admin. Verificati e ricalcolati dal server.</p></details>
-      <div class="form-grid"><label>Nota revisione<textarea id="structure-changelog" maxlength="500" placeholder="Cosa cambia in questa revisione? (visibile solo allo staff)"></textarea></label>
-      <div id="structure-restore-field" class="hidden"><label>Carica una revisione precedente<div class="restore-row"><input id="structure-restore-rev" type="number" min="1" step="1" placeholder="N° revisione"><button type="button" id="structure-load-revision" class="secondary">Carica N</button></div></label><small class="field-hint">Il salvataggio crea comunque una nuova revisione: le precedenti non vengono mai toccate.</small></div></div>
-      <p class="callout">Date di creazione e ultima modifica sono di sola lettura. Non esiste un campo "Versione": le revisioni sono gestite dal sistema.</p>
-      <p id="structure-error" class="error" role="alert"></p><div class="dialog-actions"><button type="button" class="secondary" data-close-structure>Annulla</button><button id="structure-submit" class="primary" type="submit">Salva struttura →</button></div>
-    </form>
+        <div class="form-grid">
+          <label>Categoria<select id="request-category"></select></label>
+          <label>Famiglia<select id="request-family"></select></label>
+        </div>
+        <div class="form-grid">
+          <label class="check-inline"><input id="request-vegetarian" type="checkbox"> Adatto a vegetariani</label>
+          <label class="check-inline"><input id="request-vegan" type="checkbox"> Adatto a vegani</label>
+        </div>
+        <label>Alias (uno per riga, facoltativi)<textarea id="request-aliases" rows="3" maxlength="2000" placeholder="tonno&#10;tonno in scatola"></textarea></label>
+        <label>Motivo / nota (audit, facoltativa)<input id="request-reason" maxlength="500" placeholder="es. inserito su richiesta del cliente"></label>
+        <p id="request-error" class="error" role="alert"></p>
+        <div class="dialog-actions"><button type="button" class="secondary" data-close-request>Annulla</button><button type="button" id="request-reject" class="primary danger">Rifiuta richiesta</button><button type="submit" id="request-accept" class="primary">Accetta e inserisci nel catalogo →</button></div>
+      </form>
   </section></div>
 
   <div id="compare-dialog" class="dialog hidden" role="dialog" aria-modal="true" aria-labelledby="compare-title"><div class="dialog-backdrop" data-close-compare></div><section class="dialog-card wide"><button class="dialog-close" data-close-compare aria-label="Chiudi confronto">×</button><p class="eyebrow">CONFRONTO STRUTTURE</p><h2 id="compare-title">Confronta strutture</h2><p id="compare-subtitle" class="dialog-lead">Sola lettura: il confronto non modifica dati.</p>
@@ -246,7 +215,7 @@
     <ul class="unlink-points">
       <li><strong>L’account resta al sicuro:</strong> credenziali, ricette, piano e backup non vengono toccati.</li>
       <li><strong>Interrompiamo solo il collegamento:</strong> tu non vedi più il cliente e lui non vede più te.</li>
-      <li><strong>I profili assegnati vengono sospesi:</strong> al prossimo aggiornamento il cliente torna alle dosi originali e la Spesa inclusa non è più disponibile.</li>
+      <li><strong>Le strutture assegnate vengono sospese:</strong> al prossimo aggiornamento il cliente torna alle dosi originali delle ricette e la Spesa inclusa non è più disponibile.</li>
     </ul>
     <form id="unlink-form"><input id="unlink-client-id" type="hidden"><label>Motivo (audit)<input id="unlink-reason" required minlength="3" maxlength="500" placeholder="es. Percorso concluso su richiesta"></label><p id="unlink-error" class="error" role="alert"></p><div class="dialog-actions"><button type="button" class="secondary" data-close-unlink>Annulla</button><button class="primary danger" type="submit">Rimuovi cliente</button></div></form>
   </section></div>
@@ -283,52 +252,29 @@
     <form id="email-change-form"><input id="email-change-client-id" type="hidden"><label>Nuova email<input id="email-change-new-email" type="email" required maxlength="254" autocomplete="off" placeholder="nuovo@esempio.it"></label><label>Motivo (audit)<input id="email-change-reason" maxlength="300" placeholder="es. Correzione indirizzo errato"></label><p class="field-hint">L’email cambia solo dopo la conferma del cliente dall’app; poi serve una nuova verifica. Nel frattempo l’indirizzo attuale resta valido.</p><p id="email-change-error" class="error" role="alert"></p><div class="dialog-actions"><button type="button" class="secondary" data-close-email-change>Annulla</button><button class="primary" type="submit">Invia la proposta →</button></div></form>
   </section></div>
 
-  <div id="group-dialog" class="dialog hidden" role="dialog" aria-modal="true" aria-labelledby="group-title"><div class="dialog-backdrop" data-close-group></div><section class="dialog-card"><button class="dialog-close" data-close-group aria-label="Chiudi">×</button><p class="eyebrow">RAGGRUPPAMENTO</p><h2 id="group-title">Raggruppa gli alimenti selezionati</h2><p id="group-subtitle" class="dialog-lead"></p>
-    <form id="group-form">
-      <fieldset><legend>Destinazione del raggruppamento</legend>
-        <label class="check-row"><input type="radio" name="group-dest" id="group-dest-rule" value="rule" checked><span><strong>Regola: dosi per famiglia</strong><small>Crea una regola che assegna a tutti gli alimenti selezionati le stesse dosi di una famiglia del motore.</small></span></label>
-        <label class="check-row"><input type="radio" name="group-dest" id="group-dest-alt" value="alt"><span><strong>Gruppo alternativo</strong><small>Aggiunge le voci a un gruppo di alternative (nuovo o esistente) con le stesse dosi.</small></span></label>
-      </fieldset>
-      <div id="group-rule-fields">
-        <label>Famiglia del motore<input id="group-family" placeholder="es. pseudo" autocomplete="off"><small class="field-hint">Famiglia di dosi esistente (es. pasta, riso, pseudo): gli alimenti selezionati erediteranno quelle dosi come riferimento.</small></label>
+  <div id="template-dialog" class="dialog hidden" role="dialog" aria-modal="true" aria-labelledby="template-title"><div class="dialog-backdrop" data-close-template></div><section class="dialog-card wide"><button class="dialog-close" data-close-template aria-label="Chiudi template">×</button><p class="eyebrow">TEMPLATE EQUIVALENZE</p><h2 id="template-title">Nuovo template</h2><p class="dialog-lead">Famiglia di riferimento obbligatoria, ingrediente di riferimento facoltativo, quantità di riferimento ed equivalenti proporzionali (a crudo). Le quantità degli equivalenti si ricalcolano in proporzione alla dose usata nelle strutture.</p>
+    <form id="template-form">
+      <label>Nome template<input id="template-name" required minlength="3" maxlength="80" placeholder="es. Carboidrati base 70g"></label>
+      <div class="form-grid">
+        <label>Famiglia di riferimento<select id="template-family" required></select></label>
+        <label>Ingrediente di riferimento (facoltativo)<input id="template-ingredient" list="diet-catalog-options" maxlength="200" autocomplete="off" placeholder="es. Riso basmati (scegli dal catalogo)"></label>
       </div>
-      <div id="group-alt-fields" class="hidden">
-        <label>Gruppo alternativo di destinazione<select id="group-target"></select></label>
-        <div id="group-new-fields" class="form-grid hidden">
-          <label>ID gruppo<input id="group-new-id" placeholder="es. quasi-cereali" maxlength="40" autocomplete="off"></label>
-          <label>Nome visualizzato<input id="group-new-name" placeholder="es. Quasi-cereali" maxlength="60"></label>
-        </div>
-      </div>
-      <fieldset><legend>Dosi comuni (grammi a crudo, vuoto = pasto non gestito)</legend>
-        <div class="rule-doses group-doses">
-          <label>Pranzo · Allenamento<input id="group-la" type="number" min="1" max="2000" step="1" placeholder="g"></label>
-          <label>Pranzo · Riposo<input id="group-lr" type="number" min="1" max="2000" step="1" placeholder="g"></label>
-          <label>Cena · Allenamento<input id="group-ca" type="number" min="1" max="2000" step="1" placeholder="g"></label>
-          <label>Cena · Riposo<input id="group-cr" type="number" min="1" max="2000" step="1" placeholder="g"></label>
+      <fieldset><legend>Quantità di riferimento</legend>
+        <div class="form-grid">
+          <label>Quantità<input id="template-ref-value" type="number" min="0" step="any" inputmode="decimal" required placeholder="70"></label>
+          <label>Unità<select id="template-ref-unit"></select></label>
         </div>
       </fieldset>
-      <p id="group-error" class="error" role="alert"></p>
-      <div class="dialog-actions"><button type="button" class="secondary" data-close-group>Annulla</button><button class="primary" type="submit">Raggruppa →</button></div>
+      <fieldset><legend>Equivalenti proporzionali</legend>
+        <div id="template-equivalents" class="structure-rules"></div>
+        <button type="button" id="template-add-equivalent" class="secondary full">＋ Aggiungi equivalente</button>
+      </fieldset>
+      <p id="template-error" class="error" role="alert"></p>
+      <div class="dialog-actions"><button type="button" class="secondary" data-close-template>Annulla</button><button id="template-submit" class="primary" type="submit">Pubblica template →</button></div>
     </form>
   </section></div>
 
-  <div id="gram-table-dialog" class="dialog hidden" role="dialog" aria-modal="true" aria-labelledby="gram-table-title"><div class="dialog-backdrop" data-close-gram-table></div><section class="dialog-card wide"><button class="dialog-close" data-close-gram-table aria-label="Chiudi tabella">×</button><p class="eyebrow">TABELLA GRAMMATURE</p><h2 id="gram-table-title">Nuova tabella grammature</h2><p id="gram-table-subtitle" class="dialog-lead">Raccogli le grammature delle alternative di carboidrati e proteine in grammi a crudo, per pranzo e cena, nei giorni di allenamento (A) e riposo (R). Lascia vuota una dose se il pasto non è gestito.</p>
-    <form id="gram-table-form"><input id="gram-table-id" type="hidden">
-      <label>Nome tabella<input id="gram-table-name" required minlength="3" maxlength="80" placeholder="es. Alternative carboidrati e proteine"></label>
-      <label>Descrizione (facoltativa)<textarea id="gram-table-description" maxlength="500" placeholder="A cosa serve questa tabella?"></textarea></label>
-      <datalist id="gram-table-catalog-options"></datalist>
-      <fieldset><legend>Righe della tabella</legend>
-        <div id="gram-table-rows" class="gram-table-rows"></div>
-        <button type="button" id="gram-table-add-row" class="secondary full">＋ Aggiungi riga</button>
-      </fieldset>
-      <p id="gram-table-error" class="error" role="alert"></p>
-      <div class="dialog-actions"><button type="button" class="secondary" data-close-gram-table>Annulla</button><button id="gram-table-submit" class="primary" type="submit">Salva tabella →</button></div>
-    </form>
-  </section></div>
-
-  <script>if (["localhost", "127.0.0.1"].includes(location.hostname)) self.FIREBASE_APPCHECK_DEBUG_TOKEN = true;</script>
-  <script src="js/loading.js"></script>
-  <script src="js/domain.js"></script>
+<script src="js/loading.js"></script>
   <script src="js/firebase.js"></script>
   <script src="js/admin.js"></script>
 

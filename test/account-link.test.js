@@ -134,7 +134,7 @@ function sampleRecipe(id, name) {
     steps: ['Cuoci']
   };
 }
-const samplePlan = { schemaVersion: 4, days: { monday: { type: 'training' } } };
+const samplePlan = { schemaVersion: 7, days: { monday: { type: 'training' } } };
 
 function seedPendingLink(overrides = {}) {
   store.set('recipeShares/link1', {

@@ -1,13 +1,10 @@
 'use strict';
-/* Dosi delle linee guida nella vista Settimana e nei dati derivati:
- *  - con una Struttura dieta assegnata le quantità del pasto seguono le dosi
- *    del cliente e cambiano fra giornata Allenamento e giornata Riposo;
- *  - l'interruttore "Quantità adattate alle linee guida" governa anche spesa e
- *    batch cooking: spento, si tornano a vedere le quantità originali;
- *  - con un profilo SaaS non ancora confermato (policy non "assigned") la vista
- *    resta comunque sulle quantità originali, come già per settimana e modale.
- * Il motore viene attivato con le stesse regole che il server converte da una
- * revisione di struttura (functions/src/domain.js → js/domain.js). */
+/* Passo 2 — dosi allineate alla dieta assegnata (Settimana, Spesa, Batch):
+ *  - la dose del cliente cambia fra Allenamento e Riposo (struttura a blocchi);
+ *  - senza struttura assegnata nessuna dose si allinea;
+ *  - profilo non confermato (pending-confirmation) → quantità originali;
+ *  - spesa e batch cooking seguono lo stesso interruttore del piano;
+ *  - le ricette originali non vengono mai riscritte. */
 const test = require('node:test');
 const assert = require('node:assert/strict');
 const fs = require('node:fs');
@@ -79,24 +76,27 @@ const doc = {
   body: makeElement('body'),
   documentElement: makeElement('html')
 };
-
-global.window = global;
 global.document = doc;
-global.localStorage = {
-  _data: {},
-  getItem(key) { return key in this._data ? this._data[key] : null; },
-  setItem(key, value) { this._data[key] = String(value); },
-  removeItem(key) { delete this._data[key]; }
-};
-Object.defineProperty(global, 'navigator', { value: {}, configurable: true, writable: true });
+global.window = global;
+global.location = { hash: '#settimana', reload: () => {} };
+Object.defineProperty(global, 'navigator', { value: { onLine: true, serviceWorker: { register: async () => {}, addEventListener: () => {} } }, configurable: true, writable: true });
+global.addEventListener = () => {};
+global.removeEventListener = () => {};
+global.requestAnimationFrame = fn => fn();
+global.MANIFEST_PLACEHOLDER = '{}';
+global.matchMedia = () => ({ matches: false, addEventListener: () => {} });
+global.confirm = () => true;
+global.alert = () => {};
 
+const store = {};
+global.localStorage = {
+  getItem: key => (key in store ? store[key] : null),
+  setItem: (key, value) => { store[key] = String(value); },
+  removeItem: key => { delete store[key]; }
+};
 const dbStub = {
-  collection: () => dbStub,
-  doc: () => dbStub,
-  where: () => dbStub,
-  orderBy: () => dbStub,
-  limit: () => dbStub,
-  get: async () => ({ exists: false, forEach: () => {}, data: () => ({}) }),
+  collection: () => ({ doc: () => ({}), where: () => ({ get: async () => ({ docs: [] }) }), get: async () => ({ docs: [] }) }),
+  doc: () => ({ get: async () => ({ exists: false }), set: async () => {}, onSnapshot: () => () => {} }),
   set: async () => {},
   add: async () => ({ id: 'x' }),
   update: async () => {},
@@ -135,26 +135,63 @@ appState.deviceSettings = {
 };
 appState.household = null;
 
-// Struttura dieta del cliente: dosi diverse fra Allenamento e Riposo.
-const STRUCTURE = [
-  { family: 'pasta', group: 'carb', label: 'Pasta', aliases: ['pasta', 'pasta di semola'], slots: { lunch: { training: 120, rest: 80 }, dinner: { training: 60, rest: 60 } } }
-];
+// Struttura dieta assegnata (profilo v3, blocchi famiglia): il pranzo
+// prevede 80g di cereali nelle giornate di allenamento e 60g in quelle di
+// riposo. La ricetta originale del cliente ha 200g di pasta.
+const CLIENT_CATALOG = {
+  catalogVersion: 1,
+  categories: [{ categoryId: 'carb', displayName: 'Carboidrati', sortOrder: 0 }],
+  families: [{ familyId: 'cereali', displayName: 'Cereali', categoryId: 'carb', sortOrder: 0 }],
+  ingredients: [
+    { ingredientId: 'pasta-di-semola', displayName: 'Pasta di semola', aliases: ['pasta'], categoryId: 'carb', familyId: 'cereali', dietaryFlags: { vegetarian: true, vegan: true }, status: 'active' },
+    { ingredientId: 'riso', displayName: 'Riso', aliases: [], categoryId: 'carb', familyId: 'cereali', dietaryFlags: { vegetarian: true, vegan: true }, status: 'active' }
+  ]
+};
+const CLIENT_DIET_PLAN = () => PianoDomain.createEmptyDietPlan({ days: [
+  PianoDomain.createDietPlanDay('training', { dayId: 'allenamento', meals: [
+    PianoDomain.createDietPlanMeal('lunch', { options: [
+      PianoDomain.createDietPlanOption({ type: 'family-block', blocks: [
+        PianoDomain.createDietPlanBlock({ referenceFamilyId: 'cereali', referenceIngredientId: 'riso', referenceAmount: { value: 80, unit: 'g' } })
+      ] })
+    ] })
+  ] }),
+  PianoDomain.createDietPlanDay('rest', { dayId: 'riposo', meals: [
+    PianoDomain.createDietPlanMeal('lunch', { options: [
+      PianoDomain.createDietPlanOption({ type: 'family-block', blocks: [
+        PianoDomain.createDietPlanBlock({ referenceFamilyId: 'cereali', referenceIngredientId: 'riso', referenceAmount: { value: 60, unit: 'g' } })
+      ] })
+    ] })
+  ] })
+] });
+const CLIENT_PROFILE = () => ({
+  schemaVersion: 1,
+  clientProfileId: 'cp1',
+  assignmentId: 'a1',
+  structureId: 's1',
+  structureRevisionId: 'rev1',
+  structureChecksum: 'chk-1',
+  structureName: 'Struttura del nutrizionista',
+  ingredientCatalogVersion: 1,
+  effectiveAt: '2026-01-01T00:00:00.000Z',
+  expiresAt: null,
+  structureRevision: { revisionId: 'rev1', dietPlan: CLIENT_DIET_PLAN() },
+  catalog: JSON.parse(JSON.stringify(CLIENT_CATALOG)),
+  compatibleClientSchema: 7
+});
 const RECIPE = {
   id: 'L1', slot: 'lunch', name: 'Pasta al pomodoro', emoji: '🍝',
-  ingredients: [{ name: 'Pasta di semola', portions: { single: '200 g' } }],
+  ingredients: [{ name: 'Pasta di semola', portions: { single: '200g' } }],
   steps: []
 };
 
-function scenario({ dayType = 'training', adapted = true, policyMode = 'assigned', profile = true } = {}) {
+function scenario({ dayType = 'training', aligned = true, policyMode = 'assigned', profile = true } = {}) {
   appState.household = null;
-  appState.saasContext = profile
-    ? { state: 'assigned', profile: { clientProfileId: 'c1', assignmentId: 'a1', structureId: 's1', structureRevisionId: '1' } }
-    : { state: 'unassigned' };
+  appState.saasContext = profile ? { state: 'assigned', profile: CLIENT_PROFILE() } : { state: 'unassigned' };
   appState.saasPolicy = { mode: policyMode, migrationRequired: policyMode !== 'assigned' };
-  assert.equal(PianoDomain.activateGuideRuleSet(STRUCTURE, []), true, 'motore con le regole del cliente');
+  invalidateDietEngine();
   setRecipes([RECIPE]);
   appState.plan = PianoDomain.migratePlan(createEmptyWeeklyPlan());
-  appState.plan = PianoDomain.setAdaptedQuantitiesEnabled(appState.plan, adapted);
+  appState.plan = PianoDomain.setPlanAlignedDosesEnabled(appState.plan, aligned);
   appState.plan.days.monday.type = dayType;
   appState.plan.days.monday.lunch = 'L1';
   appState.shopping = {
@@ -166,38 +203,43 @@ function scenario({ dayType = 'training', adapted = true, policyMode = 'assigned
 
 function weekMarkup() { return document.getElementById('view-week').innerHTML; }
 function shoppingTotals() {
-  const entry = aggregateShoppingList().find(item => item.ingredientId === PianoDomain.ingredientIdFor('Pasta di semola'));
+  const entry = aggregateShoppingList().find(item => item.ingredientId === 'pasta-di-semola');
   return entry ? entry.totals.g : null;
 }
 
 test('settimana: la dose del cliente cambia fra Allenamento e Riposo', () => {
   scenario({ dayType: 'training' });
-  assert.match(weekMarkup(), /Pasta di semola 120 g/, 'giornata Allenamento: dose allenamento');
-  assert.doesNotMatch(weekMarkup(), /Pasta di semola 80 g/);
+  assert.match(weekMarkup(), /Pasta di semola 80g/, 'giornata Allenamento: dose della struttura');
+  assert.doesNotMatch(weekMarkup(), /Pasta di semola 60g/);
 
   scenario({ dayType: 'rest' });
-  assert.match(weekMarkup(), /Pasta di semola 80 g/, 'giornata Riposo: dose riposo');
-  assert.doesNotMatch(weekMarkup(), /Pasta di semola 120 g/);
+  assert.match(weekMarkup(), /Pasta di semola 60g/, 'giornata Riposo: dose della struttura');
+  assert.doesNotMatch(weekMarkup(), /Pasta di semola 80g/);
 });
 
-test('settimana: senza struttura assegnata nessuna dose di linee guida', () => {
-  scenario({ dayType: 'training', adapted: false });
+test('settimana: interruttore spento → nessuna dose allineata, ricetta visibile', () => {
+  scenario({ dayType: 'training', aligned: false });
   assert.doesNotMatch(weekMarkup(), /week-meal-doses/, 'interruttore spento: restano le quantità originali');
   assert.match(weekMarkup(), /Pasta al pomodoro/, 'la ricetta resta visibile');
 });
 
+test('settimana: senza struttura assegnata nessuna dose si allinea', () => {
+  scenario({ dayType: 'training', profile: false });
+  assert.doesNotMatch(weekMarkup(), /week-meal-doses/, 'nessuna dieta, nessun allineamento');
+});
+
 test('settimana: profilo non confermato resta sulle quantità originali', () => {
-  scenario({ dayType: 'rest', adapted: true, policyMode: 'pending-confirmation' });
-  assert.doesNotMatch(weekMarkup(), /week-meal-doses/, 'adattamento bloccato finché il cliente non conferma');
+  scenario({ dayType: 'rest', aligned: true, policyMode: 'pending-confirmation' });
+  assert.doesNotMatch(weekMarkup(), /week-meal-doses/, 'allineamento bloccato finché il cliente non conferma');
   assert.equal(shoppingTotals(), 200, 'spesa con la quantità originale della ricetta');
 });
 
-test('spesa: interruttore acceso → dosi del cliente; spento → dosi originali', () => {
-  scenario({ dayType: 'rest', adapted: true });
-  assert.equal(shoppingTotals(), 80, 'spesa allineata alla giornata Riposo');
-  scenario({ dayType: 'training', adapted: true });
-  assert.equal(shoppingTotals(), 120, 'spesa allineata alla giornata Allenamento');
-  scenario({ dayType: 'training', adapted: false });
+test('spesa: interruttore acceso → dosi della struttura; spento → dosi originali', () => {
+  scenario({ dayType: 'rest', aligned: true });
+  assert.equal(shoppingTotals(), 60, 'spesa allineata alla giornata Riposo');
+  scenario({ dayType: 'training', aligned: true });
+  assert.equal(shoppingTotals(), 80, 'spesa allineata alla giornata Allenamento');
+  scenario({ dayType: 'training', aligned: false });
   assert.equal(shoppingTotals(), 200, 'interruttore spento: quantità originali');
 });
 
@@ -216,10 +258,20 @@ test('batch cooking: le quantità seguono lo stesso interruttore', () => {
   days.tuesday.lunch = 'L1';
   const plan = PianoDomain.migratePlan({ days, defaultDays: JSON.parse(JSON.stringify(days)), batchRules: {}, batchTemplates: templates });
   plan.batchTemplates = templates;
-  PianoDomain.activateGuideRuleSet(STRUCTURE, []);
+  plan.alignedDosesEnabled = true;
+  appState.saasContext = { state: 'assigned', profile: CLIENT_PROFILE() };
+  appState.saasPolicy = { mode: 'assigned' };
+  // Il resolver legge lo stato dell'app: piano attivo e cache motore coerenti.
+  appState.plan = plan;
+  invalidateDietEngine();
   const recipes = { L1: RECIPE };
-  const on = PianoDomain.activeBatch('monday', plan, templates, recipes, 'single', { applyGuide: true });
-  assert.equal(on[0].tasks[0].quantity, '120 g', 'batch con dosi del cliente');
-  const off = PianoDomain.activeBatch('monday', plan, templates, recipes, 'single', { applyGuide: false });
-  assert.equal(off[0].tasks[0].quantity, '200 g', 'batch con quantità originali');
+  // La quantità del task segue il pranzo target (martedì, allenamento): 80g
+  // della struttura invece dei 200g originali.
+  const on = PianoDomain.activeBatch('monday', plan, templates, recipes, 'single', { resolveRecipe: shoppingResolveRecipe });
+  assert.equal(on[0].tasks[0].quantity, '80g', 'batch con le dosi allineate della struttura');
+  // Interruttore spento: il resolver restituisce null → dose originale
+  const off = PianoDomain.activeBatch('monday', plan, templates, recipes, 'single', { resolveRecipe: () => null });
+  assert.equal(off[0].tasks[0].quantity, '200g', 'batch con la quantità originale');
+  // Le ricette restano intatte
+  assert.equal(RECIPE.ingredients[0].portions.single, '200g');
 });

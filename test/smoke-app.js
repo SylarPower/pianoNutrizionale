@@ -183,8 +183,9 @@ appState.shopping = {
 };
 appState.deviceSettings = { portionProfile: 'single', darkMode: false, lastOpenDate: null };
 
-// Regressione: l'adattamento avviato dalla modalità lettura non deve catturare
-// input inesistenti e sovrascrivere i dati della ricetta con i fallback.
+// Regressione apertura in lettura: la ricetta si normalizza senza perdere
+// dati e NESSUN adattamento riscrive il documento (le dosi allineate sono
+// solo una vista calcolata dalla struttura assegnata dal professionista).
 const readModeRecipe = {
   id: 'READ-ADAPT', name: 'Pasta speciale', emoji: '🍝', slot: 'lunch',
   proteinCategory: 'Pollame',
@@ -201,18 +202,107 @@ openRecipeModal('READ-ADAPT');
 assert.equal(editMode, false, 'ricetta aperta in lettura');
 assert.deepEqual(currentModal.recipe.notes, ['Non scuocere', 'Usare pepe fresco'], 'nota speciale unificata in notes senza prefisso');
 assert.equal(currentModal.recipe.specialNote, undefined, 'campo specialNote rimosso dalla ricetta normalizzata');
-const beforeReadAdapt = clone(currentModal.recipe);
-adaptCurrentRecipeToGuide();
-assert.equal(editMode, true, 'dopo il click passa in modifica');
-for (const field of ['name', 'emoji', 'slot', 'proteinCategory', 'steps', 'notes']) {
-  assert.deepEqual(currentModal.recipe[field], beforeReadAdapt[field], `${field} preservato`);
-}
-assert.equal(currentModal.recipe.ingredients[0].name, beforeReadAdapt.ingredients[0].name);
-assert.deepEqual(currentModal.recipe.ingredients[1], beforeReadAdapt.ingredients[1], 'ingrediente non adattato identico');
-// Dosi v3 della tabella di riferimento: cereali al pranzo nel giorno di
-// allenamento = 70 g.
-assert.equal(currentModal.recipe.ingredients[0].portions.single, '70 g', 'porzione unica dopo adattamento');
+assert.equal(currentModal.recipe.ingredients[0].portions.single, '120g', 'porzioni originali intatte in lettura (nessun adattamento scrive il documento)');
 setRecipes(recipes);
+
+// ---- Riconoscimento ingredienti (catalogo globale dal profilo assegnato) ----
+const SMOKE_CATALOG = {
+  categories: [
+    { categoryId: 'cereali-cat', displayName: 'Cereali e tuberi' },
+    { categoryId: 'proteine-cat', displayName: 'Proteine' }
+  ],
+  families: [
+    { familyId: 'cereali', displayName: 'Cereali e derivati', categoryId: 'cereali-cat' },
+    { familyId: 'patate', displayName: 'Patate e tuberi', categoryId: 'cereali-cat' },
+    { familyId: 'uova', displayName: 'Uova', categoryId: 'proteine-cat' },
+    { familyId: 'pesce', displayName: 'Pesce', categoryId: 'proteine-cat' },
+    { familyId: 'conserve', displayName: 'Conserve e scatolame', categoryId: 'proteine-cat' }
+  ],
+  ingredients: [
+    { ingredientId: 'riso-venere', displayName: 'Riso venere', aliases: ['riso nero'], categoryId: 'cereali-cat', familyId: 'cereali', dietaryFlags: { vegetarian: true, vegan: true } },
+    { ingredientId: 'uova-intere', displayName: 'Uova intere', aliases: ['uovo', 'uova'], categoryId: 'proteine-cat', familyId: 'uova', dietaryFlags: { vegetarian: true, vegan: false } },
+    { ingredientId: 'tonno-fresco', displayName: 'Tonno fresco', aliases: ['tonno'], categoryId: 'proteine-cat', familyId: 'pesce', dietaryFlags: { vegetarian: false, vegan: false } },
+    { ingredientId: 'tonno-in-scatola', displayName: 'Tonno in scatola', aliases: ['tonno'], categoryId: 'proteine-cat', familyId: 'conserve', dietaryFlags: { vegetarian: false, vegan: false } }
+  ]
+};
+const SMOKE_DIET_PLAN = {
+  schemaVersion: window.PianoDomain.DIET_PLAN_SCHEMA_VERSION,
+  days: [{
+    dayId: 'd1', label: '', dayType: 'training',
+    meals: [{
+      mealId: 'lunch', note: '',
+      options: [
+        { optionId: 'o1', type: 'ingredients', note: '', items: [{ itemId: 'i1', ingredientId: 'riso-venere', amount: { value: 70, unit: 'g' } }] },
+        { optionId: 'o2', type: 'family-block', note: '', blocks: [{
+          blockId: 'b1', referenceFamilyId: 'cereali', referenceIngredientId: 'riso-venere',
+          referenceAmount: { value: 40, unit: 'g' }, templateId: 'tpl1',
+          templateSnapshot: { revisionId: '1', referenceAmount: { value: 80, unit: 'g' }, equivalents: [{ familyId: 'patate', ingredientId: null, amount: { value: 250, unit: 'g' } }] },
+          overrides: []
+        }] }
+      ]
+    }],
+    generalNotes: ''
+  }]
+};
+appState.saasPolicy = { mode: 'assigned' };
+appState.saasContext = {
+  state: 'assigned',
+  profile: {
+    assignmentId: 'a1', structureId: 's1', structureRevisionId: '3', structureName: 'Smoke struttura',
+    structureRevision: { revisionId: '3', dietPlan: SMOKE_DIET_PLAN },
+    catalog: SMOKE_CATALOG
+  }
+};
+
+// Stati distinti: resolved / recognized-generic / ambiguous / unknown, mai
+// falsi unknown e mai auto-canonizzazione (tonno: due ingredienti in famiglie
+// diverse → ambiguo; un nome che identifica solo la famiglia → generico).
+assert.equal(recognizeIngredientText('Uova intere').status, 'resolved', 'nome esatto riconosciuto');
+assert.equal(recognizeIngredientText('uovo').status, 'resolved', 'alias singolare uovo riconosciuto');
+const tonno = recognizeIngredientText('tonno');
+assert.equal(tonno.status, 'ambiguous', 'tonno noto ma ambiguo (famiglie diverse): mai auto-mappato');
+assert.equal(tonno.candidates.length, 2, 'tonno elenca i due candidati distinti');
+assert.equal(recognizeIngredientText('kiwi unicorno').status, 'unknown', 'sconosciuto resta sconosciuto');
+
+// Meta editor: lo stato guida la UI (Segnala solo per unknown).
+const metaRecipe = { ingredients: [{ name: 'Uova intere' }, { name: 'tonno' }, { name: 'kiwi unicorno' }] };
+const meta = editorIngredientMeta(metaRecipe);
+assert.equal(meta[0].recognitionStatus, 'resolved', 'editor: uova resolved');
+assert.equal(meta[0].ingredientId, 'uova-intere', 'editor: ingredientId risolto per uova');
+assert.equal(meta[1].recognitionStatus, 'ambiguous', 'editor: tonno ambiguo senza id impostato');
+assert.equal(meta[1].ingredientId, '', 'editor: nessun id inventato per tonno');
+assert.equal(meta[2].recognitionStatus, 'unknown', 'editor: kiwi unicorno unknown');
+
+// ---- Dosi allineate: vista calcolata, il documento resta originale ----
+const l1 = getRecipe('L1');
+const originalL1 = JSON.stringify(l1);
+const resolution = resolvePlannedRecipe(l1, 'monday', 'lunch');
+assert.equal(resolution.aligned, true, 'ricetta del pasto allineata alla struttura');
+const alignedRice = resolution.recipe.ingredients.find(item => item.name === 'Riso venere');
+assert.equal(alignedRice.portions.single, '70g', 'dose allineata dalla struttura (70g, non gli originali 90g)');
+assert.ok(resolution.omitted.some(item => item.name === 'Uova intere'), 'ingrediente non previsto dalla opzione segnalato come omesso');
+assert.equal(resolution.changed, true, 'allineamento marcato come cambiato');
+assert.equal(JSON.stringify(l1), originalL1, 'la ricetta originale NON viene mai modificata');
+
+// Toggle: con dosi allineate disattivate la vista resta sulle originali.
+appState.plan.alignedDosesEnabled = false;
+assert.equal(resolvePlannedRecipe(l1, 'monday', 'lunch').aligned, false, 'toggle OFF: dosi originali');
+appState.plan.alignedDosesEnabled = true;
+
+// ---- Equivalenti proporzionali dai blocchi (template snapshot + proporzioni) ----
+openRecipeModal('L1', 'monday', 'lunch');
+const equivalents = dietEquivalentsForIngredient('Riso venere', 'monday', 'lunch');
+assert.ok(equivalents, 'equivalenti disponibili per un ingrediente del blocco');
+assert.equal(equivalents.referenceFamilyLabel, 'Cereali e derivati', 'famiglia di riferimento del blocco');
+assert.equal(equivalents.rows.length, 1, 'una riga equivalente dal template');
+assert.equal(equivalents.rows[0].label, 'Patate e tuberi', 'etichetta dalla famiglia del catalogo');
+assert.equal(equivalents.rows[0].amount, '125g', 'quantità proporzionale: 250 g × (40/80) = 125 g');
+assert.equal(equivalents.rows[0].overridden, false, 'nessun override nel blocco dello smoke');
+// Nessun equivalente senza profilo assegnato.
+appState.saasPolicy = {};
+appState.saasContext = null;
+assert.equal(dietEquivalentsForIngredient('Riso venere', 'monday', 'lunch'), null, 'senza struttura assegnata niente equivalenti');
+assert.equal(resolvePlannedRecipe(l1, 'monday', 'lunch').aligned, false, 'senza struttura assegnata niente allineamento');
 
 // ---- Percorsi di rendering ----
 renderGlobalHeader();
@@ -265,8 +355,9 @@ appState.plan.batchTemplates = [];
 appState.plan.days.tuesday.lunch = 'D1';
 openBatchModal('monday');
 assert.match(batchModalList.innerHTML, /Ingredienti · dosi totali/, 'dosi totali integrate nella ricetta completa');
-// Dosi v3: cena 70g + pranzo (giorno di allenamento) 70g = 140g di riso.
-assert.match(batchModalList.innerHTML, /140g/, 'dose cena e pranzo sommata');
+// Dosi originali sommate: cena 90g + pranzo 90g = 180g di riso (nessuna
+// tabella guide: le quantità sono quelle reali delle ricette).
+assert.match(batchModalList.innerHTML, /180g/, 'dose cena e pranzo sommata');
 assert.doesNotMatch(batchModalList.innerHTML, /Doppia porzione|Pranzo di Martedì|tra 1 giorno/, 'testi ridondanti assenti per cena e pranzo successivo');
 closeBatchModal();
 appState.plan.batchTemplates = originalTemplates;
@@ -595,133 +686,23 @@ assert.doesNotMatch(document.getElementById('view-settings').innerHTML, /Dati e 
 assert.doesNotMatch(document.getElementById('view-settings').innerHTML, /cloud-section/, 'niente debug cloud/import dedicati nelle Impostazioni');
 // I pulsanti "Ricevute" sono sostituiti dalla campanella del centro notifiche.
 assert.doesNotMatch(document.getElementById('view-settings').innerHTML, /📥 Ricevute/, 'pulsanti Ricevute rimossi dalle Impostazioni');
-assert.doesNotMatch(document.getElementById('view-settings').innerHTML, /aria-controls="guide-struttura-della-dieta"/, 'Struttura della dieta non è più un accordion autonomo');
-assert.match(document.getElementById('view-settings').innerHTML, /aria-controls="guide-altre-informazioni-e-faq"[\s\S]*<h3>Struttura della dieta<\/h3>/, 'la struttura è contenuta in Altre informazioni e FAQ');
+// Impostazioni: nessuna sezione del vecchio manuale Guide (tabelle alternative,
+// struttura A/R, FAQ): la dieta del professionista vive in «La mia dieta».
+assert.doesNotMatch(document.getElementById('view-settings').innerHTML, /guide-|Struttura della dieta|altre-informazioni/i, 'nessuna sezione del manuale Guide nelle Impostazioni');
+assert.match(document.getElementById('view-settings').innerHTML, /Uscita dall'account/, 'sezione uscita presente');
 
-// ---- Popup e tabelle delle alternative Guide (fonte unica js/domain.js) ----
-// Le Impostazioni non hanno una giornata di riferimento, quindi mostrano
-// entrambe le colonne pranzo: Alimento | Pranzo A | Pranzo R | Cena.
-{
-  const settingsHtml = document.getElementById('view-settings').innerHTML;
-  assert.match(settingsHtml, /alternative-table guide-carbs cols-4/, 'tabella carboidrati a 4 colonne nelle Impostazioni');
-  assert.match(settingsHtml, /alternative-table guide-proteins cols-2/, 'tabella proteine a 2 colonne nelle Impostazioni');
-  assert.match(settingsHtml, /Carboidrati · riferimento Pasta\/Riso 70g a pranzo A, 50g a pranzo R, 40g a cena/, 'titolo derivato dalla tabella');
-  assert.match(settingsHtml, /<strong>Alimento<\/strong><strong>Pranzo A<\/strong><strong>Pranzo R<\/strong><strong>Cena<\/strong>/, 'intestazione carboidrati con entrambe le giornate');
-  assert.match(settingsHtml, /<strong>Alimento<\/strong><strong>Pranzo e cena<\/strong>/, 'intestazione proteine a colonna unica');
-  assert.match(settingsHtml, /Gnocchi<\/span><strong>150g<\/strong><strong>110g<\/strong><strong>80g<\/strong>/, 'riga gnocchi A + R + cena');
-  assert.match(settingsHtml, /Legumotti<\/span><strong>70g<\/strong>/, 'riga legumotti dose unica');
-  assert.match(settingsHtml, /Fiocchi di latte<\/span><strong>200g<\/strong>/, 'riga fiocchi di latte 200g');
-  assert.match(settingsHtml, /Uova<\/span><strong>180g<\/strong>/, 'riga uova 180g');
-  assert.equal((settingsHtml.match(/<strong>Cena<\/strong>/g) || []).length, 1, 'una sola colonna Cena: la tabella proteine ne resta priva');
-}
-
-// Popup al tocco di un ingrediente: la tabella mostrata dipende dalla famiglia
-// canonica e dalla GIORNATA della ricetta aperta.
-setupGuideModal();
-
-// Giornata di allenamento: a pranzo devono comparire le dosi A (cereali 70g).
-currentModal = { recipe: { id: 'X', slot: 'lunch', ingredients: [], steps: [] }, dayType: 'training' };
-openGuideAlternatives('Pasta integrale');
-{
-  const popupHtml = document.getElementById('guide-modal-body')._innerHTML;
-  assert.match(popupHtml, /alternative-table guide-carbs cols-3/, 'popup carboidrati per la pasta');
-  assert.doesNotMatch(popupHtml, /guide-proteins/, 'nessuna tabella proteine per un carboidrato');
-  assert.match(popupHtml, /<strong>Alimento<\/strong><strong>Pranzo A<\/strong><strong>Cena<\/strong>/, 'colonne Alimento | Pranzo A | Cena');
-  assert.doesNotMatch(popupHtml, /Pranzo R/, 'in allenamento non si mostrano le dosi di riposo');
-  assert.match(popupHtml, /guide-highlight/, 'riga della pasta evidenziata');
-  assert.match(popupHtml, /Cereali<\/span><strong>70g<\/strong><strong>40g<\/strong>/, 'cereali con la dose di allenamento');
-  assert.match(popupHtml, /Pane<\/span><strong>100g<\/strong><strong>50g<\/strong>/, 'pane con la dose di allenamento');
-  assert.equal(document.getElementById('guide-modal-subtitle').textContent, 'Carboidrati equivalenti · giorno di allenamento · riferimento Pasta/Riso 70g a pranzo, 40g a cena');
-}
-
-// Giornata di riposo: stesse righe, dosi R (cereali 50g).
-currentModal = { recipe: { id: 'X', slot: 'lunch', ingredients: [], steps: [] }, dayType: 'rest' };
-openGuideAlternatives('Pasta integrale');
-{
-  const popupHtml = document.getElementById('guide-modal-body')._innerHTML;
-  assert.match(popupHtml, /<strong>Alimento<\/strong><strong>Pranzo R<\/strong><strong>Cena<\/strong>/, 'colonne Alimento | Pranzo R | Cena');
-  assert.match(popupHtml, /Cereali<\/span><strong>50g<\/strong><strong>40g<\/strong>/, 'cereali con la dose di riposo');
-  assert.match(popupHtml, /Pane<\/span><strong>70g<\/strong><strong>50g<\/strong>/, 'pane con la dose di riposo');
-  assert.equal(document.getElementById('guide-modal-subtitle').textContent, 'Carboidrati equivalenti · giorno di riposo · riferimento Pasta/Riso 50g a pranzo, 40g a cena');
-}
-
-// Le proteine non cambiano con la giornata: colonna unica in entrambi i casi.
-['training', 'rest'].forEach(dayType => {
-  currentModal = { recipe: { id: 'X', slot: 'lunch', ingredients: [], steps: [] }, dayType };
-  openGuideAlternatives('Petto di pollo');
-  const popupHtml = document.getElementById('guide-modal-body')._innerHTML;
-  assert.match(popupHtml, /alternative-table guide-proteins cols-2/, `popup proteine (${dayType})`);
-  assert.doesNotMatch(popupHtml, /guide-carbs/, 'nessuna tabella carboidrati per una proteina');
-  assert.match(popupHtml, /<strong>Alimento<\/strong><strong>Pranzo e cena<\/strong>/, 'colonna unica per le proteine');
-  assert.match(popupHtml, /Affettati<\/span><strong>150g<\/strong>/, 'affettati 150g');
-  assert.match(popupHtml, /Uova<\/span><strong>180g<\/strong>/, 'uova 180g');
-  assert.match(popupHtml, /Legumotti<\/span><strong>70g<\/strong>/, 'legumotti 70g');
-  assert.equal(document.getElementById('guide-modal-subtitle').textContent, 'Proteine equivalenti · riferimento Pollo e tacchino 200g');
-});
-currentModal = null;
-closeGuideAlternatives();
-assert.equal(document.getElementById('guide-alternatives-modal').classList.contains('hidden'), true, 'popup chiuso');
-openGuideAlternatives('Zucchine');
-assert.equal(document.getElementById('guide-alternatives-modal').classList.contains('hidden'), true, 'la verdura non apre il popup');
-
-// Spuntini e merende: nessuna equivalenza. I crackers dello spuntino valgono
-// 30g fissi e non si scambiano con i 70g dei cereali, quindi non sono tappabili.
-['breakfast', 'snack1', 'snack2'].forEach(slot => {
-  currentModal = { recipe: { id: 'S', slot, ingredients: [], steps: [] }, dayType: 'training' };
-  ['Crackers', 'Pane', 'Yogurt greco', 'Fiocchi di latte', 'Uova'].forEach(name => {
-    assert.equal(
-      getGuideAlternativesForIngredient(name), null,
-      `${name} non ha equivalenze in ${slot}`
-    );
-  });
-  openGuideAlternatives('Crackers');
-  assert.equal(
-    document.getElementById('guide-alternatives-modal').classList.contains('hidden'), true,
-    `il popup non si apre in ${slot}`
-  );
-});
-
-// Gli stessi ingredienti restano tappabili a pranzo e a cena.
-['lunch', 'dinner'].forEach(slot => {
-  currentModal = { recipe: { id: 'S', slot, ingredients: [], steps: [] }, dayType: 'training' };
-  assert.ok(getGuideAlternativesForIngredient('Crackers'), `crackers tappabili in ${slot}`);
-  assert.ok(getGuideAlternativesForIngredient('Petto di pollo'), `pollo tappabile in ${slot}`);
-});
-
-// Cross-slot: conta il pasto di DESTINAZIONE, non quello della ricetta. Una
-// ricetta da pranzo servita come spuntino non mostra le equivalenze.
-currentModal = { recipe: { id: 'S', slot: 'lunch', ingredients: [], steps: [] }, slot: 'dinner', dayType: 'training' };
-assert.ok(getGuideAlternativesForIngredient('Crackers'), 'pranzo → cena: equivalenze attive');
-currentModal = { recipe: { id: 'S', slot: 'lunch', ingredients: [], steps: [] }, slot: 'snack1', dayType: 'training' };
-assert.equal(getGuideAlternativesForIngredient('Crackers'), null, 'pranzo → spuntino: nessuna equivalenza');
-currentModal = null;
-
-// Riconoscimento degli ingredienti: ogni famiglia delle tabelle alternative è
-// raggiungibile dal popup con un nome reale.
-{
-  const carbNames = ['Pasta', 'Riso', 'Gnocchi', 'Farro', 'Orzo', 'Quinoa', 'Grano saraceno', 'Amaranto',
-    'Cous cous', 'Pane', 'Piadina', 'Crackers', 'Grissini', 'Crostini', 'Polenta', 'Patate'];
-  carbNames.forEach(name => {
-    assert.equal(isGuideCarbIngredient(name), true, `${name} apre le equivalenze carboidrati`);
-    assert.equal(isGuideProteinIngredient(name), false, `${name} non è una proteina`);
-  });
-  const proteinNames = ['Maiale', 'Affettati', 'Salumi', 'Fiocchi di latte', 'Uova', 'Legumotti',
-    'Petto di pollo', 'Manzo', 'Merluzzo', 'Tonno', 'Salmone', 'Gamberi', 'Montasio', 'Lenticchie'];
-  proteinNames.forEach(name => {
-    assert.equal(isGuideProteinIngredient(name), true, `${name} apre le equivalenze proteiche`);
-    assert.equal(isGuideCarbIngredient(name), false, `${name} non è un carboidrato`);
-  });
-  ['Zucchine', 'Basilico', 'Olio EVO'].forEach(name => {
-    assert.equal(getGuideAlternativesForIngredient(name), null, `${name} non ha equivalenze Guide`);
-  });
-  // Le etichette delle tabelle sono riconoscibili dal popup (stessa famiglia).
-  PianoDomain.GUIDE_CARB_ALTERNATIVES.forEach(entry => {
-    assert.ok(isGuideCarbIngredient(entry.label), `etichetta tabella riconosciuta: ${entry.label}`);
-  });
-  PianoDomain.GUIDE_PROTEIN_ALTERNATIVES.forEach(entry => {
-    assert.ok(isGuideProteinIngredient(entry.label.split(' / ')[0]), `etichetta tabella riconosciuta: ${entry.label}`);
-  });
-}
+// ---- Regressione pulizia: il vecchio layer Guide non esiste più ----
+// Le equivalenze arrivano SOLO dai template collegati ai blocchi della
+// struttura assegnata (testate sopra); nessuna tabella alternativa globale.
+assert.equal(typeof openGuideAlternatives, 'undefined', 'openGuideAlternatives rimosso');
+assert.equal(typeof setupGuideModal, 'undefined', 'setupGuideModal rimosso');
+assert.equal(typeof getGuideAlternativesForIngredient, 'undefined', 'getGuideAlternativesForIngredient rimosso');
+assert.equal(typeof isGuideCarbIngredient, 'undefined', 'isGuideCarbIngredient rimosso');
+assert.equal(typeof isGuideProteinIngredient, 'undefined', 'isGuideProteinIngredient rimosso');
+assert.equal(typeof adaptCurrentRecipeToGuide, 'undefined', 'adaptCurrentRecipeToGuide rimosso');
+assert.equal(window.PianoDomain.GUIDE_GRAMMATURE, undefined, 'GUIDE_GRAMMATURE non esiste più nel dominio');
+assert.equal(window.PianoDomain.GUIDE_CARB_ALTERNATIVES, undefined, 'tabelle alternative Guide rimosse dal dominio');
+assert.equal(window.PianoDomain.DEFAULT_CONSTRAINTS, undefined, 'frequenze proteiche globali rimosse dal dominio');
 
 // ---- Prezzi condivisi (Spesa Smart): rendering delle tre schede ----
 // Nello smoke non c'è un Firestore reale: la rubrica prezzi arriva da uno stub
@@ -849,39 +830,35 @@ assert.match(document.getElementById('generator-preview')._innerHTML, /Anteprima
   assert.match(paramsHtml, /Cucinare una volta e mangiare due volte/, 'titolo batch più semplice');
   assert.match(paramsHtml, /Quante volte può tornare la stessa ricetta\?/, 'titolo ripetizioni più semplice');
   assert.match(paramsHtml, /Vuoi più scelta tra pranzo e cena\?/, 'titolo cross-slot più semplice');
-  assert.match(paramsHtml, /Proteine della settimana/, 'sezione avanzata con titolo più semplice');
   assert.match(paramsHtml, /generatorParamChanged\('batchPairs'/, 'controllo batch cena → pranzo presente');
   assert.match(paramsHtml, /value=\"7\"/, 'batch selezionabile fino a sette volte');
   assert.match(paramsHtml, /generatorParamChanged\('maxRepeats'/, 'controllo tetto ripetizioni presente');
   assert.match(paramsHtml, /generatorParamChanged\('allowCrossSlot'/, 'controllo cross-slot presente');
   assert.match(paramsHtml, /generatorSlotToggled\('lunch'/, 'toggle slot pranzo presente');
-  assert.match(paramsHtml, /generatorConstraintChanged\('legumesMin'/, 'input frequenze min\/max presente');
+  // Nessun vincolo di frequenza: il motore è puramente strutturale e le
+  // indicazioni nutrizionali vivono nella struttura dieta del professionista.
+  assert.doesNotMatch(paramsHtml, /Proteine della settimana/, 'pannello frequenze proteiche rimosso');
+  assert.doesNotMatch(paramsHtml, /generatorConstraintChanged/, 'nessun input min/max frequenze');
+  assert.doesNotMatch(paramsHtml, /generator-constraint/, 'nessuna riga vincoli nel pannello');
+  assert.equal(typeof generatorCountStatus, 'undefined', 'stato ok/warning dei conteggi rimosso');
   generatorSlotToggled('breakfast', false);
   assert.equal(getGeneratorPrefs().slots.breakfast, false, 'slot escluso salvato nelle preferenze');
   generatorParamChanged('batchPairs', 3);
   assert.equal(getGeneratorPrefs().batchPairs, 3, 'batch cena → pranzo salvato');
   generatorParamChanged('batchPairs', 9);
   assert.equal(getGeneratorPrefs().batchPairs, 7, 'batch limitato a sette volte');
-  generatorConstraintChanged('legumesMin', '9');
-  assert.equal(getGeneratorPrefs().constraints.legumesMin, 9, 'frequenze limitate a 0-14 pasti');
-  generatorConstraintChanged('legumesMax', '20');
-  assert.equal(getGeneratorPrefs().constraints.legumesMax, 14, 'massimo frequenze limitato a 14');
-  assert.match(paramsHtml, /Affettati e carni miste/, 'riga Affettati e carni miste nelle frequenze');
-  assert.match(paramsHtml, /generatorConstraintChanged\('curedMeatsMin'/, 'controllo min curedMeats presente');
-  assert.match(paramsHtml, /generatorConstraintChanged\('curedMeatsMax'/, 'controllo max curedMeats presente');
-  assert.match(paramsHtml, /max="14"/, 'input frequenze con max 14');
+  generatorParamChanged('maxRepeats', 99);
+  assert.equal(getGeneratorPrefs().maxRepeats, 7, 'ripetizioni limitate a sette');
   generatorPrefsReset();
   assert.equal(getGeneratorPrefs().batchPairs, GENERATOR_PREFS_DEFAULTS.batchPairs, 'ripristino valori predefiniti');
-  appState.deviceSettings.generatorPrefs = { constraints: { legumesMax: 4 }, slots: {} };
-  assert.equal(getGeneratorPrefs().constraints.legumesMax, 14, 'migrazione: legumesMax vecchio default 4 → 14');
-  assert.equal(getGeneratorPrefs().version, 2, 'versione assegnata dopo migrazione');
+  // Migrazione v3: le vecchie preferenze con vincoli vengono migrate senza
+  // portarsi dietro i constraints rimossi.
   appState.deviceSettings.generatorPrefs = { version: 2, constraints: { legumesMax: 10 }, slots: {} };
-  assert.equal(getGeneratorPrefs().constraints.legumesMax, 10, 'preferenze personalizzate preservate dopo migrazione');
+  const migrated = getGeneratorPrefs();
+  assert.equal(migrated.constraints, undefined, 'migrazione: constraints scartati');
+  assert.equal(migrated.version, 3, 'versione 3 assegnata dopo migrazione');
+  assert.equal(migrated.slots.breakfast, true, 'slot default preservati dopo migrazione');
   generatorPrefsReset();
-  const advDetails = document.getElementById('generator-advanced');
-  if (advDetails) advDetails.open = true;
-  generatorConstraintChanged('legumesMin', '4');
-  assert.equal(document.getElementById('generator-advanced')?.open, true, 'pannello avanzato resta aperto dopo modifica');
   generatorSlotToggled('breakfast', true);
 }
 // I blocchi sono espliciti, vicini agli altri parametri e richiudibili.

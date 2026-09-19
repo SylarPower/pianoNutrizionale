@@ -1,7 +1,8 @@
 // Configurazione dell'interfaccia. Le ricette, gli ingredienti e il piano
 // settimanale NON sono presenti nel codice: vengono caricati da Firebase.
-const CATALOG_SCHEMA_VERSION = 5;
-const DOMAIN_SCHEMA_VERSION = 5;
+// Versione allineata a js/domain.js VERSION 7 (catalogo v2 + dosi allineate).
+const CATALOG_SCHEMA_VERSION = 7;
+const DOMAIN_SCHEMA_VERSION = 7;
 
 function createEmptyWeeklyPlan() {
   const types = {
@@ -18,11 +19,8 @@ function createEmptyWeeklyPlan() {
     defaultDays: JSON.parse(JSON.stringify(days)),
     batchRules: {},
     batchTemplates: [],
-    guideModes: PianoDomain.emptyGuideModes(),
-    guideAdaptations: {}
+    // Scelta unica del cliente: dosi originali delle ricette o dosi allineate
+    // alla struttura dieta assegnata (solo visualizzazione, mai riscritture).
+    alignedDosesEnabled: true
   };
 }
-
-// Linee guida e alternative alimentari del nutrizionista. Fonte unica:
-// js/domain.js (GUIDE_GRAMMATURE e derivati). Qui c'è solo il riferimento.
-const GUIDE_MANUAL = PianoDomain.GUIDE_MANUAL;

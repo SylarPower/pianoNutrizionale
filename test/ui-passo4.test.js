@@ -131,52 +131,73 @@ appState.deviceSettings = {
 };
 appState.household = null;
 
-const FREQ = { legumes: { min: 2, max: 4 } };
-function assignedWithFreq() {
+// Struttura dieta assegnata (profilo v3, blocco cereali 80g a pranzo).
+const ASSIGNED_CATALOG = {
+  catalogVersion: 1,
+  categories: [{ categoryId: 'carb', displayName: 'Carboidrati', sortOrder: 0 }],
+  families: [{ familyId: 'cereali', displayName: 'Cereali', categoryId: 'carb', sortOrder: 0 }],
+  ingredients: [
+    { ingredientId: 'pasta-di-semola', displayName: 'Pasta di semola', aliases: ['pasta'], categoryId: 'carb', familyId: 'cereali', dietaryFlags: { vegetarian: true, vegan: true }, status: 'active' },
+    { ingredientId: 'riso', displayName: 'Riso', aliases: [], categoryId: 'carb', familyId: 'cereali', dietaryFlags: { vegetarian: true, vegan: true }, status: 'active' }
+  ]
+};
+function assignedStructure(extraMealValue = 80) {
+  return {
+    schemaVersion: 1, clientProfileId: 'cp1', assignmentId: 'a1',
+    structureId: 's1', structureRevisionId: 'rev1', structureChecksum: 'chk',
+    structureName: 'Base', ingredientCatalogVersion: 1,
+    effectiveAt: '2026-01-01T00:00:00.000Z', expiresAt: null,
+    structureRevision: { revisionId: 'rev1', dietPlan: PianoDomain.createEmptyDietPlan({ days: [
+      PianoDomain.createDietPlanDay('training', { dayId: 't', meals: [
+        PianoDomain.createDietPlanMeal('lunch', { options: [
+          PianoDomain.createDietPlanOption({ type: 'family-block', blocks: [
+            PianoDomain.createDietPlanBlock({ referenceFamilyId: 'cereali', referenceIngredientId: 'riso', referenceAmount: { value: extraMealValue, unit: 'g' } })
+          ] })
+        ] })
+      ] })
+    ] }) },
+    catalog: JSON.parse(JSON.stringify(ASSIGNED_CATALOG)),
+    compatibleClientSchema: 7
+  };
+}
+function assignedWithStructure() {
   appState.household = null;
-  appState.saasContext = { state: 'assigned', profile: { clientOverrides: { revision: 1, doses: {}, frequencies: FREQ } } };
+  appState.saasContext = { state: 'assigned', profile: assignedStructure() };
   appState.saasPolicy = { mode: 'assigned', migrationRequired: false };
   appState.plan = PianoDomain.migratePlan(createEmptyWeeklyPlan());
-  appState.plan = PianoDomain.setAdaptedQuantitiesEnabled(appState.plan, true);
+  appState.plan = PianoDomain.setPlanAlignedDosesEnabled(appState.plan, true);
+  invalidateDietEngine();
 }
 
-// ---- Vincoli frequenze ----
+// ---- Generatore: solo preferenze strutturali, mai frequenze cliniche ----
 
-test('saasGeneratorConstraints: profilo confermato e personale → frequenze profilo', () => {
-  assignedWithFreq();
-  const constraints = saasGeneratorConstraints();
-  assert.equal(constraints.legumesMin, 2);
-  assert.equal(constraints.legumesMax, 4);
-  assert.equal(constraints.poultryMin, 1, 'default per le altre famiglie');
-});
-
-test('saasGeneratorConstraints: household, pending e assenza → null', () => {
-  assignedWithFreq();
-  appState.household = { id: 'h1' };
-  assert.equal(saasGeneratorConstraints(), null, 'household: frequenze standard');
-  appState.household = null;
-  appState.saasPolicy = { mode: 'pending-confirmation', migrationRequired: true };
-  assert.equal(saasGeneratorConstraints(), null, 'non confermato: frequenze standard');
-  appState.saasPolicy = { mode: 'assigned', migrationRequired: false };
-  appState.saasContext = { state: 'assigned', profile: {} };
-  assert.equal(saasGeneratorConstraints(), null, 'senza override: preferenze dispositivo');
-});
-
-test('computeGeneratorProposal: usa le frequenze profilo e mostra la nota', () => {
-  assignedWithFreq();
+test('generatore: nessun vincolo di frequenza dal profilo assegnato', () => {
+  assignedWithStructure();
   setRecipes([]);
   appState.deviceSettings.generatorPrefs = null;
   generatorState.seed = 7;
   const previous = PianoDomain.generateWeek;
   let captured = null;
-  PianoDomain.generateWeek = (catalog, options) => { captured = options.constraints; return previous(catalog, options); };
+  PianoDomain.generateWeek = (catalog, options) => { captured = options; return previous(catalog, options); };
   try {
     computeGeneratorProposal(false);
-    assert.equal(captured.legumesMin, 2, 'generatore guidato dal profilo');
-    assert.match(document.getElementById('generator-preview').innerHTML, /Frequenze del tuo profilo professionale/);
+    assert.equal(captured.constraints, undefined, 'il generatore non riceve vincoli di frequenza');
+    assert.ok(captured.batchPairs !== undefined && captured.slots !== undefined && captured.maxRepeats !== undefined, 'solo opzioni strutturali');
   } finally {
     PianoDomain.generateWeek = previous;
   }
+});
+
+test('generatore: household, pending e assenza restano sul comportamento standard', () => {
+  assignedWithStructure();
+  appState.household = { id: 'h1' };
+  appState.saasContext = { state: 'unassigned' };
+  appState.saasPolicy = { mode: 'original-only', migrationRequired: false };
+  setRecipes([]);
+  appState.deviceSettings.generatorPrefs = null;
+  generatorState.seed = 7;
+  computeGeneratorProposal(false);
+  assert.ok(document.getElementById('generator-preview').innerHTML.length > 0, 'anteprima generata con le preferenze dispositivo');
 });
 
 test('computeGeneratorProposal: senza profilo usa le preferenze dispositivo', () => {
@@ -193,62 +214,39 @@ test('computeGeneratorProposal: senza profilo usa le preferenze dispositivo', ()
 
 // ---- Dosi override fino a settimana e spesa ----
 
-test('dosi override nel motore: settimana e spesa usano la dose cliente', () => {
-  const snapshot = {
-    grammature: [...PianoDomain.GUIDE_GRAMMATURE],
-    carbs: [...PianoDomain.CARB_REFERENCE],
-    alternatives: { ...PianoDomain.GUIDE_ALTERNATIVES },
-    constraints: { ...PianoDomain.DEFAULT_CONSTRAINTS },
-    guide: { ...PianoDomain.GUIDE_MANUAL }
-  };
-  try {
-    assignedWithFreq();
-    // Simula il profilo servito: regole studio + override cliente fusi.
-    const engine = PianoSaas.engineRulesFor({
-      schemaVersion: 1,
-      rules: [{
-        family: 'pasta', group: 'carb', label: 'Pasta', aliases: ['pasta', 'pasta di semola'],
-        slots: { lunch: { training: 90, rest: 70 }, dinner: { training: 40, rest: 40 } }
-      }],
-      freeAliases: [],
-      clientOverrides: { revision: 1, doses: { pasta: { lunch: { training: 120 } } }, frequencies: {} }
-    });
-    assert.equal(PianoDomain.activateGuideRuleSet(engine.rules, engine.freeAliases), true);
-    const recipe = {
-      id: 'L1', slot: 'lunch', name: 'Pasta', emoji: '🍝',
-      ingredients: [{ name: 'Pasta di semola', portions: { single: '120 g' } }]
-    };
-    setRecipes([recipe]);
-    appState.plan.days.monday.type = 'training';
-    appState.plan.days.monday.lunch = 'L1';
-    const resolved = resolvePlannedRecipe(getRecipe('L1'), 'monday', 'lunch');
-    assert.equal(resolved.recipe.ingredients[0].portions.single, '120 g', 'settimana con dose cliente');
-    const list = PianoDomain.aggregateShopping(
-      appState.plan, { L1: getRecipe('L1') }, { monday: ['lunch'] }, 'single'
-    );
-    const pasta = list.find(entry => entry.ingredientId === PianoDomain.ingredientIdFor('Pasta di semola'));
-    assert.equal(pasta.totals.g, 120, 'spesa unica riflette la dose cliente');
-  } finally {
-    PianoDomain.GUIDE_GRAMMATURE.splice(0, PianoDomain.GUIDE_GRAMMATURE.length, ...snapshot.grammature);
-    PianoDomain.CARB_REFERENCE.splice(0, PianoDomain.CARB_REFERENCE.length, ...snapshot.carbs);
-    Object.keys(PianoDomain.GUIDE_ALTERNATIVES).forEach(key => delete PianoDomain.GUIDE_ALTERNATIVES[key]);
-    Object.assign(PianoDomain.GUIDE_ALTERNATIVES, snapshot.alternatives);
-    Object.assign(PianoDomain.DEFAULT_CONSTRAINTS, snapshot.constraints);
-    Object.assign(PianoDomain.GUIDE_MANUAL, snapshot.guide);
-  }
-});
-
-test('interazione: switch adattate OFF → originali anche con profilo assegnato', () => {
-  assignedWithFreq();
-  appState.plan = PianoDomain.setAdaptedQuantitiesEnabled(appState.plan, false);
+test('dosi della struttura: settimana e spesa seguono la dieta assegnata', () => {
+  assignedWithStructure();
   const recipe = {
     id: 'L1', slot: 'lunch', name: 'Pasta', emoji: '🍝',
-    ingredients: [{ name: 'Pasta di semola', portions: { single: '200 g' } }]
+    ingredients: [{ name: 'Pasta di semola', ingredientId: 'pasta-di-semola', portions: { single: '120 g' } }],
+    steps: [], notes: []
   };
   setRecipes([recipe]);
   appState.plan.days.monday.type = 'training';
   appState.plan.days.monday.lunch = 'L1';
   const resolved = resolvePlannedRecipe(getRecipe('L1'), 'monday', 'lunch');
-  assert.equal(resolved.mode, 'original');
+  assert.equal(resolved.aligned, true);
+  assert.equal(resolved.recipe.ingredients[0].portions.single, '80g', 'settimana con la dose della struttura');
+  const list = PianoDomain.aggregateShopping(
+    appState.plan, { L1: getRecipe('L1') }, { monday: ['lunch'] }, 'single',
+    {}, { resolveRecipe: shoppingResolveRecipe }
+  );
+  const pasta = list.find(entry => entry.ingredientId === 'pasta-di-semola');
+  assert.equal(pasta.totals.g, 80, 'spesa unica riflette la dose della struttura');
+});
+
+test('interazione: switch dosi allineate OFF → originali anche con profilo assegnato', () => {
+  assignedWithStructure();
+  appState.plan = PianoDomain.setPlanAlignedDosesEnabled(appState.plan, false);
+  const recipe = {
+    id: 'L1', slot: 'lunch', name: 'Pasta', emoji: '🍝',
+    ingredients: [{ name: 'Pasta di semola', ingredientId: 'pasta-di-semola', portions: { single: '200 g' } }],
+    steps: [], notes: []
+  };
+  setRecipes([recipe]);
+  appState.plan.days.monday.type = 'training';
+  appState.plan.days.monday.lunch = 'L1';
+  const resolved = resolvePlannedRecipe(getRecipe('L1'), 'monday', 'lunch');
+  assert.equal(resolved.aligned, false);
   assert.equal(resolved.recipe.ingredients[0].portions.single, '200 g');
 });

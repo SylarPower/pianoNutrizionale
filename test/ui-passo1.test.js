@@ -194,47 +194,47 @@ test('footer: Impostazioni resta dopo Prezzi e usa l’icona dedicata', () => {
   assert.match(indexHtml, /id="nav-settings"[\s\S]*⚙️[\s\S]*Impostazioni/, 'tab footer Impostazioni presente');
 });
 
-// ---- Switch quantità adattate ----
+// ---- Switch dosi allineate alla dieta assegnata ----
 
 test('switch: label cliccabile, interruttore accessibile e stato persistito', () => {
   appState.saasPolicy = { mode: 'assigned', migrationRequired: false };
-  appState.plan = PianoDomain.setAdaptedQuantitiesEnabled(appState.plan, true);
+  appState.plan = PianoDomain.setPlanAlignedDosesEnabled(appState.plan, true);
   renderWeek();
-  assert.match(weekHtml(), /<label class="week-adapted-row" for="week-adapted-toggle">/, 'testo cliccabile via label');
-  assert.match(weekHtml(), /id="week-adapted-toggle"/);
+  assert.match(weekHtml(), /<label class="week-adapted-row" for="week-aligned-toggle">/, 'testo cliccabile via label');
+  assert.match(weekHtml(), /id="week-aligned-toggle"/);
   assert.match(weekHtml(), /role="switch"/);
-  assert.match(weekHtml(), /aria-label="Ricette con quantità adattate alle linee guida"/);
-  assert.match(weekHtml(), /alle linee guida" checked/, 'stato ON riflesso');
-  appState.plan = PianoDomain.setAdaptedQuantitiesEnabled(appState.plan, false);
+  assert.match(weekHtml(), /aria-label="Dosi allineate alla mia dieta"/);
+  assert.match(weekHtml(), /alla mia dieta" checked/, 'stato ON riflesso');
+  appState.plan = PianoDomain.setPlanAlignedDosesEnabled(appState.plan, false);
   renderWeek();
-  assert.doesNotMatch(weekHtml(), /alle linee guida" checked/, 'stato OFF riflesso');
-  assert.equal(PianoDomain.normalizeAdaptedQuantitiesEnabled(appState.plan), false);
+  assert.doesNotMatch(weekHtml(), /alla mia dieta" checked/, 'stato OFF riflesso');
+  assert.equal(PianoDomain.planAlignedDosesEnabled(appState.plan), false);
 });
 
 test('switch: profilo non confermato mostra il blocco e resta sulle originali', () => {
-  appState.plan = PianoDomain.setAdaptedQuantitiesEnabled(appState.plan, true);
+  appState.plan = PianoDomain.setPlanAlignedDosesEnabled(appState.plan, true);
   appState.saasPolicy = { mode: 'pending-confirmation', migrationRequired: true };
   assert.equal(window.PIANO_SAAS_CONFIG.enabled, true);
-  assert.equal(planAdaptedQuantitiesEffective(), false, 'il blocco impedisce un adattamento non autorizzato');
+  assert.equal(planAlignedDosesEffective(), false, 'il blocco impedisce un allineamento non autorizzato');
   renderWeek();
-  assert.match(weekHtml(), /Stai vedendo le quantità originali/, 'testo chiaro sul blocco');
+  assert.match(weekHtml(), /Stai vedendo le dosi originali/, 'testo chiaro sul blocco');
   assert.match(weekHtml(), /conferma il nuovo profilo nelle Impostazioni/, 'azione richiesta esplicita');
   appState.saasPolicy = { mode: 'assigned', migrationRequired: false };
-  assert.equal(planAdaptedQuantitiesEffective(), true, 'profilo confermato: adattamento effettivo');
+  assert.equal(planAlignedDosesEffective(), true, 'profilo confermato: allineamento effettivo');
 });
 
 test('switch: toggle on/off persiste tramite saveWeeklyPlan', async () => {
   const calls = [];
   const previous = global.saveWeeklyPlan;
-  global.saveWeeklyPlan = async plan => { calls.push(PianoDomain.normalizeAdaptedQuantitiesEnabled(plan)); };
+  global.saveWeeklyPlan = async plan => { calls.push(PianoDomain.planAlignedDosesEnabled(plan)); };
   try {
-    appState.plan = PianoDomain.setAdaptedQuantitiesEnabled(appState.plan, true);
+    appState.plan = PianoDomain.setPlanAlignedDosesEnabled(appState.plan, true);
     appState.saasPolicy = { mode: 'assigned', migrationRequired: false };
-    await toggleWeekAdaptedQuantities(false);
-    assert.equal(PianoDomain.normalizeAdaptedQuantitiesEnabled(appState.plan), false);
+    await toggleWeekAlignedDoses(false);
+    assert.equal(PianoDomain.planAlignedDosesEnabled(appState.plan), false);
     assert.deepEqual(calls, [false], 'persistenza OFF');
-    await toggleWeekAdaptedQuantities(true);
-    assert.equal(PianoDomain.normalizeAdaptedQuantitiesEnabled(appState.plan), true);
+    await toggleWeekAlignedDoses(true);
+    assert.equal(PianoDomain.planAlignedDosesEnabled(appState.plan), true);
     assert.deepEqual(calls, [false, true], 'persistenza ON');
   } finally {
     global.saveWeeklyPlan = previous;

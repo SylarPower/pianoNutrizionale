@@ -7,27 +7,30 @@
       "sortOrder": 90
     }
   ],
+  "families": [
+    {
+      "familyId": "sorgo-e-affini",
+      "displayName": "Sorgo e affini",
+      "categoryId": "cereali-minori",
+      "sortOrder": 10
+    }
+  ],
   "ingredients": [
     {
       "ingredientId": "sorgo",
       "displayName": "Sorgo",
-      "aliases": [
-        "sorgo bianco",
-        "sorgo decorticato"
-      ],
+      "aliases": ["sorgo bianco", "sorgo decorticato"],
       "categoryId": "cereali-minori",
-      "mappingKind": "guided",
-      "guideFamilyId": "cereali"
+      "familyId": "sorgo-e-affini",
+      "dietaryFlags": { "vegetarian": true, "vegan": true }
     },
     {
-      "ingredientId": "free-finocchio-selvatico",
+      "ingredientId": "finocchio-selvatico",
       "displayName": "Finocchio selvatico",
-      "aliases": [
-        "finocchio selvatico"
-      ],
+      "aliases": ["finocchio selvatico"],
       "categoryId": "free",
-      "mappingKind": "free",
-      "guideFamilyId": null
+      "familyId": "erbe-aromatiche",
+      "dietaryFlags": { "vegetarian": true, "vegan": true }
     }
   ]
 }

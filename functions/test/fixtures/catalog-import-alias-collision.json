@@ -1,14 +1,14 @@
 {
+  "categories": [{ "categoryId": "carb", "displayName": "Carboidrati", "sortOrder": 0 }],
+  "families": [{ "familyId": "cereali", "displayName": "Cereali", "categoryId": "carb", "sortOrder": 0 }],
   "ingredients": [
     {
       "ingredientId": "riso-rosso",
       "displayName": "Riso rosso",
-      "aliases": [
-        "riso"
-      ],
+      "aliases": ["riso"],
       "categoryId": "carb",
-      "mappingKind": "guided",
-      "guideFamilyId": "cereali"
+      "familyId": "cereali",
+      "dietaryFlags": { "vegetarian": true, "vegan": true }
     }
   ]
 }

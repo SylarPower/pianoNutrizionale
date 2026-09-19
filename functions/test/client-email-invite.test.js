@@ -1,7 +1,7 @@
 'use strict';
 /* Inviti con EMAIL REALE: callable su Firestore finto con transazioni.
  *
- * Copre i requisiti del nuovo modello (ADR 0004):
+ * Copre i requisiti del nuovo modello (ADR 0001):
  *  - invito monouso con solo hash del token, nome e cognome inseriti dal
  *    nutrizionista, scadenza, audit, idempotenza;
  *  - email tecnica legacy rifiutata per i clienti reali;

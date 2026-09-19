@@ -226,7 +226,7 @@ function usernameFromUser(user) {
 }
 
 // =====================================================================
-// Nuovo modello con EMAIL REALE (ADR 0004)
+// Nuovo modello con EMAIL REALE (ADR 0001)
 // =====================================================================
 // L'email reale è la credenziale dei clienti; nome e cognome sono dati di
 // profilo inseriti dal nutrizionista. Questo blocco NON converte gli account
@@ -1202,12 +1202,6 @@ async function getRecipeCatalog() {
   }
 }
 
-function getCanonicalIngredientLabels() {
-  if (typeof PianoDomain === "undefined") return {};
-  const embedded = catalogMeta?.canonicalIngredients;
-  return { ...PianoDomain.CANONICAL_INGREDIENTS, ...(embedded || {}) };
-}
-
 async function saveRecipeCatalog(recipes, metadata = {}) {
   validateRecipeCatalog(recipes);
   const clean = cloneData(recipes);
@@ -1227,14 +1221,10 @@ async function getWeeklyPlan() {
     if (!snapExists(snapshot)) return readLocalJson("weekly_plan", createEmptyWeeklyPlan());
     const plan = snapData(snapshot);
 
-    // Migrazione una tantum del piano: schema 4 + batchTemplates strutturati
-    // derivati dalle vecchie batchRules. Salvata una sola volta.
-    const hasLegacyRules = plan.batchRules && Object.keys(plan.batchRules).length > 0;
-    // Compatibilità: i piani salvati prima del cambio nome hanno `mellerModes`
-    // — il contesto esiste già, nessuna migrazione forzata.
-    const needsGuideContext = !Object.prototype.hasOwnProperty.call(plan, "guideModes")
-      && !Object.prototype.hasOwnProperty.call(plan, "mellerModes");
-    const needsMigration = Number(plan.schemaVersion || 1) < CATALOG_SCHEMA_VERSION || hasLegacyRules || needsGuideContext;
+    // Migrazione una tantum del piano allo schema corrente (VERSION 7:
+    // struttura settimane + batchTemplates + interruttore dosi allineate).
+    // Le scelte dosi del cliente sopravvivono come alignedDosesEnabled.
+    const needsMigration = Number(plan.schemaVersion || 1) < CATALOG_SCHEMA_VERSION;
     if (needsMigration && typeof PianoDomain !== "undefined") {
       const migrated = PianoDomain.migratePlan(plan);
       writeLocalJson("weekly_plan", migrated);
@@ -1256,15 +1246,26 @@ async function saveWeeklyPlan(plan) {
   const clean = cloneData(plan);
   writeLocalJson("weekly_plan", clean);
   await setDoc(weeklyPlanRef(), clean);
-  // Gancio post-salvataggio (auto-report mapping Guide nuovi): il
-  // salvataggio è già riuscito, quindi errori qui sono solo avvisi.
-  try {
-    if (typeof window !== "undefined" && typeof window.afterWeeklyPlanSaved === "function") {
-      await window.afterWeeklyPlanSaved(clean);
-    }
-  } catch (error) {
-    console.warn("Hook post-salvataggio settimana non riuscito", error);
-  }
+  return clean;
+}
+
+// Catalogo ingredienti globale (sola lettura, utenti autenticati): fonte
+// unica di identità per autocomplete, riconoscimento e richieste catalogo.
+// Nessuna dose vive qui: dosi ed equivalenze arrivano dalla struttura dieta.
+async function getGlobalIngredientCatalog() {
+  requireUser();
+  const [ingredientsSnap, categoriesSnap, familiesSnap] = await Promise.all([
+    getDocsQuery(queryLimit(collectionAt("globalIngredientCatalog/current/ingredients"), 2000)),
+    getDocsQuery(queryLimit(collectionAt("globalIngredientCatalog/current/categories"), 500)),
+    getDocsQuery(queryLimit(collectionAt("globalIngredientCatalog/current/families"), 500))
+  ]);
+  const ingredients = [];
+  snapForEach(ingredientsSnap, doc => ingredients.push({ ingredientId: doc.id, ...doc.data() }));
+  const categories = [];
+  snapForEach(categoriesSnap, doc => categories.push({ categoryId: doc.id, ...doc.data() }));
+  const families = [];
+  snapForEach(familiesSnap, doc => families.push({ familyId: doc.id, ...doc.data() }));
+  return { ingredients, categories, families };
 }
 
 async function getShoppingListCloud() {
