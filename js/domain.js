@@ -1819,7 +1819,7 @@ const PROTEIN_CATEGORY_LABELS = {
   }
 
   // =====================================================================
-  // Dieta guidata — modello v2 (strutture dieta a blocchi)
+  // Strutture dieta — piano a blocchi (dietPlan schema 2)
   //
   // Il piano descrive la dieta come la deve leggere il cliente: giornate
   // (allenamento/riposo/altra), pasti e opzioni. Non esegue alcun calcolo
@@ -2283,7 +2283,7 @@ const PROTEIN_CATEGORY_LABELS = {
     maskEmailClient,
     clientDisplayTitle,
     clientInitials,
-    // Dieta guidata — modello v2 (strutture a blocchi)
+    // Strutture dieta — piano a blocchi (dietPlan schema 2)
     DIET_PLAN_SCHEMA_VERSION,
     DIET_PLAN_DAY_TYPES,
     DIET_PLAN_DAY_TYPE_LABELS,

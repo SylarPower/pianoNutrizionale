@@ -933,7 +933,7 @@ function renderCompareBar() {
 
 // ---- Editor struttura dieta (modello a blocchi) ----
 // La struttura è nome + piano dieta a blocchi (dietPlan v2). Il piano si
-// compone nell'editor dedicato (dialog dieta guidata); qui si gestiscono
+// compone nell'editor dedicato (dialog piano dieta); qui si gestiscono
 // nome, nota revisione, ripristini e dettagli tecnici.
 
 async function openStructureEditor(structureId) {
@@ -996,7 +996,7 @@ async function openCompare() {
 
 function closeCompare() { $('compare-dialog').classList.add('hidden'); }
 
-// ---- Editor dieta guidata (dietPlan v2) ----
+// ---- Editor piano dieta (dietPlan schema 2) ----
 // Giornate → pasti → opzioni. Ogni opzione è: blocchi con famiglia di
 // riferimento (+ template equivalenze con snapshot non retroattivo e override),
 // elenco ingredienti del catalogo globale, oppure una ricetta professionale

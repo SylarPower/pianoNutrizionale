@@ -1,5 +1,5 @@
 'use strict';
-/* Dieta guidata — modello v2 (dietPlan schema 2, strutture a blocchi).
+/* Strutture dieta — piano a blocchi (dietPlan schema 2).
  *
  * Contratto verificato senza rete:
  *  - vocabolario condiviso (giornate, pasti, unità, tipi opzione, limiti);

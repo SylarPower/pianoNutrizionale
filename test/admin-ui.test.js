@@ -5,7 +5,7 @@
  *    Catalogo e Richieste catalogo riservate al creatore;
  *  - nessuna vista legacy (Dosi clienti, Mapping, Utenti, editor regole);
  *  - callable v2 usate, callable rimosse assenti;
- *  - dialog assegnazione senza campi v1; editor dieta guidata e dialog
+ *  - dialog assegnazione senza campi v1; editor strutture dieta e dialog
  *    template/richieste col contratto attuale.
  * I percorsi DOM interattivi sono coperti da test/smoke-admin.js. */
 const test = require('node:test');

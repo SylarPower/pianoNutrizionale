@@ -106,7 +106,7 @@ assert('vista dosi rimossa', !doc.getElementById('view-doses'));
 assert('vista tabelle grammature rimossa', !doc.getElementById('view-tables'));
 assert('dialog richiesta catalogo presente', Boolean(doc.getElementById('request-dialog')));
 assert('dialog template equivalenze presente', Boolean(doc.getElementById('template-dialog')));
-assert('dialog dieta guidata presente', Boolean(doc.getElementById('diet-plan-dialog')));
+assert('dialog struttura dieta presente', Boolean(doc.getElementById('diet-plan-dialog')));
 assert('dialog struttura classica rimosso', !doc.getElementById('structure-dialog'));
 assert('dialog mapping rimosso', !doc.getElementById('mapping-dialog'));
 assert('dialog tabelle grammature rimosso', !doc.getElementById('gram-table-dialog'));

@@ -42,7 +42,7 @@ Il client usa una feature flag pubblica in `js/saas-config.js`, attiva (`enabled
 
 Architettura e operatività:
 
-- [ADR 0008 — rifondazione catalogo/strutture/template](docs/adr/0008-rifondazione-catalogo-strutture-v3.md) e [indice ADR](docs/adr/) (0001 multi-tenant è storico: il codice usa la sola organizzazione `pianoNutrizionale`)
+- [ADR 0008 — rifondazione catalogo/strutture/template](docs/adr/0008-rifondazione-catalogo-strutture-v3.md) e [gli altri ADR](docs/adr/) — il codice usa la sola organizzazione `pianoNutrizionale`
 - [contratti dati e matrice permessi](docs/saas-data-contracts.md) e [schema JSON](docs/schema-catalogo-strutture-v3.json)
 - [formato import catalogo](docs/catalog-import-format.md) e [editor strutture dieta](docs/editor-strutture-dieta.md)
 - [runbook deploy, migrazione, GDPR e rollback](docs/saas-runbook.md)

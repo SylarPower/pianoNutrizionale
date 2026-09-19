@@ -313,7 +313,7 @@ exports.listAuthorizedClients = callable(async (data, uid) => {
   const actor = await actorContext(data.organizationId, uid);
   // Vista Clienti unificata: ogni professionista vede i propri clienti in
   // tutti gli stati operativi (attivi, in attesa, inattivi); il creatore li
-  // vede tutti. Un solo filtro per query (ADR 0003): la selezione degli
+  // vede tutti. Un solo filtro per query: la selezione degli
   // stati e l'ordinamento avvengono in codice, senza nuovi indici composti.
   let query = db.collection(`organizations/${actor.organizationId}/clients`);
   if (actor.role === 'nutritionist') query = query.where('nutritionistUids', 'array-contains', uid);
@@ -365,7 +365,7 @@ exports.listAuthorizedClients = callable(async (data, uid) => {
 
 // Storico collegamenti di un cliente (scheda cliente): inviti e richieste
 // non più pendenti (accettati, rifiutati, revocati, scaduti, sostituiti).
-// Singolo filtro per clientId (ADR 0003); mai token o hash in risposta.
+// Singolo filtro per clientId; mai token o hash in risposta.
 exports.getClientHistory = callable(async (data, uid) => {
   exactObject(data, ['organizationId', 'clientId']);
   const actor = await actorContext(data.organizationId, uid);
@@ -1650,7 +1650,7 @@ async function clientProfilesByEmail(orgId, emailNormalized) {
 }
 
 async function pendingEmailInvites(orgId, emailNormalized) {
-  // Singolo filtro (ADR 0003): lo stato si seleziona in codice, senza
+  // Singolo filtro: lo stato si seleziona in codice, senza
   // indici composti (la combinazione email+stato non è indicizzata).
   const snap = await db.collection(`organizations/${orgId}/invitations`)
     .where('targetEmailNormalized', '==', emailNormalized).limit(10).get();
@@ -1660,7 +1660,7 @@ async function pendingEmailInvites(orgId, emailNormalized) {
 }
 
 async function pendingLinkRequestsByEmail(orgId, emailNormalized) {
-  // Singolo filtro (ADR 0003): lo stato si seleziona in codice.
+  // Singolo filtro: lo stato si seleziona in codice.
   const snap = await db.collection(`organizations/${orgId}/clientLinkRequests`)
     .where('targetEmailNormalized', '==', emailNormalized).limit(10).get();
   return snap.docs
@@ -1870,7 +1870,7 @@ exports.inviteClientByEmail = callable(async (data, uid) => {
     if (existing.exists || audit.exists) { created = false; return; }
     // Un solo invito pendente per indirizzo/cliente: i precedenti vengono
     // invalidati (il vecchio link smette di funzionare) e restano in storico.
-    // Singolo filtro (ADR 0003): lo stato si seleziona in codice.
+    // Singolo filtro: lo stato si seleziona in codice.
     const stale = await tx.get(
       db.collection(`organizations/${orgId}/invitations`)
         .where('targetEmailNormalized', '==', input.email)
@@ -2360,7 +2360,7 @@ exports.correctClientInvite = callable(async (data, uid) => {
     if (old.data()?.status === 'accepted') {
       throw new HttpsError('failed-precondition', 'Il cliente è già registrato: usa la vista Clienti per aggiornare i dati');
     }
-    // Singolo filtro (ADR 0003): lo stato si seleziona in codice.
+    // Singolo filtro: lo stato si seleziona in codice.
     const otherPending = await tx.get(
       db.collection(`organizations/${orgId}/invitations`)
         .where('targetEmailNormalized', '==', input.email)
@@ -2830,7 +2830,7 @@ exports.listMyClientLinkRequests = callable(async (data, uid) => {
     }
   }
   // Proposte di cambio email in attesa di conferma del cliente (solo le proprie).
-  // Singolo filtro (ADR 0003): lo stato si seleziona in codice (già fatto sotto).
+  // Singolo filtro: lo stato si seleziona in codice (già fatto sotto).
   const emailChangeSnap = await db.collection(`organizations/${SINGLE_ORGANIZATION_ID}/emailChangeRequests`)
     .where('targetUid', '==', uid).limit(5).get();
   const pendingEmailChange = emailChangeSnap.docs
@@ -3024,7 +3024,7 @@ exports.removeClientLink = callable(async (data, uid) => {
     });
     tx.delete(client.ref.collection('state').doc('activeAssignment'));
     tx.update(client.ref, { activeAssignment: null, updatedAt: FieldValue.serverTimestamp(), updatedBy: uid });
-    // Singolo filtro (ADR 0003): lo stato si seleziona in codice.
+    // Singolo filtro: lo stato si seleziona in codice.
     pendingRequests.docs.filter(doc => doc.data()?.status === 'pending').forEach(doc => tx.update(doc.ref, { status: 'revoked', decidedAt: FieldValue.serverTimestamp(), decidedBy: uid, updatedAt: FieldValue.serverTimestamp() }));
     pendingInvites.docs.filter(doc => doc.data()?.status === 'pending').forEach(doc => {
       tx.update(doc.ref, { status: 'revoked', decidedAt: FieldValue.serverTimestamp(), decidedBy: uid, updatedAt: FieldValue.serverTimestamp() });

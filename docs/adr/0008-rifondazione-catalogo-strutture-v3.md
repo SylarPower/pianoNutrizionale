@@ -3,7 +3,7 @@
 - Stato: accettato
 - Data: 2026-09-19
 - Decisione di prodotto: owner
-- Supera: ADR 0002 (catalogo v2 con mappingKind/guideFamilyId), ADR 0003 (ruleSets→dietStructures con regole per famiglia), ADR 0005 in parte (dietPlan v1, revisioni schema 3, vista Dosi), ADR 0007 (opzioni free-foods e gruppi scelta)
+- Supera le decisioni pre-rifondazione su catalogo (v2 con mappingKind/guideFamilyId), runtime dosi (ruleSets con regole per famiglia), piano dieta (v1, revisioni schema 3, vista Dosi) ed editor (opzioni free-foods, gruppi scelta); i relativi ADR storici sono stati rimossi dall'archivio (la numerazione salta per questo)
 - Allegati normativi: `docs/schema-catalogo-strutture-v3.json`, `docs/catalog-import-format.md`, `docs/saas-data-contracts.md`
 
 ## Contesto

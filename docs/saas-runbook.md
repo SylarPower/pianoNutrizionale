@@ -94,27 +94,25 @@ Creare una struttura dieta con l'editor a blocchi (`/admin.html` → Strutture: 
 - Il flag è pubblico e non è un controllo di sicurezza: le autorizzazioni
   restano nelle Rules e nelle callable.
 
-## Console unificata e dieta guidata (ADR 0005, 2026-09-13)
+## Console unificata (ADR 0005, 2026-09-13)
 
-- Deploy come sempre: Rules/indici (invariati: nessun nuovo indice
-  composito), Functions, Hosting con bump di `CACHE_VERSION`.
+- Deploy come sempre: Rules/indici, Functions, Hosting con bump di `CACHE_VERSION`.
 - Alcune query combinavano due `where` senza indice composto dichiarato
   (inviti/richieste per email+stato o clientId+stato, cambi email per
   uid+stato): in produzione rispondevano `failed-precondition`. Ora usano un
-  solo filtro + selezione in codice (ADR 0003). Se in log vedi ancora errori
+  solo filtro + selezione in codice. Se in log vedi ancora errori
   `failed-precondition` con «requires an index», è una Functions non
   ripubblicata: ridistribuisci.
-- Dieta guidata: nessun dato da migrare (`hasDietPlan` assente = classica).
-  Le revisioni schema 3 convivono con 1/2; rollback = pubblicare una nuova
-  revisione classica dalla stessa struttura.
+- Strutture dieta: nessun dato da migrare; rollback = pubblicare una nuova
+  revisione dalla stessa struttura (mai modificare una pubblicata).
 - Smoke post-deploy: apri la vista Clienti (filtri + scheda + storico),
-  crea una dieta guidata di prova, pubblicala, verifica badge e anteprima.
+  crea una struttura dieta di prova con l'editor a blocchi, pubblicala e
+  assegnala, verifica badge e anteprima dal cliente.
 
 ## Migrazione reversibile
 
 - Non creare assignment per utenti legacy.
 - Non spostare né riscrivere ricette.
-- Import segnalazioni locali solo opt-in: calcolare fingerprint, chiamare `submitMappingReport`, registrare l'esito; la deduplica rende il retry sicuro.
 - Prima di associare `authUid` a un client verificare consenso e identità; scrivere `accountClientLinks` server-side.
 - Rollback client (solo emergenza): `enabled:false` ripristina il comportamento legacy senza cancellare snapshot; in condizioni normali il flag resta `true`.
 - Rollback clinico: nuova assignment verso la versione precedente; mai modificare il documento pubblicato.

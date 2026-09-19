@@ -266,7 +266,7 @@ function verifyStructureRevision(value) {
 }
 
 // ---------------------------------------------------------------------
-// Dieta guidata — modello v2 (strutture a blocchi)
+// Strutture dieta — piano a blocchi (dietPlan schema 2)
 // Lo stesso vocabolario vive in js/domain.js per la console; qui la
 // validazione è bloccante (fail) e ogni campo ha un limite. L'esistenza di
 // famiglie/ingredienti/template nel catalogo è verificata dalla callable
