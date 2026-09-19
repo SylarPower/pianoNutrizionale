@@ -125,7 +125,7 @@ test('server: vista unificata con singoli filtri e selezione in codice', () => {
   assert.match(indexJs, /requests: requestsSnap\.docs/);
   assert.match(indexJs, /updatedAt: iso\(row\.data\.updatedAt\)/);
   // getClientHistory: singolo filtro per clientId, niente token in risposta.
-  const historyFn = indexJs.slice(indexJs.indexOf('exports.getClientHistory'), indexJs.indexOf('exports.publishRuleSetVersion'));
+  const historyFn = indexJs.slice(indexJs.indexOf('exports.getClientHistory'), indexJs.indexOf('exports.assignClientStructure'));
   assert.match(historyFn, /where\('clientId', '==', client\.id\)/);
   assert.doesNotMatch(historyFn, /token/);
 });

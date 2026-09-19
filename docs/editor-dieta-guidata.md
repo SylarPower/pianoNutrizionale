@@ -1,138 +1,52 @@
-# Editor dieta guidata — guida operativa
+# Editor strutture dieta — guida operativa (dietPlan schema 2)
 
-L'editor guidato crea diete **descrittive** (come un piano stampato):
-giornate, pasti, opzioni A/B/C/D, quantità con unità di misura e alimenti
-scelti dal catalogo condiviso. Non richiede la ricopiatura della tabella:
-comincia a digitare il nome e seleziona l'alimento suggerito. Contratto dati:
-`docs/saas-data-contracts.md` (dietPlan v1); decisioni:
-`docs/adr/0005-console-unificata-dieta-guidata.md`.
+L'editor delle strutture costruisce la dieta come un piano stampato: **giornate → pasti → opzioni**, con le dosi espresse su **blocchi famiglia di riferimento**. Contratto dati: `docs/saas-data-contracts.md` (struttura dieta, revisioni schema 4); schema JSON: `docs/schema-catalogo-strutture-v3.json`; decisioni: ADR 0008.
 
-## Quando usare quale editor
+## Dove si trova
 
-| Caso | Editor | Note |
-|---|---|---|
-| Dieta descrittiva da leggere/stampare | Guidata («＋ Nuova dieta guidata») | revisioni schema 3, badge «Dieta guidata» |
-| Famiglie e dosi per il calcolo automatico | Classica, disponibile solo per modificare strutture già esistenti | revisioni schema 2, come prima |
-| Struttura esistente con badge «Dieta guidata» | Guidata (si apre da sola in modifica) | conserva le regole classiche |
-| Struttura esistente senza badge | Classica | conserva l'eventuale piano guidato |
+Console `admin.html` → vista **Strutture**: crea una struttura («Nuova struttura») o apri una esistente. Ogni salvataggio pubblica una **revisione immutabile** con checksum: le assegnazioni già fatte non cambiano mai in silenzio (non-retroattività).
 
-## Passo passo
+## Giornata
 
-1. **Nome dieta** (almeno 3 caratteri).
-2. **Giornate**: tipo (allenamento, riposo, altra) e titolo facoltativo.
-   Si possono aggiungere (max 14), duplicare (la copia ha titolo «(copia)» e
-   identità nuova), riordinare (↑ ↓) ed eliminare. Non sono richiesti campi
-   energetici manuali.
-3. **Pasti in ordine fisso** (max 10 per giornata, un solo pasto per tipo):
-   colazione → spuntino di metà mattina → pranzo → merenda → cena → spuntino
-   serale. «＋ Aggiungi pasto» propone solo i tipi ancora assenti; i pasti non
-   si riordinano e non si duplicano: l'ordine è quello del modello. Orario e
-   nota facoltativi. All'apertura dell'editor i pasti partono **minimizzati**
-   (intestazione + riepilogo compatto); si espandono cliccando
-   sull'intestazione. Un pasto con dati incompleti si espande automaticamente
-   al salvataggio se la validazione segnala un errore al suo interno.
-4. **Opzioni A/B/C/D** (max 4 per pasto): alternative equivalenti dello
-   stesso pasto, di due tipi **mutuamente esclusivi**:
-   - **Alimenti dal catalogo**: comincia a digitare il nome e scegli tra i
-     suggerimenti di ricerca testuale (nessun elenco a categorie); la
-     categoria viene dedotta in automatico dal catalogo e viaggia nascosta.
-     Completa quantità + unità (g, kg, ml, l, pz, fette,
-     cucchiai, cucchiaini, tazze, bicchieri, porzioni, scatolette, misurini,
-     q.b.), max 20 voci;
-   - **Ricetta**: una ricetta del ricettario professionale, con anteprima
-     degli ingredienti scalata live (le dosi testuali come «80 g» si
-     moltiplicano; «q.b.» resta tale). Il moltiplicatore porzioni non è più
-     un campo della console: il valore salvato resta conservato per
-     round-trip e la logica del moltiplicatore vive nell'app clienti
-     (profilo coppia, vedi sotto).
-   Si possono aggiungere, duplicare ed eliminare (ne resta sempre almeno una).
-5. **Pesi sempre al netto degli scarti e a crudo**: non esistono più il
-   select crudo/cotto, il flag «al netto degli scarti» né l'alternativa
-   «oppure». Le diete salvate prima di questa evoluzione si aprono lo stesso:
-   i campi vecchi vengono ignorati e scompaiono al primo salvataggio.
-6. **Gruppi scelta** («Scegli 1 tra:», max 3 per opzione, solo opzioni
-   alimenti liberi): titolo + alternative a dose editabile (descrizione,
-   quantità, unità) che il cliente può scegliere. La scelta è facoltativa di
-   default (il cliente può saltare il gruppo). Il gruppo si mostra
-   **minimizzato** (solo riepilogo) quando è completo e si espande con
-   «Modifica»; «Precompila alternative» riempie il gruppo dalla **tabella
-   grammature scelta** nell'intestazione dell'editor (carboidrati o proteine)
-   con le dosi del pasto corrente (pranzo: colonna A/R della giornata; cena:
-   dose serale) e lo minimizza subito. Se la tabella scelta non ha una dose
-   per quel pasto/giorno, si ripiega sulla tabella guida integrata. Le
-   alternative restano tutte editabili dopo il precompilamento.
-7. **Integrazione, idratazione, nota** per giornata + **note generali**.
-8. **Anteprima**: «Mostra anteprima» riepiloga la bozza (conteggi + testo,
-   ricette con dosi scalate, gruppi scelta in una riga); resta aggiornata
-   mentre si digita e segnala i problemi in italiano.
-9. **Pubblica dieta**: valida tutto e pubblica una nuova revisione. Le
-   revisioni precedenti restano intatte e ripristinabili.
+- **Tipo giornata**: Allenamento / Riposo / Altro.
+- **Etichetta** opzionale (es. «Giorno lungo»), max 80 caratteri.
+- **Integrazione** e **Idratazione**: testo libero visibile al cliente.
+- Fino a 14 giornate per struttura.
 
-Le operazioni strutturali (aggiungi, duplica, sposta, elimina) rileggono
-sempre il modulo prima di ridisegnarlo: **il testo digitato non si perde**.
+## Pasto
 
-## Tabelle grammature
+Colazione, spuntino mattina, pranzo, merenda, cena, spuntino sera: si aggiunge col chip ＋, un pasto per tipo. Ogni pasto ha **nota** (istruzioni visibili al cliente) e da 1 a 4 **opzioni**.
 
-Ogni nutrizionista ha le proprie **tabelle grammature** (raccolte personali
-di alternative carboidrati/proteine con dosi pranzo/cena per giorno di
-allenamento e di riposo). Voce di menu a sinistra «Tabelle grammature»:
-crea, modifica, duplica ed elimina le proprie tabelle; quelle degli altri
-membri sono visibili in elenco ma non modificabili.
+**Opzione unica o alternative?** Con una sola opzione il cliente la vede senza etichette; con più opzioni la console le etichetta A, B, C… solo in UI — l'etichetta non viene mai salvata.
 
-- **Righe**: descrizione alimento, gruppo (carboidrati/proteine), categoria
-  catalogo facoltativa (dedotta dal suggerimento) e dosi in grammi per
-  pranzo A/R e cena A/R. Almeno una dose per riga; le dosi mancanti restano
-  vuote.
-- **Tabella di esempio**: il profilo demo del nutrizionista viene popolato
-  con la tabella guida di riferimento. Per (ri)caricarla si usa lo script
-  `functions/scripts/seed-grammature-tables.js` (istruzioni nell'intestazione
-  dello script, richieste credenziali Admin di produzione); non è
-  un'operazione della console.
-- **Scelta in compilazione**: nell'intestazione dell'editor della dieta
-  guidata si seleziona la tabella da cui attingere («Tabella guida
-  integrata» è sempre disponibile). La precompilazione dei gruppi scelta usa
-  la tabella selezionata e ripiega sulla guida quando una dose manca.
+## I tre tipi di opzione
 
-### Moltiplicatore porzioni (solo app clienti)
+Ogni opzione è UNO di questi tre tipi (scelta a chip, mutuamente esclusivi):
 
-Il moltiplicatore porzioni **non è più un campo della console**: nell'app
-clienti, quando è attivo il profilo «Coppia · uomo + donna», compare un
-controllo ×0,5–×3 (passo 0,5) che scala in tempo reale le dosi uomo/donna
-mostrate (settimana, modali e batch cooking) e i totali della lista della
-spesa. La preferenza è salvata nelle impostazioni locali del dispositivo e
-vale solo per il profilo coppia.
+1. **Blocchi famiglia** — il modo principale di dosare: uno o più blocchi (max 8).
+2. **Ingredienti** — elenco puntuale di ingredienti singoli con quantità (max 20), per casi speciali.
+3. **Ricetta** — una ricetta del ricettario professionale con **moltiplicatore dose** ×0,1–10. Le dosi mostrate al cliente sono moltiplicate: la ricetta originale non viene mai modificata.
 
-## Regole di compatibilità
+### Blocco famiglia di riferimento
 
-- Salvare con l'editor classico una struttura guidata **conserva** il piano
-  (lo dice una nota nel dialog); vale il viceversa per le regole classiche.
-- Le strutture solo-guidate non hanno famiglie di dosi: nella vista Dosi si
-  personalizzano solo le frequenze; il cliente vede le dosi originali.
-- Il confronto strutture confronta famiglie e gruppi (non il piano
-  descrittivo): per le solo-guidate mostra «—».
-- L'app dei clienti non mostra ancora il piano guidato: è lavoro futuro.
+Un blocco dice: «questa famiglia di alimenti, in questa quantità, riferita a questo ingrediente».
 
-## Errori frequenti
+- **Famiglia di riferimento**: dal catalogo globale (es. *Cereali e derivati*). Le famiglie sono globali e stabili.
+- **Ingrediente di riferimento** opzionale (es. *Riso basmati*): quello su cui è espressa la quantità.
+- **Quantità di riferimento**: numero + unità (g, ml, pz, fette, cucchiai, …).
+- **Template equivalenze** opzionale: collega un template dell'organizzazione. Alla pubblicazione il blocco incapsula uno **snapshot** della revisione template (non retroattivo): modifiche future al template non toccano le strutture già pubblicate.
+- **Override quantità**: fissati valori diversi per famiglie specifiche SOLO in questa struttura (es. gnocchi 150 g). La famiglia di riferimento del blocco non può comparire tra gli override.
 
-| Messaggio | Causa |
-|---|---|
-| «Descrivi l’alimento» | voce senza descrizione |
-| «Seleziona la ricetta» | opzione di tipo Ricetta senza ricetta scelta |
-| «Moltiplicatore ricetta non valido» | valore fuori da ×0,1–×10 |
-| «Dai un titolo al gruppo» | gruppo scelta senza titolo |
-| «da 1 a 30 alternative» | gruppo scelta senza alternative |
-| «opzione X duplicata» | due opzioni con la stessa etichetta (l'editor le assegna da solo: ricarica la bozza) |
-| «quantità non valida» | numero negativo, non numerico o oltre 5000 |
-| «unità di misura non valida» | unità fuori elenco |
-| «Backend della console non aggiornato» | ripubblicare le Cloud Functions |
+Il cliente vede il blocco con le grammature della struttura e gli equivalenti proporzionali: la scelta «dosi originali / dosi allineate» si applica ovunque (settimana, ricettario, spesa) senza mai riscrivere la ricetta originale.
 
-## Vista Clienti unificata (promemoria)
+### Riconoscimento degli alimenti
 
-- Filtri Tutti/Attivi/In attesa/Inattivi con conteggi; titolo sempre Nome
-  e Cognome.
-- «Invita nuovo cliente» apre il dialog con email reale, nome e cognome;
-  il link viene consegnato manualmente e i dati compaiono già compilati al
-  cliente.
-- La scheda si apre con «Apri scheda →»: nome ed email sono nell'intestazione,
-  poi seguono collegamento, struttura dieta e attività. Le informazioni interne
-  restano riservate all'admin; «Rimuovi cliente» esiste solo lì.
+Nei campi «Alimento» e «Ingrediente di riferimento» si digita e si sceglie dal catalogo (autocomplete). Se un termine non è riconosciuto l'editor lo segnala («Alimento non riconosciuto: scegline uno dal catalogo») e non inventa dosi. Il cliente, dal lato suo, può proporre l'ingrediente mancante con categoria e famiglia suggerite: la proposta entra nella coda **Richieste ingredienti** gestita dal platform admin.
+
+## Pubblicazione
+
+«Salva» → pre-validazione in italiano (stesso vocabolario del server) → callable `updateDietStructureRevision` → nuova revisione pubblicata con checksum e `ingredientCatalogVersion` congelati. Il **changelog** documentato e il campo «ripristinata da» tengono la storia leggibile; il confronto tra strutture («Confronta») mostra le differenze giorno per giorno.
+
+## Limiti (validati dal server)
+
+14 giornate · 10 pasti/giornata · 4 opzioni/pasto · 8 blocchi/opzione · 20 ingredienti/opzione · 30 equivalenti per snapshot · 30 override per blocco · moltiplicatore ricetta 0,1–10 · quantità 0–5000.

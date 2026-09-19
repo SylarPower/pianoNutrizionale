@@ -37,12 +37,13 @@ produzione. Questo documento corregge quel piano.
 | `recipeShares/**`, `priceEntries/**`, `priceMeta/**`, `accountClientLinks/**`, `platformMembers/**` | Funzionalità attive: condivisioni, prezzi, collegamenti account. |
 | `organizations/pianoNutrizionale/**` | È l'organizzazione SaaS **in uso**. Le Functions accettano solo questa (`SINGLE_ORGANIZATION_ID = 'pianoNutrizionale'`, `functions/src/domain.js:5`). |
 
-Queste collezioni diventeranno cancellabili solo dopo aver riscritto il
-magazzino dati del client: lavoro fuori scope. Quando succederà, aggiorna
-questa guida insieme al codice.
+La rifondazione pre-lancio (ADR 0008) ha eliminato dal codice ruleSets,
+globalRuleSets, code mapping e ogni ponte legacy: le collezioni elencate qui
+non sono più lette da nessuna Function né dal client.
 
-**In pratica si cancellano solo due cose**: le organizzazioni diverse da
-`pianoNutrizionale` (Passo 3) e, solo dopo un controllo, `globalRuleSets` (Passo 4).
+**In pratica si cancellano**: le organizzazioni diverse da `pianoNutrizionale`
+(Passo 3) e le collezioni del modello eliminato — `globalRuleSets`,
+`mappingReports`, `mappingProposals` — senza controlli preliminari (Passo 4).
 
 ---
 
@@ -146,94 +147,38 @@ Come fare:
 
 ---
 
-## Passo 4 — `globalRuleSets`: prima controlli, poi (forse) cancelli
+## Passo 4 — Collezioni del modello eliminato: si cancellano sempre
 
-**Cosa sono.** Versioni pubblicate di "rule set" con ambito *globale*. Le
-Cloud Functions le leggono ancora **solo** quando un cliente ha
-un'assegnazione **vecchia** che punta a un rule set globale.
+**Cosa sono.** `globalRuleSets` (rule set globali), `mappingReports` e
+`mappingProposals` (vecchia coda di mappatura ingredienti). Appartengono al
+modello pre-rifondazione: **nessuna Function e nessun client le legge più**.
 
-**Cosa succede se sbagli.** L'app non si rompe: `getMyAssignedProfile` non
-trova la versione e risponde `invalid-rule-set` con ripiego alle dosi
-originali (`functions/src/index.js:343-345`). Il cliente però **perde il
-profilo assegnato**: è esattamente ciò che vogliamo evitare.
+**Perché niente controlli.** Le versioni precedenti di questa guida chiedevano
+di verificare che nessuna assegnazione attiva puntasse a un rule set globale:
+il runtime ruleSets non esiste più nel codice, quindi la verifica non ha
+oggetto. Un'assegnazione storica che conserva un vecchio puntatore viene
+semplicemente ignorata.
 
-> Correzione rispetto alla guida precedente: il controllo usava un campo
-> `profileSchemaVersion`. **Quel campo non esiste nel codice** (nessun file del
-> repository lo contiene). Il campo giusto è **`schemaVersion`**, scritto da
-> `assignClientStructure`: `1` = assegnazione vecchia a un rule set,
-> `2` = assegnazione a una Struttura dieta (`functions/src/index.js:733`).
-> Quello che decide davvero è però la presenza di `ruleSet.scope: "global"`.
-
-### 4a. Il controllo (senza comandi)
+### 4a. La cancellazione (senza comandi)
 
 1. Firebase console → **Firestore Database** → **Data**.
-2. Apri `organizations` → **piano** → **clients**.
-3. Entra in ogni cliente e apri la sottocollezione **assignments**.
-4. Apri ogni documento assegnazione e guarda i campi:
-
-   | Cosa vedi nel documento | Significa | Azione |
-   |---|---|---|
-   | ha `structure` (con `structureId`, `revisionId`) e `schemaVersion: 2` | assegnazione nuova | ✅ nessuna |
-   | ha `ruleSet` con `scope: "tenant"` | assegnazione vecchia ma sul rule set del tenant | ✅ nessuna |
-   | ha `ruleSet` con `scope: "global"` | assegnazione vecchia che **usa `globalRuleSets`** | 🛑 **stop**: non cancellare |
-   | `status: "revoked"` o `"expired"` | assegnazione storica non più attiva | ✅ nessuna |
-
-   Guarda solo le assegnazioni con `status` **`active`** o **`scheduled`**: sono
-   quelle che l'app può ancora servire.
-
-Se i clienti sono tanti, invece di sfogliarli a mano puoi usare **Firestore
-Studio** (Google Cloud console → Firestore → database `(default)` → menu a
-sinistra **Firestore Studio** → scheda **Query Builder**):
-
-- *Query scope*: **Collection group**, valore `assignments`;
-- filtro: `status` `==` `active` (poi ripeti con `scheduled`);
-- **Run query**.
-
-Se compare un errore che parla di *index*, clicca il link **Create index**
-nell'errore e aspetta 1-2 minuti: `firestore.indexes.json` oggi non contiene
-indici "collection group", quindi la prima volta va creato.
-
-### 4b. La cancellazione (solo se il controllo è pulito)
-
-Se **nessuna** assegnazione attiva o programmata ha `ruleSet.scope: "global"`:
-
-1. Firebase console → **Firestore Database** → **Data**.
-2. Apri la collezione **globalRuleSets**.
+2. Apri una alla volta le collezioni **globalRuleSets**, **mappingReports** e
+   **mappingProposals** (se esistono).
 3. Elimina i documenti: tre puntini (**⋮**) sul documento → **Delete document**
    → conferma anche le sottocollezioni (`versions`). Se il menu della
    collezione offre **Delete collection**, puoi usare quello.
-4. Ricarica la pagina: la collezione deve essere vuota.
+4. Ricarica la pagina: le collezioni devono essere vuote (o scomparse).
 
 ---
 
-## Passo 5 — Pulizia delle regole di sicurezza (facoltativa)
+## Passo 5 — Regole di sicurezza: già pulite
 
-In `firestore.rules` c'è ancora il blocco che protegge `globalRuleSets`
-(righe 228-230):
-
-```text
-match /globalRuleSets/{ruleSetId}/{document=**} {
-  allow read, write: if false;
-}
-```
-
-Lasciarlo **non rompe niente** (nega l'accesso ai browser, le Functions passano
-comunque dall'Admin SDK). Togliendolo il file resta semplicemente più pulito.
-
-Se vuoi toglierlo, sempre dal browser:
-
-1. Apri <https://github.com/SylarPower/pianoNutrizionale> e premi il tasto
-   **`.`** (punto) sulla tastiera: si apre l'editor di GitHub nel browser.
-2. Apri `firestore.rules` e cancella quelle tre righe.
-3. In alto a destra **Commit changes** → messaggio "rimuove globalRuleSets
-   dalle rules" → **Commit changes**.
-4. Pubblica le regole, in uno di questi due modi:
-   - **con i clic**: Firebase console → **Firestore Database** → scheda
-     **Rules** → sostituisci tutto il testo con il contenuto del nuovo
-     `firestore.rules` → **Publish**;
-   - **con il pulsante**: GitHub → **Actions** → *Deploy Firebase (manuale)* →
-     **Run workflow** → scegli `firestore:rules`.
-     Vedi [`deploy-online-senza-terminale.md`](deploy-online-senza-terminale.md).
+Le `firestore.rules` attuali non contengono più alcun blocco per
+`globalRuleSets` o le code mapping (rimossi con la rifondazione): non c'è
+niente da modificare a mano. Se le regole del progetto sono state pubblicate
+prima della rifondazione, ripubblicale dal workflow *Deploy Firebase (manuale)*
+o da Firebase console → Firestore → **Rules** (vedi
+[`deploy-online-senza-terminale.md`](deploy-online-senza-terminale.md)).
 
 ---
 
@@ -263,17 +208,15 @@ Nessun account Auth va cancellato. `gabriele`, `martina`, `admin`, `cliente` e
    dell'ultimo deploy.
 
 Atteso: le cancellazioni dei Passi 3 e 4 **non cambiano il comportamento
-dell'app**, perché le Cloud Functions non leggono quelle collezioni (unica
-eccezione: il caso `ruleSet.scope: "global"` già verificato al Passo 4).
+dell'app**, perché le Cloud Functions non leggono quelle collezioni.
 
 Se hai anche un modo di lanciare i test automatici (per esempio il workflow
-`Test` su GitHub, che parte da solo a ogni modifica): `npm test` = 331 test,
-`npm --prefix functions test` = 92 test, `npm run smoke` = SMOKE OK,
+`Test` su GitHub, che parte da solo a ogni modifica): `npm test` = 345 test,
+`npm --prefix functions test` = 111 test, `npm run smoke` = SMOKE OK,
 `npm run syntax` = OK. Tutti verdi sul ramo aggiornato.
 
-> Conteggi verificati dopo l’introduzione degli inviti con email reale
-> (ADR 0004): 331 test client e 92 test Functions. I conteggi precedenti erano
-> 324 e 61.
+> Conteggi aggiornati alla rifondazione (ADR 0008): 345 test client e 111
+> test Functions.
 
 > Gli account tecnici con email fittizia (`@utenti.pianonutrizionale.app`)
 > restano intatti dopo la pulizia: servono ai test e alla demo. Le nuove
@@ -293,12 +236,10 @@ Se hai anche un modo di lanciare i test automatici (per esempio il workflow
 2. `gabriele` e `martina`: **Esporta** e poi **Importa** dal Ricettario.
 3. In `organizations` cancella tutto tranne `pianoNutrizionale` (che deve esistere: vedi
    [ripartenza-firebase.md](ripartenza-firebase.md)).
-4. Controlla le assegnazioni: nessuna attiva/programmata con
-   `ruleSet.scope: "global"`.
-5. Solo allora svuota `globalRuleSets`.
-6. (Facoltativo) togli il blocco dalle `firestore.rules` e ripubblica.
-7. Nessun account Auth da cancellare.
-8. Verifica app + console + Functions.
+4. Svuota `globalRuleSets`, `mappingReports`, `mappingProposals` (modello eliminato).
+5. Ripubblica le `firestore.rules` correnti se il progetto ha le vecchie.
+6. Nessun account Auth da cancellare.
+7. Verifica app + console + Functions.
 
 ---
 
@@ -317,22 +258,10 @@ gcloud firestore export gs://piano-nutrizionale-backup/$(date +%Y%m%d-%H%M) \
 gcloud firestore collections list --project=piano-nutrizionale | grep organizations
 firebase firestore:delete organizations/<ORG> --recursive --project=piano-nutrizionale -y
 
-# Passo 4: verifica zero assegnazioni v1 con rule set globale
-cd functions
-node -e "
-const admin = require('firebase-admin');
-admin.initializeApp({ projectId: 'piano-nutrizionale' });
-const db = admin.firestore();
-(async () => {
-  const snap = await db.collectionGroup('assignments')
-    .where('status', 'in', ['active', 'scheduled']).get();
-  const v1Global = snap.docs.filter(d => d.data().ruleSet?.scope === 'global');
-  console.log('Assegnazioni attive/programmate con ruleSet.scope=global:', v1Global.length);
-  v1Global.forEach(d => console.log(' -', d.ref.path));
-  if (v1Global.length) process.exit(1);
-})();
-"
+# Passo 4: collezioni del modello eliminato
 firebase firestore:delete globalRuleSets --recursive --project=piano-nutrizionale -y
+firebase firestore:delete mappingReports --recursive --project=piano-nutrizionale -y || true
+firebase firestore:delete mappingProposals --recursive --project=piano-nutrizionale -y || true
 
 # Passo 5 e 7
 firebase deploy --only firestore:rules --project piano-nutrizionale

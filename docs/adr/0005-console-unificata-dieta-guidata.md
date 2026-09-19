@@ -1,6 +1,7 @@
 # ADR 0005 — Console Clienti unificata, tema in header e dieta guidata
 
-- **Stato**: accettata (fase di building)
+- **Stato**: accettata in parte — la console Clienti unificata resta valida;
+  dietPlan v1, revisioni schema 3 e vista Dosi sono superati da ADR 0008
 - **Data**: 2026-09-13
 - **Contesto**: Piano Nutrizionale, organizzazione singola `pianoNutrizionale`
 - **Documenti collegati**: `docs/saas-data-contracts.md` (vista unificata,

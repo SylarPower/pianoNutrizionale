@@ -14,7 +14,7 @@ account che vuoi tenere:
 
 1. **prima** questa guida (Passi 1-6): se cancelli per primo, gli account
    restano senza appartenenza;
-2. **poi** la pulizia (organizzazioni vecchie tipo `prova`, `globalRuleSets`);
+2. **poi** la pulizia (organizzazioni vecchie tipo `prova` e collezioni del modello eliminato come `globalRuleSets`);
 3. **infine** la verifica (Passo 8).
 
 Tutti i passaggi si fanno **con il mouse**, senza terminale. Nessuna credenziale
@@ -279,8 +279,8 @@ Solo adesso passa a
 **[pulizia-dati-legacy.md](pulizia-dati-legacy.md)**, Passi 3 e 4:
 
 - cancella le organizzazioni diverse da `pianoNutrizionale` (nel tuo caso `prova`);
-- cancella `globalRuleSets` **solo** se il controllo del Passo 4a non trova
-  assegnazioni attive collegate;
+- cancella `globalRuleSets`, `mappingReports` e `mappingProposals` (collezioni
+  del modello eliminato: nessun controllo necessario);
 - **non** cancellare `users/...`, `households`, `usernames`, `accountClientLinks`,
   `platformMembers`, `globalIngredientCatalog` (la guida spiega perché);
 - in **Authentication** non si cancella nessun account.

@@ -135,8 +135,44 @@ appState.saasPolicy = { mode: 'assigned', migrationRequired: false };
 
 const PASTA = {
   id: 'L1', slot: 'lunch', name: 'Pasta', emoji: '🍝',
-  ingredients: [{ name: 'Pasta di semola', portions: { single: '90 g' } }],
+  ingredients: [{ name: 'Pasta di semola', ingredientId: 'pasta-di-semola', portions: { single: '90 g' } }],
   steps: [], notes: []
+};
+
+// Struttura dieta assegnata: pranzo a blocco cereali, 80g in allenamento e
+// 60g in riposo (le dosi vivono SOLO nella struttura del professionista).
+const ASSIGNED_CATALOG = {
+  catalogVersion: 1,
+  categories: [{ categoryId: 'carb', displayName: 'Carboidrati', sortOrder: 0 }],
+  families: [{ familyId: 'cereali', displayName: 'Cereali', categoryId: 'carb', sortOrder: 0 }],
+  ingredients: [
+    { ingredientId: 'pasta-di-semola', displayName: 'Pasta di semola', aliases: ['pasta'], categoryId: 'carb', familyId: 'cereali', dietaryFlags: { vegetarian: true, vegan: true }, status: 'active' },
+    { ingredientId: 'riso', displayName: 'Riso', aliases: [], categoryId: 'carb', familyId: 'cereali', dietaryFlags: { vegetarian: true, vegan: true }, status: 'active' }
+  ]
+};
+const ASSIGNED_PROFILE = {
+  schemaVersion: 3, clientProfileId: 'cp1', assignmentId: 'a1',
+  structureId: 's1', structureRevisionId: 'rev1', structureChecksum: 'chk',
+  structureName: 'Base', ingredientCatalogVersion: 1,
+  effectiveAt: '2026-01-01T00:00:00.000Z', expiresAt: null,
+  structureRevision: { revisionId: 'rev1', dietPlan: PianoDomain.createEmptyDietPlan({ days: [
+    PianoDomain.createDietPlanDay('training', { dayId: 't', meals: [
+      PianoDomain.createDietPlanMeal('lunch', { options: [
+        PianoDomain.createDietPlanOption({ type: 'family-block', blocks: [
+          PianoDomain.createDietPlanBlock({ referenceFamilyId: 'cereali', referenceIngredientId: 'riso', referenceAmount: { value: 80, unit: 'g' } })
+        ] })
+      ] })
+    ] }),
+    PianoDomain.createDietPlanDay('rest', { dayId: 'r', meals: [
+      PianoDomain.createDietPlanMeal('lunch', { options: [
+        PianoDomain.createDietPlanOption({ type: 'family-block', blocks: [
+          PianoDomain.createDietPlanBlock({ referenceFamilyId: 'cereali', referenceIngredientId: 'riso', referenceAmount: { value: 60, unit: 'g' } })
+        ] })
+      ] })
+    ] })
+  ] }) },
+  catalog: ASSIGNED_CATALOG,
+  compatibleClientSchema: 7
 };
 
 function setupPlan() {
@@ -144,8 +180,10 @@ function setupPlan() {
   appState.plan = PianoDomain.migratePlan(createEmptyWeeklyPlan());
   appState.plan.days.monday.type = 'training';
   appState.plan.days.monday.lunch = 'L1';
-  appState.plan = PianoDomain.setAdaptedQuantitiesEnabled(appState.plan, true);
+  appState.plan = PianoDomain.setPlanAlignedDosesEnabled(appState.plan, true);
+  appState.saasContext = { state: 'assigned', profile: ASSIGNED_PROFILE };
   appState.saasPolicy = { mode: 'assigned', migrationRequired: false };
+  invalidateDietEngine();
 }
 
 // ---- Riposo/Allenamento ----
@@ -153,12 +191,14 @@ function setupPlan() {
 test('resolvePlannedRecipe: dosi distinte tra allenamento e riposo', () => {
   setupPlan();
   const training = resolvePlannedRecipe(getRecipe('L1'), 'monday', 'lunch');
-  assert.equal(training.applied, true);
-  assert.equal(training.recipe.ingredients[0].portions.single, '70 g');
+  assert.equal(training.aligned, true);
+  assert.equal(training.recipe.ingredients[0].portions.single, '80g');
+  // La ricetta originale resta sui 90g: la vista allineata è solo display.
+  assert.equal(getRecipe('L1').ingredients[0].portions.single, '90 g');
   appState.plan.days.monday.type = 'rest';
   const rest = resolvePlannedRecipe(getRecipe('L1'), 'monday', 'lunch');
-  assert.equal(rest.applied, true);
-  assert.equal(rest.recipe.ingredients[0].portions.single, '50 g');
+  assert.equal(rest.aligned, true);
+  assert.equal(rest.recipe.ingredients[0].portions.single, '60g');
 });
 
 test('changeDayType: persiste il tipo giorno e ri-renderizza la settimana', async () => {

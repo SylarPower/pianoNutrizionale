@@ -1,6 +1,7 @@
 # ADR 0007 — Opzioni ricetta, gruppi scelta e ordine pasti fisso nell'editor guidata
 
-- **Stato**: accettata
+- **Stato**: superata (storica) — le opzioni ricetta sopravvivono nel dietPlan
+  schema 2; gruppi scelta e free-foods sono superati da ADR 0008
 - **Data**: 2026-09-15
 - **Contesto**: Piano Nutrizionale, editor dieta guidata (dietPlan v1,
   revisioni schema 3)

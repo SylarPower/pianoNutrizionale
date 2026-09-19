@@ -3,32 +3,377 @@
     {
       "categoryId": "carb",
       "displayName": "Carboidrati",
-      "description": null,
       "sortOrder": 0
+    },
+    {
+      "categoryId": "fat",
+      "displayName": "Grassi",
+      "sortOrder": 4
+    },
+    {
+      "categoryId": "free",
+      "displayName": "Alimenti liberi",
+      "sortOrder": 5
+    },
+    {
+      "categoryId": "fruit",
+      "displayName": "Frutta",
+      "sortOrder": 3
     },
     {
       "categoryId": "protein",
       "displayName": "Proteine",
-      "description": null,
       "sortOrder": 1
     },
     {
       "categoryId": "vegetable",
       "displayName": "Verdure",
-      "description": null,
       "sortOrder": 2
+    }
+  ],
+  "families": [
+    {
+      "familyId": "affettati-magri",
+      "displayName": "Affettati magri",
+      "categoryId": "protein",
+      "sortOrder": 130,
+      "status": "active"
     },
     {
-      "categoryId": "fruit",
+      "familyId": "bevande",
+      "displayName": "Bevande",
+      "categoryId": "free",
+      "sortOrder": 460,
+      "status": "active"
+    },
+    {
+      "familyId": "burger-vegetali",
+      "displayName": "Burger vegetali",
+      "categoryId": "protein",
+      "sortOrder": 140,
+      "status": "active"
+    },
+    {
+      "familyId": "cereali",
+      "displayName": "Cereali e derivati",
+      "categoryId": "carb",
+      "sortOrder": 20,
+      "status": "active"
+    },
+    {
+      "familyId": "cereali-colazione",
+      "displayName": "Cereali da colazione",
+      "categoryId": "carb",
+      "sortOrder": 10,
+      "status": "active"
+    },
+    {
+      "familyId": "condimenti",
+      "displayName": "Condimenti",
+      "categoryId": "free",
+      "sortOrder": 470,
+      "status": "active"
+    },
+    {
+      "familyId": "crackers-e-grissini",
+      "displayName": "Crackers, grissini e crostini",
+      "categoryId": "carb",
+      "sortOrder": 30,
+      "status": "active"
+    },
+    {
+      "familyId": "crostacei-e-molluschi",
+      "displayName": "Crostacei e molluschi",
+      "categoryId": "protein",
+      "sortOrder": 150,
+      "status": "active"
+    },
+    {
+      "familyId": "erbe-aromatiche",
+      "displayName": "Erbe aromatiche",
+      "categoryId": "free",
+      "sortOrder": 480,
+      "status": "active"
+    },
+    {
+      "familyId": "feta",
+      "displayName": "Feta",
+      "categoryId": "protein",
+      "sortOrder": 160,
+      "status": "active"
+    },
+    {
+      "familyId": "fiocchi-di-avena",
+      "displayName": "Fiocchi d'avena e porridge",
+      "categoryId": "carb",
+      "sortOrder": 40,
+      "status": "active"
+    },
+    {
+      "familyId": "fiocchi-di-latte",
+      "displayName": "Fiocchi di latte",
+      "categoryId": "protein",
+      "sortOrder": 170,
+      "status": "active"
+    },
+    {
+      "familyId": "formaggi-freschi",
+      "displayName": "Formaggi freschi e molli",
+      "categoryId": "protein",
+      "sortOrder": 180,
+      "status": "active"
+    },
+    {
+      "familyId": "formaggi-stagionati",
+      "displayName": "Formaggi stagionati",
+      "categoryId": "protein",
+      "sortOrder": 190,
+      "status": "active"
+    },
+    {
+      "familyId": "frutta",
       "displayName": "Frutta",
-      "description": null,
-      "sortOrder": 3
+      "categoryId": "fruit",
+      "sortOrder": 410,
+      "status": "active"
     },
     {
+      "familyId": "frutta-secca",
+      "displayName": "Frutta secca a guscio",
       "categoryId": "fat",
-      "displayName": "Grassi",
-      "description": null,
-      "sortOrder": 4
+      "sortOrder": 420,
+      "status": "active"
+    },
+    {
+      "familyId": "gallette",
+      "displayName": "Gallette di riso e mais",
+      "categoryId": "carb",
+      "sortOrder": 50,
+      "status": "active"
+    },
+    {
+      "familyId": "gnocchi",
+      "displayName": "Gnocchi di patate",
+      "categoryId": "carb",
+      "sortOrder": 60,
+      "status": "active"
+    },
+    {
+      "familyId": "grana",
+      "displayName": "Grana",
+      "categoryId": "protein",
+      "sortOrder": 200,
+      "status": "active"
+    },
+    {
+      "familyId": "grassi",
+      "displayName": "Grassi da condimento",
+      "categoryId": "fat",
+      "sortOrder": 430,
+      "status": "active"
+    },
+    {
+      "familyId": "latte",
+      "displayName": "Latte",
+      "categoryId": "protein",
+      "sortOrder": 210,
+      "status": "active"
+    },
+    {
+      "familyId": "legumi",
+      "displayName": "Legumi e derivati",
+      "categoryId": "protein",
+      "sortOrder": 220,
+      "status": "active"
+    },
+    {
+      "familyId": "legumotti",
+      "displayName": "Legumotti",
+      "categoryId": "protein",
+      "sortOrder": 230,
+      "status": "active"
+    },
+    {
+      "familyId": "lupini",
+      "displayName": "Lupini",
+      "categoryId": "protein",
+      "sortOrder": 240,
+      "status": "active"
+    },
+    {
+      "familyId": "maiale",
+      "displayName": "Maiale magro",
+      "categoryId": "protein",
+      "sortOrder": 250,
+      "status": "active"
+    },
+    {
+      "familyId": "mais",
+      "displayName": "Mais",
+      "categoryId": "carb",
+      "sortOrder": 70,
+      "status": "active"
+    },
+    {
+      "familyId": "manzo-vitello",
+      "displayName": "Manzo e vitello",
+      "categoryId": "protein",
+      "sortOrder": 260,
+      "status": "active"
+    },
+    {
+      "familyId": "montasio",
+      "displayName": "Montasio",
+      "categoryId": "protein",
+      "sortOrder": 270,
+      "status": "active"
+    },
+    {
+      "familyId": "mozzarella-light",
+      "displayName": "Mozzarella light",
+      "categoryId": "protein",
+      "sortOrder": 280,
+      "status": "active"
+    },
+    {
+      "familyId": "oli",
+      "displayName": "Oli",
+      "categoryId": "fat",
+      "sortOrder": 440,
+      "status": "active"
+    },
+    {
+      "familyId": "pane-e-affini",
+      "displayName": "Pane e affini",
+      "categoryId": "carb",
+      "sortOrder": 80,
+      "status": "active"
+    },
+    {
+      "familyId": "patate",
+      "displayName": "Patate",
+      "categoryId": "carb",
+      "sortOrder": 90,
+      "status": "active"
+    },
+    {
+      "familyId": "patate-dolci",
+      "displayName": "Patate dolci e batata",
+      "categoryId": "carb",
+      "sortOrder": 100,
+      "status": "active"
+    },
+    {
+      "familyId": "pesce-azzurro",
+      "displayName": "Pesce azzurro",
+      "categoryId": "protein",
+      "sortOrder": 290,
+      "status": "active"
+    },
+    {
+      "familyId": "pesce-bianco-magro",
+      "displayName": "Pesce bianco magro",
+      "categoryId": "protein",
+      "sortOrder": 300,
+      "status": "active"
+    },
+    {
+      "familyId": "pesce-scatola-naturale",
+      "displayName": "Pesce in scatola al naturale",
+      "categoryId": "protein",
+      "sortOrder": 320,
+      "status": "active"
+    },
+    {
+      "familyId": "pesce-sott-olio",
+      "displayName": "Pesce conservato sott'olio",
+      "categoryId": "protein",
+      "sortOrder": 310,
+      "status": "active"
+    },
+    {
+      "familyId": "piadina-e-wrap",
+      "displayName": "Piadina, tortilla e wrap",
+      "categoryId": "carb",
+      "sortOrder": 110,
+      "status": "active"
+    },
+    {
+      "familyId": "polenta",
+      "displayName": "Polenta",
+      "categoryId": "carb",
+      "sortOrder": 120,
+      "status": "active"
+    },
+    {
+      "familyId": "pollo-tacchino",
+      "displayName": "Pollo e tacchino",
+      "categoryId": "protein",
+      "sortOrder": 330,
+      "status": "active"
+    },
+    {
+      "familyId": "ricotta",
+      "displayName": "Ricotta",
+      "categoryId": "protein",
+      "sortOrder": 340,
+      "status": "active"
+    },
+    {
+      "familyId": "salmone-affumicato",
+      "displayName": "Salmone affumicato",
+      "categoryId": "protein",
+      "sortOrder": 350,
+      "status": "active"
+    },
+    {
+      "familyId": "seitan",
+      "displayName": "Seitan",
+      "categoryId": "protein",
+      "sortOrder": 360,
+      "status": "active"
+    },
+    {
+      "familyId": "semi",
+      "displayName": "Semi e cremi di semi",
+      "categoryId": "fat",
+      "sortOrder": 450,
+      "status": "active"
+    },
+    {
+      "familyId": "spezie",
+      "displayName": "Spezie",
+      "categoryId": "free",
+      "sortOrder": 490,
+      "status": "active"
+    },
+    {
+      "familyId": "uova",
+      "displayName": "Uova",
+      "categoryId": "protein",
+      "sortOrder": 370,
+      "status": "active"
+    },
+    {
+      "familyId": "verdura",
+      "displayName": "Verdura",
+      "categoryId": "vegetable",
+      "sortOrder": 400,
+      "status": "active"
+    },
+    {
+      "familyId": "yogurt",
+      "displayName": "Yogurt",
+      "categoryId": "protein",
+      "sortOrder": 380,
+      "status": "active"
+    },
+    {
+      "familyId": "yogurt-greco",
+      "displayName": "Yogurt greco",
+      "categoryId": "protein",
+      "sortOrder": 390,
+      "status": "active"
     }
   ],
   "ingredients": [
@@ -37,377 +382,853 @@
       "displayName": "Acciughe / Alici",
       "aliases": [
         "acciuga",
-        "acciughe",
-        "Acciughe / Alici",
         "alice",
         "alici"
       ],
       "categoryId": "protein",
-      "mappingKind": "guided",
-      "guideFamilyId": "pesceAzzurro"
+      "familyId": "pesce-azzurro",
+      "dietaryFlags": {
+        "vegetarian": false,
+        "vegan": false
+      },
+      "status": "active"
+    },
+    {
+      "ingredientId": "aceto",
+      "displayName": "Aceto",
+      "aliases": [
+        "aceto balsamico",
+        "aceto di mele",
+        "aceto di vino"
+      ],
+      "categoryId": "free",
+      "familyId": "condimenti",
+      "dietaryFlags": {
+        "vegetarian": true,
+        "vegan": true
+      },
+      "status": "active"
+    },
+    {
+      "ingredientId": "acqua",
+      "displayName": "Acqua",
+      "aliases": [],
+      "categoryId": "free",
+      "familyId": "bevande",
+      "dietaryFlags": {
+        "vegetarian": true,
+        "vegan": true
+      },
+      "status": "active"
+    },
+    {
+      "ingredientId": "aglio",
+      "displayName": "Aglio",
+      "aliases": [],
+      "categoryId": "vegetable",
+      "familyId": "verdura",
+      "dietaryFlags": {
+        "vegetarian": true,
+        "vegan": true
+      },
+      "status": "active"
+    },
+    {
+      "ingredientId": "agretti",
+      "displayName": "Agretti",
+      "aliases": [
+        "barba di frate"
+      ],
+      "categoryId": "vegetable",
+      "familyId": "verdura",
+      "dietaryFlags": {
+        "vegetarian": true,
+        "vegan": true
+      },
+      "status": "active"
+    },
+    {
+      "ingredientId": "albicocca",
+      "displayName": "Albicocca",
+      "aliases": [
+        "albicocche"
+      ],
+      "categoryId": "fruit",
+      "familyId": "frutta",
+      "dietaryFlags": {
+        "vegetarian": true,
+        "vegan": true
+      },
+      "status": "active"
     },
     {
       "ingredientId": "albume",
       "displayName": "Albume",
       "aliases": [
-        "albume",
-        "Albume",
         "albumi"
       ],
       "categoryId": "protein",
-      "mappingKind": "guided",
-      "guideFamilyId": "uova"
+      "familyId": "uova",
+      "dietaryFlags": {
+        "vegetarian": true,
+        "vegan": false
+      },
+      "status": "active"
+    },
+    {
+      "ingredientId": "alloro",
+      "displayName": "Alloro",
+      "aliases": [],
+      "categoryId": "free",
+      "familyId": "erbe-aromatiche",
+      "dietaryFlags": {
+        "vegetarian": true,
+        "vegan": true
+      },
+      "status": "active"
     },
     {
       "ingredientId": "amaranto",
       "displayName": "Amaranto",
-      "aliases": [
-        "amaranto",
-        "Amaranto"
-      ],
+      "aliases": [],
       "categoryId": "carb",
-      "mappingKind": "guided",
-      "guideFamilyId": "cereali"
+      "familyId": "cereali",
+      "dietaryFlags": {
+        "vegetarian": true,
+        "vegan": true
+      },
+      "status": "active"
+    },
+    {
+      "ingredientId": "anacardi",
+      "displayName": "Anacardi",
+      "aliases": [
+        "anacardo"
+      ],
+      "categoryId": "fat",
+      "familyId": "frutta-secca",
+      "dietaryFlags": {
+        "vegetarian": true,
+        "vegan": true
+      },
+      "status": "active"
+    },
+    {
+      "ingredientId": "ananas",
+      "displayName": "Ananas",
+      "aliases": [],
+      "categoryId": "fruit",
+      "familyId": "frutta",
+      "dietaryFlags": {
+        "vegetarian": true,
+        "vegan": true
+      },
+      "status": "active"
+    },
+    {
+      "ingredientId": "anguria",
+      "displayName": "Anguria",
+      "aliases": [
+        "cocomero"
+      ],
+      "categoryId": "fruit",
+      "familyId": "frutta",
+      "dietaryFlags": {
+        "vegetarian": true,
+        "vegan": true
+      },
+      "status": "active"
+    },
+    {
+      "ingredientId": "arachidi",
+      "displayName": "Arachidi / Burro di arachidi",
+      "aliases": [
+        "arachide",
+        "burro di arachidi"
+      ],
+      "categoryId": "fat",
+      "familyId": "frutta-secca",
+      "dietaryFlags": {
+        "vegetarian": true,
+        "vegan": true
+      },
+      "status": "active"
+    },
+    {
+      "ingredientId": "arancia",
+      "displayName": "Arancia",
+      "aliases": [
+        "arance"
+      ],
+      "categoryId": "fruit",
+      "familyId": "frutta",
+      "dietaryFlags": {
+        "vegetarian": true,
+        "vegan": true
+      },
+      "status": "active"
     },
     {
       "ingredientId": "aringa",
       "displayName": "Aringa",
       "aliases": [
-        "aringa",
-        "Aringa",
         "aringhe"
       ],
       "categoryId": "protein",
-      "mappingKind": "guided",
-      "guideFamilyId": "pesceAzzurro"
+      "familyId": "pesce-azzurro",
+      "dietaryFlags": {
+        "vegetarian": false,
+        "vegan": false
+      },
+      "status": "active"
     },
     {
       "ingredientId": "asiago",
       "displayName": "Asiago",
-      "aliases": [
-        "asiago",
-        "Asiago"
-      ],
+      "aliases": [],
       "categoryId": "protein",
-      "mappingKind": "guided",
-      "guideFamilyId": "formaggiStagionati"
+      "familyId": "formaggi-stagionati",
+      "dietaryFlags": {
+        "vegetarian": true,
+        "vegan": false
+      },
+      "status": "active"
+    },
+    {
+      "ingredientId": "asparagi",
+      "displayName": "Asparagi",
+      "aliases": [
+        "asparago"
+      ],
+      "categoryId": "vegetable",
+      "familyId": "verdura",
+      "dietaryFlags": {
+        "vegetarian": true,
+        "vegan": true
+      },
+      "status": "active"
     },
     {
       "ingredientId": "astice",
       "displayName": "Astice / Aragosta",
       "aliases": [
-        "aragosta",
-        "astice",
-        "Astice / Aragosta"
+        "aragosta"
       ],
       "categoryId": "protein",
-      "mappingKind": "guided",
-      "guideFamilyId": "crostaceiMolluschi"
+      "familyId": "crostacei-e-molluschi",
+      "dietaryFlags": {
+        "vegetarian": false,
+        "vegan": false
+      },
+      "status": "active"
     },
     {
       "ingredientId": "avena",
       "displayName": "Fiocchi d'avena / Porridge",
       "aliases": [
-        "fiocchi d'avena",
-        "Fiocchi d'avena / Porridge",
+        "avena",
         "fiocchi di avena",
         "oat",
         "oats",
         "porridge"
       ],
       "categoryId": "carb",
-      "mappingKind": "guided",
-      "guideFamilyId": "fiocchiAvena"
+      "familyId": "fiocchi-di-avena",
+      "dietaryFlags": {
+        "vegetarian": true,
+        "vegan": true
+      },
+      "status": "active"
+    },
+    {
+      "ingredientId": "avocado",
+      "displayName": "Avocado",
+      "aliases": [],
+      "categoryId": "fat",
+      "familyId": "grassi",
+      "dietaryFlags": {
+        "vegetarian": true,
+        "vegan": true
+      },
+      "status": "active"
     },
     {
       "ingredientId": "baccala",
       "displayName": "Baccalà / Stoccafisso",
       "aliases": [
-        "baccala",
-        "baccalà",
-        "Baccalà / Stoccafisso",
         "stoccafisso"
       ],
       "categoryId": "protein",
-      "mappingKind": "guided",
-      "guideFamilyId": "pesceBiancoMagro"
+      "familyId": "pesce-bianco-magro",
+      "dietaryFlags": {
+        "vegetarian": false,
+        "vegan": false
+      },
+      "status": "active"
+    },
+    {
+      "ingredientId": "banana",
+      "displayName": "Banana",
+      "aliases": [
+        "banane"
+      ],
+      "categoryId": "fruit",
+      "familyId": "frutta",
+      "dietaryFlags": {
+        "vegetarian": true,
+        "vegan": true
+      },
+      "status": "active"
+    },
+    {
+      "ingredientId": "barbabietola",
+      "displayName": "Barbabietola",
+      "aliases": [
+        "barbabietole"
+      ],
+      "categoryId": "vegetable",
+      "familyId": "verdura",
+      "dietaryFlags": {
+        "vegetarian": true,
+        "vegan": true
+      },
+      "status": "active"
+    },
+    {
+      "ingredientId": "basilico",
+      "displayName": "Basilico",
+      "aliases": [],
+      "categoryId": "free",
+      "familyId": "erbe-aromatiche",
+      "dietaryFlags": {
+        "vegetarian": true,
+        "vegan": true
+      },
+      "status": "active"
+    },
+    {
+      "ingredientId": "bietole",
+      "displayName": "Bietole / Coste",
+      "aliases": [
+        "bietola",
+        "coste"
+      ],
+      "categoryId": "vegetable",
+      "familyId": "verdura",
+      "dietaryFlags": {
+        "vegetarian": true,
+        "vegan": true
+      },
+      "status": "active"
     },
     {
       "ingredientId": "bresaola",
       "displayName": "Bresaola",
-      "aliases": [
-        "bresaola",
-        "Bresaola"
-      ],
+      "aliases": [],
       "categoryId": "protein",
-      "mappingKind": "guided",
-      "guideFamilyId": "affettatiMagri"
+      "familyId": "affettati-magri",
+      "dietaryFlags": {
+        "vegetarian": false,
+        "vegan": false
+      },
+      "status": "active"
+    },
+    {
+      "ingredientId": "broccoli",
+      "displayName": "Broccoli",
+      "aliases": [
+        "broccolo"
+      ],
+      "categoryId": "vegetable",
+      "familyId": "verdura",
+      "dietaryFlags": {
+        "vegetarian": true,
+        "vegan": true
+      },
+      "status": "active"
+    },
+    {
+      "ingredientId": "brodo",
+      "displayName": "Brodo",
+      "aliases": [
+        "brodo di carne",
+        "brodo di pollo",
+        "brodo vegetale"
+      ],
+      "categoryId": "free",
+      "familyId": "condimenti",
+      "dietaryFlags": {
+        "vegetarian": true,
+        "vegan": false
+      },
+      "status": "active"
     },
     {
       "ingredientId": "bulgur",
       "displayName": "Bulgur",
       "aliases": [
-        "bulgur",
-        "Bulgur",
         "burghul"
       ],
       "categoryId": "carb",
-      "mappingKind": "guided",
-      "guideFamilyId": "cereali"
+      "familyId": "cereali",
+      "dietaryFlags": {
+        "vegetarian": true,
+        "vegan": true
+      },
+      "status": "active"
     },
     {
       "ingredientId": "burger-vegetali",
       "displayName": "Burger vegetali",
       "aliases": [
         "burger vegetale",
-        "burger vegetali",
-        "Burger vegetali",
         "hamburger vegetale",
         "veggie burger"
       ],
       "categoryId": "protein",
-      "mappingKind": "guided",
-      "guideFamilyId": "burgerVegetali"
+      "familyId": "burger-vegetali",
+      "dietaryFlags": {
+        "vegetarian": true,
+        "vegan": true
+      },
+      "status": "active"
+    },
+    {
+      "ingredientId": "burro",
+      "displayName": "Burro",
+      "aliases": [
+        "butter"
+      ],
+      "categoryId": "fat",
+      "familyId": "grassi",
+      "dietaryFlags": {
+        "vegetarian": true,
+        "vegan": false
+      },
+      "status": "active"
+    },
+    {
+      "ingredientId": "burro-di-mandorle",
+      "displayName": "Burro di mandorle",
+      "aliases": [],
+      "categoryId": "fat",
+      "familyId": "frutta-secca",
+      "dietaryFlags": {
+        "vegetarian": true,
+        "vegan": true
+      },
+      "status": "active"
     },
     {
       "ingredientId": "calamari",
       "displayName": "Calamari / Totani",
       "aliases": [
-        "calamari",
-        "Calamari / Totani",
         "calamaro",
         "totani",
         "totano"
       ],
       "categoryId": "protein",
-      "mappingKind": "guided",
-      "guideFamilyId": "crostaceiMolluschi"
+      "familyId": "crostacei-e-molluschi",
+      "dietaryFlags": {
+        "vegetarian": false,
+        "vegan": false
+      },
+      "status": "active"
+    },
+    {
+      "ingredientId": "cannella",
+      "displayName": "Cannella",
+      "aliases": [],
+      "categoryId": "free",
+      "familyId": "spezie",
+      "dietaryFlags": {
+        "vegetarian": true,
+        "vegan": true
+      },
+      "status": "active"
+    },
+    {
+      "ingredientId": "capperi",
+      "displayName": "Capperi",
+      "aliases": [
+        "cappero"
+      ],
+      "categoryId": "vegetable",
+      "familyId": "verdura",
+      "dietaryFlags": {
+        "vegetarian": true,
+        "vegan": true
+      },
+      "status": "active"
     },
     {
       "ingredientId": "caprino",
       "displayName": "Caprino",
-      "aliases": [
-        "caprino",
-        "Caprino"
-      ],
+      "aliases": [],
       "categoryId": "protein",
-      "mappingKind": "guided",
-      "guideFamilyId": "formaggiFreschiMolli"
+      "familyId": "formaggi-freschi",
+      "dietaryFlags": {
+        "vegetarian": true,
+        "vegan": false
+      },
+      "status": "active"
+    },
+    {
+      "ingredientId": "carciofi",
+      "displayName": "Carciofi",
+      "aliases": [
+        "carciofo"
+      ],
+      "categoryId": "vegetable",
+      "familyId": "verdura",
+      "dietaryFlags": {
+        "vegetarian": true,
+        "vegan": true
+      },
+      "status": "active"
+    },
+    {
+      "ingredientId": "carote",
+      "displayName": "Carote",
+      "aliases": [
+        "carota"
+      ],
+      "categoryId": "vegetable",
+      "familyId": "verdura",
+      "dietaryFlags": {
+        "vegetarian": true,
+        "vegan": true
+      },
+      "status": "active"
+    },
+    {
+      "ingredientId": "cavolfiore",
+      "displayName": "Cavolfiore",
+      "aliases": [
+        "cavolfiori"
+      ],
+      "categoryId": "vegetable",
+      "familyId": "verdura",
+      "dietaryFlags": {
+        "vegetarian": true,
+        "vegan": true
+      },
+      "status": "active"
+    },
+    {
+      "ingredientId": "cavolo",
+      "displayName": "Cavolo",
+      "aliases": [
+        "cavoli",
+        "cavolo cappuccio",
+        "cavolo nero"
+      ],
+      "categoryId": "vegetable",
+      "familyId": "verdura",
+      "dietaryFlags": {
+        "vegetarian": true,
+        "vegan": true
+      },
+      "status": "active"
     },
     {
       "ingredientId": "ceci",
       "displayName": "Ceci",
-      "aliases": [
-        "ceci",
-        "Ceci"
-      ],
+      "aliases": [],
       "categoryId": "protein",
-      "mappingKind": "guided",
-      "guideFamilyId": "legumiScatola"
+      "familyId": "legumi",
+      "dietaryFlags": {
+        "vegetarian": true,
+        "vegan": true
+      },
+      "status": "active"
     },
     {
       "ingredientId": "cereali-soffiati",
       "displayName": "Cereali soffiati / integrali colazione",
       "aliases": [
         "cereali da colazione",
-        "cereali integrali colazione",
-        "cereali soffiati",
-        "Cereali soffiati / integrali colazione"
+        "cereali integrali colazione"
       ],
       "categoryId": "carb",
-      "mappingKind": "guided",
-      "guideFamilyId": "cerealiColazione"
+      "familyId": "cereali-colazione",
+      "dietaryFlags": {
+        "vegetarian": true,
+        "vegan": true
+      },
+      "status": "active"
+    },
+    {
+      "ingredientId": "cetriolo",
+      "displayName": "Cetriolo",
+      "aliases": [
+        "cetrioli"
+      ],
+      "categoryId": "vegetable",
+      "familyId": "verdura",
+      "dietaryFlags": {
+        "vegetarian": true,
+        "vegan": true
+      },
+      "status": "active"
+    },
+    {
+      "ingredientId": "cicoria",
+      "displayName": "Cicoria",
+      "aliases": [],
+      "categoryId": "vegetable",
+      "familyId": "verdura",
+      "dietaryFlags": {
+        "vegetarian": true,
+        "vegan": true
+      },
+      "status": "active"
+    },
+    {
+      "ingredientId": "ciliegia",
+      "displayName": "Ciliegie",
+      "aliases": [],
+      "categoryId": "fruit",
+      "familyId": "frutta",
+      "dietaryFlags": {
+        "vegetarian": true,
+        "vegan": true
+      },
+      "status": "active"
+    },
+    {
+      "ingredientId": "cime-di-rapa",
+      "displayName": "Cime di rapa",
+      "aliases": [
+        "rapa",
+        "rape"
+      ],
+      "categoryId": "vegetable",
+      "familyId": "verdura",
+      "dietaryFlags": {
+        "vegetarian": true,
+        "vegan": true
+      },
+      "status": "active"
+    },
+    {
+      "ingredientId": "cipolla",
+      "displayName": "Cipolla",
+      "aliases": [
+        "cipolle"
+      ],
+      "categoryId": "vegetable",
+      "familyId": "verdura",
+      "dietaryFlags": {
+        "vegetarian": true,
+        "vegan": true
+      },
+      "status": "active"
+    },
+    {
+      "ingredientId": "cocco",
+      "displayName": "Cocco",
+      "aliases": [],
+      "categoryId": "fruit",
+      "familyId": "frutta",
+      "dietaryFlags": {
+        "vegetarian": true,
+        "vegan": true
+      },
+      "status": "active"
+    },
+    {
+      "ingredientId": "coriandolo",
+      "displayName": "Coriandolo",
+      "aliases": [],
+      "categoryId": "free",
+      "familyId": "spezie",
+      "dietaryFlags": {
+        "vegetarian": true,
+        "vegan": true
+      },
+      "status": "active"
     },
     {
       "ingredientId": "cornflakes",
       "displayName": "Cornflakes",
       "aliases": [
         "corn flakes",
-        "cornflakes",
-        "Cornflakes",
         "fiocchi di mais"
       ],
       "categoryId": "carb",
-      "mappingKind": "guided",
-      "guideFamilyId": "cerealiColazione"
+      "familyId": "cereali-colazione",
+      "dietaryFlags": {
+        "vegetarian": true,
+        "vegan": true
+      },
+      "status": "active"
     },
     {
       "ingredientId": "couscous",
       "displayName": "Cous cous",
-      "aliases": [
-        "cous cous",
-        "Cous cous",
-        "couscous"
-      ],
+      "aliases": [],
       "categoryId": "carb",
-      "mappingKind": "guided",
-      "guideFamilyId": "cereali"
+      "familyId": "cereali",
+      "dietaryFlags": {
+        "vegetarian": true,
+        "vegan": true
+      },
+      "status": "active"
     },
     {
       "ingredientId": "cozze",
       "displayName": "Cozze",
       "aliases": [
-        "cozze",
-        "Cozze",
         "mitili"
       ],
       "categoryId": "protein",
-      "mappingKind": "guided",
-      "guideFamilyId": "crostaceiMolluschi"
+      "familyId": "crostacei-e-molluschi",
+      "dietaryFlags": {
+        "vegetarian": false,
+        "vegan": false
+      },
+      "status": "active"
     },
     {
       "ingredientId": "crackers",
       "displayName": "Crackers",
-      "aliases": [
-        "cracker",
-        "crackers",
-        "Crackers"
-      ],
+      "aliases": [],
       "categoryId": "carb",
-      "mappingKind": "guided",
-      "guideFamilyId": "crackers"
+      "familyId": "crackers-e-grissini",
+      "dietaryFlags": {
+        "vegetarian": true,
+        "vegan": true
+      },
+      "status": "active"
     },
     {
       "ingredientId": "crescenza",
       "displayName": "Crescenza / Stracchino",
       "aliases": [
-        "crescenza",
-        "Crescenza / Stracchino",
         "stracchino"
       ],
       "categoryId": "protein",
-      "mappingKind": "guided",
-      "guideFamilyId": "formaggiFreschiMolli"
+      "familyId": "formaggi-freschi",
+      "dietaryFlags": {
+        "vegetarian": true,
+        "vegan": false
+      },
+      "status": "active"
     },
     {
       "ingredientId": "crostini",
       "displayName": "Crostini",
       "aliases": [
-        "crostini",
-        "Crostini",
         "crostino"
       ],
       "categoryId": "carb",
-      "mappingKind": "guided",
-      "guideFamilyId": "crackers"
+      "familyId": "crackers-e-grissini",
+      "dietaryFlags": {
+        "vegetarian": true,
+        "vegan": true
+      },
+      "status": "active"
     },
     {
-      "ingredientId": "dairy-latte",
-      "displayName": "Latte vaccino",
-      "aliases": [
-        "latte",
-        "latte intero",
-        "latte parzialmente scremato",
-        "latte scremato",
-        "Latte vaccino"
-      ],
-      "categoryId": "protein",
-      "mappingKind": "free",
-      "guideFamilyId": null
-    },
-    {
-      "ingredientId": "dairy-yogurt",
-      "displayName": "Yogurt classico",
-      "aliases": [
-        "yoghurt",
-        "yogurt",
-        "yogurt bianco",
-        "Yogurt classico",
-        "yogurt magro",
-        "yogurt naturale"
-      ],
-      "categoryId": "protein",
-      "mappingKind": "free",
-      "guideFamilyId": null
-    },
-    {
-      "ingredientId": "drink-latte-avena",
-      "displayName": "Latte d'avena",
-      "aliases": [
-        "bevanda di avena",
-        "latte d'avena",
-        "Latte d'avena",
-        "latte di avena",
-        "oat milk"
-      ],
+      "ingredientId": "cumino",
+      "displayName": "Cumino",
+      "aliases": [],
       "categoryId": "free",
-      "mappingKind": "free",
-      "guideFamilyId": null
+      "familyId": "spezie",
+      "dietaryFlags": {
+        "vegetarian": true,
+        "vegan": true
+      },
+      "status": "active"
     },
     {
-      "ingredientId": "drink-latte-cocco",
-      "displayName": "Latte di cocco",
-      "aliases": [
-        "bevanda di cocco",
-        "coconut milk",
-        "latte di cocco",
-        "Latte di cocco"
-      ],
+      "ingredientId": "curcuma",
+      "displayName": "Curcuma",
+      "aliases": [],
       "categoryId": "free",
-      "mappingKind": "free",
-      "guideFamilyId": null
+      "familyId": "spezie",
+      "dietaryFlags": {
+        "vegetarian": true,
+        "vegan": true
+      },
+      "status": "active"
     },
     {
-      "ingredientId": "drink-latte-mandorla",
-      "displayName": "Latte di mandorla",
-      "aliases": [
-        "almond milk",
-        "bevanda di mandorla",
-        "latte di mandorla",
-        "Latte di mandorla"
-      ],
+      "ingredientId": "curry",
+      "displayName": "Curry",
+      "aliases": [],
       "categoryId": "free",
-      "mappingKind": "free",
-      "guideFamilyId": null
+      "familyId": "spezie",
+      "dietaryFlags": {
+        "vegetarian": true,
+        "vegan": true
+      },
+      "status": "active"
     },
     {
-      "ingredientId": "drink-latte-riso",
-      "displayName": "Latte di riso",
+      "ingredientId": "datteri",
+      "displayName": "Datteri",
       "aliases": [
-        "bevanda di riso",
-        "latte di riso",
-        "Latte di riso",
-        "rice milk"
+        "dattero"
       ],
-      "categoryId": "free",
-      "mappingKind": "free",
-      "guideFamilyId": null
-    },
-    {
-      "ingredientId": "drink-latte-soia",
-      "displayName": "Latte di soia",
-      "aliases": [
-        "bevanda di soia",
-        "latte di soia",
-        "Latte di soia",
-        "soy milk"
-      ],
-      "categoryId": "free",
-      "mappingKind": "free",
-      "guideFamilyId": null
+      "categoryId": "fruit",
+      "familyId": "frutta",
+      "dietaryFlags": {
+        "vegetarian": true,
+        "vegan": true
+      },
+      "status": "active"
     },
     {
       "ingredientId": "edamame",
       "displayName": "Edamame",
-      "aliases": [
-        "edamame",
-        "Edamame"
-      ],
+      "aliases": [],
       "categoryId": "protein",
-      "mappingKind": "guided",
-      "guideFamilyId": "legumiScatola"
+      "familyId": "legumi",
+      "dietaryFlags": {
+        "vegetarian": true,
+        "vegan": true
+      },
+      "status": "active"
     },
     {
       "ingredientId": "emmental",
       "displayName": "Emmental",
       "aliases": [
-        "emmental",
-        "Emmental",
         "emmenthal"
       ],
       "categoryId": "protein",
-      "mappingKind": "guided",
-      "guideFamilyId": "formaggiStagionati"
+      "familyId": "formaggi-stagionati",
+      "dietaryFlags": {
+        "vegetarian": true,
+        "vegan": false
+      },
+      "status": "active"
+    },
+    {
+      "ingredientId": "erba-cipollina",
+      "displayName": "Erba cipollina",
+      "aliases": [],
+      "categoryId": "vegetable",
+      "familyId": "verdura",
+      "dietaryFlags": {
+        "vegetarian": true,
+        "vegan": true
+      },
+      "status": "active"
+    },
+    {
+      "ingredientId": "erbe-aromatiche",
+      "displayName": "Erbe aromatiche",
+      "aliases": [],
+      "categoryId": "free",
+      "familyId": "erbe-aromatiche",
+      "dietaryFlags": {
+        "vegetarian": true,
+        "vegan": true
+      },
+      "status": "active"
     },
     {
       "ingredientId": "fagioli",
@@ -416,1071 +1237,583 @@
         "azuki",
         "borlotti",
         "cannellini",
-        "fagioli",
-        "Fagioli",
         "fagiolo"
       ],
       "categoryId": "protein",
-      "mappingKind": "guided",
-      "guideFamilyId": "legumiScatola"
+      "familyId": "legumi",
+      "dietaryFlags": {
+        "vegetarian": true,
+        "vegan": true
+      },
+      "status": "active"
+    },
+    {
+      "ingredientId": "fagiolini",
+      "displayName": "Fagiolini",
+      "aliases": [
+        "fagiolino"
+      ],
+      "categoryId": "vegetable",
+      "familyId": "verdura",
+      "dietaryFlags": {
+        "vegetarian": true,
+        "vegan": true
+      },
+      "status": "active"
     },
     {
       "ingredientId": "faraona",
       "displayName": "Faraona",
-      "aliases": [
-        "faraona",
-        "Faraona"
-      ],
+      "aliases": [],
       "categoryId": "protein",
-      "mappingKind": "guided",
-      "guideFamilyId": "polloTacchino"
+      "familyId": "pollo-tacchino",
+      "dietaryFlags": {
+        "vegetarian": false,
+        "vegan": false
+      },
+      "status": "active"
     },
     {
       "ingredientId": "farro",
       "displayName": "Farro",
-      "aliases": [
-        "farro",
-        "Farro"
-      ],
+      "aliases": [],
       "categoryId": "carb",
-      "mappingKind": "guided",
-      "guideFamilyId": "cereali"
-    },
-    {
-      "ingredientId": "fat-anacardi",
-      "displayName": "Anacardi",
-      "aliases": [
-        "anacardi",
-        "Anacardi",
-        "anacardo"
-      ],
-      "categoryId": "fat",
-      "mappingKind": "free",
-      "guideFamilyId": null
-    },
-    {
-      "ingredientId": "fat-arachidi",
-      "displayName": "Arachidi / Burro di arachidi",
-      "aliases": [
-        "arachide",
-        "arachidi",
-        "Arachidi / Burro di arachidi",
-        "burro di arachidi"
-      ],
-      "categoryId": "fat",
-      "mappingKind": "free",
-      "guideFamilyId": null
-    },
-    {
-      "ingredientId": "fat-avocado",
-      "displayName": "Avocado",
-      "aliases": [
-        "avocado",
-        "Avocado"
-      ],
-      "categoryId": "fat",
-      "mappingKind": "free",
-      "guideFamilyId": null
-    },
-    {
-      "ingredientId": "fat-burro",
-      "displayName": "Burro",
-      "aliases": [
-        "burro",
-        "Burro",
-        "butter"
-      ],
-      "categoryId": "fat",
-      "mappingKind": "free",
-      "guideFamilyId": null
-    },
-    {
-      "ingredientId": "fat-burro-mandorle",
-      "displayName": "Burro di mandorle",
-      "aliases": [
-        "burro di mandorle",
-        "Burro di mandorle"
-      ],
-      "categoryId": "fat",
-      "mappingKind": "free",
-      "guideFamilyId": null
-    },
-    {
-      "ingredientId": "fat-ghee",
-      "displayName": "Ghee (burro chiarificato)",
-      "aliases": [
-        "burro chiarificato",
-        "ghee",
-        "Ghee (burro chiarificato)"
-      ],
-      "categoryId": "fat",
-      "mappingKind": "free",
-      "guideFamilyId": null
-    },
-    {
-      "ingredientId": "fat-mandorle",
-      "displayName": "Mandorle",
-      "aliases": [
-        "mandorla",
-        "mandorle",
-        "Mandorle"
-      ],
-      "categoryId": "fat",
-      "mappingKind": "free",
-      "guideFamilyId": null
-    },
-    {
-      "ingredientId": "fat-nocciole",
-      "displayName": "Nocciole",
-      "aliases": [
-        "nocciola",
-        "nocciole",
-        "Nocciole"
-      ],
-      "categoryId": "fat",
-      "mappingKind": "free",
-      "guideFamilyId": null
-    },
-    {
-      "ingredientId": "fat-noci",
-      "displayName": "Noci",
-      "aliases": [
-        "noce",
-        "noci",
-        "Noci"
-      ],
-      "categoryId": "fat",
-      "mappingKind": "free",
-      "guideFamilyId": null
-    },
-    {
-      "ingredientId": "fat-olio-cocco",
-      "displayName": "Olio di cocco",
-      "aliases": [
-        "coconut oil",
-        "olio di cocco",
-        "Olio di cocco"
-      ],
-      "categoryId": "fat",
-      "mappingKind": "free",
-      "guideFamilyId": null
-    },
-    {
-      "ingredientId": "fat-olio-semi",
-      "displayName": "Olio di semi",
-      "aliases": [
-        "olio di arachidi",
-        "olio di girasole",
-        "olio di mais",
-        "olio di semi",
-        "Olio di semi"
-      ],
-      "categoryId": "fat",
-      "mappingKind": "free",
-      "guideFamilyId": null
-    },
-    {
-      "ingredientId": "fat-olive",
-      "displayName": "Olive",
-      "aliases": [
-        "oliva",
-        "olive",
-        "Olive"
-      ],
-      "categoryId": "fat",
-      "mappingKind": "free",
-      "guideFamilyId": null
-    },
-    {
-      "ingredientId": "fat-pistacchi",
-      "displayName": "Pistacchi",
-      "aliases": [
-        "pistacchi",
-        "Pistacchi",
-        "pistacchio"
-      ],
-      "categoryId": "fat",
-      "mappingKind": "free",
-      "guideFamilyId": null
-    },
-    {
-      "ingredientId": "fat-semi",
-      "displayName": "Semi",
-      "aliases": [
-        "Semi",
-        "semi di chia",
-        "semi di girasole",
-        "semi di lino",
-        "semi di sesamo",
-        "semi di zucca",
-        "sesamo"
-      ],
-      "categoryId": "fat",
-      "mappingKind": "free",
-      "guideFamilyId": null
-    },
-    {
-      "ingredientId": "fat-tahina",
-      "displayName": "Tahina",
-      "aliases": [
-        "crema di sesamo",
-        "tahina",
-        "Tahina",
-        "tahini"
-      ],
-      "categoryId": "fat",
-      "mappingKind": "free",
-      "guideFamilyId": null
+      "familyId": "cereali",
+      "dietaryFlags": {
+        "vegetarian": true,
+        "vegan": true
+      },
+      "status": "active"
     },
     {
       "ingredientId": "fave",
       "displayName": "Fave",
       "aliases": [
-        "fava",
-        "fave",
-        "Fave"
+        "fava"
       ],
       "categoryId": "protein",
-      "mappingKind": "guided",
-      "guideFamilyId": "legumiScatola"
+      "familyId": "legumi",
+      "dietaryFlags": {
+        "vegetarian": true,
+        "vegan": true
+      },
+      "status": "active"
     },
     {
       "ingredientId": "fesa-affettato",
       "displayName": "Fesa (affettato)",
-      "aliases": [
-        "fesa",
-        "Fesa (affettato)"
-      ],
+      "aliases": [],
       "categoryId": "protein",
-      "mappingKind": "guided",
-      "guideFamilyId": "affettatiMagri"
+      "familyId": "affettati-magri",
+      "dietaryFlags": {
+        "vegetarian": false,
+        "vegan": false
+      },
+      "status": "active"
     },
     {
       "ingredientId": "feta",
       "displayName": "Feta",
-      "aliases": [
-        "feta",
-        "Feta"
-      ],
+      "aliases": [],
       "categoryId": "protein",
-      "mappingKind": "guided",
-      "guideFamilyId": "feta"
+      "familyId": "feta",
+      "dietaryFlags": {
+        "vegetarian": true,
+        "vegan": false
+      },
+      "status": "active"
     },
     {
       "ingredientId": "fette-biscottate",
       "displayName": "Fette biscottate",
       "aliases": [
-        "fetta biscottata",
-        "fette biscottate",
-        "Fette biscottate"
+        "fetta biscottata"
       ],
       "categoryId": "carb",
-      "mappingKind": "guided",
-      "guideFamilyId": "pane"
+      "familyId": "pane-e-affini",
+      "dietaryFlags": {
+        "vegetarian": true,
+        "vegan": true
+      },
+      "status": "active"
+    },
+    {
+      "ingredientId": "fico",
+      "displayName": "Fichi",
+      "aliases": [],
+      "categoryId": "fruit",
+      "familyId": "frutta",
+      "dietaryFlags": {
+        "vegetarian": true,
+        "vegan": true
+      },
+      "status": "active"
+    },
+    {
+      "ingredientId": "finocchi",
+      "displayName": "Finocchi",
+      "aliases": [
+        "finocchio"
+      ],
+      "categoryId": "vegetable",
+      "familyId": "verdura",
+      "dietaryFlags": {
+        "vegetarian": true,
+        "vegan": true
+      },
+      "status": "active"
     },
     {
       "ingredientId": "fiocchi-latte",
       "displayName": "Fiocchi di latte",
       "aliases": [
-        "cottage cheese",
-        "fiocchi di latte",
-        "Fiocchi di latte"
+        "cottage cheese"
       ],
       "categoryId": "protein",
-      "mappingKind": "guided",
-      "guideFamilyId": "fiocchiLatte"
+      "familyId": "fiocchi-di-latte",
+      "dietaryFlags": {
+        "vegetarian": true,
+        "vegan": false
+      },
+      "status": "active"
     },
     {
       "ingredientId": "focaccia",
       "displayName": "Focaccia",
       "aliases": [
-        "focacce",
-        "focaccia",
-        "Focaccia"
+        "focacce"
       ],
       "categoryId": "carb",
-      "mappingKind": "guided",
-      "guideFamilyId": "pane"
+      "familyId": "pane-e-affini",
+      "dietaryFlags": {
+        "vegetarian": true,
+        "vegan": true
+      },
+      "status": "active"
     },
     {
-      "ingredientId": "free-aceto",
-      "displayName": "Aceto",
-      "aliases": [
-        "aceto",
-        "Aceto",
-        "aceto balsamico",
-        "aceto di mele",
-        "aceto di vino"
-      ],
-      "categoryId": "free",
-      "mappingKind": "free",
-      "guideFamilyId": null
-    },
-    {
-      "ingredientId": "free-acqua",
-      "displayName": "Acqua",
-      "aliases": [
-        "acqua",
-        "Acqua"
-      ],
-      "categoryId": "free",
-      "mappingKind": "free",
-      "guideFamilyId": null
-    },
-    {
-      "ingredientId": "free-alloro",
-      "displayName": "Alloro",
-      "aliases": [
-        "alloro",
-        "Alloro"
-      ],
-      "categoryId": "free",
-      "mappingKind": "free",
-      "guideFamilyId": null
-    },
-    {
-      "ingredientId": "free-avena",
-      "displayName": "Avena (generico)",
-      "aliases": [
-        "avena",
-        "Avena (generico)"
-      ],
-      "categoryId": "free",
-      "mappingKind": "free",
-      "guideFamilyId": null
-    },
-    {
-      "ingredientId": "free-basilico",
-      "displayName": "Basilico",
-      "aliases": [
-        "basilico",
-        "Basilico"
-      ],
-      "categoryId": "free",
-      "mappingKind": "free",
-      "guideFamilyId": null
-    },
-    {
-      "ingredientId": "free-brodo",
-      "displayName": "Brodo",
-      "aliases": [
-        "brodo",
-        "Brodo",
-        "brodo di carne",
-        "brodo di pollo",
-        "brodo vegetale"
-      ],
-      "categoryId": "free",
-      "mappingKind": "free",
-      "guideFamilyId": null
-    },
-    {
-      "ingredientId": "free-cannella",
-      "displayName": "Cannella",
-      "aliases": [
-        "cannella",
-        "Cannella"
-      ],
-      "categoryId": "free",
-      "mappingKind": "free",
-      "guideFamilyId": null
-    },
-    {
-      "ingredientId": "free-coriandolo",
-      "displayName": "Coriandolo",
-      "aliases": [
-        "coriandolo",
-        "Coriandolo"
-      ],
-      "categoryId": "free",
-      "mappingKind": "free",
-      "guideFamilyId": null
-    },
-    {
-      "ingredientId": "free-cumino",
-      "displayName": "Cumino",
-      "aliases": [
-        "cumino",
-        "Cumino"
-      ],
-      "categoryId": "free",
-      "mappingKind": "free",
-      "guideFamilyId": null
-    },
-    {
-      "ingredientId": "free-curcuma",
-      "displayName": "Curcuma",
-      "aliases": [
-        "curcuma",
-        "Curcuma"
-      ],
-      "categoryId": "free",
-      "mappingKind": "free",
-      "guideFamilyId": null
-    },
-    {
-      "ingredientId": "free-curry",
-      "displayName": "Curry",
-      "aliases": [
-        "curry",
-        "Curry"
-      ],
-      "categoryId": "free",
-      "mappingKind": "free",
-      "guideFamilyId": null
-    },
-    {
-      "ingredientId": "free-erbe-aromatiche",
-      "displayName": "Erbe aromatiche",
-      "aliases": [
-        "erbe aromatiche",
-        "Erbe aromatiche"
-      ],
-      "categoryId": "free",
-      "mappingKind": "free",
-      "guideFamilyId": null
-    },
-    {
-      "ingredientId": "free-lievito",
-      "displayName": "Lievito alimentare",
-      "aliases": [
-        "lievito alimentare",
-        "Lievito alimentare",
-        "lievito in scaglie"
-      ],
-      "categoryId": "free",
-      "mappingKind": "free",
-      "guideFamilyId": null
-    },
-    {
-      "ingredientId": "free-lime",
-      "displayName": "Lime",
-      "aliases": [
-        "lime",
-        "Lime"
-      ],
-      "categoryId": "free",
-      "mappingKind": "free",
-      "guideFamilyId": null
-    },
-    {
-      "ingredientId": "free-limone",
-      "displayName": "Limone",
-      "aliases": [
-        "limone",
-        "Limone",
-        "limoni"
-      ],
-      "categoryId": "free",
-      "mappingKind": "free",
-      "guideFamilyId": null
-    },
-    {
-      "ingredientId": "free-menta",
-      "displayName": "Menta",
-      "aliases": [
-        "menta",
-        "Menta"
-      ],
-      "categoryId": "free",
-      "mappingKind": "free",
-      "guideFamilyId": null
-    },
-    {
-      "ingredientId": "free-noce-moscata",
-      "displayName": "Noce moscata",
-      "aliases": [
-        "noce moscata",
-        "Noce moscata"
-      ],
-      "categoryId": "free",
-      "mappingKind": "free",
-      "guideFamilyId": null
-    },
-    {
-      "ingredientId": "free-origano",
-      "displayName": "Origano",
-      "aliases": [
-        "origano",
-        "Origano"
-      ],
-      "categoryId": "free",
-      "mappingKind": "free",
-      "guideFamilyId": null
-    },
-    {
-      "ingredientId": "free-paprika",
-      "displayName": "Paprika",
-      "aliases": [
-        "paprika",
-        "Paprika"
-      ],
-      "categoryId": "free",
-      "mappingKind": "free",
-      "guideFamilyId": null
-    },
-    {
-      "ingredientId": "free-pepe",
-      "displayName": "Pepe",
-      "aliases": [
-        "pepe",
-        "Pepe"
-      ],
-      "categoryId": "free",
-      "mappingKind": "free",
-      "guideFamilyId": null
-    },
-    {
-      "ingredientId": "free-peperoncino",
-      "displayName": "Peperoncino",
-      "aliases": [
-        "peperoncini",
-        "peperoncino",
-        "Peperoncino"
-      ],
-      "categoryId": "free",
-      "mappingKind": "free",
-      "guideFamilyId": null
-    },
-    {
-      "ingredientId": "free-prezzemolo",
-      "displayName": "Prezzemolo",
-      "aliases": [
-        "prezzemolo",
-        "Prezzemolo"
-      ],
-      "categoryId": "free",
-      "mappingKind": "free",
-      "guideFamilyId": null
-    },
-    {
-      "ingredientId": "free-rosmarino",
-      "displayName": "Rosmarino",
-      "aliases": [
-        "rosmarino",
-        "Rosmarino"
-      ],
-      "categoryId": "free",
-      "mappingKind": "free",
-      "guideFamilyId": null
-    },
-    {
-      "ingredientId": "free-sale",
-      "displayName": "Sale",
-      "aliases": [
-        "sale",
-        "Sale"
-      ],
-      "categoryId": "free",
-      "mappingKind": "free",
-      "guideFamilyId": null
-    },
-    {
-      "ingredientId": "free-salsa-soia",
-      "displayName": "Salsa di soia",
-      "aliases": [
-        "salsa di soia",
-        "Salsa di soia",
-        "shoyu",
-        "soy sauce",
-        "tamari"
-      ],
-      "categoryId": "free",
-      "mappingKind": "free",
-      "guideFamilyId": null
-    },
-    {
-      "ingredientId": "free-salvia",
-      "displayName": "Salvia",
-      "aliases": [
-        "salvia",
-        "Salvia"
-      ],
-      "categoryId": "free",
-      "mappingKind": "free",
-      "guideFamilyId": null
-    },
-    {
-      "ingredientId": "free-senape",
-      "displayName": "Senape",
-      "aliases": [
-        "mustard",
-        "senape",
-        "Senape"
-      ],
-      "categoryId": "free",
-      "mappingKind": "free",
-      "guideFamilyId": null
-    },
-    {
-      "ingredientId": "free-spezie",
-      "displayName": "Spezie (generiche)",
-      "aliases": [
-        "spezia",
-        "spezie",
-        "Spezie (generiche)"
-      ],
-      "categoryId": "free",
-      "mappingKind": "free",
-      "guideFamilyId": null
-    },
-    {
-      "ingredientId": "free-timo",
-      "displayName": "Timo",
-      "aliases": [
-        "timo",
-        "Timo"
-      ],
-      "categoryId": "free",
-      "mappingKind": "free",
-      "guideFamilyId": null
-    },
-    {
-      "ingredientId": "free-zafferano",
-      "displayName": "Zafferano",
-      "aliases": [
-        "zafferano",
-        "Zafferano"
-      ],
-      "categoryId": "free",
-      "mappingKind": "free",
-      "guideFamilyId": null
-    },
-    {
-      "ingredientId": "free-zenzero",
-      "displayName": "Zenzero",
-      "aliases": [
-        "ginger",
-        "zenzero",
-        "Zenzero"
-      ],
-      "categoryId": "free",
-      "mappingKind": "free",
-      "guideFamilyId": null
-    },
-    {
-      "ingredientId": "fruit-albicocca",
-      "displayName": "Albicocca",
-      "aliases": [
-        "albicocca",
-        "Albicocca",
-        "albicocche"
-      ],
-      "categoryId": "fruit",
-      "mappingKind": "free",
-      "guideFamilyId": null
-    },
-    {
-      "ingredientId": "fruit-ananas",
-      "displayName": "Ananas",
-      "aliases": [
-        "ananas",
-        "Ananas"
-      ],
-      "categoryId": "fruit",
-      "mappingKind": "free",
-      "guideFamilyId": null
-    },
-    {
-      "ingredientId": "fruit-anguria",
-      "displayName": "Anguria",
-      "aliases": [
-        "anguria",
-        "Anguria",
-        "cocomero"
-      ],
-      "categoryId": "fruit",
-      "mappingKind": "free",
-      "guideFamilyId": null
-    },
-    {
-      "ingredientId": "fruit-arancia",
-      "displayName": "Arancia",
-      "aliases": [
-        "arance",
-        "arancia",
-        "Arancia"
-      ],
-      "categoryId": "fruit",
-      "mappingKind": "free",
-      "guideFamilyId": null
-    },
-    {
-      "ingredientId": "fruit-banana",
-      "displayName": "Banana",
-      "aliases": [
-        "banana",
-        "Banana",
-        "banane"
-      ],
-      "categoryId": "fruit",
-      "mappingKind": "free",
-      "guideFamilyId": null
-    },
-    {
-      "ingredientId": "fruit-ciliegia",
-      "displayName": "Ciliegie",
-      "aliases": [
-        "ciliegia",
-        "ciliegie",
-        "Ciliegie"
-      ],
-      "categoryId": "fruit",
-      "mappingKind": "free",
-      "guideFamilyId": null
-    },
-    {
-      "ingredientId": "fruit-cocco",
-      "displayName": "Cocco",
-      "aliases": [
-        "cocco",
-        "Cocco"
-      ],
-      "categoryId": "fruit",
-      "mappingKind": "free",
-      "guideFamilyId": null
-    },
-    {
-      "ingredientId": "fruit-datteri",
-      "displayName": "Datteri",
-      "aliases": [
-        "datteri",
-        "Datteri",
-        "dattero"
-      ],
-      "categoryId": "fruit",
-      "mappingKind": "free",
-      "guideFamilyId": null
-    },
-    {
-      "ingredientId": "fruit-fico",
-      "displayName": "Fichi",
-      "aliases": [
-        "fichi",
-        "Fichi",
-        "fico"
-      ],
-      "categoryId": "fruit",
-      "mappingKind": "free",
-      "guideFamilyId": null
-    },
-    {
-      "ingredientId": "fruit-fragole",
+      "ingredientId": "fragole",
       "displayName": "Fragole",
       "aliases": [
-        "fragola",
-        "fragole",
-        "Fragole"
+        "fragola"
       ],
       "categoryId": "fruit",
-      "mappingKind": "free",
-      "guideFamilyId": null
+      "familyId": "frutta",
+      "dietaryFlags": {
+        "vegetarian": true,
+        "vegan": true
+      },
+      "status": "active"
     },
     {
-      "ingredientId": "fruit-frutti-bosco",
+      "ingredientId": "frutti-bosco",
       "displayName": "Frutti di bosco",
       "aliases": [
-        "frutti di bosco",
-        "Frutti di bosco",
         "lamponi",
         "mirtilli",
         "more",
         "ribes"
       ],
       "categoryId": "fruit",
-      "mappingKind": "free",
-      "guideFamilyId": null
+      "familyId": "frutta",
+      "dietaryFlags": {
+        "vegetarian": true,
+        "vegan": true
+      },
+      "status": "active"
     },
     {
-      "ingredientId": "fruit-kiwi",
-      "displayName": "Kiwi",
+      "ingredientId": "funghi",
+      "displayName": "Funghi",
       "aliases": [
-        "kiwi",
-        "Kiwi"
+        "champignon",
+        "chiodini",
+        "fungo",
+        "pleurotus",
+        "porcini"
       ],
-      "categoryId": "fruit",
-      "mappingKind": "free",
-      "guideFamilyId": null
-    },
-    {
-      "ingredientId": "fruit-mandarino",
-      "displayName": "Mandarino / Clementina",
-      "aliases": [
-        "clementina",
-        "clementine",
-        "mandarini",
-        "mandarino",
-        "Mandarino / Clementina"
-      ],
-      "categoryId": "fruit",
-      "mappingKind": "free",
-      "guideFamilyId": null
-    },
-    {
-      "ingredientId": "fruit-mango",
-      "displayName": "Mango",
-      "aliases": [
-        "mango",
-        "Mango"
-      ],
-      "categoryId": "fruit",
-      "mappingKind": "free",
-      "guideFamilyId": null
-    },
-    {
-      "ingredientId": "fruit-mela",
-      "displayName": "Mela",
-      "aliases": [
-        "mela",
-        "Mela",
-        "mele"
-      ],
-      "categoryId": "fruit",
-      "mappingKind": "free",
-      "guideFamilyId": null
-    },
-    {
-      "ingredientId": "fruit-melograno",
-      "displayName": "Melograno",
-      "aliases": [
-        "melograno",
-        "Melograno"
-      ],
-      "categoryId": "fruit",
-      "mappingKind": "free",
-      "guideFamilyId": null
-    },
-    {
-      "ingredientId": "fruit-melone",
-      "displayName": "Melone",
-      "aliases": [
-        "melone",
-        "Melone",
-        "meloni"
-      ],
-      "categoryId": "fruit",
-      "mappingKind": "free",
-      "guideFamilyId": null
-    },
-    {
-      "ingredientId": "fruit-papaya",
-      "displayName": "Papaya",
-      "aliases": [
-        "papaya",
-        "Papaya"
-      ],
-      "categoryId": "fruit",
-      "mappingKind": "free",
-      "guideFamilyId": null
-    },
-    {
-      "ingredientId": "fruit-pera",
-      "displayName": "Pera",
-      "aliases": [
-        "pera",
-        "Pera",
-        "pere"
-      ],
-      "categoryId": "fruit",
-      "mappingKind": "free",
-      "guideFamilyId": null
-    },
-    {
-      "ingredientId": "fruit-pesca",
-      "displayName": "Pesca / Nettarina",
-      "aliases": [
-        "nettarina",
-        "nettarine",
-        "pesca",
-        "Pesca / Nettarina",
-        "pesche"
-      ],
-      "categoryId": "fruit",
-      "mappingKind": "free",
-      "guideFamilyId": null
-    },
-    {
-      "ingredientId": "fruit-pompelmo",
-      "displayName": "Pompelmo",
-      "aliases": [
-        "pompelmi",
-        "pompelmo",
-        "Pompelmo"
-      ],
-      "categoryId": "fruit",
-      "mappingKind": "free",
-      "guideFamilyId": null
-    },
-    {
-      "ingredientId": "fruit-prugna",
-      "displayName": "Prugna / Susina",
-      "aliases": [
-        "prugna",
-        "Prugna / Susina",
-        "prugne",
-        "susina",
-        "susine"
-      ],
-      "categoryId": "fruit",
-      "mappingKind": "free",
-      "guideFamilyId": null
-    },
-    {
-      "ingredientId": "fruit-uva",
-      "displayName": "Uva",
-      "aliases": [
-        "uva",
-        "Uva"
-      ],
-      "categoryId": "fruit",
-      "mappingKind": "free",
-      "guideFamilyId": null
+      "categoryId": "vegetable",
+      "familyId": "verdura",
+      "dietaryFlags": {
+        "vegetarian": true,
+        "vegan": true
+      },
+      "status": "active"
     },
     {
       "ingredientId": "gallette",
       "displayName": "Gallette (riso/mais)",
       "aliases": [
         "galletta",
-        "gallette",
-        "Gallette (riso/mais)",
         "gallette di mais",
         "gallette di riso"
       ],
       "categoryId": "carb",
-      "mappingKind": "guided",
-      "guideFamilyId": "gallette"
+      "familyId": "gallette",
+      "dietaryFlags": {
+        "vegetarian": true,
+        "vegan": true
+      },
+      "status": "active"
     },
     {
       "ingredientId": "gamberi",
       "displayName": "Gamberi",
       "aliases": [
         "gamberetti",
-        "gamberi",
-        "Gamberi",
         "gambero",
         "gamberoni"
       ],
       "categoryId": "protein",
-      "mappingKind": "guided",
-      "guideFamilyId": "crostaceiMolluschi"
+      "familyId": "crostacei-e-molluschi",
+      "dietaryFlags": {
+        "vegetarian": false,
+        "vegan": false
+      },
+      "status": "active"
+    },
+    {
+      "ingredientId": "germogli",
+      "displayName": "Germogli",
+      "aliases": [
+        "germogli di soia",
+        "germoglio"
+      ],
+      "categoryId": "vegetable",
+      "familyId": "verdura",
+      "dietaryFlags": {
+        "vegetarian": true,
+        "vegan": true
+      },
+      "status": "active"
+    },
+    {
+      "ingredientId": "ghee",
+      "displayName": "Ghee (burro chiarificato)",
+      "aliases": [
+        "burro chiarificato"
+      ],
+      "categoryId": "fat",
+      "familyId": "grassi",
+      "dietaryFlags": {
+        "vegetarian": true,
+        "vegan": false
+      },
+      "status": "active"
     },
     {
       "ingredientId": "gnocchi",
       "displayName": "Gnocchi di patate",
       "aliases": [
-        "gnocchi",
-        "Gnocchi di patate",
         "gnocco"
       ],
       "categoryId": "carb",
-      "mappingKind": "guided",
-      "guideFamilyId": "gnocchi"
+      "familyId": "gnocchi",
+      "dietaryFlags": {
+        "vegetarian": true,
+        "vegan": true
+      },
+      "status": "active"
     },
     {
       "ingredientId": "grana",
       "displayName": "Grana Padano",
-      "aliases": [
-        "grana",
-        "grana padano",
-        "Grana Padano"
-      ],
+      "aliases": [],
       "categoryId": "protein",
-      "mappingKind": "guided",
-      "guideFamilyId": "grana"
+      "familyId": "grana",
+      "dietaryFlags": {
+        "vegetarian": true,
+        "vegan": false
+      },
+      "status": "active"
     },
     {
       "ingredientId": "granchio",
       "displayName": "Granchio",
-      "aliases": [
-        "granchi",
-        "granchio",
-        "Granchio"
-      ],
+      "aliases": [],
       "categoryId": "protein",
-      "mappingKind": "guided",
-      "guideFamilyId": "crostaceiMolluschi"
+      "familyId": "crostacei-e-molluschi",
+      "dietaryFlags": {
+        "vegetarian": false,
+        "vegan": false
+      },
+      "status": "active"
     },
     {
       "ingredientId": "grano-saraceno",
       "displayName": "Grano saraceno",
       "aliases": [
-        "grano saraceno",
-        "Grano saraceno",
         "saraceno"
       ],
       "categoryId": "carb",
-      "mappingKind": "guided",
-      "guideFamilyId": "cereali"
+      "familyId": "cereali",
+      "dietaryFlags": {
+        "vegetarian": true,
+        "vegan": true
+      },
+      "status": "active"
     },
     {
       "ingredientId": "granola",
       "displayName": "Granola",
-      "aliases": [
-        "granola",
-        "Granola"
-      ],
+      "aliases": [],
       "categoryId": "carb",
-      "mappingKind": "guided",
-      "guideFamilyId": "cerealiColazione"
+      "familyId": "cereali-colazione",
+      "dietaryFlags": {
+        "vegetarian": true,
+        "vegan": true
+      },
+      "status": "active"
     },
     {
       "ingredientId": "grissini",
       "displayName": "Grissini",
       "aliases": [
-        "grissini",
-        "Grissini",
         "grissino"
       ],
       "categoryId": "carb",
-      "mappingKind": "guided",
-      "guideFamilyId": "crackers"
+      "familyId": "crackers-e-grissini",
+      "dietaryFlags": {
+        "vegetarian": true,
+        "vegan": true
+      },
+      "status": "active"
+    },
+    {
+      "ingredientId": "indivia",
+      "displayName": "Indivia",
+      "aliases": [],
+      "categoryId": "vegetable",
+      "familyId": "verdura",
+      "dietaryFlags": {
+        "vegetarian": true,
+        "vegan": true
+      },
+      "status": "active"
+    },
+    {
+      "ingredientId": "insalata",
+      "displayName": "Insalata mista",
+      "aliases": [
+        "insalate",
+        "mix di insalata"
+      ],
+      "categoryId": "vegetable",
+      "familyId": "verdura",
+      "dietaryFlags": {
+        "vegetarian": true,
+        "vegan": true
+      },
+      "status": "active"
     },
     {
       "ingredientId": "kamut",
       "displayName": "Kamut",
-      "aliases": [
-        "kamut",
-        "Kamut"
-      ],
+      "aliases": [],
       "categoryId": "carb",
-      "mappingKind": "guided",
-      "guideFamilyId": "cereali"
+      "familyId": "cereali",
+      "dietaryFlags": {
+        "vegetarian": true,
+        "vegan": true
+      },
+      "status": "active"
+    },
+    {
+      "ingredientId": "kiwi",
+      "displayName": "Kiwi",
+      "aliases": [],
+      "categoryId": "fruit",
+      "familyId": "frutta",
+      "dietaryFlags": {
+        "vegetarian": true,
+        "vegan": true
+      },
+      "status": "active"
+    },
+    {
+      "ingredientId": "latte",
+      "displayName": "Latte vaccino",
+      "aliases": [
+        "latte intero",
+        "latte parzialmente scremato",
+        "latte scremato"
+      ],
+      "categoryId": "protein",
+      "familyId": "latte",
+      "dietaryFlags": {
+        "vegetarian": true,
+        "vegan": false
+      },
+      "status": "active"
+    },
+    {
+      "ingredientId": "latte-di-avena",
+      "displayName": "Latte d'avena",
+      "aliases": [
+        "bevanda di avena",
+        "oat milk"
+      ],
+      "categoryId": "free",
+      "familyId": "bevande",
+      "dietaryFlags": {
+        "vegetarian": true,
+        "vegan": true
+      },
+      "status": "active"
+    },
+    {
+      "ingredientId": "latte-di-cocco",
+      "displayName": "Latte di cocco",
+      "aliases": [
+        "bevanda di cocco",
+        "coconut milk"
+      ],
+      "categoryId": "free",
+      "familyId": "bevande",
+      "dietaryFlags": {
+        "vegetarian": true,
+        "vegan": true
+      },
+      "status": "active"
+    },
+    {
+      "ingredientId": "latte-di-mandorla",
+      "displayName": "Latte di mandorla",
+      "aliases": [
+        "almond milk",
+        "bevanda di mandorla"
+      ],
+      "categoryId": "free",
+      "familyId": "bevande",
+      "dietaryFlags": {
+        "vegetarian": true,
+        "vegan": true
+      },
+      "status": "active"
+    },
+    {
+      "ingredientId": "latte-di-riso",
+      "displayName": "Latte di riso",
+      "aliases": [
+        "bevanda di riso",
+        "rice milk"
+      ],
+      "categoryId": "free",
+      "familyId": "bevande",
+      "dietaryFlags": {
+        "vegetarian": true,
+        "vegan": true
+      },
+      "status": "active"
+    },
+    {
+      "ingredientId": "latte-di-soia",
+      "displayName": "Latte di soia",
+      "aliases": [
+        "bevanda di soia",
+        "soy milk"
+      ],
+      "categoryId": "free",
+      "familyId": "bevande",
+      "dietaryFlags": {
+        "vegetarian": true,
+        "vegan": true
+      },
+      "status": "active"
+    },
+    {
+      "ingredientId": "lattuga",
+      "displayName": "Lattuga",
+      "aliases": [],
+      "categoryId": "vegetable",
+      "familyId": "verdura",
+      "dietaryFlags": {
+        "vegetarian": true,
+        "vegan": true
+      },
+      "status": "active"
     },
     {
       "ingredientId": "legumotti",
       "displayName": "Legumotti",
       "aliases": [
-        "legumotti",
-        "Legumotti",
         "legumotto"
       ],
       "categoryId": "protein",
-      "mappingKind": "guided",
-      "guideFamilyId": "legumotti"
+      "familyId": "legumotti",
+      "dietaryFlags": {
+        "vegetarian": true,
+        "vegan": true
+      },
+      "status": "active"
     },
     {
       "ingredientId": "lenticchie",
       "displayName": "Lenticchie",
       "aliases": [
-        "lenticchia",
-        "lenticchie",
-        "Lenticchie"
+        "lenticchia"
       ],
       "categoryId": "protein",
-      "mappingKind": "guided",
-      "guideFamilyId": "legumiScatola"
+      "familyId": "legumi",
+      "dietaryFlags": {
+        "vegetarian": true,
+        "vegan": true
+      },
+      "status": "active"
+    },
+    {
+      "ingredientId": "lievito-alimentare",
+      "displayName": "Lievito alimentare",
+      "aliases": [
+        "lievito in scaglie"
+      ],
+      "categoryId": "free",
+      "familyId": "condimenti",
+      "dietaryFlags": {
+        "vegetarian": true,
+        "vegan": true
+      },
+      "status": "active"
+    },
+    {
+      "ingredientId": "lime",
+      "displayName": "Lime",
+      "aliases": [],
+      "categoryId": "fruit",
+      "familyId": "frutta",
+      "dietaryFlags": {
+        "vegetarian": true,
+        "vegan": true
+      },
+      "status": "active"
+    },
+    {
+      "ingredientId": "limone",
+      "displayName": "Limone",
+      "aliases": [
+        "limoni"
+      ],
+      "categoryId": "fruit",
+      "familyId": "frutta",
+      "dietaryFlags": {
+        "vegetarian": true,
+        "vegan": true
+      },
+      "status": "active"
     },
     {
       "ingredientId": "lupini",
       "displayName": "Lupini",
       "aliases": [
-        "lupini",
-        "Lupini",
         "lupino"
       ],
       "categoryId": "protein",
-      "mappingKind": "guided",
-      "guideFamilyId": "lupini"
+      "familyId": "lupini",
+      "dietaryFlags": {
+        "vegetarian": true,
+        "vegan": true
+      },
+      "status": "active"
     },
     {
       "ingredientId": "maiale",
@@ -1489,25 +1822,69 @@
         "coscia di maiale",
         "filetto di maiale",
         "lonza",
-        "maiale",
-        "Maiale (tagli magri)",
         "pork"
       ],
       "categoryId": "protein",
-      "mappingKind": "guided",
-      "guideFamilyId": "maiale"
+      "familyId": "maiale",
+      "dietaryFlags": {
+        "vegetarian": false,
+        "vegan": false
+      },
+      "status": "active"
     },
     {
       "ingredientId": "mais",
       "displayName": "Mais dolce in scatola",
-      "aliases": [
-        "mais",
-        "mais dolce",
-        "Mais dolce in scatola"
-      ],
+      "aliases": [],
       "categoryId": "carb",
-      "mappingKind": "guided",
-      "guideFamilyId": "mais"
+      "familyId": "mais",
+      "dietaryFlags": {
+        "vegetarian": true,
+        "vegan": true
+      },
+      "status": "active"
+    },
+    {
+      "ingredientId": "mandarino",
+      "displayName": "Mandarino / Clementina",
+      "aliases": [
+        "clementina",
+        "clementine",
+        "mandarini"
+      ],
+      "categoryId": "fruit",
+      "familyId": "frutta",
+      "dietaryFlags": {
+        "vegetarian": true,
+        "vegan": true
+      },
+      "status": "active"
+    },
+    {
+      "ingredientId": "mandorle",
+      "displayName": "Mandorle",
+      "aliases": [
+        "mandorla"
+      ],
+      "categoryId": "fat",
+      "familyId": "frutta-secca",
+      "dietaryFlags": {
+        "vegetarian": true,
+        "vegan": true
+      },
+      "status": "active"
+    },
+    {
+      "ingredientId": "mango",
+      "displayName": "Mango",
+      "aliases": [],
+      "categoryId": "fruit",
+      "familyId": "frutta",
+      "dietaryFlags": {
+        "vegetarian": true,
+        "vegan": true
+      },
+      "status": "active"
     },
     {
       "ingredientId": "manzo",
@@ -1518,95 +1895,212 @@
         "filetto di manzo",
         "girello",
         "hamburger di manzo",
-        "manzo",
-        "Manzo (tagli magri)",
         "noce di manzo",
         "roastbeef",
         "scamone",
         "sottofesa"
       ],
       "categoryId": "protein",
-      "mappingKind": "guided",
-      "guideFamilyId": "manzo"
+      "familyId": "manzo-vitello",
+      "dietaryFlags": {
+        "vegetarian": false,
+        "vegan": false
+      },
+      "status": "active"
+    },
+    {
+      "ingredientId": "mela",
+      "displayName": "Mela",
+      "aliases": [
+        "mele"
+      ],
+      "categoryId": "fruit",
+      "familyId": "frutta",
+      "dietaryFlags": {
+        "vegetarian": true,
+        "vegan": true
+      },
+      "status": "active"
+    },
+    {
+      "ingredientId": "melanzane",
+      "displayName": "Melanzane",
+      "aliases": [
+        "melanzana"
+      ],
+      "categoryId": "vegetable",
+      "familyId": "verdura",
+      "dietaryFlags": {
+        "vegetarian": true,
+        "vegan": true
+      },
+      "status": "active"
+    },
+    {
+      "ingredientId": "melograno",
+      "displayName": "Melograno",
+      "aliases": [],
+      "categoryId": "fruit",
+      "familyId": "frutta",
+      "dietaryFlags": {
+        "vegetarian": true,
+        "vegan": true
+      },
+      "status": "active"
+    },
+    {
+      "ingredientId": "melone",
+      "displayName": "Melone",
+      "aliases": [
+        "meloni"
+      ],
+      "categoryId": "fruit",
+      "familyId": "frutta",
+      "dietaryFlags": {
+        "vegetarian": true,
+        "vegan": true
+      },
+      "status": "active"
+    },
+    {
+      "ingredientId": "menta",
+      "displayName": "Menta",
+      "aliases": [],
+      "categoryId": "free",
+      "familyId": "erbe-aromatiche",
+      "dietaryFlags": {
+        "vegetarian": true,
+        "vegan": true
+      },
+      "status": "active"
     },
     {
       "ingredientId": "merluzzo",
       "displayName": "Merluzzo",
-      "aliases": [
-        "merluzzo",
-        "Merluzzo"
-      ],
+      "aliases": [],
       "categoryId": "protein",
-      "mappingKind": "guided",
-      "guideFamilyId": "pesceBiancoMagro"
+      "familyId": "pesce-bianco-magro",
+      "dietaryFlags": {
+        "vegetarian": false,
+        "vegan": false
+      },
+      "status": "active"
     },
     {
       "ingredientId": "miglio",
       "displayName": "Miglio",
-      "aliases": [
-        "miglio",
-        "Miglio"
-      ],
+      "aliases": [],
       "categoryId": "carb",
-      "mappingKind": "guided",
-      "guideFamilyId": "cereali"
+      "familyId": "cereali",
+      "dietaryFlags": {
+        "vegetarian": true,
+        "vegan": true
+      },
+      "status": "active"
     },
     {
       "ingredientId": "montasio",
       "displayName": "Montasio",
-      "aliases": [
-        "montasio",
-        "Montasio"
-      ],
+      "aliases": [],
       "categoryId": "protein",
-      "mappingKind": "guided",
-      "guideFamilyId": "montasio"
+      "familyId": "montasio",
+      "dietaryFlags": {
+        "vegetarian": true,
+        "vegan": false
+      },
+      "status": "active"
     },
     {
       "ingredientId": "mozzarella",
       "displayName": "Mozzarella",
       "aliases": [
-        "fior di latte",
-        "mozzarella",
-        "Mozzarella"
+        "fior di latte"
       ],
       "categoryId": "protein",
-      "mappingKind": "guided",
-      "guideFamilyId": "formaggiFreschiMolli"
+      "familyId": "formaggi-freschi",
+      "dietaryFlags": {
+        "vegetarian": true,
+        "vegan": false
+      },
+      "status": "active"
     },
     {
       "ingredientId": "mozzarella-light",
       "displayName": "Mozzarella Light",
       "aliases": [
-        "mozzarella light",
-        "Mozzarella Light",
         "santa lucia light"
       ],
       "categoryId": "protein",
-      "mappingKind": "guided",
-      "guideFamilyId": "mozzarellaLight"
+      "familyId": "mozzarella-light",
+      "dietaryFlags": {
+        "vegetarian": true,
+        "vegan": false
+      },
+      "status": "active"
     },
     {
       "ingredientId": "muesli",
       "displayName": "Muesli",
-      "aliases": [
-        "muesli",
-        "Muesli"
-      ],
+      "aliases": [],
       "categoryId": "carb",
-      "mappingKind": "guided",
-      "guideFamilyId": "cerealiColazione"
+      "familyId": "cereali-colazione",
+      "dietaryFlags": {
+        "vegetarian": true,
+        "vegan": true
+      },
+      "status": "active"
     },
     {
       "ingredientId": "nasello",
       "displayName": "Nasello",
-      "aliases": [
-        "nasello",
-        "Nasello"
-      ],
+      "aliases": [],
       "categoryId": "protein",
-      "mappingKind": "guided",
-      "guideFamilyId": "pesceBiancoMagro"
+      "familyId": "pesce-bianco-magro",
+      "dietaryFlags": {
+        "vegetarian": false,
+        "vegan": false
+      },
+      "status": "active"
+    },
+    {
+      "ingredientId": "nocciole",
+      "displayName": "Nocciole",
+      "aliases": [
+        "nocciola"
+      ],
+      "categoryId": "fat",
+      "familyId": "frutta-secca",
+      "dietaryFlags": {
+        "vegetarian": true,
+        "vegan": true
+      },
+      "status": "active"
+    },
+    {
+      "ingredientId": "noce-moscata",
+      "displayName": "Noce moscata",
+      "aliases": [],
+      "categoryId": "free",
+      "familyId": "spezie",
+      "dietaryFlags": {
+        "vegetarian": true,
+        "vegan": true
+      },
+      "status": "active"
+    },
+    {
+      "ingredientId": "noci",
+      "displayName": "Noci",
+      "aliases": [
+        "noce"
+      ],
+      "categoryId": "fat",
+      "familyId": "frutta-secca",
+      "dietaryFlags": {
+        "vegetarian": true,
+        "vegan": true
+      },
+      "status": "active"
     },
     {
       "ingredientId": "olio",
@@ -1614,64 +2108,179 @@
       "aliases": [
         "evo",
         "extravergine",
-        "olio",
-        "olio evo",
-        "Olio EVO",
         "olio extravergine"
       ],
       "categoryId": "fat",
-      "mappingKind": "guided",
-      "guideFamilyId": "olio"
+      "familyId": "oli",
+      "dietaryFlags": {
+        "vegetarian": true,
+        "vegan": true
+      },
+      "status": "active"
+    },
+    {
+      "ingredientId": "olio-di-cocco",
+      "displayName": "Olio di cocco",
+      "aliases": [
+        "coconut oil"
+      ],
+      "categoryId": "fat",
+      "familyId": "oli",
+      "dietaryFlags": {
+        "vegetarian": true,
+        "vegan": true
+      },
+      "status": "active"
+    },
+    {
+      "ingredientId": "olio-di-semi",
+      "displayName": "Olio di semi",
+      "aliases": [
+        "olio di arachidi",
+        "olio di girasole",
+        "olio di mais"
+      ],
+      "categoryId": "fat",
+      "familyId": "oli",
+      "dietaryFlags": {
+        "vegetarian": true,
+        "vegan": true
+      },
+      "status": "active"
+    },
+    {
+      "ingredientId": "olive",
+      "displayName": "Olive",
+      "aliases": [
+        "oliva"
+      ],
+      "categoryId": "fat",
+      "familyId": "grassi",
+      "dietaryFlags": {
+        "vegetarian": true,
+        "vegan": true
+      },
+      "status": "active"
     },
     {
       "ingredientId": "orata",
       "displayName": "Orata",
       "aliases": [
-        "orata",
-        "Orata",
         "orate"
       ],
       "categoryId": "protein",
-      "mappingKind": "guided",
-      "guideFamilyId": "pesceBiancoMagro"
+      "familyId": "pesce-bianco-magro",
+      "dietaryFlags": {
+        "vegetarian": false,
+        "vegan": false
+      },
+      "status": "active"
+    },
+    {
+      "ingredientId": "origano",
+      "displayName": "Origano",
+      "aliases": [],
+      "categoryId": "free",
+      "familyId": "erbe-aromatiche",
+      "dietaryFlags": {
+        "vegetarian": true,
+        "vegan": true
+      },
+      "status": "active"
     },
     {
       "ingredientId": "orzo",
       "displayName": "Orzo",
-      "aliases": [
-        "orzo",
-        "Orzo"
-      ],
+      "aliases": [],
       "categoryId": "carb",
-      "mappingKind": "guided",
-      "guideFamilyId": "cereali"
+      "familyId": "cereali",
+      "dietaryFlags": {
+        "vegetarian": true,
+        "vegan": true
+      },
+      "status": "active"
+    },
+    {
+      "ingredientId": "pak-choi",
+      "displayName": "Pak choi",
+      "aliases": [
+        "bok choy"
+      ],
+      "categoryId": "vegetable",
+      "familyId": "verdura",
+      "dietaryFlags": {
+        "vegetarian": true,
+        "vegan": true
+      },
+      "status": "active"
     },
     {
       "ingredientId": "pane",
       "displayName": "Pane",
       "aliases": [
-        "pane",
-        "Pane",
         "pane carasau",
         "pane di farro",
         "pane di segale",
         "pane integrale"
       ],
       "categoryId": "carb",
-      "mappingKind": "guided",
-      "guideFamilyId": "pane"
+      "familyId": "pane-e-affini",
+      "dietaryFlags": {
+        "vegetarian": true,
+        "vegan": true
+      },
+      "status": "active"
+    },
+    {
+      "ingredientId": "papaya",
+      "displayName": "Papaya",
+      "aliases": [],
+      "categoryId": "fruit",
+      "familyId": "frutta",
+      "dietaryFlags": {
+        "vegetarian": true,
+        "vegan": true
+      },
+      "status": "active"
+    },
+    {
+      "ingredientId": "paprika",
+      "displayName": "Paprika",
+      "aliases": [],
+      "categoryId": "free",
+      "familyId": "spezie",
+      "dietaryFlags": {
+        "vegetarian": true,
+        "vegan": true
+      },
+      "status": "active"
     },
     {
       "ingredientId": "parmigiano",
       "displayName": "Parmigiano Reggiano",
-      "aliases": [
-        "parmigiano",
-        "parmigiano reggiano",
-        "Parmigiano Reggiano"
-      ],
+      "aliases": [],
       "categoryId": "protein",
-      "mappingKind": "guided",
-      "guideFamilyId": "formaggiStagionati"
+      "familyId": "formaggi-stagionati",
+      "dietaryFlags": {
+        "vegetarian": true,
+        "vegan": false
+      },
+      "status": "active"
+    },
+    {
+      "ingredientId": "passata",
+      "displayName": "Passata di pomodoro",
+      "aliases": [
+        "pelati",
+        "polpa di pomodoro"
+      ],
+      "categoryId": "vegetable",
+      "familyId": "verdura",
+      "dietaryFlags": {
+        "vegetarian": true,
+        "vegan": true
+      },
+      "status": "active"
     },
     {
       "ingredientId": "pasta",
@@ -1686,8 +2295,6 @@
         "mezze maniche",
         "orecchiette",
         "paccheri",
-        "pasta",
-        "Pasta",
         "penne",
         "pennette",
         "rigatoni",
@@ -1698,44 +2305,53 @@
         "trofie"
       ],
       "categoryId": "carb",
-      "mappingKind": "guided",
-      "guideFamilyId": "cereali"
+      "familyId": "cereali",
+      "dietaryFlags": {
+        "vegetarian": true,
+        "vegan": true
+      },
+      "status": "active"
     },
     {
       "ingredientId": "pasta-integrale",
       "displayName": "Pasta integrale",
-      "aliases": [
-        "pasta integrale",
-        "Pasta integrale"
-      ],
+      "aliases": [],
       "categoryId": "carb",
-      "mappingKind": "guided",
-      "guideFamilyId": "cereali"
+      "familyId": "cereali",
+      "dietaryFlags": {
+        "vegetarian": true,
+        "vegan": true
+      },
+      "status": "active"
     },
     {
       "ingredientId": "pasta-legumi",
       "displayName": "Pasta di legumi",
       "aliases": [
         "pasta di ceci",
-        "pasta di legumi",
-        "Pasta di legumi",
         "pasta di lenticchie"
       ],
       "categoryId": "carb",
-      "mappingKind": "guided",
-      "guideFamilyId": "cereali"
+      "familyId": "cereali",
+      "dietaryFlags": {
+        "vegetarian": true,
+        "vegan": true
+      },
+      "status": "active"
     },
     {
       "ingredientId": "patate",
       "displayName": "Patate",
       "aliases": [
-        "patata",
-        "patate",
-        "Patate"
+        "patata"
       ],
       "categoryId": "carb",
-      "mappingKind": "guided",
-      "guideFamilyId": "patate"
+      "familyId": "patate",
+      "dietaryFlags": {
+        "vegetarian": true,
+        "vegan": true
+      },
+      "status": "active"
     },
     {
       "ingredientId": "patate-dolci",
@@ -1744,106 +2360,204 @@
         "batata",
         "patata americana",
         "patata dolce",
-        "patate dolci",
-        "Patate dolci / Batata",
         "sweet potato"
       ],
       "categoryId": "carb",
-      "mappingKind": "guided",
-      "guideFamilyId": "patateDolci"
+      "familyId": "patate-dolci",
+      "dietaryFlags": {
+        "vegetarian": true,
+        "vegan": true
+      },
+      "status": "active"
     },
     {
       "ingredientId": "pecorino",
       "displayName": "Pecorino",
-      "aliases": [
-        "pecorino",
-        "Pecorino"
-      ],
+      "aliases": [],
       "categoryId": "protein",
-      "mappingKind": "guided",
-      "guideFamilyId": "formaggiStagionati"
+      "familyId": "formaggi-stagionati",
+      "dietaryFlags": {
+        "vegetarian": true,
+        "vegan": false
+      },
+      "status": "active"
+    },
+    {
+      "ingredientId": "pepe",
+      "displayName": "Pepe",
+      "aliases": [],
+      "categoryId": "free",
+      "familyId": "spezie",
+      "dietaryFlags": {
+        "vegetarian": true,
+        "vegan": true
+      },
+      "status": "active"
+    },
+    {
+      "ingredientId": "peperoncino",
+      "displayName": "Peperoncino",
+      "aliases": [
+        "peperoncini"
+      ],
+      "categoryId": "free",
+      "familyId": "spezie",
+      "dietaryFlags": {
+        "vegetarian": true,
+        "vegan": true
+      },
+      "status": "active"
+    },
+    {
+      "ingredientId": "peperoni",
+      "displayName": "Peperoni",
+      "aliases": [
+        "peperone"
+      ],
+      "categoryId": "vegetable",
+      "familyId": "verdura",
+      "dietaryFlags": {
+        "vegetarian": true,
+        "vegan": true
+      },
+      "status": "active"
+    },
+    {
+      "ingredientId": "pera",
+      "displayName": "Pera",
+      "aliases": [
+        "pere"
+      ],
+      "categoryId": "fruit",
+      "familyId": "frutta",
+      "dietaryFlags": {
+        "vegetarian": true,
+        "vegan": true
+      },
+      "status": "active"
+    },
+    {
+      "ingredientId": "pesca",
+      "displayName": "Pesca / Nettarina",
+      "aliases": [
+        "nettarina",
+        "nettarine",
+        "pesche"
+      ],
+      "categoryId": "fruit",
+      "familyId": "frutta",
+      "dietaryFlags": {
+        "vegetarian": true,
+        "vegan": true
+      },
+      "status": "active"
     },
     {
       "ingredientId": "pesce-scatola-naturale",
       "displayName": "Pesce in scatola al naturale",
       "aliases": [
-        "pesce al naturale",
-        "pesce in scatola al naturale",
-        "Pesce in scatola al naturale"
+        "pesce al naturale"
       ],
       "categoryId": "protein",
-      "mappingKind": "guided",
-      "guideFamilyId": "pesceScatolaNaturale"
+      "familyId": "pesce-scatola-naturale",
+      "dietaryFlags": {
+        "vegetarian": false,
+        "vegan": false
+      },
+      "status": "active"
     },
     {
       "ingredientId": "pesce-spada",
       "displayName": "Pesce spada",
-      "aliases": [
-        "pesce spada",
-        "Pesce spada"
-      ],
+      "aliases": [],
       "categoryId": "protein",
-      "mappingKind": "guided",
-      "guideFamilyId": "pesceBiancoMagro"
+      "familyId": "pesce-bianco-magro",
+      "dietaryFlags": {
+        "vegetarian": false,
+        "vegan": false
+      },
+      "status": "active"
     },
     {
       "ingredientId": "philadelphia",
       "displayName": "Philadelphia / Formaggio spalmabile",
       "aliases": [
         "formaggio fresco spalmabile",
-        "formaggio spalmabile",
-        "philadelphia",
-        "Philadelphia / Formaggio spalmabile"
+        "formaggio spalmabile"
       ],
       "categoryId": "protein",
-      "mappingKind": "guided",
-      "guideFamilyId": "formaggiFreschiMolli"
+      "familyId": "formaggi-freschi",
+      "dietaryFlags": {
+        "vegetarian": true,
+        "vegan": false
+      },
+      "status": "active"
     },
     {
       "ingredientId": "piadina",
       "displayName": "Piadina",
       "aliases": [
-        "piadina",
-        "Piadina",
         "piadine"
       ],
       "categoryId": "carb",
-      "mappingKind": "guided",
-      "guideFamilyId": "piadina"
+      "familyId": "piadina-e-wrap",
+      "dietaryFlags": {
+        "vegetarian": true,
+        "vegan": true
+      },
+      "status": "active"
     },
     {
       "ingredientId": "piselli",
       "displayName": "Piselli",
       "aliases": [
-        "piselli",
-        "Piselli",
         "pisello"
       ],
       "categoryId": "protein",
-      "mappingKind": "guided",
-      "guideFamilyId": "legumiScatola"
+      "familyId": "legumi",
+      "dietaryFlags": {
+        "vegetarian": true,
+        "vegan": true
+      },
+      "status": "active"
+    },
+    {
+      "ingredientId": "pistacchi",
+      "displayName": "Pistacchi",
+      "aliases": [
+        "pistacchio"
+      ],
+      "categoryId": "fat",
+      "familyId": "frutta-secca",
+      "dietaryFlags": {
+        "vegetarian": true,
+        "vegan": true
+      },
+      "status": "active"
     },
     {
       "ingredientId": "platessa",
       "displayName": "Platessa",
-      "aliases": [
-        "platessa",
-        "Platessa"
-      ],
+      "aliases": [],
       "categoryId": "protein",
-      "mappingKind": "guided",
-      "guideFamilyId": "pesceBiancoMagro"
+      "familyId": "pesce-bianco-magro",
+      "dietaryFlags": {
+        "vegetarian": false,
+        "vegan": false
+      },
+      "status": "active"
     },
     {
       "ingredientId": "polenta",
       "displayName": "Polenta cotta",
-      "aliases": [
-        "polenta",
-        "Polenta cotta"
-      ],
+      "aliases": [],
       "categoryId": "carb",
-      "mappingKind": "guided",
-      "guideFamilyId": "polenta"
+      "familyId": "polenta",
+      "dietaryFlags": {
+        "vegetarian": true,
+        "vegan": true
+      },
+      "status": "active"
     },
     {
       "ingredientId": "pollo",
@@ -1851,84 +2565,196 @@
       "aliases": [
         "coscia di pollo",
         "petto di pollo",
-        "pollo",
-        "Pollo",
         "sovracoscia"
       ],
       "categoryId": "protein",
-      "mappingKind": "guided",
-      "guideFamilyId": "polloTacchino"
+      "familyId": "pollo-tacchino",
+      "dietaryFlags": {
+        "vegetarian": false,
+        "vegan": false
+      },
+      "status": "active"
     },
     {
       "ingredientId": "polpo",
       "displayName": "Polpo",
       "aliases": [
-        "polipo",
-        "polpo",
-        "Polpo"
+        "polipo"
       ],
       "categoryId": "protein",
-      "mappingKind": "guided",
-      "guideFamilyId": "crostaceiMolluschi"
+      "familyId": "crostacei-e-molluschi",
+      "dietaryFlags": {
+        "vegetarian": false,
+        "vegan": false
+      },
+      "status": "active"
+    },
+    {
+      "ingredientId": "pomodori",
+      "displayName": "Pomodori",
+      "aliases": [
+        "ciliegini",
+        "ciliegino",
+        "datterini",
+        "pomodorini",
+        "pomodoro"
+      ],
+      "categoryId": "vegetable",
+      "familyId": "verdura",
+      "dietaryFlags": {
+        "vegetarian": true,
+        "vegan": true
+      },
+      "status": "active"
+    },
+    {
+      "ingredientId": "pompelmo",
+      "displayName": "Pompelmo",
+      "aliases": [
+        "pompelmi"
+      ],
+      "categoryId": "fruit",
+      "familyId": "frutta",
+      "dietaryFlags": {
+        "vegetarian": true,
+        "vegan": true
+      },
+      "status": "active"
+    },
+    {
+      "ingredientId": "porro",
+      "displayName": "Porro",
+      "aliases": [
+        "porri"
+      ],
+      "categoryId": "vegetable",
+      "familyId": "verdura",
+      "dietaryFlags": {
+        "vegetarian": true,
+        "vegan": true
+      },
+      "status": "active"
+    },
+    {
+      "ingredientId": "prezzemolo",
+      "displayName": "Prezzemolo",
+      "aliases": [],
+      "categoryId": "free",
+      "familyId": "erbe-aromatiche",
+      "dietaryFlags": {
+        "vegetarian": true,
+        "vegan": true
+      },
+      "status": "active"
     },
     {
       "ingredientId": "prosciutto-cotto",
       "displayName": "Prosciutto cotto",
       "aliases": [
-        "cotto",
-        "prosciutto cotto",
-        "Prosciutto cotto"
+        "cotto"
       ],
       "categoryId": "protein",
-      "mappingKind": "guided",
-      "guideFamilyId": "affettatiMagri"
+      "familyId": "affettati-magri",
+      "dietaryFlags": {
+        "vegetarian": false,
+        "vegan": false
+      },
+      "status": "active"
     },
     {
       "ingredientId": "prosciutto-crudo",
       "displayName": "Prosciutto crudo",
       "aliases": [
-        "crudo",
-        "prosciutto crudo",
-        "Prosciutto crudo"
+        "crudo"
       ],
       "categoryId": "protein",
-      "mappingKind": "guided",
-      "guideFamilyId": "affettatiMagri"
+      "familyId": "affettati-magri",
+      "dietaryFlags": {
+        "vegetarian": false,
+        "vegan": false
+      },
+      "status": "active"
     },
     {
       "ingredientId": "provolone",
       "displayName": "Provolone",
-      "aliases": [
-        "provolone",
-        "Provolone"
-      ],
+      "aliases": [],
       "categoryId": "protein",
-      "mappingKind": "guided",
-      "guideFamilyId": "formaggiStagionati"
+      "familyId": "formaggi-stagionati",
+      "dietaryFlags": {
+        "vegetarian": true,
+        "vegan": false
+      },
+      "status": "active"
+    },
+    {
+      "ingredientId": "prugna",
+      "displayName": "Prugna / Susina",
+      "aliases": [
+        "prugne",
+        "susina",
+        "susine"
+      ],
+      "categoryId": "fruit",
+      "familyId": "frutta",
+      "dietaryFlags": {
+        "vegetarian": true,
+        "vegan": true
+      },
+      "status": "active"
     },
     {
       "ingredientId": "quinoa",
       "displayName": "Quinoa",
-      "aliases": [
-        "quinoa",
-        "Quinoa"
-      ],
+      "aliases": [],
       "categoryId": "carb",
-      "mappingKind": "guided",
-      "guideFamilyId": "cereali"
+      "familyId": "cereali",
+      "dietaryFlags": {
+        "vegetarian": true,
+        "vegan": true
+      },
+      "status": "active"
+    },
+    {
+      "ingredientId": "radicchio",
+      "displayName": "Radicchio",
+      "aliases": [],
+      "categoryId": "vegetable",
+      "familyId": "verdura",
+      "dietaryFlags": {
+        "vegetarian": true,
+        "vegan": true
+      },
+      "status": "active"
+    },
+    {
+      "ingredientId": "ravanelli",
+      "displayName": "Ravanelli",
+      "aliases": [
+        "ravanello"
+      ],
+      "categoryId": "vegetable",
+      "familyId": "verdura",
+      "dietaryFlags": {
+        "vegetarian": true,
+        "vegan": true
+      },
+      "status": "active"
     },
     {
       "ingredientId": "ricotta",
       "displayName": "Ricotta",
       "aliases": [
-        "ricotta",
-        "Ricotta",
         "ricotta di pecora",
         "ricotta vaccina"
       ],
       "categoryId": "protein",
-      "mappingKind": "guided",
-      "guideFamilyId": "ricotta"
+      "familyId": "ricotta",
+      "dietaryFlags": {
+        "vegetarian": true,
+        "vegan": false
+      },
+      "status": "active"
     },
     {
       "ingredientId": "riso",
@@ -1937,895 +2763,765 @@
         "arborio",
         "basmati",
         "carnaroli",
-        "riso",
-        "Riso",
         "riso integrale",
         "risotto"
       ],
       "categoryId": "carb",
-      "mappingKind": "guided",
-      "guideFamilyId": "cereali"
+      "familyId": "cereali",
+      "dietaryFlags": {
+        "vegetarian": true,
+        "vegan": true
+      },
+      "status": "active"
     },
     {
       "ingredientId": "riso-venere",
       "displayName": "Riso Venere / Riso nero",
       "aliases": [
         "riso nero",
-        "riso rosso",
-        "riso venere",
-        "Riso Venere / Riso nero"
+        "riso rosso"
       ],
       "categoryId": "carb",
-      "mappingKind": "guided",
-      "guideFamilyId": "cereali"
+      "familyId": "cereali",
+      "dietaryFlags": {
+        "vegetarian": true,
+        "vegan": true
+      },
+      "status": "active"
     },
     {
       "ingredientId": "robiola",
       "displayName": "Robiola",
-      "aliases": [
-        "robiola",
-        "Robiola"
-      ],
+      "aliases": [],
       "categoryId": "protein",
-      "mappingKind": "guided",
-      "guideFamilyId": "formaggiFreschiMolli"
+      "familyId": "formaggi-freschi",
+      "dietaryFlags": {
+        "vegetarian": true,
+        "vegan": false
+      },
+      "status": "active"
+    },
+    {
+      "ingredientId": "rosmarino",
+      "displayName": "Rosmarino",
+      "aliases": [],
+      "categoryId": "free",
+      "familyId": "erbe-aromatiche",
+      "dietaryFlags": {
+        "vegetarian": true,
+        "vegan": true
+      },
+      "status": "active"
+    },
+    {
+      "ingredientId": "rucola",
+      "displayName": "Rucola",
+      "aliases": [],
+      "categoryId": "vegetable",
+      "familyId": "verdura",
+      "dietaryFlags": {
+        "vegetarian": true,
+        "vegan": true
+      },
+      "status": "active"
+    },
+    {
+      "ingredientId": "sale",
+      "displayName": "Sale",
+      "aliases": [],
+      "categoryId": "free",
+      "familyId": "condimenti",
+      "dietaryFlags": {
+        "vegetarian": true,
+        "vegan": true
+      },
+      "status": "active"
     },
     {
       "ingredientId": "salmone",
       "displayName": "Salmone",
-      "aliases": [
-        "salmone",
-        "Salmone"
-      ],
+      "aliases": [],
       "categoryId": "protein",
-      "mappingKind": "guided",
-      "guideFamilyId": "pesceAzzurro"
+      "familyId": "pesce-azzurro",
+      "dietaryFlags": {
+        "vegetarian": false,
+        "vegan": false
+      },
+      "status": "active"
     },
     {
       "ingredientId": "salmone-affumicato",
       "displayName": "Salmone affumicato",
-      "aliases": [
-        "salmone affumicato",
-        "Salmone affumicato"
-      ],
+      "aliases": [],
       "categoryId": "protein",
-      "mappingKind": "guided",
-      "guideFamilyId": "salmoneAffumicato"
+      "familyId": "salmone-affumicato",
+      "dietaryFlags": {
+        "vegetarian": false,
+        "vegan": false
+      },
+      "status": "active"
     },
     {
       "ingredientId": "salmone-naturale",
       "displayName": "Salmone al naturale",
-      "aliases": [
-        "salmone al naturale",
-        "Salmone al naturale"
-      ],
+      "aliases": [],
       "categoryId": "protein",
-      "mappingKind": "guided",
-      "guideFamilyId": "pesceScatolaNaturale"
+      "familyId": "pesce-scatola-naturale",
+      "dietaryFlags": {
+        "vegetarian": false,
+        "vegan": false
+      },
+      "status": "active"
     },
     {
       "ingredientId": "salmone-sottolio",
       "displayName": "Salmone sott'olio",
-      "aliases": [
-        "salmone sott'olio",
-        "Salmone sott'olio"
-      ],
+      "aliases": [],
       "categoryId": "protein",
-      "mappingKind": "guided",
-      "guideFamilyId": "pesceSottOlio"
+      "familyId": "pesce-sott-olio",
+      "dietaryFlags": {
+        "vegetarian": false,
+        "vegan": false
+      },
+      "status": "active"
+    },
+    {
+      "ingredientId": "salsa-di-soia",
+      "displayName": "Salsa di soia",
+      "aliases": [
+        "shoyu",
+        "soy sauce",
+        "tamari"
+      ],
+      "categoryId": "free",
+      "familyId": "condimenti",
+      "dietaryFlags": {
+        "vegetarian": true,
+        "vegan": true
+      },
+      "status": "active"
+    },
+    {
+      "ingredientId": "salvia",
+      "displayName": "Salvia",
+      "aliases": [],
+      "categoryId": "free",
+      "familyId": "erbe-aromatiche",
+      "dietaryFlags": {
+        "vegetarian": true,
+        "vegan": true
+      },
+      "status": "active"
     },
     {
       "ingredientId": "sardine",
       "displayName": "Sardine",
       "aliases": [
-        "sardina",
-        "sardine",
-        "Sardine"
+        "sardina"
       ],
       "categoryId": "protein",
-      "mappingKind": "guided",
-      "guideFamilyId": "pesceAzzurro"
+      "familyId": "pesce-azzurro",
+      "dietaryFlags": {
+        "vegetarian": false,
+        "vegan": false
+      },
+      "status": "active"
     },
     {
       "ingredientId": "sardine-sottolio",
       "displayName": "Sardine sott'olio",
       "aliases": [
-        "sardina sott'olio",
-        "sardine sott'olio",
-        "Sardine sott'olio"
+        "sardina sott'olio"
       ],
       "categoryId": "protein",
-      "mappingKind": "guided",
-      "guideFamilyId": "pesceSottOlio"
+      "familyId": "pesce-sott-olio",
+      "dietaryFlags": {
+        "vegetarian": false,
+        "vegan": false
+      },
+      "status": "active"
+    },
+    {
+      "ingredientId": "scalogno",
+      "displayName": "Scalogno",
+      "aliases": [
+        "scalogni"
+      ],
+      "categoryId": "vegetable",
+      "familyId": "verdura",
+      "dietaryFlags": {
+        "vegetarian": true,
+        "vegan": true
+      },
+      "status": "active"
     },
     {
       "ingredientId": "scamorza",
       "displayName": "Scamorza",
-      "aliases": [
-        "scamorza",
-        "Scamorza"
-      ],
+      "aliases": [],
       "categoryId": "protein",
-      "mappingKind": "guided",
-      "guideFamilyId": "formaggiStagionati"
+      "familyId": "formaggi-stagionati",
+      "dietaryFlags": {
+        "vegetarian": true,
+        "vegan": false
+      },
+      "status": "active"
     },
     {
       "ingredientId": "scampi",
       "displayName": "Scampi",
-      "aliases": [
-        "scampi",
-        "Scampi"
-      ],
+      "aliases": [],
       "categoryId": "protein",
-      "mappingKind": "guided",
-      "guideFamilyId": "crostaceiMolluschi"
+      "familyId": "crostacei-e-molluschi",
+      "dietaryFlags": {
+        "vegetarian": false,
+        "vegan": false
+      },
+      "status": "active"
+    },
+    {
+      "ingredientId": "sedano",
+      "displayName": "Sedano",
+      "aliases": [],
+      "categoryId": "vegetable",
+      "familyId": "verdura",
+      "dietaryFlags": {
+        "vegetarian": true,
+        "vegan": true
+      },
+      "status": "active"
     },
     {
       "ingredientId": "seitan",
       "displayName": "Seitan",
-      "aliases": [
-        "seitan",
-        "Seitan"
-      ],
+      "aliases": [],
       "categoryId": "protein",
-      "mappingKind": "guided",
-      "guideFamilyId": "seitan"
+      "familyId": "seitan",
+      "dietaryFlags": {
+        "vegetarian": true,
+        "vegan": true
+      },
+      "status": "active"
+    },
+    {
+      "ingredientId": "semi",
+      "displayName": "Semi",
+      "aliases": [
+        "semi di chia",
+        "semi di girasole",
+        "semi di lino",
+        "semi di sesamo",
+        "semi di zucca",
+        "sesamo"
+      ],
+      "categoryId": "fat",
+      "familyId": "semi",
+      "dietaryFlags": {
+        "vegetarian": true,
+        "vegan": true
+      },
+      "status": "active"
     },
     {
       "ingredientId": "semolino",
       "displayName": "Semolino / Semola",
       "aliases": [
-        "semola",
-        "semolino",
-        "Semolino / Semola"
+        "semola"
       ],
       "categoryId": "carb",
-      "mappingKind": "guided",
-      "guideFamilyId": "cereali"
+      "familyId": "cereali",
+      "dietaryFlags": {
+        "vegetarian": true,
+        "vegan": true
+      },
+      "status": "active"
+    },
+    {
+      "ingredientId": "senape",
+      "displayName": "Senape",
+      "aliases": [
+        "mustard"
+      ],
+      "categoryId": "free",
+      "familyId": "condimenti",
+      "dietaryFlags": {
+        "vegetarian": true,
+        "vegan": true
+      },
+      "status": "active"
     },
     {
       "ingredientId": "seppie",
       "displayName": "Seppie",
       "aliases": [
-        "seppia",
-        "seppie",
-        "Seppie"
+        "seppia"
       ],
       "categoryId": "protein",
-      "mappingKind": "guided",
-      "guideFamilyId": "crostaceiMolluschi"
+      "familyId": "crostacei-e-molluschi",
+      "dietaryFlags": {
+        "vegetarian": false,
+        "vegan": false
+      },
+      "status": "active"
     },
     {
       "ingredientId": "sgombro",
       "displayName": "Sgombro",
-      "aliases": [
-        "sgombro",
-        "Sgombro"
-      ],
+      "aliases": [],
       "categoryId": "protein",
-      "mappingKind": "guided",
-      "guideFamilyId": "pesceAzzurro"
+      "familyId": "pesce-azzurro",
+      "dietaryFlags": {
+        "vegetarian": false,
+        "vegan": false
+      },
+      "status": "active"
     },
     {
       "ingredientId": "sgombro-naturale",
       "displayName": "Sgombro al naturale",
-      "aliases": [
-        "sgombro al naturale",
-        "Sgombro al naturale"
-      ],
+      "aliases": [],
       "categoryId": "protein",
-      "mappingKind": "guided",
-      "guideFamilyId": "pesceScatolaNaturale"
+      "familyId": "pesce-scatola-naturale",
+      "dietaryFlags": {
+        "vegetarian": false,
+        "vegan": false
+      },
+      "status": "active"
     },
     {
       "ingredientId": "sgombro-sottolio",
       "displayName": "Sgombro sott'olio",
       "aliases": [
-        "sgombro in scatola",
-        "sgombro sott'olio",
-        "Sgombro sott'olio"
+        "sgombro in scatola"
       ],
       "categoryId": "protein",
-      "mappingKind": "guided",
-      "guideFamilyId": "pesceSottOlio"
+      "familyId": "pesce-sott-olio",
+      "dietaryFlags": {
+        "vegetarian": false,
+        "vegan": false
+      },
+      "status": "active"
     },
     {
       "ingredientId": "sogliola",
       "displayName": "Sogliola",
       "aliases": [
-        "sogliola",
-        "Sogliola",
         "sogliole"
       ],
       "categoryId": "protein",
-      "mappingKind": "guided",
-      "guideFamilyId": "pesceBiancoMagro"
+      "familyId": "pesce-bianco-magro",
+      "dietaryFlags": {
+        "vegetarian": false,
+        "vegan": false
+      },
+      "status": "active"
     },
     {
       "ingredientId": "soia",
       "displayName": "Soia",
-      "aliases": [
-        "soia",
-        "Soia"
-      ],
+      "aliases": [],
       "categoryId": "protein",
-      "mappingKind": "guided",
-      "guideFamilyId": "legumiScatola"
+      "familyId": "legumi",
+      "dietaryFlags": {
+        "vegetarian": true,
+        "vegan": true
+      },
+      "status": "active"
+    },
+    {
+      "ingredientId": "songino",
+      "displayName": "Songino / Valeriana",
+      "aliases": [
+        "valeriana"
+      ],
+      "categoryId": "vegetable",
+      "familyId": "verdura",
+      "dietaryFlags": {
+        "vegetarian": true,
+        "vegan": true
+      },
+      "status": "active"
     },
     {
       "ingredientId": "speck",
       "displayName": "Speck",
-      "aliases": [
-        "speck",
-        "Speck"
-      ],
+      "aliases": [],
       "categoryId": "protein",
-      "mappingKind": "guided",
-      "guideFamilyId": "affettatiMagri"
+      "familyId": "affettati-magri",
+      "dietaryFlags": {
+        "vegetarian": false,
+        "vegan": false
+      },
+      "status": "active"
+    },
+    {
+      "ingredientId": "spezie",
+      "displayName": "Spezie",
+      "aliases": [
+        "Spezie (generiche)",
+        "spezia"
+      ],
+      "categoryId": "free",
+      "familyId": "spezie",
+      "dietaryFlags": {
+        "vegetarian": true,
+        "vegan": true
+      },
+      "status": "active"
     },
     {
       "ingredientId": "spigola",
       "displayName": "Spigola / Branzino",
       "aliases": [
-        "branzino",
-        "spigola",
-        "Spigola / Branzino"
+        "branzino"
       ],
       "categoryId": "protein",
-      "mappingKind": "guided",
-      "guideFamilyId": "pesceBiancoMagro"
+      "familyId": "pesce-bianco-magro",
+      "dietaryFlags": {
+        "vegetarian": false,
+        "vegan": false
+      },
+      "status": "active"
+    },
+    {
+      "ingredientId": "spinaci",
+      "displayName": "Spinaci",
+      "aliases": [
+        "spinacio"
+      ],
+      "categoryId": "vegetable",
+      "familyId": "verdura",
+      "dietaryFlags": {
+        "vegetarian": true,
+        "vegan": true
+      },
+      "status": "active"
     },
     {
       "ingredientId": "tacchino",
       "displayName": "Tacchino",
       "aliases": [
         "fesa di tacchino",
-        "petto di tacchino",
-        "tacchino",
-        "Tacchino"
+        "petto di tacchino"
       ],
       "categoryId": "protein",
-      "mappingKind": "guided",
-      "guideFamilyId": "polloTacchino"
+      "familyId": "pollo-tacchino",
+      "dietaryFlags": {
+        "vegetarian": false,
+        "vegan": false
+      },
+      "status": "active"
+    },
+    {
+      "ingredientId": "tahina",
+      "displayName": "Tahina",
+      "aliases": [
+        "crema di sesamo",
+        "tahini"
+      ],
+      "categoryId": "fat",
+      "familyId": "frutta-secca",
+      "dietaryFlags": {
+        "vegetarian": true,
+        "vegan": true
+      },
+      "status": "active"
     },
     {
       "ingredientId": "tempeh",
       "displayName": "Tempeh",
-      "aliases": [
-        "tempeh",
-        "Tempeh"
-      ],
+      "aliases": [],
       "categoryId": "protein",
-      "mappingKind": "guided",
-      "guideFamilyId": "legumiScatola"
+      "familyId": "legumi",
+      "dietaryFlags": {
+        "vegetarian": true,
+        "vegan": true
+      },
+      "status": "active"
+    },
+    {
+      "ingredientId": "timo",
+      "displayName": "Timo",
+      "aliases": [],
+      "categoryId": "free",
+      "familyId": "erbe-aromatiche",
+      "dietaryFlags": {
+        "vegetarian": true,
+        "vegan": true
+      },
+      "status": "active"
     },
     {
       "ingredientId": "tofu",
       "displayName": "Tofu",
-      "aliases": [
-        "tofu",
-        "Tofu"
-      ],
+      "aliases": [],
       "categoryId": "protein",
-      "mappingKind": "guided",
-      "guideFamilyId": "legumiScatola"
-    },
-    {
-      "ingredientId": "tonno",
-      "displayName": "Tonno sott'olio",
-      "aliases": [
-        "tonno in scatola",
-        "tonno sott'olio",
-        "Tonno sott'olio"
-      ],
-      "categoryId": "protein",
-      "mappingKind": "guided",
-      "guideFamilyId": "pesceSottOlio"
+      "familyId": "legumi",
+      "dietaryFlags": {
+        "vegetarian": true,
+        "vegan": true
+      },
+      "status": "active"
     },
     {
       "ingredientId": "tonno-fresco",
       "displayName": "Tonno fresco",
-      "aliases": [
-        "tonno fresco",
-        "Tonno fresco"
-      ],
+      "aliases": [],
       "categoryId": "protein",
-      "mappingKind": "guided",
-      "guideFamilyId": "pesceAzzurro"
+      "familyId": "pesce-azzurro",
+      "dietaryFlags": {
+        "vegetarian": false,
+        "vegan": false
+      },
+      "status": "active"
     },
     {
       "ingredientId": "tonno-naturale",
       "displayName": "Tonno al naturale",
       "aliases": [
-        "tonno al naturale",
-        "Tonno al naturale"
+        "tonno al naturale sgocciolato"
       ],
       "categoryId": "protein",
-      "mappingKind": "guided",
-      "guideFamilyId": "pesceScatolaNaturale"
+      "familyId": "pesce-scatola-naturale",
+      "dietaryFlags": {
+        "vegetarian": false,
+        "vegan": false
+      },
+      "status": "active"
+    },
+    {
+      "ingredientId": "tonno-sott-olio",
+      "displayName": "Tonno sott'olio",
+      "aliases": [
+        "tonno in scatola"
+      ],
+      "categoryId": "protein",
+      "familyId": "pesce-sott-olio",
+      "dietaryFlags": {
+        "vegetarian": false,
+        "vegan": false
+      },
+      "status": "active"
+    },
+    {
+      "ingredientId": "topinambur",
+      "displayName": "Topinambur",
+      "aliases": [],
+      "categoryId": "vegetable",
+      "familyId": "verdura",
+      "dietaryFlags": {
+        "vegetarian": true,
+        "vegan": true
+      },
+      "status": "active"
     },
     {
       "ingredientId": "tortilla",
       "displayName": "Tortilla / Wrap",
       "aliases": [
-        "tortilla",
-        "Tortilla / Wrap",
         "tortillas",
         "wrap",
         "wraps"
       ],
       "categoryId": "carb",
-      "mappingKind": "guided",
-      "guideFamilyId": "piadina"
+      "familyId": "piadina-e-wrap",
+      "dietaryFlags": {
+        "vegetarian": true,
+        "vegan": true
+      },
+      "status": "active"
     },
     {
       "ingredientId": "trota",
       "displayName": "Trota",
       "aliases": [
-        "trota",
-        "Trota",
         "trote"
       ],
       "categoryId": "protein",
-      "mappingKind": "guided",
-      "guideFamilyId": "pesceBiancoMagro"
+      "familyId": "pesce-bianco-magro",
+      "dietaryFlags": {
+        "vegetarian": false,
+        "vegan": false
+      },
+      "status": "active"
     },
     {
       "ingredientId": "tuorlo",
       "displayName": "Tuorlo",
       "aliases": [
-        "tuorli",
-        "tuorlo",
-        "Tuorlo"
+        "tuorli"
       ],
       "categoryId": "protein",
-      "mappingKind": "guided",
-      "guideFamilyId": "uova"
+      "familyId": "uova",
+      "dietaryFlags": {
+        "vegetarian": true,
+        "vegan": false
+      },
+      "status": "active"
     },
     {
       "ingredientId": "uova",
       "displayName": "Uova",
       "aliases": [
-        "uova",
-        "Uova",
-        "uovo"
+        "uova intere",
+        "uovo",
+        "uovo intero"
       ],
       "categoryId": "protein",
-      "mappingKind": "guided",
-      "guideFamilyId": "uova"
+      "familyId": "uova",
+      "dietaryFlags": {
+        "vegetarian": true,
+        "vegan": false
+      },
+      "status": "active"
     },
     {
-      "ingredientId": "veg-aglio",
-      "displayName": "Aglio",
-      "aliases": [
-        "aglio",
-        "Aglio"
-      ],
-      "categoryId": "vegetable",
-      "mappingKind": "guided",
-      "guideFamilyId": "verdura"
+      "ingredientId": "uva",
+      "displayName": "Uva",
+      "aliases": [],
+      "categoryId": "fruit",
+      "familyId": "frutta",
+      "dietaryFlags": {
+        "vegetarian": true,
+        "vegan": true
+      },
+      "status": "active"
     },
     {
-      "ingredientId": "veg-agretti",
-      "displayName": "Agretti",
-      "aliases": [
-        "agretti",
-        "Agretti",
-        "barba di frate"
-      ],
-      "categoryId": "vegetable",
-      "mappingKind": "guided",
-      "guideFamilyId": "verdura"
-    },
-    {
-      "ingredientId": "veg-asparagi",
-      "displayName": "Asparagi",
-      "aliases": [
-        "asparagi",
-        "Asparagi",
-        "asparago"
-      ],
-      "categoryId": "vegetable",
-      "mappingKind": "guided",
-      "guideFamilyId": "verdura"
-    },
-    {
-      "ingredientId": "veg-barbabietola",
-      "displayName": "Barbabietola",
-      "aliases": [
-        "barbabietola",
-        "Barbabietola",
-        "barbabietole"
-      ],
-      "categoryId": "vegetable",
-      "mappingKind": "guided",
-      "guideFamilyId": "verdura"
-    },
-    {
-      "ingredientId": "veg-bietole",
-      "displayName": "Bietole / Coste",
-      "aliases": [
-        "bietola",
-        "bietole",
-        "Bietole / Coste",
-        "coste"
-      ],
-      "categoryId": "vegetable",
-      "mappingKind": "guided",
-      "guideFamilyId": "verdura"
-    },
-    {
-      "ingredientId": "veg-broccoli",
-      "displayName": "Broccoli",
-      "aliases": [
-        "broccoli",
-        "Broccoli",
-        "broccolo"
-      ],
-      "categoryId": "vegetable",
-      "mappingKind": "guided",
-      "guideFamilyId": "verdura"
-    },
-    {
-      "ingredientId": "veg-capperi",
-      "displayName": "Capperi",
-      "aliases": [
-        "capperi",
-        "Capperi",
-        "cappero"
-      ],
-      "categoryId": "vegetable",
-      "mappingKind": "guided",
-      "guideFamilyId": "verdura"
-    },
-    {
-      "ingredientId": "veg-carciofi",
-      "displayName": "Carciofi",
-      "aliases": [
-        "carciofi",
-        "Carciofi",
-        "carciofo"
-      ],
-      "categoryId": "vegetable",
-      "mappingKind": "guided",
-      "guideFamilyId": "verdura"
-    },
-    {
-      "ingredientId": "veg-carote",
-      "displayName": "Carote",
-      "aliases": [
-        "carota",
-        "carote",
-        "Carote"
-      ],
-      "categoryId": "vegetable",
-      "mappingKind": "guided",
-      "guideFamilyId": "verdura"
-    },
-    {
-      "ingredientId": "veg-cavolfiore",
-      "displayName": "Cavolfiore",
-      "aliases": [
-        "cavolfiore",
-        "Cavolfiore",
-        "cavolfiori"
-      ],
-      "categoryId": "vegetable",
-      "mappingKind": "guided",
-      "guideFamilyId": "verdura"
-    },
-    {
-      "ingredientId": "veg-cavolo",
-      "displayName": "Cavolo",
-      "aliases": [
-        "cavoli",
-        "cavolo",
-        "Cavolo",
-        "cavolo cappuccio",
-        "cavolo nero"
-      ],
-      "categoryId": "vegetable",
-      "mappingKind": "guided",
-      "guideFamilyId": "verdura"
-    },
-    {
-      "ingredientId": "veg-cetriolo",
-      "displayName": "Cetriolo",
-      "aliases": [
-        "cetrioli",
-        "cetriolo",
-        "Cetriolo"
-      ],
-      "categoryId": "vegetable",
-      "mappingKind": "guided",
-      "guideFamilyId": "verdura"
-    },
-    {
-      "ingredientId": "veg-cicoria",
-      "displayName": "Cicoria",
-      "aliases": [
-        "cicoria",
-        "Cicoria"
-      ],
-      "categoryId": "vegetable",
-      "mappingKind": "guided",
-      "guideFamilyId": "verdura"
-    },
-    {
-      "ingredientId": "veg-cime-di-rapa",
-      "displayName": "Cime di rapa",
-      "aliases": [
-        "cime di rapa",
-        "Cime di rapa",
-        "rapa",
-        "rape"
-      ],
-      "categoryId": "vegetable",
-      "mappingKind": "guided",
-      "guideFamilyId": "verdura"
-    },
-    {
-      "ingredientId": "veg-cipolla",
-      "displayName": "Cipolla",
-      "aliases": [
-        "cipolla",
-        "Cipolla",
-        "cipolle"
-      ],
-      "categoryId": "vegetable",
-      "mappingKind": "guided",
-      "guideFamilyId": "verdura"
-    },
-    {
-      "ingredientId": "veg-erba-cipollina",
-      "displayName": "Erba cipollina",
-      "aliases": [
-        "erba cipollina",
-        "Erba cipollina"
-      ],
-      "categoryId": "vegetable",
-      "mappingKind": "guided",
-      "guideFamilyId": "verdura"
-    },
-    {
-      "ingredientId": "veg-fagiolini",
-      "displayName": "Fagiolini",
-      "aliases": [
-        "fagiolini",
-        "Fagiolini",
-        "fagiolino"
-      ],
-      "categoryId": "vegetable",
-      "mappingKind": "guided",
-      "guideFamilyId": "verdura"
-    },
-    {
-      "ingredientId": "veg-finocchi",
-      "displayName": "Finocchi",
-      "aliases": [
-        "finocchi",
-        "Finocchi",
-        "finocchio"
-      ],
-      "categoryId": "vegetable",
-      "mappingKind": "guided",
-      "guideFamilyId": "verdura"
-    },
-    {
-      "ingredientId": "veg-funghi",
-      "displayName": "Funghi",
-      "aliases": [
-        "champignon",
-        "chiodini",
-        "funghi",
-        "Funghi",
-        "fungo",
-        "pleurotus",
-        "porcini"
-      ],
-      "categoryId": "vegetable",
-      "mappingKind": "guided",
-      "guideFamilyId": "verdura"
-    },
-    {
-      "ingredientId": "veg-germogli",
-      "displayName": "Germogli",
-      "aliases": [
-        "germogli",
-        "Germogli",
-        "germogli di soia",
-        "germoglio"
-      ],
-      "categoryId": "vegetable",
-      "mappingKind": "guided",
-      "guideFamilyId": "verdura"
-    },
-    {
-      "ingredientId": "veg-indivia",
-      "displayName": "Indivia",
-      "aliases": [
-        "indivia",
-        "Indivia"
-      ],
-      "categoryId": "vegetable",
-      "mappingKind": "guided",
-      "guideFamilyId": "verdura"
-    },
-    {
-      "ingredientId": "veg-insalata",
-      "displayName": "Insalata mista",
-      "aliases": [
-        "insalata",
-        "Insalata mista",
-        "insalate",
-        "mix di insalata"
-      ],
-      "categoryId": "vegetable",
-      "mappingKind": "guided",
-      "guideFamilyId": "verdura"
-    },
-    {
-      "ingredientId": "veg-lattuga",
-      "displayName": "Lattuga",
-      "aliases": [
-        "lattuga",
-        "Lattuga"
-      ],
-      "categoryId": "vegetable",
-      "mappingKind": "guided",
-      "guideFamilyId": "verdura"
-    },
-    {
-      "ingredientId": "veg-melanzane",
-      "displayName": "Melanzane",
-      "aliases": [
-        "melanzana",
-        "melanzane",
-        "Melanzane"
-      ],
-      "categoryId": "vegetable",
-      "mappingKind": "guided",
-      "guideFamilyId": "verdura"
-    },
-    {
-      "ingredientId": "veg-pak-choi",
-      "displayName": "Pak choi",
-      "aliases": [
-        "bok choy",
-        "pak choi",
-        "Pak choi"
-      ],
-      "categoryId": "vegetable",
-      "mappingKind": "guided",
-      "guideFamilyId": "verdura"
-    },
-    {
-      "ingredientId": "veg-passata",
-      "displayName": "Passata di pomodoro",
-      "aliases": [
-        "passata",
-        "passata di pomodoro",
-        "Passata di pomodoro",
-        "pelati",
-        "polpa di pomodoro"
-      ],
-      "categoryId": "vegetable",
-      "mappingKind": "guided",
-      "guideFamilyId": "verdura"
-    },
-    {
-      "ingredientId": "veg-peperoni",
-      "displayName": "Peperoni",
-      "aliases": [
-        "peperone",
-        "peperoni",
-        "Peperoni"
-      ],
-      "categoryId": "vegetable",
-      "mappingKind": "guided",
-      "guideFamilyId": "verdura"
-    },
-    {
-      "ingredientId": "veg-pomodori",
-      "displayName": "Pomodori",
-      "aliases": [
-        "ciliegini",
-        "ciliegino",
-        "datterini",
-        "pomodori",
-        "Pomodori",
-        "pomodorini",
-        "pomodoro"
-      ],
-      "categoryId": "vegetable",
-      "mappingKind": "guided",
-      "guideFamilyId": "verdura"
-    },
-    {
-      "ingredientId": "veg-porro",
-      "displayName": "Porro",
-      "aliases": [
-        "porri",
-        "porro",
-        "Porro"
-      ],
-      "categoryId": "vegetable",
-      "mappingKind": "guided",
-      "guideFamilyId": "verdura"
-    },
-    {
-      "ingredientId": "veg-radicchio",
-      "displayName": "Radicchio",
-      "aliases": [
-        "radicchi",
-        "radicchio",
-        "Radicchio"
-      ],
-      "categoryId": "vegetable",
-      "mappingKind": "guided",
-      "guideFamilyId": "verdura"
-    },
-    {
-      "ingredientId": "veg-ravanelli",
-      "displayName": "Ravanelli",
-      "aliases": [
-        "ravanelli",
-        "Ravanelli",
-        "ravanello"
-      ],
-      "categoryId": "vegetable",
-      "mappingKind": "guided",
-      "guideFamilyId": "verdura"
-    },
-    {
-      "ingredientId": "veg-rucola",
-      "displayName": "Rucola",
-      "aliases": [
-        "rucola",
-        "Rucola"
-      ],
-      "categoryId": "vegetable",
-      "mappingKind": "guided",
-      "guideFamilyId": "verdura"
-    },
-    {
-      "ingredientId": "veg-scalogno",
-      "displayName": "Scalogno",
-      "aliases": [
-        "scalogni",
-        "scalogno",
-        "Scalogno"
-      ],
-      "categoryId": "vegetable",
-      "mappingKind": "guided",
-      "guideFamilyId": "verdura"
-    },
-    {
-      "ingredientId": "veg-sedano",
-      "displayName": "Sedano",
-      "aliases": [
-        "sedano",
-        "Sedano"
-      ],
-      "categoryId": "vegetable",
-      "mappingKind": "guided",
-      "guideFamilyId": "verdura"
-    },
-    {
-      "ingredientId": "veg-songino",
-      "displayName": "Songino / Valeriana",
-      "aliases": [
-        "songino",
-        "Songino / Valeriana",
-        "valeriana"
-      ],
-      "categoryId": "vegetable",
-      "mappingKind": "guided",
-      "guideFamilyId": "verdura"
-    },
-    {
-      "ingredientId": "veg-spinaci",
-      "displayName": "Spinaci",
-      "aliases": [
-        "spinaci",
-        "Spinaci",
-        "spinacio"
-      ],
-      "categoryId": "vegetable",
-      "mappingKind": "guided",
-      "guideFamilyId": "verdura"
-    },
-    {
-      "ingredientId": "veg-topinambur",
-      "displayName": "Topinambur",
-      "aliases": [
-        "topinambur",
-        "Topinambur"
-      ],
-      "categoryId": "vegetable",
-      "mappingKind": "guided",
-      "guideFamilyId": "verdura"
-    },
-    {
-      "ingredientId": "veg-verza",
+      "ingredientId": "verza",
       "displayName": "Verza",
-      "aliases": [
-        "verza",
-        "Verza"
-      ],
+      "aliases": [],
       "categoryId": "vegetable",
-      "mappingKind": "guided",
-      "guideFamilyId": "verdura"
-    },
-    {
-      "ingredientId": "veg-zucca",
-      "displayName": "Zucca",
-      "aliases": [
-        "zucca",
-        "Zucca"
-      ],
-      "categoryId": "vegetable",
-      "mappingKind": "guided",
-      "guideFamilyId": "verdura"
-    },
-    {
-      "ingredientId": "veg-zucchine",
-      "displayName": "Zucchine",
-      "aliases": [
-        "zucchin",
-        "Zucchine"
-      ],
-      "categoryId": "vegetable",
-      "mappingKind": "guided",
-      "guideFamilyId": "verdura"
+      "familyId": "verdura",
+      "dietaryFlags": {
+        "vegetarian": true,
+        "vegan": true
+      },
+      "status": "active"
     },
     {
       "ingredientId": "vitello",
       "displayName": "Vitello",
       "aliases": [
-        "vitella",
-        "vitello",
-        "Vitello"
+        "vitella"
       ],
       "categoryId": "protein",
-      "mappingKind": "guided",
-      "guideFamilyId": "manzo"
+      "familyId": "manzo-vitello",
+      "dietaryFlags": {
+        "vegetarian": false,
+        "vegan": false
+      },
+      "status": "active"
     },
     {
       "ingredientId": "vongole",
       "displayName": "Vongole",
-      "aliases": [
-        "vongole",
-        "Vongole"
-      ],
+      "aliases": [],
       "categoryId": "protein",
-      "mappingKind": "guided",
-      "guideFamilyId": "crostaceiMolluschi"
+      "familyId": "crostacei-e-molluschi",
+      "dietaryFlags": {
+        "vegetarian": false,
+        "vegan": false
+      },
+      "status": "active"
     },
     {
       "ingredientId": "wasa",
       "displayName": "Wasa / Cracotte",
       "aliases": [
-        "cracotte",
-        "wasa",
-        "Wasa / Cracotte"
+        "cracotte"
       ],
       "categoryId": "carb",
-      "mappingKind": "guided",
-      "guideFamilyId": "pane"
+      "familyId": "pane-e-affini",
+      "dietaryFlags": {
+        "vegetarian": true,
+        "vegan": true
+      },
+      "status": "active"
+    },
+    {
+      "ingredientId": "yogurt",
+      "displayName": "Yogurt classico",
+      "aliases": [
+        "yoghurt",
+        "yogurt bianco",
+        "yogurt magro",
+        "yogurt naturale"
+      ],
+      "categoryId": "protein",
+      "familyId": "yogurt",
+      "dietaryFlags": {
+        "vegetarian": true,
+        "vegan": false
+      },
+      "status": "active"
     },
     {
       "ingredientId": "yogurt-greco",
       "displayName": "Yogurt greco / Skyr",
       "aliases": [
         "skyr",
-        "yoghurt greco",
-        "yogurt greco",
-        "Yogurt greco / Skyr"
+        "yoghurt greco"
       ],
       "categoryId": "protein",
-      "mappingKind": "guided",
-      "guideFamilyId": "yogurtGreco"
+      "familyId": "yogurt-greco",
+      "dietaryFlags": {
+        "vegetarian": true,
+        "vegan": false
+      },
+      "status": "active"
+    },
+    {
+      "ingredientId": "zafferano",
+      "displayName": "Zafferano",
+      "aliases": [],
+      "categoryId": "free",
+      "familyId": "spezie",
+      "dietaryFlags": {
+        "vegetarian": true,
+        "vegan": true
+      },
+      "status": "active"
+    },
+    {
+      "ingredientId": "zenzero",
+      "displayName": "Zenzero",
+      "aliases": [
+        "ginger"
+      ],
+      "categoryId": "free",
+      "familyId": "spezie",
+      "dietaryFlags": {
+        "vegetarian": true,
+        "vegan": true
+      },
+      "status": "active"
+    },
+    {
+      "ingredientId": "zucca",
+      "displayName": "Zucca",
+      "aliases": [],
+      "categoryId": "vegetable",
+      "familyId": "verdura",
+      "dietaryFlags": {
+        "vegetarian": true,
+        "vegan": true
+      },
+      "status": "active"
+    },
+    {
+      "ingredientId": "zucchine",
+      "displayName": "Zucchine",
+      "aliases": [
+        "zucchina"
+      ],
+      "categoryId": "vegetable",
+      "familyId": "verdura",
+      "dietaryFlags": {
+        "vegetarian": true,
+        "vegan": true
+      },
+      "status": "active"
     }
   ]
 }

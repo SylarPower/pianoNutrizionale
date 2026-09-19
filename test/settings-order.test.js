@@ -3,7 +3,7 @@
  *
  * Contratto verificato senza rete, per sola lettura dei sorgenti e DOM minimale:
  *  - sezioni con eyebrow in ordine: PROFILO NUTRIZIONALE, PROFESSIONISTA,
- *    ACCOUNT COLLEGATI, LINEE GUIDA, ASPETTO, USCITA;
+ *    ACCOUNT COLLEGATI, LA MIA DIETA (se assegnata), ASPETTO, USCITA;
  *  - account-card rimossa, profile-name-form rimosso;
  *  - USCITA contiene logoutCurrentUser() e nessun altro logout duplicato;
  *  - il toggle tema è penultimo, prima di USCITA.
@@ -142,36 +142,55 @@ appState.saasContext = { state: 'unassigned' };
 appState.clientLink = { requests: [], link: { organizationId: 'org-1', organizationName: 'Studio A', clientId: 'c1', firstName: 'Mario', lastName: 'Rossi', email: 'mario@esempio.it', emailVerified: true, nutritionistUsername: 'nutri1', nutritionistDisplayName: 'Dott. Bianchi' } };
 
 test('Impostazioni: tema penultimo e uscita davvero ultima', () => {
+  // Con una dieta assegnata la sezione LA MIA DIETA è visibile: serve un
+  // profilo v3 valido (struttura con piano a blocchi).
+  const previousContext = appState.saasContext;
+  const previousPolicy = appState.saasPolicy;
+  appState.saasContext = { state: 'assigned', profile: {
+    schemaVersion: 3, clientProfileId: 'cp1', assignmentId: 'a1',
+    structureId: 's1', structureRevisionId: 'rev1', structureChecksum: 'chk',
+    structureName: 'Struttura base', ingredientCatalogVersion: 1,
+    structureRevision: { revisionId: 'rev1', dietPlan: PianoDomain.createEmptyDietPlan() },
+    catalog: { categories: [], families: [], ingredients: [] },
+    compatibleClientSchema: 7
+  } };
+  appState.saasPolicy = { mode: 'assigned', plan: appState.plan, migrationRequired: false };
+  try {
   renderSettings();
   const html = document.getElementById('view-settings').innerHTML;
   const idxProfilo = html.indexOf('PROFILO NUTRIZIONALE');
   const idxProfessionista = html.indexOf('PROFESSIONISTA');
   const idxAccount = html.indexOf('ACCOUNT COLLEGATI');
-  const idxFaq = html.indexOf('Altre informazioni e FAQ');
+  const idxDieta = html.indexOf('LA MIA DIETA');
   const idxAspetto = html.indexOf('ASPETTO');
   const idxUscita = html.indexOf('USCITA');
   assert.ok(idxProfilo >= 0, 'manca PROFILO NUTRIZIONALE');
   assert.ok(idxProfessionista >= 0, 'manca PROFESSIONISTA');
   assert.ok(idxAccount >= 0, 'manca ACCOUNT COLLEGATI');
-  assert.ok(idxFaq >= 0, 'manca Altre informazioni e FAQ');
+  assert.ok(idxDieta >= 0, 'manca LA MIA DIETA');
   assert.ok(idxAspetto >= 0, 'manca ASPETTO');
   assert.ok(idxUscita >= 0, 'manca USCITA');
   assert.ok(idxProfilo < idxProfessionista, 'PROFILO NUTRIZIONALE prima di PROFESSIONISTA');
   assert.ok(idxProfessionista < idxAccount, 'PROFESSIONISTA prima di ACCOUNT COLLEGATI');
-  assert.ok(idxAccount < idxFaq, 'ACCOUNT COLLEGATI prima delle FAQ');
-  assert.ok(idxFaq < idxAspetto, 'FAQ prima di ASPETTO');
+  assert.ok(idxAccount < idxDieta, 'ACCOUNT COLLEGATI prima di LA MIA DIETA');
+  assert.ok(idxDieta < idxAspetto, 'LA MIA DIETA prima di ASPETTO');
   assert.ok(idxAspetto < idxUscita, 'ASPETTO prima di USCITA');
   // Ogni sezione ha eyebrow
   assert.match(html, /<p class="eyebrow">PROFILO NUTRIZIONALE<\/p>/);
   assert.match(html, /<p class="eyebrow">PROFESSIONISTA<\/p>/);
   assert.match(html, /<p class="eyebrow">ACCOUNT COLLEGATI<\/p>/);
+  assert.match(html, /<p class="eyebrow">LA MIA DIETA<\/p>/);
   assert.match(html, /<p class="eyebrow">ASPETTO<\/p>/);
   assert.match(html, /<p class="eyebrow">USCITA<\/p>/);
   assert.match(html, /Tema scuro/);
   assert.match(html, /settings-dark-mode-toggle/);
-  // Preferenze e manuale alimentare in testata
-  assert.match(html, /Preferenze e manuale alimentare/);
-  assert.match(html, /LINEE GUIDA/);
+  // Testata della pagina Impostazioni senza manuale alimentare rimosso
+  assert.doesNotMatch(html, /LINEE GUIDA/);
+  assert.doesNotMatch(html, /manuale alimentare/i);
+  } finally {
+    appState.saasContext = previousContext;
+    appState.saasPolicy = previousPolicy;
+  }
 });
 
 test('Impostazioni: account-card e form nome mostrato rimossi, logout unico in USCITA', () => {

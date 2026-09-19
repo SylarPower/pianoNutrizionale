@@ -1,0 +1,322 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://piano.app/schemas/catalogo-strutture-v3.json",
+  "title": "Piano — Catalogo globale, Strutture dieta, Template equivalenze e assegnazioni",
+  "description": "Contratto vigente dopo la rifondazione pre-lancio. Identità (catalogo globale) separata dalla logica clinica (strutture e template org-scoped). Il catalogo non contiene dosi; le dosi vivono solo nelle strutture dieta e nei template equivalenze del singolo professionista. Le revisioni sono immutabili e non retroattive: checksum verificato sia dal server sia dal client.",
+  "type": "object",
+  "required": ["globalIngredientCatalog", "organizationDietStructures", "organizationEquivalenceTemplates", "clientAssignments", "catalogRequests"],
+  "additionalProperties": false,
+  "properties": {
+    "globalIngredientCatalog": { "$ref": "#/$defs/globalIngredientCatalog" },
+    "organizationDietStructures": {
+      "type": "array",
+      "items": { "$ref": "#/$defs/dietStructureAggregate" }
+    },
+    "organizationEquivalenceTemplates": {
+      "type": "array",
+      "items": { "$ref": "#/$defs/equivalenceTemplateAggregate" }
+    },
+    "clientAssignments": {
+      "type": "array",
+      "items": { "$ref": "#/$defs/clientAssignment" }
+    },
+    "catalogRequests": {
+      "type": "array",
+      "items": { "$ref": "#/$defs/catalogRequest" }
+    }
+  },
+  "x-firestoreCollections": {
+    "meta": "globalIngredientCatalog/current/meta/summary",
+    "categories": "globalIngredientCatalog/current/categories/{categoryId}",
+    "families": "globalIngredientCatalog/current/families/{familyId}",
+    "ingredients": "globalIngredientCatalog/current/ingredients/{ingredientId}",
+    "snapshots": "globalIngredientCatalog/versions/snapshots/{catalogVersion}",
+    "structures": "organizations/{organizationId}/dietStructures/{dietStructureId}",
+    "structureRevisions": "organizations/{organizationId}/dietStructures/{dietStructureId}/revisions/{revisionId}",
+    "templates": "organizations/{organizationId}/equivalenceTemplates/{templateId}",
+    "templateRevisions": "organizations/{organizationId}/equivalenceTemplates/{templateId}/revisions/{revisionId}",
+    "assignments": "organizations/{organizationId}/clients/{clientId}/assignments/{assignmentId}",
+    "catalogRequests": "organizations/{organizationId}/catalogRequests/{requestId}"
+  },
+  "$defs": {
+    "catalogFamily": {
+      "description": "Famiglia globale stabile: unità di equivalenza e di riferimento per blocchi e template. Nessuna quantità.",
+      "type": "object",
+      "required": ["familyId", "displayName", "categoryId", "sortOrder", "status"],
+      "additionalProperties": false,
+      "properties": {
+        "familyId": { "type": "string", "pattern": "^[a-z0-9][a-z0-9-]{1,63}$" },
+        "displayName": { "type": "string", "minLength": 1, "maxLength": 100 },
+        "categoryId": { "type": "string", "pattern": "^[a-z0-9][a-z0-9-]{1,63}$" },
+        "sortOrder": { "type": "integer", "minimum": 0 },
+        "status": { "enum": ["active", "archived"] }
+      }
+    },
+    "catalogIngredient": {
+      "description": "Identità dell'ingrediente. Zero dosi: qualsiasi chiave dose rifiuta l'import.",
+      "type": "object",
+      "required": ["ingredientId", "displayName", "categoryId", "familyId", "dietaryFlags", "status"],
+      "additionalProperties": false,
+      "properties": {
+        "ingredientId": { "type": "string", "pattern": "^[a-z0-9][a-z0-9-]{1,95}$" },
+        "displayName": { "type": "string", "minLength": 1, "maxLength": 160 },
+        "normalizedName": { "type": "string", "description": "Derivato dal server, mai accettato dal file." },
+        "aliases": { "type": "array", "maxItems": 100, "items": { "type": "string", "minLength": 1 } },
+        "searchTokens": { "type": "array", "items": { "type": "string" }, "description": "Rigenerati dal server da displayName + aliases." },
+        "categoryId": { "type": "string", "pattern": "^[a-z0-9][a-z0-9-]{1,63}$" },
+        "familyId": { "type": "string", "pattern": "^[a-z0-9][a-z0-9-]{1,63}$" },
+        "dietaryFlags": {
+          "type": "object",
+          "required": ["vegetarian", "vegan"],
+          "additionalProperties": false,
+          "properties": {
+            "vegetarian": { "type": "boolean" },
+            "vegan": { "type": "boolean", "description": "vegan implica vegetarian." }
+          }
+        },
+        "status": { "enum": ["active", "archived"] }
+      }
+    },
+    "globalIngredientCatalog": {
+      "type": "object",
+      "required": ["catalogVersion", "checksum", "categories", "families", "ingredients"],
+      "additionalProperties": false,
+      "properties": {
+        "catalogVersion": { "type": "integer", "minimum": 0 },
+        "checksum": { "type": "string", "description": "Checksum del contenuto + versione." },
+        "categories": { "type": "array", "items": { "$ref": "#/$defs/catalogCategory" } },
+        "families": { "type": "array", "items": { "$ref": "#/$defs/catalogFamily" } },
+        "ingredients": { "type": "array", "items": { "$ref": "#/$defs/catalogIngredient" } }
+      }
+    },
+    "catalogCategory": {
+      "type": "object",
+      "required": ["categoryId", "displayName", "sortOrder", "status"],
+      "additionalProperties": false,
+      "properties": {
+        "categoryId": { "type": "string", "pattern": "^[a-z0-9][a-z0-9-]{1,63}$" },
+        "displayName": { "type": "string", "minLength": 1, "maxLength": 100 },
+        "description": { "type": ["string", "null"], "maxLength": 500 },
+        "sortOrder": { "type": "integer", "minimum": 0 },
+        "status": { "enum": ["active", "archived"] }
+      }
+    },
+    "dietPlan": {
+      "description": "Schema 2. Giornate → pasti → opzioni. Le etichette A/B/C/D non si persistono: derivazione di UI. Un pasto a opzione singola resta options:[…] con un solo elemento.",
+      "type": "object",
+      "required": ["schemaVersion", "days", "generalNotes"],
+      "additionalProperties": false,
+      "properties": {
+        "schemaVersion": { "const": 2 },
+        "generalNotes": { "type": "string", "maxLength": 2000 },
+        "days": { "type": "array", "minItems": 1, "maxItems": 14, "items": { "$ref": "#/$defs/dietPlanDay" } }
+      }
+    },
+    "dietPlanDay": {
+      "type": "object",
+      "required": ["dayId", "label", "dayType", "meals", "supplements", "hydration", "note"],
+      "additionalProperties": false,
+      "properties": {
+        "dayId": { "type": "string", "pattern": "^[a-z0-9][a-z0-9-]{0,63}$" },
+        "label": { "type": "string", "maxLength": 80 },
+        "dayType": { "enum": ["training", "rest", "other"] },
+        "meals": { "type": "array", "minItems": 1, "maxItems": 10, "items": { "$ref": "#/$defs/dietPlanMeal" } },
+        "supplements": { "type": "string", "maxLength": 1000 },
+        "hydration": { "type": "string", "maxLength": 1000 },
+        "note": { "type": "string", "maxLength": 1000 }
+      }
+    },
+    "dietPlanMeal": {
+      "type": "object",
+      "required": ["mealId", "time", "options", "note"],
+      "additionalProperties": false,
+      "properties": {
+        "mealId": { "enum": ["breakfast", "morning-snack", "lunch", "afternoon-snack", "dinner", "evening-snack"] },
+        "time": { "type": "string", "pattern": "^\\d{1,2}[:.]\\d{2}$", "description": "Opzionale, formato HH:MM o H.MM." },
+        "options": { "type": "array", "minItems": 1, "maxItems": 4, "items": { "$ref": "#/$defs/dietPlanOption" } },
+        "note": { "type": "string", "maxLength": 1000 }
+      }
+    },
+    "dietPlanOption": {
+      "type": "object",
+      "required": ["optionId", "type", "note"],
+      "additionalProperties": false,
+      "properties": {
+        "optionId": { "type": "string", "pattern": "^[a-z0-9][a-z0-9-]{0,63}$" },
+        "type": { "enum": ["family-block", "ingredients", "recipe"] },
+        "note": { "type": "string", "maxLength": 1000 },
+        "blocks": {
+          "type": "array", "minItems": 1, "maxItems": 8,
+          "items": { "$ref": "#/$defs/dietPlanBlock" },
+          "description": "Solo per type=family-block."
+        },
+        "items": {
+          "type": "array", "minItems": 1, "maxItems": 20,
+          "items": { "$ref": "#/$defs/dietPlanItem" },
+          "description": "Solo per type=ingredients."
+        },
+        "recipeId": { "type": "string", "description": "Solo per type=recipe; obbligatorio lì, vietato altrove." },
+        "recipeMultiplier": { "type": "number", "minimum": 0.1, "maximum": 10, "description": "Solo per type=recipe, default 1." }
+      }
+    },
+    "dietPlanBlock": {
+      "description": "Blocco famiglia di riferimento: la quantità espressa sull'ingrediente di riferimento, gli equivalenti dal template (snapshot non retroattivo), override espliciti della struttura.",
+      "type": "object",
+      "required": ["blockId", "referenceFamilyId", "referenceIngredientId", "referenceAmount", "templateId", "templateSnapshot", "overrides"],
+      "additionalProperties": false,
+      "properties": {
+        "blockId": { "type": "string", "pattern": "^[a-z0-9][a-z0-9-]{0,63}$" },
+        "referenceFamilyId": { "type": "string", "pattern": "^[a-z0-9][a-z0-9-]{1,63}$" },
+        "referenceIngredientId": { "type": ["string", "null"], "description": "Null = famiglia senza ingrediente di riferimento." },
+        "referenceAmount": { "$ref": "#/$defs/dietAmount" },
+        "templateId": { "type": ["string", "null"] },
+        "templateSnapshot": {
+          "oneOf": [
+            { "type": "null" },
+            {
+              "type": "object",
+              "required": ["revisionId", "referenceAmount", "equivalents"],
+              "additionalProperties": false,
+              "properties": {
+                "revisionId": { "type": "string", "maxLength": 32 },
+                "referenceAmount": { "$ref": "#/$defs/dietAmount" },
+                "equivalents": { "type": "array", "minItems": 1, "maxItems": 30, "items": { "$ref": "#/$defs/equivalentEntry" } }
+              }
+            }
+          ],
+          "description": "Obbligatorio se templateId è valorizzato, vietato altrimenti. Congelato alla pubblicazione."
+        },
+        "overrides": {
+          "type": "array", "maxItems": 30,
+          "items": { "$ref": "#/$defs/equivalentEntry" },
+          "description": "La famiglia di riferimento del blocco non può comparire negli override."
+        }
+      }
+    },
+    "dietPlanItem": {
+      "type": "object",
+      "required": ["itemId", "ingredientId", "amount"],
+      "additionalProperties": false,
+      "properties": {
+        "itemId": { "type": "string", "pattern": "^[a-z0-9][a-z0-9-]{0,63}$" },
+        "ingredientId": { "type": "string", "pattern": "^[a-z0-9][a-z0-9-]{1,95}$" },
+        "amount": { "$ref": "#/$defs/dietAmount" }
+      }
+    },
+    "dietAmount": {
+      "type": "object",
+      "required": ["value", "unit"],
+      "additionalProperties": false,
+      "properties": {
+        "value": { "type": "number", "minimum": 0, "maximum": 5000 },
+        "unit": { "enum": ["g", "kg", "ml", "l", "pz", "fette", "cucchiai", "cucchiaini", "tazze", "bicchieri", "porzioni", "scatolette", "misurini", "qb"] }
+      }
+    },
+    "equivalentEntry": {
+      "type": "object",
+      "required": ["familyId", "ingredientId", "amount"],
+      "additionalProperties": false,
+      "properties": {
+        "familyId": { "type": "string", "pattern": "^[a-z0-9][a-z0-9-]{1,63}$" },
+        "ingredientId": { "type": ["string", "null"] },
+        "amount": { "$ref": "#/$defs/dietAmount" }
+      }
+    },
+    "dietStructureAggregate": {
+      "description": "Struttura dieta org-scoped: metadati + revisioni immutabili. Revisione corrente = status published + checksum verificato.",
+      "type": "object",
+      "required": ["structureId", "name", "status", "revisions"],
+      "additionalProperties": false,
+      "properties": {
+        "structureId": { "type": "string" },
+        "name": { "type": "string", "minLength": 3, "maxLength": 120 },
+        "description": { "type": ["string", "null"], "maxLength": 1000 },
+        "status": { "enum": ["active", "archived"] },
+        "revisions": { "type": "array", "items": { "$ref": "#/$defs/structureRevision" } }
+      }
+    },
+    "structureRevision": {
+      "description": "Schema 4: solo dietPlan, checksum dedicato. La revisione pubblicata congela anche ingredientCatalogVersion (non-retroattività del catalogo).",
+      "type": "object",
+      "required": ["revisionId", "schemaVersion", "status", "dietPlan", "checksum", "ingredientCatalogVersion"],
+      "additionalProperties": false,
+      "properties": {
+        "revisionId": { "type": "string" },
+        "schemaVersion": { "const": 4 },
+        "status": { "enum": ["published"] },
+        "dietPlan": { "$ref": "#/$defs/dietPlan" },
+        "checksum": { "type": "string", "description": "structureRevisionChecksum({schemaVersion, dietPlan})." },
+        "ingredientCatalogVersion": { "type": "integer", "minimum": 0 }
+      }
+    },
+    "equivalenceTemplateAggregate": {
+      "description": "Template equivalenze org-scoped, riusabile su più strutture e blocchi. La famiglia di riferimento è globale e stabile; le quantità sono proporzionali alla quantità di riferimento.",
+      "type": "object",
+      "required": ["templateId", "name", "status", "revisions"],
+      "additionalProperties": false,
+      "properties": {
+        "templateId": { "type": "string" },
+        "name": { "type": "string" },
+        "status": { "enum": ["active", "archived"] },
+        "revisions": { "type": "array", "items": { "$ref": "#/$defs/equivalenceTemplateRevision" } }
+      }
+    },
+    "equivalenceTemplateRevision": {
+      "description": "Schema 1. La famiglia di riferimento non può comparire tra gli equivalenti.",
+      "type": "object",
+      "required": ["schemaVersion", "name", "referenceFamilyId", "referenceIngredientId", "referenceAmount", "equivalents", "checksum"],
+      "additionalProperties": false,
+      "properties": {
+        "schemaVersion": { "const": 1 },
+        "name": { "type": "string", "minLength": 3, "maxLength": 120 },
+        "referenceFamilyId": { "type": "string", "pattern": "^[a-z0-9][a-z0-9-]{1,63}$" },
+        "referenceIngredientId": { "type": ["string", "null"] },
+        "referenceAmount": { "$ref": "#/$defs/dietAmount" },
+        "equivalents": { "type": "array", "minItems": 1, "maxItems": 30, "items": { "$ref": "#/$defs/equivalentEntry" } },
+        "checksum": { "type": "string", "description": "equivalenceTemplateRevisionChecksum(revision)." }
+      }
+    },
+    "clientAssignment": {
+      "description": "Assegnazione di una revisione struttura a un cliente. Campi esatti, nessuna strategia/revisione extra.",
+      "type": "object",
+      "required": ["assignmentId", "organizationId", "clientId", "structureId", "effectiveAt", "status"],
+      "additionalProperties": false,
+      "properties": {
+        "assignmentId": { "type": "string" },
+        "organizationId": { "type": "string" },
+        "clientId": { "type": "string" },
+        "structureId": { "type": "string", "minLength": 1 },
+        "structureRevisionId": { "type": "string" },
+        "structureChecksum": { "type": "string" },
+        "ingredientCatalogVersion": { "type": "integer", "minimum": 0 },
+        "effectiveAt": { "type": "string", "format": "date-time" },
+        "expiresAt": { "type": ["string", "null"], "format": "date-time" },
+        "withoutExpiration": { "type": "boolean" },
+        "notes": { "type": "string", "maxLength": 1000 },
+        "status": { "enum": ["active", "suspended", "revoked"] }
+      }
+    },
+    "catalogRequest": {
+      "description": "Proposta del cliente per un ingrediente non riconosciuto: termine + categoria/famiglia proposte. Il platform admin risolve con accept/edit/reject; accept/edit inserisce l'ingrediente nel catalogo globale (nuova versione). Nessuna dose.",
+      "type": "object",
+      "required": ["requestId", "status", "ingredientText"],
+      "additionalProperties": false,
+      "properties": {
+        "requestId": { "type": "string" },
+        "status": { "enum": ["pending", "accepted", "rejected"] },
+        "ingredientText": { "type": "string", "minLength": 2, "maxLength": 160 },
+        "normalizedIngredient": { "type": "string" },
+        "proposedCategoryId": { "type": ["string", "null"] },
+        "proposedFamilyId": { "type": ["string", "null"] },
+        "clientId": { "type": ["string", "null"] },
+        "clientTitle": { "type": ["string", "null"] },
+        "resolution": {
+          "type": ["object", "null"],
+          "description": "Compilato alla risoluzione: { action: 'accept'|'edit'|'reject', ingredientId? }."
+        },
+        "resolutionNote": { "type": ["string", "null"] },
+        "resolvedAt": { "type": ["string", "null"], "format": "date-time" }
+      }
+    }
+  }
+}

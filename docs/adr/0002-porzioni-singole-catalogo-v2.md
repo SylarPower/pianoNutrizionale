@@ -1,9 +1,9 @@
 # ADR 0002 — Porzione singola per profilo e separazione catalogo/strutture/assegna­zioni (schema 6)
 
-- Stato: accettato
+- Stato: superato (storico) — vedi ADR 0008
 - Data: 2026-09-10
 - Decisione di prodotto: owner
-- Allegati normativi: `docs/schema-catalogo-strutture-v2.json`, `docs/catalogo-ingredienti.json`, `docs/prompt-sessione-ux-saas-2.md`
+- Allegati normativi: `docs/schema-catalogo-strutture-v2.json` (rimosso, sostituito da `schema-catalogo-strutture-v3.json`), `docs/catalogo-ingredienti.json`, `docs/prompt-sessione-ux-saas-2.md` (rimosso)
 
 ## Contesto
 

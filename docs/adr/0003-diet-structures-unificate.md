@@ -1,6 +1,6 @@
 # ADR 0003 — Transizione ruleSets → dietStructures unificate (Fase 2)
 
-- Stato: accettato
+- Stato: superato (storico) — vedi ADR 0008
 - Data: 2026-09-10
 - Decisione di prodotto: owner
 - Precede: ADR 0001 (multi-tenant), ADR 0002 (schema 6, separazione catalogo/strutture)

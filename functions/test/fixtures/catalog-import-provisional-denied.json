@@ -1,14 +1,14 @@
 {
+  "categories": [{ "categoryId": "carb", "displayName": "Carboidrati", "sortOrder": 0 }],
+  "families": [{ "familyId": "cereali", "displayName": "Cereali", "categoryId": "carb", "sortOrder": 0 }],
   "ingredients": [
     {
       "ingredientId": "provisional-demo-non-importabile",
       "displayName": "Voce dimostrativa non importabile",
-      "aliases": [
-        "voce demo provvisoria"
-      ],
+      "aliases": ["voce demo provvisoria"],
       "categoryId": "carb",
-      "mappingKind": "guided",
-      "guideFamilyId": "cereali"
+      "familyId": "cereali",
+      "dietaryFlags": { "vegetarian": true, "vegan": true }
     }
   ]
 }

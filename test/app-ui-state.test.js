@@ -400,12 +400,23 @@ test('avvio rapido: dati e contesto invariati → nessuna riapplicazione né re-
   const previousSaasFn = global.callSaasFunction;
   const user = { uid: 'u1', email: 'mario@utenti.pianonutrizionale.app' };
   const profile = {
-    clientProfileId: 'c1', assignmentId: 'a1', schemaVersion: 1,
-    ruleSetId: 'r1', ruleSetVersion: '3', ruleSetChecksum: 'x', mappingCatalogChecksum: null,
-    rules: [{
-      family: 'pasta', group: 'carb', label: 'Pasta', aliases: ['pasta'],
-      slots: { lunch: { training: 90, rest: 70 }, dinner: { training: 40, rest: 40 } }
-    }], freeAliases: []
+    clientProfileId: 'c1', assignmentId: 'a1', schemaVersion: 3,
+    structureId: 's1', structureRevisionId: 'rev1', structureChecksum: 'chk-1',
+    structureName: 'Struttura base', ingredientCatalogVersion: 1,
+    structureRevision: {
+      revisionId: 'rev1',
+      dietPlan: PianoDomain.createEmptyDietPlan({ days: [
+        PianoDomain.createDietPlanDay('training', { dayId: 't', meals: [
+          PianoDomain.createDietPlanMeal('lunch', { options: [
+            PianoDomain.createDietPlanOption({ type: 'family-block', blocks: [
+              PianoDomain.createDietPlanBlock({ referenceFamilyId: 'cereali', referenceAmount: { value: 80, unit: 'g' } })
+            ] })
+          ] })
+        ] })
+      ] })
+    },
+    catalog: { categories: [], families: [{ familyId: 'cereali', displayName: 'Cereali', categoryId: 'carb', sortOrder: 0 }], ingredients: [] },
+    compatibleClientSchema: 7
   };
   const recipesA = [{ id: 'r1', name: 'Primo piatto', slot: 'lunch', ingredients: [], steps: [] }];
   const planA = createEmptyWeeklyPlan();

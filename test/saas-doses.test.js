@@ -1,15 +1,15 @@
 'use strict';
-/* Passo 4 (client) — dosi e frequenze personalizzate:
- *  - allineamento chiavi frequenza client/server;
- *  - merge override sopra le dosi studio (v1 e v2);
- *  - override solo in ambito personale, mai negli household;
- *  - snapshot: cambio override richiede nuova conferma;
- *  - loadContext online usa il motore convertito. */
+/* Passo 4 (client) — dosi allineate alla struttura dieta assegnata:
+ *  - snapshot della conferma cliente (revisione + checksum + catalogo);
+ *  - policy: senza assegnazione o negli household si resta su dosi originali;
+ *  - motore dieta dal profilo v3 (dietPlan a blocchi per pasto e tipo giornata);
+ *  - equivalenti proporzionali del blocco con override espliciti;
+ *  - vista allineata della ricetta: dosi cambiate, aggiunti, omessi, mai
+ *    mutazioni della ricetta originale. */
 const test = require('node:test');
 const assert = require('node:assert/strict');
 const saas = require('../js/saas.js');
 const Domain = require('../js/domain.js');
-const serverDomain = require('../functions/src/domain.js');
 
 global.PianoDomain = Domain;
 global.PIANO_SAAS_CONFIG = { enabled: true };
@@ -20,256 +20,287 @@ global.localStorage = {
   removeItem: key => { delete store[key]; }
 };
 
-const V1_RULES = [
-  { family: 'pasta', group: 'carb', label: 'Pasta', aliases: ['pasta'], slots: { lunch: { training: 90, rest: 70 }, dinner: { training: 40, rest: 40 } } }
-];
-const v1Profile = (overrides = null) => ({
-  schemaVersion: 1, clientProfileId: 'c1', assignmentId: 'a1',
-  ruleSetId: 'r1', ruleSetVersion: '3', ruleSetChecksum: 'x', mappingCatalogChecksum: null,
-  rules: JSON.parse(JSON.stringify(V1_RULES)), freeAliases: [],
-  ...(overrides ? { clientOverrides: overrides } : {})
-});
-const V2_REVISION = {
-  revisionId: 'r1',
-  rules: [{ guideFamilyId: 'pasta', ingredientIds: ['pasta-semola'], quantityGrams: { lunch: { training: 90, rest: 70 }, dinner: { training: 40, rest: 40 } }, enabled: true }],
-  alternativeGroups: []
-};
-const V2_CATALOG = {
+const CATALOG = {
   catalogVersion: 7,
-  ingredients: [{ ingredientId: 'pasta-semola', displayName: 'Pasta di semola', categoryId: 'cat1', aliases: ['pasta'], searchTokens: ['pasta'], mappingKind: 'guided', status: 'active' }],
-  categories: [{ categoryId: 'cat1', displayName: 'Primi' }]
+  categories: [{ categoryId: 'carb', displayName: 'Carboidrati', sortOrder: 0 }],
+  families: [
+    { familyId: 'cereali', displayName: 'Cereali', categoryId: 'carb', sortOrder: 0 },
+    { familyId: 'patate', displayName: 'Patate e tuberi', categoryId: 'carb', sortOrder: 1 }
+  ],
+  ingredients: [
+    { ingredientId: 'pasta-semola', displayName: 'Pasta di semola', aliases: ['pasta'], categoryId: 'carb', familyId: 'cereali', dietaryFlags: { vegetarian: true, vegan: true }, status: 'active' },
+    { ingredientId: 'riso', displayName: 'Riso', aliases: [], categoryId: 'carb', familyId: 'cereali', dietaryFlags: { vegetarian: true, vegan: true }, status: 'active' },
+    { ingredientId: 'patate', displayName: 'Patate', aliases: ['patata'], categoryId: 'carb', familyId: 'patate', dietaryFlags: { vegetarian: true, vegan: true }, status: 'active' }
+  ]
 };
-const v2Profile = (overrides = null) => ({
-  schemaVersion: 2, clientProfileId: 'c1', assignmentId: 'a1',
-  structureId: 's1', structureRevisionId: 'r1', structureChecksum: 'y', ingredientCatalogVersion: 7,
-  structureRevision: JSON.parse(JSON.stringify(V2_REVISION)),
-  catalog: JSON.parse(JSON.stringify(V2_CATALOG)),
-  ...(overrides ? { clientOverrides: overrides } : {})
+
+const TEMPLATE_SNAPSHOT = {
+  revisionId: 'tpl-rev-1',
+  referenceAmount: { value: 80, unit: 'g' },
+  equivalents: [{ familyId: 'patate', ingredientId: 'patate', amount: { value: 250, unit: 'g' } }]
+};
+
+function dietPlan() {
+  return Domain.createEmptyDietPlan({ days: [
+    Domain.createDietPlanDay('training', { dayId: 'giorno-allenamento', meals: [
+      Domain.createDietPlanMeal('lunch', { options: [
+        Domain.createDietPlanOption({
+          optionId: 'pranzo-cereali', type: 'family-block',
+          blocks: [Domain.createDietPlanBlock({
+            blockId: 'amidi', referenceFamilyId: 'cereali', referenceIngredientId: 'riso',
+            referenceAmount: { value: 80, unit: 'g' },
+            templateId: 'tpl-amidi',
+            templateSnapshot: JSON.parse(JSON.stringify(TEMPLATE_SNAPSHOT)),
+            overrides: [{ familyId: 'patate', ingredientId: 'patate', amount: { value: 300, unit: 'g' } }]
+          })]
+        }),
+        Domain.createDietPlanOption({ optionId: 'pranzo-ricetta', type: 'recipe', recipeId: 'ricetta-x', recipeMultiplier: 1 })
+      ] })
+    ] }),
+    Domain.createDietPlanDay('rest', { dayId: 'giorno-riposo', meals: [
+      Domain.createDietPlanMeal('lunch', { options: [
+        Domain.createDietPlanOption({
+          optionId: 'pranzo-riposo', type: 'family-block',
+          blocks: [Domain.createDietPlanBlock({
+            blockId: 'amidi-riposo', referenceFamilyId: 'cereali', referenceIngredientId: 'riso',
+            referenceAmount: { value: 60, unit: 'g' },
+            templateId: 'tpl-amidi',
+            templateSnapshot: JSON.parse(JSON.stringify(TEMPLATE_SNAPSHOT))
+          })]
+        })
+      ] })
+    ] })
+  ] });
+}
+
+function v3Profile(extra = {}) {
+  return {
+    schemaVersion: 3,
+    clientProfileId: 'cp1',
+    assignmentId: 'a1',
+    structureId: 's1',
+    structureRevisionId: 'rev1',
+    structureChecksum: 'chk-1',
+    structureName: 'Struttura base',
+    ingredientCatalogVersion: 7,
+    effectiveAt: '2026-01-01T00:00:00.000Z',
+    expiresAt: null,
+    structureRevision: { revisionId: 'rev1', dietPlan: dietPlan() },
+    catalog: JSON.parse(JSON.stringify(CATALOG)),
+    compatibleClientSchema: 7,
+    ...extra
+  };
+}
+
+const personalPlan = snapshot => ({ schemaVersion: Domain.VERSION, days: {}, alignedDosesEnabled: true, ...(snapshot ? { nutritionSnapshot: snapshot } : {}) });
+
+// ---- Snapshot della conferma ----
+
+test('snapshot: la conferma fissa revisione, checksum e versione catalogo', () => {
+  const profile = v3Profile();
+  const snapshot = saas.snapshotFor(profile, new Date('2026-05-01T08:00:00.000Z'));
+  assert.equal(snapshot.schemaVersion, 2);
+  assert.equal(snapshot.structureId, 's1');
+  assert.equal(snapshot.structureRevisionId, 'rev1');
+  assert.equal(snapshot.structureChecksum, 'chk-1');
+  assert.equal(snapshot.ingredientCatalogVersion, 7);
+  assert.equal(snapshot.resolvedAt, '2026-05-01T08:00:00.000Z');
 });
-const OVERRIDES = { revision: 2, doses: { pasta: { lunch: { training: 120 } } }, frequencies: { legumes: { min: 2 } } };
 
-// ---- Allineamento client/server ----
-
-test('frequenze: chiavi, etichette e default allineati tra client e server', () => {
-  const client = Domain.GUIDE_PROTEIN_FREQUENCIES;
-  assert.deepEqual([...serverDomain.CLIENT_FREQUENCY_KEYS].sort(), client.map(item => item.key).sort());
-  client.forEach(item => {
-    assert.equal(serverDomain.CLIENT_FREQUENCY_LABELS[item.key].split(' (')[0], item.label.split(' (')[0], `etichetta ${item.key}`);
-    assert.deepEqual(serverDomain.CLIENT_FREQUENCY_DEFAULTS[item.key], { min: item.min, max: item.max }, `default ${item.key}`);
-  });
+test('snapshot: cambio revisione o catalogo richiede nuova conferma', () => {
+  const profile = v3Profile();
+  const plan = personalPlan(saas.snapshotFor(profile));
+  assert.equal(saas.snapshotMatches(plan, profile), true);
+  // Nuova revisione della struttura → pending-confirmation
+  assert.equal(saas.snapshotMatches(plan, v3Profile({ structureRevisionId: 'rev2', structureRevision: { revisionId: 'rev2', dietPlan: dietPlan() } })), false);
+  // Checksum diverso (contenuto cambiato) → pending-confirmation
+  assert.equal(saas.snapshotMatches(plan, v3Profile({ structureChecksum: 'chk-2' })), false);
+  // Anche solo il catalogo ingredienti è cambiato → pending-confirmation
+  assert.equal(saas.snapshotMatches(plan, v3Profile({ ingredientCatalogVersion: 8 })), false);
+  // Nessuno snapshot → da confermare
+  assert.equal(saas.snapshotMatches(personalPlan(), profile), false);
 });
 
-test('frequencyConstraintsFor: override sparsi sopra i default', () => {
-  assert.equal(Domain.frequencyConstraintsFor(null).legumesMin, 3);
-  const merged = Domain.frequencyConstraintsFor({ legumes: { min: 2 }, eggs: { max: 3 } });
-  assert.equal(merged.legumesMin, 2);
-  assert.equal(merged.legumesMax, 14, 'default preservato');
-  assert.equal(merged.eggsMax, 3);
-  assert.equal(merged.poultryMin, 1, 'famiglie non toccate invariate');
-  assert.equal(Domain.DEFAULT_CONSTRAINTS.legumesMin, 3, 'default globali non mutati');
+// ---- Policy ----
+
+test('applyPolicy: senza assegnazione si resta su dosi originali', () => {
+  const plan = personalPlan();
+  const result = saas.applyPolicy(plan, { state: 'unassigned' });
+  assert.equal(result.mode, 'original-only');
+  assert.equal(result.plan, plan, 'piano non toccato');
 });
 
-// ---- Merge dosi ----
-
-test('applyDoseOverrides: fonde le celle senza mutare lo studio', () => {
-  const engine = { rules: JSON.parse(JSON.stringify(V1_RULES)), freeAliases: [] };
-  const merged = saas.applyDoseOverrides(engine, OVERRIDES);
-  assert.equal(merged.rules[0].slots.lunch.training, 120);
-  assert.equal(merged.rules[0].slots.lunch.rest, 70, 'cella non coperta preservata');
-  assert.equal(engine.rules[0].slots.lunch.training, 90, 'input non mutato');
-  assert.equal(merged.freeAliases, engine.freeAliases);
+test('applyPolicy: assegnato e confermato attiva la vista allineata', () => {
+  const profile = v3Profile();
+  const result = saas.applyPolicy(personalPlan(saas.snapshotFor(profile)), { state: 'assigned', profile });
+  assert.equal(result.mode, 'assigned');
+  assert.equal(result.migrationRequired, false);
+  assert.equal(result.plan.alignedDosesEnabled, true);
 });
 
-test('engineRulesFor v1: override applicati in ambito personale', () => {
-  const merged = saas.engineRulesFor(v1Profile(OVERRIDES));
-  assert.equal(merged.rules[0].slots.lunch.training, 120);
-  const plain = saas.engineRulesFor(v1Profile());
-  assert.equal(plain.rules[0].slots.lunch.training, 90);
+test('applyPolicy: profilo non confermato → originali forzate e conferma richiesta', () => {
+  const profile = v3Profile();
+  const result = saas.applyPolicy(personalPlan(), { state: 'assigned', profile });
+  assert.equal(result.mode, 'pending-confirmation');
+  assert.equal(result.migrationRequired, true);
+  assert.equal(result.plan.alignedDosesEnabled, false, 'interruttore spento finché non conferma');
+  // Il piano di partenza non è mutato
+  const original = personalPlan();
+  saas.applyPolicy(original, { state: 'assigned', profile });
+  assert.equal(original.alignedDosesEnabled, true);
 });
 
-test('engineRulesFor v2: conversione + override', () => {
-  const merged = saas.engineRulesFor(v2Profile(OVERRIDES));
-  assert.equal(merged.rules.length, 1);
-  assert.equal(merged.rules[0].family, 'pasta');
-  assert.equal(merged.rules[0].slots.lunch.training, 120);
-  assert.equal(merged.rules[0].slots.dinner.rest, 40);
-});
-
-test('engineRulesFor: negli household condivisi valgono le dosi studio', () => {
+test('applyPolicy: nei piani famiglia valgono sempre le dosi originali', () => {
   global.getCurrentHousehold = () => ({ id: 'h1' });
   try {
     assert.equal(saas.saasPersonalScope(), false);
-    const merged = saas.engineRulesFor(v1Profile(OVERRIDES));
-    assert.equal(merged.rules[0].slots.lunch.training, 90, 'override ignorato in household');
+    const profile = v3Profile();
+    const result = saas.applyPolicy(personalPlan(saas.snapshotFor(profile)), { state: 'assigned', profile });
+    assert.equal(result.mode, 'original-only', 'la dieta personale non si applica alla famiglia');
   } finally {
     delete global.getCurrentHousehold;
   }
   assert.equal(saas.saasPersonalScope(), true);
 });
 
-// ---- Snapshot ----
-
-test('snapshot: cambio revisione override richiede nuova conferma', () => {
-  const confirmed = saas.snapshotFor(v1Profile(OVERRIDES));
-  assert.equal(confirmed.overridesRevision, 2);
-  const plan = { nutritionSnapshot: confirmed };
-  assert.equal(saas.snapshotMatches(plan, v1Profile(OVERRIDES)), true);
-  assert.equal(saas.snapshotMatches(plan, v1Profile({ ...OVERRIDES, revision: 3 })), false, 'nuova revisione → pending-confirmation');
-  assert.equal(saas.snapshotMatches(plan, v1Profile()), false, 'override rimossi → pending-confirmation');
+test('originalOnlyPlan: clona il piano senza mutarlo', () => {
+  const plan = personalPlan();
+  const next = saas.originalOnlyPlan(plan);
+  assert.equal(next.alignedDosesEnabled, false);
+  assert.equal(plan.alignedDosesEnabled, true, 'originale intatto');
+  assert.notEqual(next, plan);
 });
 
-test('snapshot legacy senza campo resta valido senza override', () => {
-  const legacy = { clientProfileId: 'c1', assignmentId: 'a1', ruleSetId: 'r1', ruleSetVersion: '3', ruleSetChecksum: 'x' };
-  assert.equal(saas.snapshotMatches({ nutritionSnapshot: legacy }, v1Profile()), true, 'niente nudge spuri');
-  assert.equal(saas.snapshotMatches({ nutritionSnapshot: legacy }, v1Profile(OVERRIDES)), false, 'primi override → conferma');
-  const policy = saas.applyPolicy({ nutritionSnapshot: legacy }, { state: 'assigned', profile: v1Profile(OVERRIDES) });
-  assert.equal(policy.mode, 'pending-confirmation');
+// ---- Motore dieta ----
+
+test('buildDietEngine: opzioni per pasto e tipo giornata, niente piano → null', () => {
+  const engine = Domain.buildDietEngine(v3Profile());
+  assert.ok(engine);
+  assert.equal(engine.structureRevisionId, 'rev1');
+  assert.equal(engine.structureName, 'Struttura base');
+  assert.deepEqual(engine.mealIds, ['lunch']);
+  assert.deepEqual(engine.optionsFor('lunch', 'training').map(option => option.optionId), ['pranzo-cereali', 'pranzo-ricetta']);
+  // Allenamento e riposo hanno ciascuno la propria pasto
+  assert.equal(engine.optionsFor('lunch', 'training')[0].blocks[0].referenceAmount.value, 80);
+  assert.equal(engine.optionsFor('lunch', 'rest')[0].blocks[0].referenceAmount.value, 60);
+  // Pasto non previsto dalla struttura → null (mai dosi inventate)
+  assert.equal(engine.optionsFor('dinner', 'training'), null);
+  // Senza piano a blocchi non esiste motore
+  assert.equal(Domain.buildDietEngine({ structureRevision: { revisionId: 'r', dietPlan: null }, catalog: CATALOG }), null);
+  assert.equal(Domain.buildDietEngine(null), null);
 });
 
-// ---- loadContext ----
+test('dietBlockEquivalents: proporzionali, override esplicito vince senza riscala', () => {
+  const block = Domain.createDietPlanBlock({
+    referenceFamilyId: 'cereali', referenceIngredientId: 'riso',
+    referenceAmount: { value: 80, unit: 'g' },
+    templateId: 'tpl-amidi', templateSnapshot: JSON.parse(JSON.stringify(TEMPLATE_SNAPSHOT))
+  });
+  assert.deepEqual(Domain.dietBlockEquivalents(block), [
+    { familyId: 'patate', ingredientId: 'patate', amount: { value: 250, unit: 'g' }, overridden: false }
+  ]);
+  // Blocco con quantità doppia: gli equivalenti del template scalano ×2,5
+  const scaled = Domain.createDietPlanBlock({
+    referenceFamilyId: 'cereali', referenceIngredientId: 'riso',
+    referenceAmount: { value: 200, unit: 'g' },
+    templateId: 'tpl-amidi', templateSnapshot: JSON.parse(JSON.stringify(TEMPLATE_SNAPSHOT))
+  });
+  assert.deepEqual(Domain.dietBlockEquivalents(scaled), [
+    { familyId: 'patate', ingredientId: 'patate', amount: { value: 625, unit: 'g' }, overridden: false }
+  ]);
+  // Override della struttura: importo fisso, niente proporzionalità
+  const overriddenBlock = Domain.createDietPlanBlock({
+    referenceFamilyId: 'cereali', referenceIngredientId: 'riso',
+    referenceAmount: { value: 200, unit: 'g' },
+    templateId: 'tpl-amidi', templateSnapshot: JSON.parse(JSON.stringify(TEMPLATE_SNAPSHOT)),
+    overrides: [{ familyId: 'patate', ingredientId: 'patate', amount: { value: 300, unit: 'g' } }]
+  });
+  const equivalents = Domain.dietBlockEquivalents(overriddenBlock);
+  assert.equal(equivalents[0].amount.value, 300);
+  assert.equal(equivalents[0].overridden, true);
+  // Blocco senza template → nessun equivalente
+  assert.deepEqual(Domain.dietBlockEquivalents(Domain.createDietPlanBlock({ referenceFamilyId: 'cereali' })), []);
+});
 
-test('loadContext online: attiva il motore convertito con override', async () => {
-  const activated = [];
-  const previous = Domain.activateGuideRuleSet;
-  Domain.activateGuideRuleSet = (rules, freeAliases) => { activated.push({ rules, freeAliases }); return true; };
+test('alignRecipeToDiet: dosi allineate, aggiunti e omessi senza toccare la ricetta', () => {
+  const engine = Domain.buildDietEngine(v3Profile());
+  const recipe = {
+    id: 'r1', name: 'Pasta al pomodoro', slot: 'lunch',
+    ingredients: [
+      { name: 'Pasta di semola', ingredientId: 'pasta-semola', portions: { single: '200g' } },
+      { name: 'Patate', ingredientId: 'patate', portions: { single: '150g' } }
+    ]
+  };
+  const aligned = Domain.alignRecipeToDiet(recipe, engine, 'lunch', 'training');
+  assert.ok(aligned);
+  assert.equal(aligned.optionId, 'pranzo-cereali');
+  assert.equal(aligned.changed, true);
+  // La pasta (stessa famiglia del blocco cereali) è allineata a 80g
+  const pasta = aligned.ingredients.find(item => item.ingredientId === 'pasta-semola');
+  assert.equal(pasta.amountText, '80g');
+  assert.equal(pasta.original, '200g');
+  assert.equal(pasta.aligned, true);
+  // Le patate non sono previste dall'opzione scelta per quel pasto: segnalate
+  // come omesse, mai riscritte. I loro equivalenti si vedono nel pannello
+  // alternative (dietBlockEquivalents), non qui.
+  assert.deepEqual(aligned.omitted.map(item => item.ingredientId), ['patate']);
+  // La ricetta originale non è mai mutata
+  assert.equal(recipe.ingredients[0].portions.single, '200g');
+  assert.equal(recipe.ingredients[1].portions.single, '150g');
+  // Ricetta senza nulla della famiglia del blocco: la dieta aggiunge il
+  // riferimento (riso 80g) e segnala l'estraneo.
+  const estranea = { id: 'r2', name: 'Solo patate', slot: 'lunch', ingredients: [{ name: 'Patate', ingredientId: 'patate', portions: { single: '150g' } }] };
+  const vista = Domain.alignRecipeToDiet(estranea, engine, 'lunch', 'training');
+  assert.equal(vista.added.length, 1);
+  assert.equal(vista.added[0].ingredientId, 'riso');
+  assert.equal(vista.added[0].amountText, '80g');
+  // Pasto non coperto dalla struttura → nessuna vista
+  assert.equal(Domain.alignRecipeToDiet(recipe, engine, 'dinner', 'training'), null);
+  assert.equal(Domain.alignRecipeToDiet(recipe, null, 'lunch', 'training'), null);
+});
+
+// ---- Contesto (cache e online) ----
+
+test('loadContext online: profilo assegnato salvato in cache e motore valido', async () => {
+  delete store['pn_saas_profile_u1'];
+  const profile = v3Profile();
+  global.callSaasFunction = async () => ({ state: 'assigned', profile });
   try {
-    const context = await saas.loadContext('u1', async () => ({ state: 'assigned', profile: v2Profile(OVERRIDES) }));
+    const context = await saas.loadContext('u1');
     assert.equal(context.state, 'assigned');
-    assert.equal(activated.length, 1);
-    assert.equal(activated[0].rules[0].slots.lunch.training, 120, 'regole v2 convertite e personalizzate');
-    assert.ok(store['pn_saas_profile_u1'], 'profilo in cache per l’offline');
+    assert.equal(context.profile.structureRevisionId, 'rev1');
+    assert.ok(store['pn_saas_profile_u1'], 'profilo salvato in cache');
+    const cached = saas.cachedContext('u1');
+    assert.equal(cached.state, 'assigned');
+    assert.equal(cached.offline, true);
+    assert.equal(cached.profile.structureId, 's1');
   } finally {
-    Domain.activateGuideRuleSet = previous;
+    delete global.callSaasFunction;
   }
 });
 
-test('loadContext online v1 invariato, offline usa la cache verificata', async () => {
-  const activated = [];
-  const previous = Domain.activateGuideRuleSet;
-  Domain.activateGuideRuleSet = (rules, freeAliases) => { activated.push(rules); return true; };
+test('loadContext offline: fallback sull’ultima versione verificata', async () => {
+  const profile = v3Profile();
+  global.callSaasFunction = async () => { throw new Error('rete assente'); };
   try {
-    await saas.loadContext('u2', async () => ({ state: 'assigned', profile: v1Profile() }));
-    assert.equal(activated[0][0].slots.lunch.training, 90);
-    // Offline: la cache verificata vale ancora.
-    const offline = await saas.loadContext('u2', async () => { throw new Error('offline'); });
-    assert.equal(offline.offline, true);
-    assert.equal(offline.profile.rules[0].slots.lunch.training, 90);
-  } finally {
-    Domain.activateGuideRuleSet = previous;
-  }
-});
-
-// ---- cachedContext (cache-first per l'avvio rapido) ----
-
-test('cachedContext: profilo verificato in cache attiva il motore in sincrono', () => {
-  const activated = [];
-  const previous = Domain.activateGuideRuleSet;
-  Domain.activateGuideRuleSet = (rules, freeAliases) => { activated.push(rules); return true; };
-  try {
-    // Come scritto dal successo di loadContext: {...value, cachedAt}.
-    store['pn_saas_profile_u9'] = JSON.stringify({ state: 'assigned', profile: v1Profile(), cachedAt: '2026-09-18T10:00:00Z' });
-    const context = saas.cachedContext('u9');
+    const context = await saas.loadContext('u1');
     assert.equal(context.state, 'assigned');
-    assert.equal(context.offline, true);
-    assert.equal(activated.length, 1, 'motore attivato prima della rete');
-    assert.equal(activated[0][0].slots.lunch.training, 90);
+    assert.equal(context.fallback, undefined);
+    assert.equal(context.offline, true, 'contesto dalla cache verificata');
+    assert.equal(context.profile.structureRevisionId, 'rev1');
   } finally {
-    Domain.activateGuideRuleSet = previous;
-    delete store['pn_saas_profile_u9'];
+    delete global.callSaasFunction;
+    delete store['pn_saas_profile_u1'];
   }
 });
 
-test('cachedContext: scaduto, incompatibile o assente → null (mai una regola stantia)', () => {
-  store['pn_saas_profile_e1'] = JSON.stringify({ state: 'assigned', profile: { ...v1Profile(), expiresAt: '2020-01-01T00:00:00Z' } });
-  assert.equal(saas.cachedContext('e1'), null, 'profilo scaduto mai usato');
-  delete store['pn_saas_profile_e1'];
-  store['pn_saas_profile_e2'] = JSON.stringify({ state: 'assigned', profile: { ...v1Profile(), rules: [] } });
-  assert.equal(saas.cachedContext('e2'), null, 'motore vuoto mai usato');
-  delete store['pn_saas_profile_e2'];
-  assert.equal(saas.cachedContext('assente'), null, 'nessuna cache: null');
-});
-
-test('cachedContext: SaaS disattivato → mai usato', () => {
-  const previous = global.PIANO_SAAS_CONFIG.enabled;
-  global.PIANO_SAAS_CONFIG.enabled = false;
-  try {
-    store['pn_saas_profile_d1'] = JSON.stringify({ state: 'assigned', profile: v1Profile() });
-    assert.equal(saas.cachedContext('d1'), null);
-    delete store['pn_saas_profile_d1'];
-  } finally {
-    global.PIANO_SAAS_CONFIG.enabled = previous;
-  }
-});
-
-test('override proteine e carboidrati indipendenti', () => {
-  const engine = saas.applyDoseOverrides({ rules: [
-    { family: 'pasta', slots: { lunch: { training: 90, rest: 70 } } },
-    { family: 'pollame', slots: { lunch: { training: 150, rest: 150 } } }
-  ], freeAliases: [] }, { revision: 1, doses: { pollame: { lunch: { training: 180 } } }, frequencies: {} });
-  assert.equal(engine.rules[0].slots.lunch.training, 90, 'carboidrati invariati');
-  assert.equal(engine.rules[1].slots.lunch.training, 180, 'proteine personalizzate');
-});
-
-// ---- Switch quantità adattate (struttura v2 assegnata) ----
-
-test('switch ON: engineRulesFor v2 + attivazione motore adattano le porzioni del pasto', () => {
-  // Motore completo: struttura v2 (90/70 pranzo) + override 120 A pranzo.
-  const engine = saas.engineRulesFor(v2Profile(OVERRIDES));
-  assert.equal(engine.rules[0].slots.lunch.training, 120);
-  assert.equal(engine.rules[0].slots.lunch.rest, 70);
-  const previousActivate = Domain.activateGuideRuleSet;
-  try {
-    assert.equal(Domain.activateGuideRuleSet(engine.rules, engine.freeAliases), true, 'motore installato');
-    const recipe = {
-      name: 'Pranzo tipo', slot: 'lunch',
-      ingredients: [{ name: 'Pasta', portions: { single: '500 g' } }]
-    };
-    const onTraining = Domain.resolveRecipeForPlan(recipe, 'lunch', Domain.GUIDE_MODE_GUIDE, 'training');
-    assert.equal(onTraining.mode, 'guide');
-    assert.equal(onTraining.applied, true, 'dosi personalizzate applicate');
-    assert.equal(onTraining.recipe.ingredients[0].portions.single, '120 g', 'override allenamento');
-    const onRest = Domain.resolveRecipeForPlan(recipe, 'lunch', Domain.GUIDE_MODE_GUIDE, 'rest');
-    assert.equal(onRest.applied, true);
-    assert.equal(onRest.recipe.ingredients[0].portions.single, '70 g', 'dose riposo della struttura (non coperta dall’override)');
-    assert.equal(recipe.ingredients[0].portions.single, '500 g', 'ricetta originale mai mutata');
-  } finally {
-    Domain.activateGuideRuleSet = previousActivate;
-  }
-});
-
-test('switch OFF: stessa struttura assegnata ma le quantità restano originali', () => {
-  const engine = saas.engineRulesFor(v2Profile(OVERRIDES));
-  const previousActivate = Domain.activateGuideRuleSet;
-  try {
-    Domain.activateGuideRuleSet(engine.rules, engine.freeAliases);
-    const recipe = {
-      name: 'Pranzo tipo', slot: 'lunch',
-      ingredients: [{ name: 'Pasta', portions: { single: '500 g' } }]
-    };
-    const off = Domain.resolveRecipeForPlan(recipe, 'lunch', Domain.GUIDE_MODE_ORIGINAL, 'training');
-    assert.equal(off.mode, 'original');
-    assert.equal(off.applied, false, 'nessuna adattazione in modalità originale');
-    assert.equal(off.recipe.ingredients[0].portions.single, '500 g', 'porzioni intatte');
-    assert.equal(recipe.ingredients[0].portions.single, '500 g', 'sorgente immutata');
-  } finally {
-    Domain.activateGuideRuleSet = previousActivate;
-  }
-});
-
-test('switch ON senza override: valgono le dosi dello studio dalla revisione v2', () => {
-  const engine = saas.engineRulesFor(v2Profile());
-  assert.equal(engine.rules[0].slots.lunch.training, 90, 'nessun override: dosi studio');
-  const previousActivate = Domain.activateGuideRuleSet;
-  try {
-    Domain.activateGuideRuleSet(engine.rules, engine.freeAliases);
-    const recipe = {
-      name: 'Pranzo tipo', slot: 'lunch',
-      ingredients: [{ name: 'Pasta', portions: { single: '500 g' } }]
-    };
-    const on = Domain.resolveRecipeForPlan(recipe, 'lunch', Domain.GUIDE_MODE_GUIDE, 'training');
-    assert.equal(on.applied, true);
-    assert.equal(on.recipe.ingredients[0].portions.single, '90 g', 'dose studio applicata');
-  } finally {
-    Domain.activateGuideRuleSet = previousActivate;
-  }
+test('cachedContext: profilo scaduto o senza motore → null', async () => {
+  store['pn_saas_profile_u2'] = JSON.stringify({ state: 'assigned', profile: v3Profile({ expiresAt: '2020-01-01T00:00:00.000Z' }) });
+  assert.equal(saas.cachedContext('u2'), null, 'assegnazione scaduta');
+  const noEngine = v3Profile();
+  noEngine.structureRevision = { revisionId: 'rev1', dietPlan: Domain.createEmptyDietPlan({ days: [] }) };
+  store['pn_saas_profile_u2'] = JSON.stringify({ state: 'assigned', profile: noEngine });
+  assert.equal(saas.cachedContext('u2'), null, 'senza piano a blocchi non si attiva nulla');
+  assert.equal(saas.cachedContext('sconosciuto'), null);
+  delete store['pn_saas_profile_u2'];
 });

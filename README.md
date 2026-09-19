@@ -9,31 +9,26 @@ WebApp PWA privata per gestire colazioni, spuntini, pranzi, cene, batch cooking 
 - accesso personale con email e password, con l'indirizzo usato come credenziale;
 - account utilizzabile anche con ricettario completamente vuoto;
 - creazione manuale di ricette con una dose originale unica per ingrediente;
-- importazione ed esportazione JSON di una ricetta o dell'intero catalogo (schema 6);
+- importazione ed esportazione JSON di una ricetta o dell'intero catalogo;
 - condivisione di ricette **e/o della struttura della settimana** con un altro username, con anteprima dei conflitti e scelta della modalità di sostituzione;
 - collegamento di due o più account in una **household**: piano, catalogo, batch cooking e spesa condivisi in tempo reale, con profilo porzioni locale per ogni persona;
 - invito al collegamento per username, scelta della settimana base, backup automatico di entrambi gli account e scollegamento con copia indipendente;
 - richieste ricevute con **Solo ricette**, **Solo settimana**, **Importa tutto**, **Sostituisci ricette**, scelta della base account oppure **Rifiuta**;
 - catalogo opzionale di partenza fornito nel file esterno `firebase-seed.json` (mai committato nel repository);
 - colazioni e spuntini inclusi nel piano;
-- crackers dello spuntino mattutino aggiunti nei giorni A e rimossi nei giorni R (dinamici, derivati dal piano);
 - vista ricetta completa in una singola schermata (ingredienti, quantità, preparazione, note e batch cooking);
 - operazioni sui pasti: sostituisci con una ricetta, scambia con un altro giorno, copia in un altro giorno, ripristina scelta iniziale;
-- **sostituzione pranzo ↔ cena** con adattamento dei soli carboidrati alle grammature Guide del pasto di destinazione (pranzo → cena: dose cena della tabella, cioè `floor(pranzo riposo × 2/3 / 10) × 10`; cena → pranzo: dosi pranzo A/R rilette dalla tabella);
+- pranzo ↔ cena: nella sostituzione sono mostrate anche le ricette del pasto opposto, con i carboidrati adattati alle dosi previste per il pasto di destinazione (badge ↻);
 - **suggerimento batch cooking nella sostituzione**: cambiando un pranzo viene evidenziata la cena del giorno prima (e cambiando una cena il pranzo del giorno dopo), così un tocco attiva la "doppia porzione";
-- generatore automatico della settimana con parametri strutturali (slot da rigenerare, **accoppiate cena → pranzo per il batch**, tetto ripetizioni, cross-slot pranzo ↔ cena, frequenze proteiche min–max), vincoli nutrizionali, blocchi pasto/giornata che contano nelle frequenze, seed riproducibile, anteprima e diff;
+- generatore automatico della settimana con parametri strutturali (slot da rigenerare, **accoppiate cena → pranzo per il batch**, tetto ripetizioni, cross-slot pranzo ↔ cena), blocchi pasto/giornata, seed riproducibile, anteprima e diff;
 - batch cooking dinamico basato su `batchTemplates` strutturati (cena di oggi → pranzo futuro): la colonna del giorno nella vista **Settimana** mostra la chip cliccabile "Batch cooking disponibile", che apre direttamente una modale con ingredienti, dosi e preparazione completi delle ricette coinvolte; per la stessa ricetta a cena e pranzo viene mostrato un solo riquadro con dosi totali, senza informazioni ridondanti né note di conservazione;
 - backup precedente automatico (`users/{uid}/backups/previous`) prima delle operazioni distruttive (meccanismo interno, senza UI);
-- lista della spesa aggregata per `ingredientId` con profili **1 persona** e **2 persone**, moltiplicatore locale per il profilo `2 persone` e **ordine degli alimenti dentro ogni categoria condiviso nell'household** (salvato nel documento spesa come mappa `itemOrder` categoria → ingredientId, con frecce ↑/↓ e scorciatoie A→Z / Ripristina);
-- PWA offline con shell versionata, aggiornamento one-tap e fallback offline comprensibile;
-- alternative alimentari di Guide sempre consultabili nelle Impostazioni;
-- **manuale Guide single source in `js/domain.js`**: famiglie, grammature per pasto e giorno A/R e frequenze proteiche vivono in un solo file (`GUIDE_GRAMMATURE`, `GUIDE_PROTEIN_FREQUENCIES`); da lì derivano i vincoli del generatore, il riferimento carboidrati del travaso pranzo ↔ cena, le tabelle delle alternative dei popup e delle Impostazioni (`guideAlternativeGroups(dayType)`, `GUIDE_MANUAL`), il riconoscimento carboidrati/proteine degli ingredienti (`isGuideCarbIngredient` / `isGuideProteinIngredient`) e la verifica delle ricette (`checkGuideAdaptation` / `adaptRecipeToGuide`); le grammature **restano nell'app**, quindi per aggiornare un valore si tocca solo `js/domain.js`;
-- **equivalenze Guide legate alla giornata visualizzata**: il popup di un ingrediente mostra le dosi della giornata della ricetta aperta — in allenamento `Alimento | Pranzo A | Cena` (pasta 90 g), in riposo `Alimento | Pranzo R | Cena` (pasta 70 g); nelle Impostazioni, dove non c'è una giornata di contesto, la tabella mostra entrambe le colonne pranzo; le proteine, uguali in tutti i casi, restano a colonna unica `Pranzo e cena`;
-- **Guide contestuale e non distruttivo**: il ricettario conserva sempre le quantità originali; il piano memorizza per ogni giorno/slot principale la modalità `guide` o `original`, applica la dose del profilo nutrizionale per Allenamento/Riposo e conserva su ogni ricetta l’adattamento riutilizzabile per pranzo/cena;
-- **segnalazioni e blocco mapping**: durante creazione, modifica e importazione le ricette fuori riferimento ricevono un flag senza essere riscritte; verdure, aromi e spezie esplicitamente liberi non vengono segnalati, mentre ingredienti non riconosciuti o gruppi ambigui bloccano l’applicazione Guide e consentono di usare esplicitamente le quantità originali;
-- **propagazione della dose effettiva**: quando il piano usa Guide, lista della spesa e batch cooking lavorano sulla ricetta risolta del contesto, senza mutare quella del catalogo;
-- **equivalenze solo a pranzo e a cena**: il manuale costruisce le alternative sul rapporto pranzo/cena, quindi negli spuntini, nelle merende e a colazione gli ingredienti non sono tappabili — i crackers dello spuntino valgono 30 g fissi e non si scambiano con 90 g di pasta (`guideSlotHasAlternatives`); nelle ricette cross-slot conta il pasto di **destinazione**;
-- **operazioni sul pasto dal dettaglio ricetta**: aprendo una ricetta da una casella della Settimana, il foglio "Altro" offre anche "Sostituisci con una ricetta", "Scambia con altro pasto" e "Copia in altro giorno" (gruppo *Questo pasto nel piano*), che riusano lo stesso flusso del menu ⋯ della griglia; dal Ricettario, dove non c'è un pasto a cui applicarle, il gruppo non compare;
+- lista della spesa aggregata per `ingredientId` con profili **1 persona** e **2 persone**, moltiplicatore locale per il profilo `2 persone` e **ordine degli alimenti dentro ogni categoria condiviso nell'household** (mappa `itemOrder` categoria → ingredientId, con frecce ↑/↓ e scorciatoie A→Z / Ripristina);
+- riepilogo proteico della settimana come **conteggio descrittivo** (quante ricette di ogni categoria finiscono nei pasti principali): nessun target o giudizio clinico nel client;
+- **catalogo globale ingredienti**: identità (nomi, alias, categoria, famiglia, flag vegetarian/vegan) condivisa da cliente, nutrizionista e backend; è la fonte dell'autocomplete, del motore di riconoscimento e della persistenza degli `ingredientId`. Nessuna dose vive nel catalogo;
+- **riconoscimento a stati espliciti** (`resolved / recognized-generic / ambiguous / unknown`): i termini noti coerenti si risolvono (es. `uovo`/`uova`), i termini generici riconosciuti ma ambigui (es. `tonno`) non vengono mai auto-canonizzati a un ID sbagliato, un `ingredientId` valido non si perde in editing, nessun falso "unknown";
+- **«La mia dieta»**: con una struttura dieta assegnata e confermata il cliente vede il piano del professionista (opzioni senza etichette A/B/C quando sono una sola, blocchi con grammature, equivalenti proporzionali dai template, ricette con moltiplicatore) e sceglie ovunque — Settimana, Ricettario, Lista della spesa — tra **dosi originali** e **dosi allineate alla dieta**; la ricetta originale non viene mai modificata;
+- proposta di nuovi ingredienti al platform admin: un termine non riconosciuto diventa una richiesta con categoria e famiglia suggerite (coda senza dosi, gestita solo dall'admin);
 - **registro prezzi condiviso** (scheda Prezzi): un unico database tra tutti gli utenti per registrare i prezzi nei negozi (con barcode Open Food Facts), confrontare il prezzo normalizzato €/kg tra negozi con indicazione del migliore (ricerca prodotto con suggerimenti live mentre si digita, prodotti recenti a un tocco, navigazione da tastiera), giudizio rispetto allo storico (minimo storico / affare / caro), suggerimento del nome prodotto già in archivio quando quello scannerizzato è una variante più lunga ("Cereali di grano duro" → "Cereali"), archivio con modifica delle proprie voci e importazione/esportazione di backup JSON (incluso il vecchio formato "Spesa Smart");
 - **pagina negozio** (Prezzi → Negozi): per ogni negozio l'ultimo prezzo registrato di ogni prodotto, con indicazione di dove quel prodotto costa meno (🏆 miglior prezzo, scostamento % rispetto al migliore, "solo qui");
 - **Sezione Prezzi al momento nascosta**: la tab e la rotta `#prices` non vengono mostrate (`PRICES_FEATURE_ENABLED = false` in `js/app.js`); vista, logica e dati restano integri. Attivazione globale: `PRICES_FEATURE_ENABLED = true`; attivazione solo per account specifici: `pricesEnabledForUids` in `js/saas-config.js` (flag di visibilità, non sicurezza).
@@ -41,23 +36,23 @@ WebApp PWA privata per gestire colazioni, spuntini, pranzi, cene, batch cooking 
 
 ## Console SaaS (organizzazione singola)
 
-La prima slice SaaS è disponibile in [`admin.html`](admin.html): coda ingredienti, proposta/pubblicazione mapping e assegnazione versionata cliente → rule set. Le operazioni privilegiate passano dalle Cloud Functions in `functions/`; Firestore rifiuta le scritture SaaS dirette dal browser.
+La console professionale è [`admin.html`](admin.html) (v2): **Clienti** (anagrafica, inviti con email reale, storico, assegnazione strutture), **Strutture** (editor dieta a blocchi, revisioni versionate con checksum, confronto), **Template** (equivalenze per famiglia di riferimento, versionate) e **Ricette** (ricettario professionisti). Il creatore vede in più **Catalogo** (import batch versionato del catalogo globale) e **Richieste ingredienti** (coda cliente → admin). Ogni operazione privilegiata passa dalle Cloud Functions in `functions/`; Firestore rifiuta le scritture SaaS dirette dal browser.
 
-Il client usa una feature flag pubblica in `js/saas-config.js`, attiva (`enabled: true`) e limitata all'organizzazione `pianoNutrizionale`. Con SaaS attivo, un cliente senza assegnazione valida usa soltanto le dosi originali; un cambio di versione richiede conferma e salva `clientProfileId`, assignment, versione e checksum nel piano. La Lista della spesa è predisposta per uno sblocco pubblicitario di 24 ore: finché il provider ads non è configurato in `js/saas-config.js` (`shoppingRewardedAds.enabled` + `provider`) la spesa resta accessibile a tutti senza gate; solo con provider configurato l'utente senza assegnazione passa dal gate con sblocco 24h (verifica server-side inclusa).
+Il client usa una feature flag pubblica in `js/saas-config.js`, attiva (`enabled: true`) e limitata all'organizzazione `pianoNutrizionale`. Con SaaS attivo, un cliente senza assegnazione valida usa soltanto le dosi originali; l'assegnazione di una struttura porta checksum e versione nel piano (`js/saas.js`). La Lista della spesa è predisposta per uno sblocco pubblicitario di 24 ore: finché il provider ads non è configurato in `js/saas-config.js` (`shoppingRewardedAds.enabled` + `provider`) la spesa resta accessibile a tutti senza gate; solo con provider configurato l'utente senza assegnazione passa dal gate con sblocco 24h (verifica server-side inclusa).
 
 Architettura e operatività:
 
-- [ADR originale multi-tenant](docs/adr/0001-saas-multi-tenant.md) — storico: il codice attuale usa la sola organizzazione `pianoNutrizionale`
-- [contratti dati e matrice permessi](docs/saas-data-contracts.md)
+- [ADR 0008 — rifondazione catalogo/strutture/template](docs/adr/0008-rifondazione-catalogo-strutture-v3.md) e [indice ADR](docs/adr/) (0001 multi-tenant è storico: il codice usa la sola organizzazione `pianoNutrizionale`)
+- [contratti dati e matrice permessi](docs/saas-data-contracts.md) e [schema JSON](docs/schema-catalogo-strutture-v3.json)
+- [formato import catalogo](docs/catalog-import-format.md) e [editor strutture dieta](docs/editor-dieta-guidata.md)
 - [runbook deploy, migrazione, GDPR e rollback](docs/saas-runbook.md)
 - [pubblicare su Firebase senza terminale](docs/deploy-online-senza-terminale.md)
 - [ripartenza pulita su Firebase: la struttura nuova](docs/ripartenza-firebase.md)
 - [pulizia dei dati legacy su Firestore](docs/pulizia-dati-legacy.md)
-- [prompt originario](docs/prompt-saas-guide.md)
 
 ## Dove si trovano i dati
 
-Le ricette non sono hardcoded nel repository GitHub. Il codice contiene soltanto interfaccia, regole di visualizzazione, servizi di dominio puri (`js/domain.js`) e il manuale Guide, di cui `js/domain.js` è la fonte unica.
+Le ricette non sono hardcoded nel repository GitHub. Il codice contiene soltanto interfaccia, regole di visualizzazione e servizi di dominio puri (`js/domain.js`). Le dosi e le equivalenze della dieta non vivono nel client: arrivano dalle strutture e dai template del professionista.
 
 Finché l'account è indipendente, i dati si trovano nei documenti privati:
 
@@ -90,13 +85,15 @@ collezioni dell'organizzazione singola `pianoNutrizionale`:
 ```text
 organizations/pianoNutrizionale/members/{uid}                 membership (solo nutritionist)
 organizations/pianoNutrizionale/clients/{clientId}            clienti + assignments/ e state/
-organizations/pianoNutrizionale/dietStructures/{id}/revisions/{n}
-organizations/pianoNutrizionale/invitations|clientLinkRequests|mappingReports|mappingProposals|notifications|auditLog
+organizations/pianoNutrizionale/dietStructures/{id}/revisions/{n}   strutture dieta (schema 4)
+organizations/pianoNutrizionale/equivalenceTemplates/{id}/revisions/{n}   template equivalenze
+organizations/pianoNutrizionale/invitations|clientLinkRequests|catalogRequests|notifications|auditLog
 accountClientLinks/{uid}                          collegamento account ↔ cliente
 platformMembers/{uid}                             platform admin (creatore)
-globalIngredientCatalog/current|config            catalogo alimenti condiviso
+globalIngredientCatalog/current/{meta,families,ingredients,categories}   catalogo identità (v3)
+globalIngredientCatalog/config                    config server-only (import flag, denylist)
 globalIngredientCatalog/versions/snapshots/{n}    snapshot versioni (rollback)
-globalRuleSets|organizations/{org}/ruleSets       percorso legacy, solo retrocompatibilità
+platformAuditLog/{eventId}                        audit di piattaforma (catalogo, richieste)
 ```
 
 L'avvio da zero (catalogo, membri, clienti) è descritto in
@@ -433,19 +430,19 @@ Apri l'indirizzo online e controlla, nell'ordine:
 7. login con un secondo utente;
 8. invio di una ricetta tra i due account;
 9. accettazione e rifiuto delle richieste;
-10. cambio A/R e presenza/assenza crackers;
+10. cambio A/R delle giornate e dosi mostrate;
 11. lista della spesa;
-12. alternative Guide nelle Impostazioni.
+12. se assegnata una struttura dieta: «La mia dieta», toggle dosi allineate/originali e equivalenze dei blocchi.
 
 Se la condivisione restituisce “utente non trovato”, fai accedere il destinatario almeno una volta all'ultima versione e riprova.
 
 ---
 
-# Schema 5 e servizi di dominio
+# Catalogo ricette e riconoscimento ingredienti
 
-## Schema ricette v5
+## Schema catalogo (versione 7)
 
-Il catalogo usa `schemaVersion: 6`. Ogni ingrediente ha una struttura stabile:
+Il catalogo utente usa `schemaVersion: 7` (`js/data.js`). Ogni ingrediente di ricetta ha una struttura stabile:
 
 ```javascript
 {
@@ -457,55 +454,30 @@ Il catalogo usa `schemaVersion: 6`. Ogni ingrediente ha una struttura stabile:
 }
 ```
 
-- `ingredientId` è l'identificatore **stabile** usato per aggregare la lista della spesa;
+- `ingredientId` è l'identificatore **stabile** usato per aggregare la lista della spesa; la sua coerenza col catalogo globale si appoggia al motore di riconoscimento;
 - `name` è solo l'etichetta visualizzata;
 - la migrazione è **idempotente** e avviene **solo quando necessario** (versione precedente rilevata), con una sola scrittura per documento;
 - le porzioni delle ricette usano solo `portions.single` come quantità originale;
 - importazioni, esportazioni e condivisioni sono normalizzate allo schema corrente;
-- il catalogo ingredienti canonici (alias + etichette) è incorporato nel documento catalogo (`ingredientAliases`, `canonicalIngredients`);
 - nessuna lettura Firestore per singolo ingrediente.
-
-### Alias comuni
-
-```text
-Uovo intero / Uova intere / Uova intere (sode) / Uova intere (barzotte) → whole-eggs
-Pomodorini → cherry-tomatoes          Salmone → salmon
-Tonno (al naturale sgocciolato) → tuna   Yogurt greco → greek-yogurt
-Pane (integrale / di segale) → bread     Limone → lemon
-Zucchina / Zucchine → zucchini
-```
-
-Gli alias sono estendibili in `js/domain.js` (`INGREDIENT_ALIASES`) e nel documento catalogo. I nomi non in elenco ricevono uno slug stabile (es. `Riso venere` → `riso-venere`).
-
-### Rimozione di `frequency` (schema 4 → 5)
-
-Lo schema 5 rimuove il campo legacy `frequency` dalle ricette: le frequenze proteiche sono ora calcolate dal generatore e dalla vista Settimana direttamente sui pasti principali (pranzo e cena), senza bisogno di un campo per ricetta. La migrazione:
-
-- rimuove `frequency` da ogni ricetta senza alterare gli altri campi;
-- non muta l'oggetto originale;
-- è idempotente;
-- viene eseguita al caricamento e il catalogo aggiornato viene salvato una sola volta.
 
 ### Classificazione proteica
 
-La categoria proteica di una ricetta viene determinata in questo ordine:
+La categoria proteica di una ricetta (usata dal riepilogo settimanale e dal generatore) viene determinata in questo ordine:
 
-1. **Ingredienti effettivi** della ricetta (es. "Petto di pollo" → Pollame, "Bresaola" → Affettati e carni miste);
-2. **`proteinCategory`** come fallback manuale/legacy (supporta sia chiavi tecniche come `poultry`, `beef`, `curedMeats` sia etichette testuali come "Manzo/Vitello");
+1. **ingredienti effettivi** della ricetta (es. "Petto di pollo" → Pollame, "Bresaola" → Affettati e carni miste), riconosciuti in `js/domain.js` (`PROTEIN_INGREDIENT_HINTS`);
+2. **`proteinCategory`** come fallback manuale/legacy (chiavi tecniche come `poultry`, `beef`, `curedMeats` o etichette testuali come "Manzo/Vitello");
 3. `null` se nessuna delle due fonti è riconoscibile.
 
 Il valore selezionato manualmente nell'editor ricette **non sovrascrive** un ingrediente già riconosciuto: serve solo come fallback per ricette con ingredienti non riconoscibili.
 
 ## Normalizzazioni ancora attive
 
-Restano attive solo le normalizzazioni non legate al vecchio modello porzioni:
-
 - ricette senza `ingredientId`;
 - campo legacy `frequency` rimosso (schema 4 → 5);
 - `batchRules` testuali → `batchTemplates` strutturati;
-- piani schema 3 (aggiunta di `batchTemplates`);
+- piani vecchi (aggiunta di `batchTemplates`);
 - catalogo vuoto (primo avvio);
-- vecchia sottocollezione `recipes` (già migrata a documento unico nelle versioni precedenti);
 - riferimenti del piano a ricette mancanti (rimossi/sanificati);
 - condivisioni vecchie solo ricette e nuove ricette + piano.
 
@@ -579,114 +551,50 @@ Nella vista **Settimana** ogni pasto ha un menu operazioni:
 
 Ogni operazione chiede conferma, salva il piano una sola volta e aggiorna batch, lista spesa, frequenze e feedback. Il piano resta coerente con le ricette mancanti.
 
-## Trasformazione carboidrati pranzo ↔ cena
+## Ricette del pasto opposto (cross-slot)
 
-Per i piani legacy privi di contesto Guide, quando una ricetta di cena viene collocata a pranzo (o viceversa), **solo il carboidrato** viene ricalcolato con le grammature Guide della tabella; proteine, uova, verdura e condimenti restano invariati. Nei piani contestuali nuovi, invece, l’attivazione Guide risolve tutte le famiglie guidate della ricetta nel pasto di destinazione, lasciando liberi soltanto gli ingredienti esplicitamente non regolati.
+Nella sostituzione di pranzo e cena vengono mostrate anche le ricette del **pasto opposto**, contrassegnate dal badge ↻ «Carboidrati adattati alla dose prevista per questo pasto»: le dosi mostrate (modale ricetta, Settimana, batch, Lista della spesa) sono risolte per il pasto di destinazione dal motore della dieta quando il cliente ha una struttura assegnata con dosi allineate attive. La ricetta originale nel catalogo non viene mai riscritta: l'adattamento vive solo nel piano e nelle viste derivate.
 
-- **pranzo → cena**: si usa la **dose cena Guide** della famiglia, cioè `floor(pranzo riposo × 2/3 / 10) × 10`, identica nei giorni di allenamento e di riposo (es. pane 90g → 60g, pasta/riso 70g → 40g, patate 350g → 230g, gnocchi 190g → 120g, piadina 80g → 50g);
-- **cena → pranzo**: le dosi pranzo A/R vengono **rilette dalla tabella**, mai calcolate dalla cena: l'arrotondamento per difetto dei 2/3 non è invertibile (es. patate 230g → pranzo A 450g e pranzo R 350g, non 460g).
+# Le dosi: chi decide cosa
 
-A cena è ammesso **qualsiasi carboidrato della tabella delle alternative**, non solo pane, crackers e patate: ogni famiglia ha la propria dose cena.
+- **Ricette del cliente**: le dosi originali restano sempre intatte (`portions.single`); ogni trasformazione è in memoria o nel piano, mai nel catalogo.
+- **Struttura dieta assegnata** (org-scoped): blocchi famiglia di riferimento con quantità, override espliciti e opzioni ricetta con moltiplicatore — è l'unica fonte delle dosi "allineate".
+- **Template equivalenze** (org-scoped): quantità proporzionali per famiglia (es. riso 80 g ↔ patate 250 g), agganciati ai blocchi con snapshot non retroattivo.
+- **Catalogo globale**: solo identità, zero dosi.
 
-Il carboidrato **resta lo stesso** (pasta, riso, pane, patate…): non viene convertito in altro alimento di default, cambia solo la dose. Solo per un alimento non ancora censito in `GUIDE_GRAMMATURE` resta il fallback storico in percentuale (2/3 del pranzo di riposo verso cena, 200%/150% verso pranzo, arrotondato alla decina per eccesso).
-
-La trasformazione è applicata ovunque le dosi vengono mostrate o sommate: modale ricetta (con avviso e marcatore ↻ sugli ingredienti trasformati), vista **Settimana** (piccolo ↻ sul pasto e modale batch dalla colonna del giorno) e **Lista della spesa** (le quantità tengono conto del pasto in cui la ricetta è collocata). Le funzioni pure sono in `js/domain.js` (`adaptIngredientForSlot`, `carbSourceForName`, `isPranzoCenaCross`).
-
-# Manuale Guide a fonte unica
-
-`js/domain.js` è l'**unica fonte** delle regole Guide. Una sola tabella
-(`GUIDE_GRAMMATURE`) definisce famiglie, classificazione (`group`: carboidrati,
-proteine, latticini, condimenti, dolci, frutta) e grammature per pasto e giorno
-A/R; tutto il resto è **derivato**:
-
-| Superficie | Come deriva dalla fonte |
-| --- | --- |
-| vincoli del generatore | `DEFAULT_CONSTRAINTS` da `GUIDE_PROTEIN_FREQUENCIES` |
-| travaso pranzo ↔ cena | `CARB_REFERENCE` (famiglie e dosi lette da `GUIDE_GRAMMATURE`) |
-| popup equivalenze e Impostazioni | `guideAlternativeGroups(dayType)` → `training` / `rest` / `both`; `GUIDE_MANUAL.alternatives` usa `both` (`GUIDE_CARB_ALTERNATIVES` / `GUIDE_PROTEIN_ALTERNATIVES` contengono solo `label` + `family`, nessuna grammatura) |
-| riconoscimento ingredienti | `isGuideCarbIngredient` / `isGuideProteinIngredient` (usano `match` e `group` canonici) |
-| verifica e correzione delle ricette | `checkGuideAdaptation()` / `adaptRecipeToGuide()` per compatibilità, più `checkGuideContext()` / `resolveRecipeForPlan()` per la risoluzione contestuale non distruttiva |
-
-## Grammaticature carboidrati
-
-Cena = `floor(pranzo riposo × 2/3 / 10) × 10`, identica nei giorni A e R. Le
-inverse cena → pranzo **non si calcolano**: si rileggono pranzo A/R dalla
-tabella (l'arrotondamento per difetto non è invertibile: 230 × 2 = 460, ma il
-pranzo A reale delle patate è 450).
-
-| Famiglia | Pranzo A | Pranzo R | Cena (A = R) | Nota |
-| --- | ---: | ---: | ---: | --- |
-| pane | 120 g | 90 g | **60 g** | confermato dal manuale |
-| crackers/grissini/crostini | 70 g | 60 g | **40 g** | confermato dal manuale |
-| patate | 450 g | 350 g | **230 g** | confermato dal manuale |
-| polenta cotta | 430 g | 340 g | **220 g** | confermato dal manuale |
-| piadina | 110 g | 80 g | **50 g** | confermato dal manuale |
-| pasta | 90 g | 70 g | **40 g** | confermato dal manuale |
-| riso | 90 g | 70 g | **40 g** | confermato dal manuale |
-| gnocchi di patate | 250 g | 190 g | 120 g | derivato |
-| farro/orzo | 90 g | 70 g | 40 g | derivato |
-| quinoa/grano saraceno/amaranto | 80 g | 60 g | 40 g | derivato |
-| cous cous | 80 g | 60 g | 40 g | derivato |
-
-A cena è ammesso **qualsiasi carboidrato della tabella**, non solo pane,
-crackers e patate.
-
-## Grammature proteine
-
-Le proteine mantengono **la stessa dose a pranzo e a cena** (scelta del
-manuale): pollame 200 g, manzo/vitello 150 g, maiale 100 g, affettati/salumi
-100 g, pesce bianco 250 g, tonno 150 g, pesce azzurro/omega-3 100 g,
-crostacei/molluschi 300 g, uova 180 g, fiocchi di latte 180 g, formaggi 50 g,
-legumi 240 g, legumotti 80 g. Il travaso pranzo ↔ cena non le tocca mai.
+Il toggle «Dosi allineate alla mia dieta» (Settimana, Ricettario, Lista della spesa) sceglie quale fonte mostrare; il professionista vede sempre le dosi della struttura in console.
 
 # Generatore automatico della settimana
 
-Funzioni pure in `js/domain.js` (`generateWeek`), nessun rendering DOM nel motore.
+Funzioni pure in `js/domain.js` (`generateWeek`), nessun rendering DOM nel motore. Il generatore lavora **solo su vincoli strutturali**: ripetizioni, pesce giornaliero, distanza omega-3, accoppiate batch, blocchi. Non esistono più intervalli di frequenza proteica min–max: erano dati clinici del vecchio manuale e le indicazioni nutrizionali arrivano esclusivamente dalla struttura dieta assegnata dal professionista.
 
 ## Parametri (salvati per dispositivo, mai su Firestore)
 
 Nella UI (vista Settimana → **Genera settimana**) il primo passo è il pannello **parametri**:
 
-- **Cosa generare**: quali slot rigenerare (colazione, spuntino, pranzo, merenda, cena). Gli slot esclusi restano come sono e contano nelle frequenze;
-- **🍳 Batch cena → pranzo** (0-7 giorni): quante cene vengono **pianificate in coppia** col pranzo del giorno dopo (doppia porzione automatica). Le coppie vengono piazzate per prime e contano due volte la proteina: aumentando le coppie crescono le ripetizioni e possono comparire avvisi per i vincoli su manzo, uova o pollame;
-- **🔁 Stessa ricetta al massimo** (1-4 volte): tetto alle ripetizioni in settimana;
-- **↻ Solo varietà: includi anche ricette dell'altro pasto**: il motore può pescare anche dal pasto opposto e trasforma i carboidrati in percentuale (come per lo scambio manuale). Non crea doppie porzioni: per cucinare una volta per cena e pranzo va usato Batch cena → pranzo;
-- **Frequenze proteiche min–max** (pannello avanzato): intervallo settimanale per legumi, pesce omega-3, altro pesce e prodotti ittici, pollame, manzo e maiale, affettati e carni miste, latticini e formaggi, uova. "Valori predefiniti" ripristina quelli del manuale;
-- **blocco di un singolo pasto** e **blocco dell'intera giornata**: la legenda in modale distingue chiaramente 🔒 bloccato (resta identico e conta nelle frequenze) da 🔓 sbloccato (il generatore può cambiarlo). I pasti bloccati non sono mai sovrascritti e, soprattutto, **contano nelle frequenze**;
+- **Cosa generare**: quali slot rigenerare (colazione, spuntino, pranzo, merenda, cena). Gli slot esclusi restano come sono;
+- **🍳 Batch cena → pranzo** (0–7 giorni): quante cene vengono **pianificate in coppia** col pranzo del giorno dopo (doppia porzione automatica);
+- **🔁 Stessa ricetta al massimo** (1–7 volte, default 2): tetto alle ripetizioni in settimana;
+- **↻ Solo varietà: includi anche ricette dell'altro pasto**: il motore può pescare anche dal pasto opposto (i carboidrati delle ricette cross-slot sono gestiti come nello scambio manuale, badge ↻). Non crea doppie porzioni: per cucinare una volta per cena e pranzo va usato Batch cena → pranzo;
+- **blocco di un singolo pasto** e **blocco dell'intera giornata**: 🔒 bloccato (resta identico) vs 🔓 sbloccato (il generatore può cambiarlo). I pasti bloccati non sono mai sovrascritti ed entrano nei conteggi;
 - **seed** opzionale: risultato riproducibile con lo stesso seed; "Rigenera" pesca un seed nuovo.
 
 ## Come lavora il motore
 
-Il generatore conta esclusivamente i **pasti principali** (pranzo e cena), per un massimo teorico di 14 pasti settimanali. Le categorie proteiche e gli intervalli finali sono:
-
-| Categoria | Min | Max |
-|---|---|---|
-| Pollame | 1 | 2 |
-| Manzo e maiale | 0 | 1 |
-| Affettati e carni miste | 0 | 1 |
-| Pesce ricco di omega-3 | 2 | 3 |
-| Altro pesce e prodotti ittici | 1 | 2 |
-| Latticini e formaggi | 1 | 2 |
-| Uova | 1 | 2 |
-| Legumi e derivati | 3 | 14 |
-
-- "Legumi max 14" significa semplicemente che non c'è un tetto nutrizionale più basso del massimo fisico dei 14 pasti principali;
-- una coppia batch cena → pranzo conta come due pasti, quindi due utilizzi della fonte proteica;
-- manzo/maiale e affettati/carni miste sono **due categorie distinte**: possono comparire una volta ciascuna nella stessa settimana.
+Il generatore conta esclusivamente i **pasti principali** (pranzo e cena), per un massimo teorico di 14 pasti settimanali. Le categorie proteiche riconosciute (a scopo di varietà e conteggio) sono: pollame, manzo e maiale, affettati e carni miste (due categorie distinte), pesce ricco di omega-3, altro pesce e prodotti ittici, latticini e formaggi, uova, legumi e derivati.
 
 Vincoli rispettati:
 
 - rispetta i tipi A/R del piano e **non modifica mai i dosaggi**;
 - la classificazione si basa **prima sugli ingredienti effettivi** della ricetta; `proteinCategory` è un **fallback opzionale** usato solo se nessun ingrediente è riconoscibile;
 - massimo un pasto di pesce al giorno (considerando anche i pasti bloccati/mantenuti);
-- **omega-3 mai in giorni consecutivi** (settimana circolare: anche domenica→lunedì). Unica eccezione voluta: l'**accoppiata batch cena → pranzo** richiesta con una ricetta omega, dove lo stesso pasto occupa due giorni consecutivi per costruzione — in quel caso l'adiacenza non genera avviso, mentre quella derivante da pasti bloccati/mantenuti o da rilassamenti estremi resta segnalata;
-- insegue **sia i minimi sia i massimi** delle frequenze proteiche: riempimento con punteggio (categorie sotto il minimo premiate) e **riparazione mirata** finale che scambia pasti generati per chiudere i minimi mancanti, senza violare massimi, pesce/giorno né spingere altre categorie sotto il proprio minimo;
+- **omega-3 mai in giorni consecutivi** (settimana circolare: anche domenica→lunedì). Unica eccezione voluta: l'**accoppiata batch cena → pranzo** richiesta con una ricetta omega, dove lo stesso pasto occupa due giorni consecutivi per costruzione;
 - evita ripetizioni **immediate e settimanali** (`maxRepeats`);
 - favorisce le combinazioni batch strutturali (`batchTemplates` cena anchor ↔ pranzo target) e pianifica le coppie **doppia porzione** richieste;
 - ricette senza ingredienti riconoscibili né `proteinCategory`: la categoria resta `null` e la ricetta non pesa sui vincoli;
 - gestisce catalogo vuoto/insufficiente con avvisi; quando i vincoli non sono soddisfabili li rilassa **a gradini**, con un unico avviso per pasto, anziché lasciare pasti vuoti.
 
-Nella UI: anteprima con diff attuale → proposto, chip verdi/rossi delle frequenze rispetto all'intervallo scelto, elenco delle coppie batch programmate, applica (con backup) e annulla.
+Nella UI: anteprima con diff attuale → proposto, elenco delle coppie batch programmate, applica (con backup) e annulla.
 
 # Condivisione di ricette e settimana
 
@@ -765,15 +673,21 @@ App Check **non sostituisce** Authentication né Firestore Rules: le regole in `
 # Test
 
 ```bash
-npm test
+npm test && npm --prefix functions test
 npm run syntax
 npm run smoke
 git diff --check
 ```
 
-I test (`test/domain.test.js`) coprono: normalizzazione allo schema corrente e idempotenza (ingredientId, note unificate, rimozione `frequency`), alias ingredienti, ingredienti senza ID, **Guide contestuale non distruttivo (350 g pollo → riferimento 200 g), ingredienti liberi, mapping bloccati, adattamenti persistenti, modalità piano e propagazione a spesa/batch**, lista spesa per `ingredientId`, profili **1 persona**/**2 persone** con moltiplicatore locale, crackers A/R, **travaso carboidrati pranzo↔cena sulle dosi Guide** (riconoscimento carboidrati, pranzo→cena con la dose cena della tabella, cena→pranzo con le dosi A/R rilette dalla tabella, propagazione alla lista spesa), **fonte unica Guide** (grammature e regola dei 2/3, sei valori cena confermati, proteine invariate tra pranzo e cena, righe dei popup per giornata A/R/entrambe), batch indipendente da A/R, batch cena→pranzo futuro, attraversamento domenica→lunedì, batch parziale, `maxDays` diversi, quantità target A/R, copia/scambio pasti, blocchi, generatore e vincoli (frequenze su molti seed, **omega-3 distanziati con eccezione solo per le accoppiate batch richieste**, **accoppiate batch cena → pranzo fino a 7 giorni**, tetto ripetizioni, blocchi che contano nelle frequenze e nel pesce/giorno, slot disabilitati, cross-slot, inferenza della categoria dagli ingredienti, vincoli personalizzati, beef e curedMeats conteggiati separatamente, warning centralizzati), classificazione proteica (ingredienti prevalgono su `proteinCategory`, fallback su chiavi tecniche e testuali legacy), cataloghi vuoto/insufficiente, riferimenti piano mancanti, import Aggiungi/Sostituisci, conflitti condivisione (solo ricette/solo settimana/completa), backup, service worker (shell, cache, fallback offline, aggiornamento).
+I test coprono i moduli del client e i flussi di integrazione: dominio (`test/domain.test.js`: normalizzazione e idempotenza dello schema, `ingredientId`, classificazione proteica, generatore con vincoli strutturali su molti seed, batch cooking, copia/scambio pasti, spesa aggregata per `ingredientId`, backup), riconoscimento ingredienti a stati espliciti e dieta assegnata con dosi allineate/originali (`test/week-doses.test.js`, `test/ui-passo2.test.js`, `test/saas-doses.test.js`), SaaS (membership, snapshot, inviti), service worker, PWA e console admin (smoke). Il backend ha la propria suite (`npm --prefix functions test`): validazione domini, strutture e revisioni con checksum, template equivalenze, richieste catalogo, import catalogo (dry-run/commit/restore su Firestore finto fedele alle regole del client), permessi.
 
-Smoke test locale:
+```bash
+npm test                    # 345 test client
+npm --prefix functions test # 111 test functions
+npm run test:rules          # regole Firestore (richiede l'emulator, quindi Java)
+```
+
+Smoke test locale:Smoke test locale:
 
 ```bash
 python3 -m http.server 8080 --bind 0.0.0.0

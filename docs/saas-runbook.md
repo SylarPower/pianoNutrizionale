@@ -51,16 +51,15 @@ organizations/demo/clients/client-b = {schemaVersion:1, authUid:"patientBUid", d
 accountClientLinks/{patientAUid} = {schemaVersion:1, organizationId:"demo", clientId:"client-a", status:"active"}
 ```
 
-Creare `globalRuleSets/base/versions/3` con il contratto documentato, `status:"published"` e checksum corretto. Aprire `/admin.html`, indicare `demo`, assegnare base v3 al Cliente A. Verificare:
+Creare una struttura dieta con l'editor a blocchi (`/admin.html` → Strutture: una giornata, un pasto con opzione a blocchi famiglia e quantità di riferimento), pubblicarla e assegnarla al Cliente A. Verificare:
 
-1. Cliente A riceve soltanto il proprio profilo tramite `getMyAssignedProfile`.
+1. Cliente A riceve soltanto il proprio profilo tramite `getMyAssignedProfile` (con `structureRevision.dietPlan` e snapshot catalogo).
 2. Cliente B non legge A (test Rules e callable).
-3. Il client mostra “Nuovo profilo da confermare” e usa dosi originali.
-4. Dopo conferma, il piano contiene `nutritionSnapshot` con client/rule/version/checksum.
-5. Pubblicare v4: il piano v3 non cambia.
-6. Assegnare v4: torna `original-only` finché il cliente non conferma.
-7. Sospendere/revocare: al caricamento successivo il client usa originali.
-8. Creare una ricetta con ingrediente sconosciuto, inviare opt-in, aprire coda, proporre e pubblicare mapping. La ricetta originale deve restare identica.
+3. Il client mostra «La mia dieta» e il toggle dosi originali/allineate funziona in Settimana, Ricettario e Spesa.
+4. Pubblicare una seconda revisione: il piano assegnato al cliente non cambia (checksum congelato, non-retroattività).
+5. Assegnare la nuova revisione: il cliente la riceve e conferma.
+6. Sospendere/revocare: al caricamento successivo il client torna alle dosi originali.
+7. Da cliente, proporre un ingrediente non riconosciuto (`submitCatalogRequest`): la richiesta compare nella coda Richieste ingredienti del platform admin, che la risolve; l'ingrediente entra nel catalogo come nuova versione. La ricetta originale resta identica.
 
 ## Deploy graduale
 

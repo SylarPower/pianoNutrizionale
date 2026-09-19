@@ -19,48 +19,29 @@
     };
   }
 
+  // Piano con dosi originali forzate: l'interruttore dosi allineate si
+  // spegne (scelta unica del cliente, a livello piano). Nessuna matrice
+  // per-pasto: la vista allineata si riattiva con un tap.
   function originalOnlyPlan(plan) {
     const next = JSON.parse(JSON.stringify(plan || {}));
-    // Piani legacy: la mappa si chiamava mellerModes — le modalità salvate
-    // dall'utente non si perdono quando si forza «solo originali».
-    if (!next.guideModes) next.guideModes = next.mellerModes ? JSON.parse(JSON.stringify(next.mellerModes)) : {};
-    const days = ['monday','tuesday','wednesday','thursday','friday','saturday','sunday'];
-    days.forEach(day => {
-      next.guideModes[day] = { ...(next.guideModes[day] || {}), lunch: 'original', dinner: 'original' };
-    });
+    next.alignedDosesEnabled = false;
     return next;
   }
 
-  // Snapshot v2: le assegnazioni a Struttura dieta registrano structureId,
-  // revisione e versione del catalogo ingredienti al momento della conferma.
-  // Un cambio di catalogo richiede conferma (nudge sui nuovi pasti) senza
-  // mai ricalcolare retroattivamente quelli già pianificati.
+  // Snapshot della conferma cliente: la revisione della struttura assegnata
+  // si applica solo dopo l'ok esplicito (mai retroattività silenziosa). Un
+  // cambio di revisione o di catalogo richiede una nuova conferma.
   function snapshotFor(profile, now = new Date()) {
-    const base = {
-      schemaVersion: 1,
+    return {
+      schemaVersion: 2,
       clientProfileId: profile.clientProfileId,
       assignmentId: profile.assignmentId,
       resolvedAt: now.toISOString(),
       migrationDecision: 'confirmed',
-      // Dosi/frequenze personalizzate: una modifica in console richiede una
-      // nuova conferma esplicita (mai applicazioni silenziose).
-      overridesRevision: Number(profile.clientOverrides?.revision || 0)
-    };
-    if (profile.structureId) {
-      return {
-        ...base,
-        structureId: profile.structureId,
-        structureRevisionId: String(profile.structureRevisionId),
-        structureChecksum: profile.structureChecksum,
-        ingredientCatalogVersion: profile.ingredientCatalogVersion ?? null
-      };
-    }
-    return {
-      ...base,
-      ruleSetId: profile.ruleSetId,
-      ruleSetVersion: profile.ruleSetVersion,
-      ruleSetChecksum: profile.ruleSetChecksum,
-      mappingCatalogChecksum: profile.mappingCatalogChecksum || null
+      structureId: profile.structureId,
+      structureRevisionId: String(profile.structureRevisionId),
+      structureChecksum: profile.structureChecksum,
+      ingredientCatalogVersion: profile.ingredientCatalogVersion ?? null
     };
   }
 
@@ -68,29 +49,14 @@
     const snap = plan?.nutritionSnapshot;
     if (!snap || !profile) return false;
     if (snap.clientProfileId !== profile.clientProfileId || snap.assignmentId !== profile.assignmentId) return false;
-    // Snapshot legacy senza campo = revisione 0: restano validi finché il
-    // profilo non riceve davvero degli override (niente nudge spuri).
-    if ((snap.overridesRevision ?? 0) !== Number(profile.clientOverrides?.revision || 0)) return false;
-    if (profile.structureId || snap.structureId) {
-      return snap.structureId === profile.structureId &&
-        String(snap.structureRevisionId) === String(profile.structureRevisionId) &&
-        snap.structureChecksum === profile.structureChecksum &&
-        (snap.ingredientCatalogVersion ?? null) === (profile.ingredientCatalogVersion ?? null);
-    }
-    return Boolean(
-      snap.ruleSetId === profile.ruleSetId &&
-      String(snap.ruleSetVersion) === String(profile.ruleSetVersion) &&
-      snap.ruleSetChecksum === profile.ruleSetChecksum &&
-      (snap.mappingCatalogChecksum || null) === (profile.mappingCatalogChecksum || null));
+    return snap.structureId === profile.structureId
+      && String(snap.structureRevisionId) === String(profile.structureRevisionId)
+      && snap.structureChecksum === profile.structureChecksum
+      && (snap.ingredientCatalogVersion ?? null) === (profile.ingredientCatalogVersion ?? null);
   }
 
-  // Regole motore per il profilo assegnato. V1: già in formato motore. V2: la
-  // revisione struttura viene convertita nel client con il catalogo incorporato
-  // nel profilo (stesso motore, nessun fork server-side delle dosi). Ritorna
-  // null se la conversione è impossibile o produrrebbe un profilo vuoto: mai
-  // attivare in silenzio un profilo senza dosi.
-  // Le personalizzazioni del cliente valgono solo in ambito personale: nei
-  // piani famiglia condivisi si usano sempre le dosi dello studio.
+  // Ambito personale: nei piani famiglia condivisi valgono sempre le dosi
+  // originali delle ricette (mai la dieta personale di un membro).
   function saasPersonalScope() {
     try {
       return !root.getCurrentHousehold || !root.getCurrentHousehold();
@@ -99,52 +65,14 @@
     }
   }
 
-  // Applica gli override dose del cliente (sparsi, per famiglia) sopra
-  // le regole dello studio. Non muta l'input: restituisce un motore nuovo.
-  function applyDoseOverrides(engine, overrides) {
-    if (!engine || !overrides?.doses || !Object.keys(overrides.doses).length) return engine;
-    const rules = (engine.rules || []).map(rule => {
-      const patch = overrides.doses[rule.family];
-      if (!patch) return rule;
-      const slots = JSON.parse(JSON.stringify(rule.slots || {}));
-      ['lunch', 'dinner'].forEach(meal => {
-        ['training', 'rest'].forEach(dayType => {
-          const value = patch[meal]?.[dayType];
-          if (Number.isFinite(Number(value)) && Number(value) > 0) {
-            slots[meal] = slots[meal] || {};
-            slots[meal][dayType] = Number(value);
-          }
-        });
-      });
-      return { ...rule, slots };
-    });
-    return { rules, freeAliases: engine.freeAliases || [] };
-  }
-
-  function engineRulesFor(profile) {
-    if (!profile) return null;
-    let engine = null;
-    if (profile.schemaVersion !== 2) {
-      engine = Array.isArray(profile.rules) && profile.rules.length
-        ? { rules: profile.rules, freeAliases: profile.freeAliases || [] }
-        : null;
-    } else {
-      const Domain = root.PianoDomain;
-      if (!Domain?.buildCatalogIndex || !Domain?.structureRevisionToGuideRules) return null;
-      const converted = Domain.structureRevisionToGuideRules(
-        profile.structureRevision || {}, Domain.buildCatalogIndex(profile.catalog || {}));
-      if (!converted.rules.length) return null;
-      engine = converted;
-    }
-    // Override solo in ambito personale (mai negli household condivisi).
-    return saasPersonalScope() ? applyDoseOverrides(engine, profile.clientOverrides) : engine;
-  }
-
   function applyPolicy(plan, context) {
     if (!config().enabled) return { plan, mode: 'legacy-disabled', migrationRequired: false };
     if (context?.state !== 'assigned' || !context.profile) {
-      return { plan: originalOnlyPlan(plan), mode: 'original-only', migrationRequired: false };
+      return { plan, mode: 'original-only', migrationRequired: false };
     }
+    // La conferma del nuovo profilo serve solo in ambito personale: nei
+    // piani famiglia condivisi le dosi allineate non si applicano comunque.
+    if (!saasPersonalScope()) return { plan, mode: 'original-only', migrationRequired: false };
     if (!snapshotMatches(plan, context.profile)) {
       return { plan: originalOnlyPlan(plan), mode: 'pending-confirmation', migrationRequired: true };
     }
@@ -165,9 +93,10 @@
       const cached = JSON.parse(localStorage.getItem(cacheKey(uid)) || 'null');
       const expires = cached?.profile?.expiresAt ? new Date(cached.profile.expiresAt) : null;
       if (cached?.state === 'assigned' && (!expires || expires > new Date())) {
-        const engine = engineRulesFor(cached.profile);
+        // Un profilo in cache è utilizzabile solo se produce un motore dieta
+        // valido (revisione con piano dieta a blocchi).
+        const engine = root.PianoDomain?.buildDietEngine ? root.PianoDomain.buildDietEngine(cached.profile) : null;
         if (!engine) return null;
-        root.PianoDomain?.activateGuideRuleSet?.(engine.rules, engine.freeAliases);
         return { ...cached, offline: true };
       }
     } catch (_) {}
@@ -179,18 +108,15 @@
     try {
       const value = await call('getMyAssignedProfile', {});
       if (value?.state === 'assigned' && value.profile) {
-        // Stesso percorso del fallback offline: conversione v2 + override
-        // dose via engineRulesFor (il vecchio accesso diretto a profile.rules
-        // non copriva i profili v2, privi di quel campo).
-        const engine = engineRulesFor(value.profile);
-        if (!engine || !root.PianoDomain?.activateGuideRuleSet?.(engine.rules, engine.freeAliases)) {
-          throw new Error('Rule set non compatibile');
-        }
+        // Il profilo deve produrre un motore dieta valido: senza piano a
+        // blocchi non si attiva nulla (mai dosi silenziose).
+        const engine = root.PianoDomain?.buildDietEngine ? root.PianoDomain.buildDietEngine(value.profile) : null;
+        if (!engine) throw new Error('Struttura dieta non compatibile');
         localStorage.setItem(cacheKey(uid), JSON.stringify({ ...value, cachedAt: new Date().toISOString() }));
       }
       return value;
     } catch (error) {
-      // Offline: usa solo l'ultima versione verificata, non una regola nuova.
+      // Offline: usa solo l'ultima versione verificata, non una struttura nuova.
       const cached = cachedContext(uid);
       if (cached) return cached;
       return { state: 'unavailable', fallback: 'original-only', error: error?.message || 'offline' };
@@ -234,5 +160,5 @@
     return grant;
   }
 
-  return { config, originalOnlyPlan, snapshotFor, snapshotMatches, engineRulesFor, applyDoseOverrides, saasPersonalScope, applyPolicy, loadContext, cachedContext, shoppingAccess, requestShoppingReward };
+  return { config, originalOnlyPlan, snapshotFor, snapshotMatches, saasPersonalScope, applyPolicy, loadContext, cachedContext, shoppingAccess, requestShoppingReward };
 });

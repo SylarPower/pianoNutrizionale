@@ -43,7 +43,7 @@ test('ogni elemento letto da admin.js è dichiarato prima dello script della con
 test('nessun dialog della console resta fuori dalla sezione markup', () => {
   // I dialog vivono tutti prima degli script: nessuno deve essere aggiunto in coda.
   assert.doesNotMatch(afterScripts, /<div[^>]+class="dialog/, 'nessun dialog dopo gli script');
-  assert.match(beforeScripts, /id="group-dialog"/, 'il dialog di raggruppamento resta nel markup utile');
+  assert.match(beforeScripts, /id="recipe-dialog"/, 'il dialog delle ricette resta nel markup utile');
 });
 
 test('markup della console senza refusi evidenti nei contenitori principali', () => {

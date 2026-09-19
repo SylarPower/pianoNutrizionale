@@ -64,7 +64,7 @@ test('permessi UI: proprietario modifica/archivia, creatore condivide', () => {
   assert.match(js, /data-edit-recipe.*disabled.*Solo il proprietario modifica/s);
   assert.match(js, /\$\{isOwner && !archived \? `[^`]*data-archive-recipe/s);
   assert.match(js, /adminState\.isCreator && !archived \? `[^`]*data-visibility-recipe/s);
-  assert.match(js, /async function loadProfessionalRecipes\(\)/);
+  assert.match(js, /async function loadProfessionalRecipes\(\{ quiet = false \} = \{\}\)/);
   assert.match(js, /async function submitRecipeForm\(event\)/);
   assert.match(js, /async function submitRecipeSend\(event\)/);
   assert.match(js, /async function cancelProfessionalShareUI\(shareId\)/);

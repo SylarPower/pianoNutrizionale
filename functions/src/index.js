@@ -7,10 +7,11 @@ const { logger } = require('firebase-functions');
 const { initializeApp } = require('firebase-admin/app');
 const { getFirestore, FieldValue, Timestamp } = require('firebase-admin/firestore');
 const {
-  SINGLE_ORGANIZATION_ID, ROLES, REPORT_STATUSES, STRUCTURE_REVISION_SCHEMA_VERSION, STRUCTURE_REVISION_SCHEMA_VERSION_WITH_PLAN, exactObject, text, optionalText, id, checksum,
-  hashToken, normalizeUsername,
-  reportKey, validateReport, validateMapping, validateRuleSetRules, validateAssignment, validateStructureAssignment,
-  validateDietStructureRules, validateAlternativeGroups, validateDietPlan, structureRevisionChecksum, verifyStructureRevision, effectiveAssignment,
+  SINGLE_ORGANIZATION_ID, ROLES, STRUCTURE_REVISION_SCHEMA_VERSION, exactObject, text, optionalText, id, checksum,
+  hashToken, normalizeUsername, normalizeIngredient, searchTokensFor,
+  validateStructureAssignment, validateDietPlan, structureRevisionChecksum, verifyStructureRevision, effectiveAssignment,
+  validateEquivalenceTemplateRevision, equivalenceTemplateRevisionChecksum, verifyEquivalenceTemplateRevision,
+  validateCatalogRequestSubmit, validateCatalogRequestResolve,
   CATALOG_IMPORT_MODES, parseCatalogPayload, validateCatalogImport, catalogImportPreviewId,
   validateInviteOrganizationUser, validateInviteClientLink, validateRespondClientLink,
   validateRemoveClientLink, validateMemberStatus, validateRemoveNutritionist,
@@ -20,12 +21,7 @@ const {
   validateGetInviteLink,
   validateCancelClientInvite, validateUpdateClientProfileByStaff, validateDeleteClientPermanently,
   validateProposeClientEmailChange, validateRespondClientEmailChange, validateRedeemClientInvite,
-  CLIENT_FREQUENCY_KEYS, CLIENT_FREQUENCY_LABELS, CLIENT_FREQUENCY_DEFAULTS,
-  DOSE_EDITABLE_ASSIGNMENT_STATUSES,
-  validateClientDoseOverrides, validateGetClientDoses,
-  validateUpdateClientDoseOverrides, validateCopyClientDoses,
-  PROFESSIONAL_RECIPE_VISIBILITY, validateProfessionalRecipe,
-  GRAMMATURE_TABLE_LIMITS, validateGrammatureTable
+  PROFESSIONAL_RECIPE_VISIBILITY, validateProfessionalRecipe
 } = require('./domain');
 
 initializeApp();
@@ -128,22 +124,28 @@ function platformAuditRef(eventId) {
 // Catalogo globale corrente: meta + ingredienti + categorie. Letto server-side
 // per incorporare uno snapshot nel profilo cliente, per validare le strutture
 // (ingredientIds/categoryId esistenti) e come base del dry-run import.
+// Catalogo globale v2: ingredienti, categorie e FAMIGLIE (fonte unica di
+// identità). Nessuna dose vive qui: grammature ed equivalenze appartengono ai
+// template e alle strutture organization-scoped.
 async function loadGlobalCatalog() {
-  const [meta, ingredientsSnap, categoriesSnap] = await Promise.all([
+  const [meta, ingredientsSnap, categoriesSnap, familiesSnap] = await Promise.all([
     db.doc('globalIngredientCatalog/current/meta/summary').get(),
     db.collection('globalIngredientCatalog/current/ingredients').limit(2000).get(),
-    db.collection('globalIngredientCatalog/current/categories').limit(500).get()
+    db.collection('globalIngredientCatalog/current/categories').limit(500).get(),
+    db.collection('globalIngredientCatalog/current/families').limit(500).get()
   ]);
   return {
     catalogVersion: Number(meta.data()?.catalogVersion || 0),
     checksum: meta.data()?.checksum || null,
     ingredients: ingredientsSnap.docs.map(doc => ({ ingredientId: doc.id, ...doc.data() })),
-    categories: categoriesSnap.docs.map(doc => ({ categoryId: doc.id, ...doc.data() }))
+    categories: categoriesSnap.docs.map(doc => ({ categoryId: doc.id, ...doc.data() })),
+    families: familiesSnap.docs.map(doc => ({ familyId: doc.id, ...doc.data() }))
   };
 }
 
 // Sottoinsieme sicuro del catalogo incorporato nel profilo cliente: solo
-// identità/alias/categorie, mai quantità (il catalogo non ne contiene).
+// identità (nomi, alias, token di ricerca, categoria, famiglia, flag
+// dietetici), mai quantità (il catalogo non ne contiene).
 function publicCatalogSnapshot(catalog) {
   return {
     catalogVersion: catalog.catalogVersion,
@@ -153,24 +155,31 @@ function publicCatalogSnapshot(catalog) {
         ingredientId: item.ingredientId,
         displayName: item.displayName,
         categoryId: item.categoryId || null,
+        familyId: item.familyId || null,
         aliases: Array.isArray(item.aliases) ? item.aliases : [],
         searchTokens: Array.isArray(item.searchTokens) ? item.searchTokens : [],
-        mappingKind: item.mappingKind || 'guided',
-        // Compatibilità: i documenti importati prima del cambio nome hanno
-        // la famiglia sulla chiave storica mellerFamilyId.
-        guideFamilyId: item.guideFamilyId || item.mellerFamilyId || null,
+        dietaryFlags: {
+          vegetarian: item.dietaryFlags?.vegetarian === true,
+          vegan: item.dietaryFlags?.vegan === true
+        },
         status: 'active'
       })),
     categories: catalog.categories
       .filter(item => item.status !== 'archived')
-      .map(item => ({ categoryId: item.categoryId, displayName: item.displayName }))
+      .map(item => ({ categoryId: item.categoryId, displayName: item.displayName })),
+    families: catalog.families
+      .filter(item => item.status !== 'archived')
+      .map(item => ({ familyId: item.familyId, displayName: item.displayName, categoryId: item.categoryId || null }))
   };
 }
 
 function catalogLookup(catalog) {
   return {
     ingredientIds: new Set(catalog.ingredients.filter(item => item.status !== 'archived').map(item => item.ingredientId)),
-    categoryIds: new Set(catalog.categories.filter(item => item.status !== 'archived').map(item => item.categoryId))
+    categoryIds: new Set(catalog.categories.filter(item => item.status !== 'archived').map(item => item.categoryId)),
+    families: new Map(catalog.families
+      .filter(item => item.status !== 'archived')
+      .map(item => [item.familyId, item]))
   };
 }
 
@@ -188,78 +197,6 @@ function auditEvent({ orgId, eventId, type, actor, subject, idempotencyKey, meta
     actor: { uid: actor.uid, role: actor.role }, subject, idempotencyKey,
     occurredAt: FieldValue.serverTimestamp(), metadata
   };
-}
-
-function applyMappingCatalogs(baseRules, ...catalogs) {
-  const rules = JSON.parse(JSON.stringify(baseRules || []));
-  const freeAliases = [];
-  catalogs.forEach(catalog => Object.values(catalog?.entries || {}).forEach(entry => {
-    const mapping = entry?.mapping;
-    if (!mapping) return;
-    if (mapping.kind === 'free') {
-      freeAliases.push(...(mapping.aliases || []));
-      return;
-    }
-    let rule = rules.find(item => item.family === mapping.family);
-    if (!rule) {
-      rule = { family: mapping.family, group: mapping.group, label: mapping.canonicalIngredientId, aliases: [], slots: mapping.doses };
-      rules.push(rule);
-    }
-    rule.aliases = [...new Set([...(rule.aliases || []), ...(mapping.aliases || [])])];
-    if (mapping.doses) rule.slots = mapping.doses;
-  }));
-  return { rules, freeAliases: [...new Set(freeAliases)] };
-}
-
-function publicAssignment(assignment, clientId, rules, catalogs = []) {
-  const resolved = applyMappingCatalogs(rules.rules, ...catalogs);
-  return {
-    schemaVersion: 1,
-    clientProfileId: clientId,
-    assignmentId: assignment.assignmentId,
-    ruleSetId: assignment.ruleSet.ruleSetId,
-    ruleSetVersion: assignment.ruleSet.version,
-    ruleSetChecksum: assignment.ruleSet.checksum,
-    mappingCatalogChecksum: checksum(catalogs.map(item => item?.checksum || null)),
-    effectiveAt: assignment.effectiveAt,
-    expiresAt: assignment.expiresAt || null,
-    strategy: assignment.strategy,
-    rules: resolved.rules,
-    freeAliases: resolved.freeAliases,
-    clientOverrides: publicClientOverrides(assignment),
-    compatibleClientSchema: rules.compatibleClientSchema || 1
-  };
-}
-
-// Personalizzazioni per cliente (console "Dosi clienti"): override sparsi
-// serviti insieme al profilo. Solo revisione + celle valorizzate: metadati
-// interni (autore, timestamp) non escono mai verso il client.
-function publicClientOverrides(assignment) {
-  const overrides = assignment?.clientOverrides;
-  if (!overrides) return null;
-  return {
-    revision: Number(overrides.revision || 0),
-    doses: overrides.doses || {},
-    frequencies: overrides.frequencies || {}
-  };
-}
-
-async function ruleVersionRef(orgId, pointer) {
-  return pointer.scope === 'global'
-    ? db.doc(`globalRuleSets/${pointer.ruleSetId}/versions/${pointer.version}`)
-    : db.doc(`organizations/${orgId}/ruleSets/${pointer.ruleSetId}/versions/${pointer.version}`);
-}
-
-function verifiedRuleVersion(value, pointer) {
-  if (!value || value.status !== 'published' || !Array.isArray(value.rules) || !value.rules.length) return false;
-  const expected = checksum({
-    schemaVersion: Number(value.schemaVersion || 1),
-    ruleSetId: pointer.ruleSetId,
-    version: String(pointer.version),
-    rules: value.rules,
-    overrides: value.overrides || []
-  });
-  return value.checksum === pointer.checksum && value.checksum === expected;
 }
 
 async function resolveDueAssignment(orgId, clientId) {
@@ -284,14 +221,12 @@ async function resolveDueAssignment(orgId, clientId) {
   return assignment;
 }
 
-// Profilo v2: la revisione della Struttura dieta + uno snapshot del catalogo
-// globale al momento della lettura. La conversione in regole motore avviene
-// nel client via structureRevisionToGuideRules (stesso motore, nessun fork
-// server-side delle dosi). Note e checksum interni non escono mai: il client
-// riceve solo il checksum di snapshot ereditato dal contratto v1.
+// Profilo v3: la revisione della Struttura dieta (dietPlan a blocchi) + lo
+// snapshot del catalogo globale al momento della lettura. Note e checksum
+// interni non escono mai verso il cliente.
 function publicStructureAssignment({ assignment, clientId, structure, revision, catalog }) {
   return {
-    schemaVersion: 2,
+    schemaVersion: 3,
     clientProfileId: clientId,
     assignmentId: assignment.assignmentId,
     structureId: assignment.structure.structureId,
@@ -303,12 +238,10 @@ function publicStructureAssignment({ assignment, clientId, structure, revision, 
     expiresAt: assignment.expiresAt || null,
     structureRevision: {
       revisionId: revision.revisionId,
-      rules: revision.rules || [],
-      alternativeGroups: revision.alternativeGroups || []
+      dietPlan: revision.dietPlan || null
     },
     catalog: publicCatalogSnapshot(catalog),
-    clientOverrides: publicClientOverrides(assignment),
-    compatibleClientSchema: 6
+    compatibleClientSchema: 7
   };
 }
 
@@ -327,42 +260,27 @@ exports.getMyAssignedProfile = callable(async (_data, uid) => {
   const assignment = await resolveDueAssignment(organizationId, clientId);
   const effective = effectiveAssignment(assignment && assignmentDates(assignment));
   if (!effective.valid) return { state: effective.reason || 'unassigned', fallback: 'original-only', clientProfileId: clientId };
-  // Fase 2: le assegnazioni v2 puntano alla revisione di una Struttura dieta
-  // (pointer {structureId, revisionId, checksum}); quelle storiche v1 al rule
-  // set. La revisione assegnata resta servita anche se la struttura viene
-  // archiviata dopo (non-retroattività: governa l'assignment, non la testata).
-  if (assignment.structure?.structureId) {
-    const revisionId = String(assignment.structure.revisionId || '');
-    if (!revisionId) return { state: 'invalid-rule-set', fallback: 'original-only', clientProfileId: clientId };
-    const structureRef = db.doc(`organizations/${organizationId}/dietStructures/${assignment.structure.structureId}`);
-    const [structure, revision, catalog] = await Promise.all([
-      structureRef.get(),
-      structureRef.collection('revisions').doc(revisionId).get(),
-      loadGlobalCatalog()
-    ]);
-    if (!structure.exists || !revision.exists
-      || revision.id !== String(assignment.structure.revisionId)
-      || revision.data().checksum !== assignment.structure.checksum
-      || !verifyStructureRevision(revision.data())) {
-      return { state: 'invalid-rule-set', fallback: 'original-only', clientProfileId: clientId };
-    }
-    return {
-      state: 'assigned', fallback: 'original-only',
-      profile: publicStructureAssignment({ assignment, clientId, structure: structure.data(), revision: revision.data(), catalog })
-    };
-  }
-  const versionRef = await ruleVersionRef(organizationId, assignment.ruleSet);
-  const [version, globalCatalog, tenantCatalog] = await Promise.all([
-    versionRef.get(),
-    db.doc('globalMappingCatalog/current').get(),
-    db.doc(`organizations/${organizationId}/mappingCatalog/current`).get()
+  // Le assegnazioni puntano alla revisione pubblicata di una Struttura dieta
+  // (pointer {structureId, revisionId, checksum}). La revisione assegnata
+  // resta servita anche se la struttura viene archiviata dopo
+  // (non-retroattività: governa l'assignment, non la testata).
+  const revisionId = String(assignment.structure?.revisionId || '');
+  if (!revisionId) return { state: 'invalid-structure', fallback: 'original-only', clientProfileId: clientId };
+  const structureRef = db.doc(`organizations/${organizationId}/dietStructures/${assignment.structure.structureId}`);
+  const [structure, revision, catalog] = await Promise.all([
+    structureRef.get(),
+    structureRef.collection('revisions').doc(revisionId).get(),
+    loadGlobalCatalog()
   ]);
-  if (!version.exists || !verifiedRuleVersion(version.data(), assignment.ruleSet)) {
-    return { state: 'invalid-rule-set', fallback: 'original-only', clientProfileId: clientId };
+  if (!structure.exists || !revision.exists
+    || revision.id !== String(assignment.structure.revisionId)
+    || revision.data().checksum !== assignment.structure.checksum
+    || !verifyStructureRevision(revision.data())) {
+    return { state: 'invalid-structure', fallback: 'original-only', clientProfileId: clientId };
   }
   return {
     state: 'assigned', fallback: 'original-only',
-    profile: publicAssignment(assignment, clientId, version.data(), [globalCatalog.data() || {}, tenantCatalog.data() || {}])
+    profile: publicStructureAssignment({ assignment, clientId, structure: structure.data(), revision: revision.data(), catalog })
   };
 });
 
@@ -388,146 +306,6 @@ exports.markNotificationRead = callable(async (data, uid) => {
     if (!snap.data()?.readAt) tx.update(ref, { readAt: FieldValue.serverTimestamp(), updatedAt: FieldValue.serverTimestamp() });
   });
   return { ok: true };
-});
-
-exports.submitMappingReport = callable(async (data, uid) => {
-  const payload = validateReport(data);
-  const link = await db.doc(`accountClientLinks/${uid}`).get();
-  if (!link.exists || link.data()?.status !== 'active' || link.data()?.clientId !== payload.clientProfileId) {
-    throw new HttpsError('permission-denied', 'Profilo cliente non autorizzato');
-  }
-  const { organizationId, clientId } = link.data();
-  if (organizationId !== SINGLE_ORGANIZATION_ID) throw new HttpsError('permission-denied', 'Profilo cliente non autorizzato');
-  const client = await db.doc(`organizations/${organizationId}/clients/${clientId}`).get();
-  if (!client.exists || client.data()?.authUid !== uid) throw new HttpsError('permission-denied', 'Profilo cliente non autorizzato');
-
-  const key = reportKey({ organizationId, ...payload });
-  const reportRef = db.doc(`organizations/${organizationId}/mappingReports/${key}`);
-  const eventRef = reportRef.collection('events').doc(checksum(`${uid}:${key}:${payload.fingerprint}`).slice(0, 32));
-  const limitRef = db.doc(`organizations/${organizationId}/rateLimits/mapping-${uid}`);
-  await db.runTransaction(async tx => {
-    const [existing, rate] = await Promise.all([tx.get(reportRef), tx.get(limitRef)]);
-    const nowMs = Date.now();
-    const windowStart = rate.data()?.windowStart?.toMillis?.() || 0;
-    const count = nowMs - windowStart < 3600000 ? Number(rate.data()?.count || 0) : 0;
-    if (count >= 30) throw new HttpsError('resource-exhausted', 'Troppe segnalazioni: riprova più tardi');
-    tx.set(limitRef, {
-      schemaVersion: 1,
-      windowStart: count ? rate.data().windowStart : FieldValue.serverTimestamp(),
-      count: count + 1,
-      updatedAt: FieldValue.serverTimestamp()
-    });
-    if (existing.exists) {
-      tx.update(reportRef, { occurrenceCount: FieldValue.increment(1), lastSeenAt: FieldValue.serverTimestamp(), updatedAt: FieldValue.serverTimestamp() });
-    } else {
-      tx.create(reportRef, {
-        schemaVersion: 1, reportId: key, organizationId, clientId,
-        clientRef: checksum(`${organizationId}:${clientId}`).slice(0, 16),
-        normalizedFingerprint: payload.fingerprint,
-        normalizedIngredient: payload.normalizedIngredient,
-        ingredientText: payload.ingredientText,
-        context: { slot: payload.slot, errorType: payload.errorType },
-        ruleSet: { id: payload.ruleSetId, version: payload.ruleSetVersion },
-        status: 'open', occurrenceCount: 1, resolution: null,
-        firstSeenAt: FieldValue.serverTimestamp(), lastSeenAt: FieldValue.serverTimestamp(),
-        createdAt: FieldValue.serverTimestamp(), updatedAt: FieldValue.serverTimestamp(),
-        createdBy: uid, updatedBy: uid
-      });
-    }
-    tx.create(eventRef, {
-      schemaVersion: 1, type: 'mapping.reported', from: null,
-      to: existing.exists ? existing.data().status : 'open', actorUid: uid,
-      occurredAt: FieldValue.serverTimestamp()
-    });
-  });
-  return { reportId: key, deduplicated: (await reportRef.get()).data().occurrenceCount > 1 };
-});
-
-exports.listMappingReports = callable(async (data, uid) => {
-  exactObject(data, ['organizationId', 'status', 'pageSize', 'cursor']);
-  const actor = await actorContext(data.organizationId, uid);
-  const pageSize = Math.min(Math.max(Number(data.pageSize || 25), 1), 50);
-  const status = data.status ? text(data.status, 'status') : null;
-  if (status && !REPORT_STATUSES.has(status)) throw new HttpsError('invalid-argument', 'Stato non valido');
-  let query = db.collection(`organizations/${actor.organizationId}/mappingReports`).orderBy('updatedAt', 'desc');
-  if (status) query = query.where('status', '==', status);
-  if (data.cursor) {
-    const cursor = await db.doc(`organizations/${actor.organizationId}/mappingReports/${id(data.cursor, 'cursor')}`).get();
-    if (cursor.exists) query = query.startAfter(cursor);
-  }
-  const snapshot = await query.limit(pageSize + 1).get();
-  let rows = snapshot.docs;
-  if (actor.role === 'nutritionist') {
-    const authorized = new Set((await db.collection(`organizations/${actor.organizationId}/clients`).where('nutritionistUids', 'array-contains', uid).get()).docs.map(doc => doc.id));
-    rows = rows.filter(doc => authorized.has(doc.data().clientId));
-  }
-  const hasMore = rows.length > pageSize;
-  rows = rows.slice(0, pageSize);
-  return {
-    reports: rows.map(doc => ({ id: doc.id, ...doc.data(), clientId: undefined, createdBy: undefined })),
-    nextCursor: hasMore ? rows.at(-1)?.id || null : null
-  };
-});
-
-exports.proposeMapping = callable(async (data, uid) => {
-  exactObject(data, ['organizationId', 'reportId', 'mapping', 'rationale', 'idempotencyKey']);
-  const actor = await actorContext(data.organizationId, uid);
-  const reportId = id(data.reportId, 'reportId');
-  const mapping = validateMapping(data.mapping);
-  const rationale = text(data.rationale, 'rationale', { min: 3, max: 500 });
-  const idem = id(data.idempotencyKey, 'idempotencyKey');
-  const proposalId = checksum(`${actor.organizationId}:${idem}`).slice(0, 32);
-  const proposalRef = db.doc(`organizations/${actor.organizationId}/mappingProposals/${proposalId}`);
-  const reportRef = db.doc(`organizations/${actor.organizationId}/mappingReports/${reportId}`);
-  const eventId = checksum(`mapping.proposed:${proposalId}`).slice(0, 32);
-  await db.runTransaction(async tx => {
-    const [existing, report] = await Promise.all([tx.get(proposalRef), tx.get(reportRef)]);
-    if (existing.exists) return;
-    if (!report.exists) throw new HttpsError('not-found', 'Segnalazione non trovata');
-    if (actor.role === 'nutritionist') await authorizedClient(actor, report.data().clientId);
-    const body = { schemaVersion: 1, proposalId, reportId, scope: 'tenant', mapping, status: 'draft', version: '1', rationale };
-    tx.create(proposalRef, { ...body, checksum: checksum(body), createdAt: FieldValue.serverTimestamp(), updatedAt: FieldValue.serverTimestamp(), createdBy: uid, updatedBy: uid });
-    tx.update(reportRef, { status: 'needs-review', updatedAt: FieldValue.serverTimestamp(), updatedBy: uid });
-    tx.create(auditRef(actor.organizationId, eventId), auditEvent({ orgId: actor.organizationId, eventId, type: 'mapping.proposed', actor, subject: { type: 'mappingProposal', id: proposalId }, idempotencyKey: idem }));
-  });
-  return { proposalId };
-});
-
-exports.publishMapping = callable(async (data, uid) => {
-  exactObject(data, ['organizationId', 'proposalId', 'targetScope', 'idempotencyKey']);
-  const targetScope = text(data.targetScope, 'targetScope', { pattern: /^(tenant|global)$/ });
-  const proposalId = id(data.proposalId, 'proposalId');
-  const idem = id(data.idempotencyKey, 'idempotencyKey');
-  let actor;
-  if (targetScope === 'global') actor = await platformAdmin(uid);
-  else actor = await actorContext(data.organizationId, uid);
-  const orgId = enforceSingleOrg(data.organizationId);
-  const proposalRef = db.doc(`organizations/${orgId}/mappingProposals/${proposalId}`);
-  const proposal = await proposalRef.get();
-  if (!proposal.exists) throw new HttpsError('not-found', 'Proposta non trovata');
-  const mappingId = proposal.data().mapping.canonicalIngredientId;
-  const version = String(Date.now());
-  const target = targetScope === 'global'
-    ? db.doc(`globalMappings/${mappingId}/versions/${version}`)
-    : db.doc(`organizations/${orgId}/mappings/${mappingId}/versions/${version}`);
-  const catalogRef = targetScope === 'global'
-    ? db.doc('globalMappingCatalog/current')
-    : db.doc(`organizations/${orgId}/mappingCatalog/current`);
-  const eventId = checksum(`mapping.published:${targetScope}:${proposalId}:${idem}`).slice(0, 32);
-  await db.runTransaction(async tx => {
-    const [audit, fresh, catalog] = await Promise.all([
-      tx.get(auditRef(orgId, eventId)), tx.get(proposalRef), tx.get(catalogRef)
-    ]);
-    if (audit.exists || fresh.data()?.status === 'published') return;
-    const published = { schemaVersion: 1, mappingId, version, scope: targetScope, status: 'published', mapping: fresh.data().mapping, checksum: fresh.data().checksum, createdAt: FieldValue.serverTimestamp(), updatedAt: FieldValue.serverTimestamp(), createdBy: uid, updatedBy: uid, publishedAt: FieldValue.serverTimestamp(), publishedBy: uid };
-    const entries = { ...(catalog.data()?.entries || {}), [mappingId]: { version, mapping: fresh.data().mapping, checksum: fresh.data().checksum } };
-    tx.create(target, published);
-    tx.set(catalogRef, { schemaVersion: 1, scope: targetScope, entries, checksum: checksum(entries), updatedAt: FieldValue.serverTimestamp(), updatedBy: uid }, { merge: true });
-    tx.update(proposalRef, { status: 'published', scope: targetScope, publishedAt: FieldValue.serverTimestamp(), publishedBy: uid, updatedAt: FieldValue.serverTimestamp(), updatedBy: uid });
-    tx.update(db.doc(`organizations/${orgId}/mappingReports/${fresh.data().reportId}`), { status: 'resolved', resolution: { mappingId, version, scope: targetScope }, updatedAt: FieldValue.serverTimestamp(), updatedBy: uid });
-    tx.create(auditRef(orgId, eventId), auditEvent({ orgId, eventId, type: 'mapping.published', actor, subject: { type: 'mapping', id: mappingId }, idempotencyKey: idem, metadata: { version, scope: targetScope } }));
-  });
-  return { mappingId, version, scope: targetScope };
 });
 
 exports.listAuthorizedClients = callable(async (data, uid) => {
@@ -610,191 +388,25 @@ exports.getClientHistory = callable(async (data, uid) => {
   };
 });
 
-exports.publishRuleSetVersion = callable(async (data, uid) => {
-  exactObject(data, ['organizationId', 'scope', 'ruleSetId', 'version', 'rules', 'overrides', 'effectiveAt', 'changelog', 'reviewNotes', 'idempotencyKey']);
-  const scope = text(data.scope, 'scope', { pattern: /^(tenant|global)$/ });
-  const orgId = enforceSingleOrg(data.organizationId);
-  const actor = scope === 'global' ? await platformAdmin(uid) : await actorContext(orgId, uid);
-  const ruleSetId = id(data.ruleSetId, 'ruleSetId');
-  const version = id(String(data.version), 'version');
-  const rules = validateRuleSetRules(data.rules);
-  const overrides = Array.isArray(data.overrides) ? data.overrides : [];
-  const effectiveAt = new Date(text(data.effectiveAt, 'effectiveAt', { max: 40 }));
-  if (!Number.isFinite(effectiveAt.getTime())) throw new HttpsError('invalid-argument', 'effectiveAt non valida');
-  const changelog = text(data.changelog, 'changelog', { min: 3, max: 2000 });
-  const reviewNotes = optionalText(data.reviewNotes, 'reviewNotes', 2000);
-  const idem = id(data.idempotencyKey, 'idempotencyKey');
-  const rootRef = scope === 'global'
-    ? db.doc(`globalRuleSets/${ruleSetId}`)
-    : db.doc(`organizations/${orgId}/ruleSets/${ruleSetId}`);
-  const versionRef = rootRef.collection('versions').doc(version);
-  const body = { schemaVersion: 1, ruleSetId, version, rules, overrides };
-  const ruleChecksum = checksum(body);
-  const eventId = checksum(`ruleset.published:${scope}:${ruleSetId}:${version}:${idem}`).slice(0, 32);
-  await db.runTransaction(async tx => {
-    const [root, existing, audit] = await Promise.all([tx.get(rootRef), tx.get(versionRef), tx.get(auditRef(orgId, eventId))]);
-    if (existing.exists) {
-      if (existing.data()?.checksum === ruleChecksum) return;
-      throw new HttpsError('already-exists', 'Questa versione esiste già ed è immutabile');
-    }
-    if (scope === 'tenant' && actor.role === 'nutritionist' && root.exists && root.data()?.createdBy !== uid) {
-      throw new HttpsError('permission-denied', 'Il nutrizionista può modificare soltanto i propri rule set');
-    }
-    if (audit.exists) return;
-    const common = { schemaVersion: 1, updatedAt: FieldValue.serverTimestamp(), updatedBy: uid };
-    tx.set(rootRef, { ...common, ruleSetId, scope, createdAt: root.exists ? root.data().createdAt : FieldValue.serverTimestamp(), createdBy: root.exists ? root.data().createdBy : uid, latestPublishedVersion: version, latestChecksum: ruleChecksum }, { merge: true });
-    tx.create(versionRef, { ...body, scope, status: 'published', checksum: ruleChecksum, compatibleClientSchema: 1, effectiveAt: Timestamp.fromDate(effectiveAt), changelog, reviewNotes, createdAt: FieldValue.serverTimestamp(), updatedAt: FieldValue.serverTimestamp(), createdBy: uid, updatedBy: uid, publishedAt: FieldValue.serverTimestamp(), publishedBy: uid });
-    tx.create(auditRef(orgId, eventId), auditEvent({ orgId, eventId, type: 'ruleset.published', actor, subject: { type: 'ruleSetVersion', id: `${ruleSetId}:${version}` }, idempotencyKey: idem, metadata: { scope, checksum: ruleChecksum } }));
-  });
-  return { ruleSetId, version, checksum: ruleChecksum, scope };
-});
-
-exports.previewClientRuleSet = callable(async (data, uid) => {
-  exactObject(data, ['organizationId', 'clientId', 'ruleSet']);
-  exactObject(data.ruleSet, ['scope', 'ruleSetId', 'version', 'checksum'], 'ruleSet');
-  const actor = await actorContext(data.organizationId, uid);
-  const client = await authorizedClient(actor, data.clientId);
-  const pointer = {
-    scope: text(data.ruleSet.scope, 'ruleSet.scope', { pattern: /^(global|tenant)$/ }),
-    ruleSetId: id(data.ruleSet.ruleSetId, 'ruleSet.ruleSetId'),
-    version: id(String(data.ruleSet.version), 'ruleSet.version'),
-    checksum: text(data.ruleSet.checksum, 'ruleSet.checksum', { min: 64, max: 64, pattern: /^[a-f0-9]{64}$/ })
-  };
-  const nextSnap = await (await ruleVersionRef(actor.organizationId, pointer)).get();
-  if (!nextSnap.exists || !verifiedRuleVersion(nextSnap.data(), pointer)) throw new HttpsError('failed-precondition', 'Versione non valida');
-  let previousRules = [];
-  const activeId = client.activeAssignment?.assignmentId;
-  if (activeId) {
-    const active = await client.ref.collection('assignments').doc(activeId).get();
-    if (active.exists) {
-      const previous = await (await ruleVersionRef(actor.organizationId, active.data().ruleSet)).get();
-      if (previous.exists) previousRules = previous.data().rules || [];
-    }
-  }
-  const previous = new Map(previousRules.map(rule => [rule.family, rule]));
-  const next = new Map((nextSnap.data().rules || []).map(rule => [rule.family, rule]));
-  const added = [...next.keys()].filter(key => !previous.has(key));
-  const removed = [...previous.keys()].filter(key => !next.has(key));
-  const changed = [...next.keys()].filter(key => previous.has(key) && checksum(next.get(key).slots) !== checksum(previous.get(key).slots)).map(family => ({ family, before: previous.get(family).slots, after: next.get(family).slots }));
-  return { from: client.activeAssignment?.ruleSet || null, to: pointer, summary: { added, removed, changed, totalChanges: added.length + removed.length + changed.length } };
-});
-
-exports.assignClientRuleSet = callable(async (data, uid) => {
-  const input = validateAssignment(data);
-  const actor = await actorContext(input.organizationId, uid);
-  const client = await authorizedClient(actor, input.clientId);
-  const versionRef = await ruleVersionRef(actor.organizationId, input.ruleSet);
-  const version = await versionRef.get();
-  if (!version.exists || !verifiedRuleVersion(version.data(), input.ruleSet)) {
-    throw new HttpsError('failed-precondition', 'Versione rule set non pubblicata o checksum non valido');
-  }
-  const assignmentId = checksum(`${actor.organizationId}:${input.clientId}:${input.idempotencyKey}`).slice(0, 32);
-  const assignmentRef = client.ref.collection('assignments').doc(assignmentId);
-  const stateRef = client.ref.collection('state').doc('activeAssignment');
-  const eventId = checksum(`assignment.created:${assignmentId}`).slice(0, 32);
-  const now = new Date();
-  const immediate = input.effectiveAt <= now;
-  await db.runTransaction(async tx => {
-    const [existing, state] = await Promise.all([tx.get(assignmentRef), tx.get(stateRef)]);
-    if (existing.exists) return;
-    const previousAssignmentId = state.data()?.assignmentId || null;
-    if (immediate && previousAssignmentId) {
-      tx.update(client.ref.collection('assignments').doc(previousAssignmentId), { status: 'revoked', revocationReason: 'Sostituito da una nuova assegnazione', updatedAt: FieldValue.serverTimestamp(), updatedBy: uid });
-    }
-    tx.create(assignmentRef, {
-      schemaVersion: 1, assignmentId, clientId: client.id, ruleSet: input.ruleSet,
-      status: immediate ? 'active' : 'scheduled', effectiveAt: Timestamp.fromDate(input.effectiveAt),
-      expiresAt: input.expiresAt ? Timestamp.fromDate(input.expiresAt) : null,
-      strategy: input.strategy, reason: input.reason, previousAssignmentId, idempotencyKey: input.idempotencyKey,
-      createdAt: FieldValue.serverTimestamp(), updatedAt: FieldValue.serverTimestamp(), createdBy: uid, updatedBy: uid
-    });
-    if (immediate) {
-      tx.set(stateRef, { schemaVersion: 1, assignmentId, updatedAt: FieldValue.serverTimestamp(), updatedBy: uid });
-      tx.update(client.ref, { activeAssignment: { assignmentId, ruleSet: input.ruleSet }, updatedAt: FieldValue.serverTimestamp(), updatedBy: uid });
-    }
-    tx.create(auditRef(actor.organizationId, eventId), auditEvent({ orgId: actor.organizationId, eventId, type: 'assignment.created', actor, subject: { type: 'assignment', id: assignmentId }, idempotencyKey: input.idempotencyKey, metadata: { clientId: client.id, ruleSet: input.ruleSet, effectiveAt: input.effectiveAt.toISOString() } }));
-    if (client.authUid) {
-      tx.create(db.doc(`organizations/${actor.organizationId}/notifications/${eventId}`), {
-        schemaVersion: 1, notificationId: eventId, recipientUid: client.authUid,
-        type: immediate ? 'profile.assigned' : 'profile.scheduled', subjectId: assignmentId,
-        readAt: null, dedupeKey: eventId, createdAt: FieldValue.serverTimestamp(),
-        updatedAt: FieldValue.serverTimestamp(), delivery: { inApp: 'pending', email: 'disabled' }
-      });
-    }
-  });
-  return { assignmentId, status: immediate ? 'active' : 'scheduled', requiresClientConfirmation: true };
-});
-
-// DEPRECATO (Fase 2): la console usa listDietStructures. Mantenuto per i
-// client già rilasciati che risolvono ancora ruleSets legacy.
-exports.listRuleSets = callable(async (data, uid) => {
-  exactObject(data, ['organizationId']);
-  const actor = await actorContext(data.organizationId, uid);
-  let query = db.collection(`organizations/${actor.organizationId}/ruleSets`);
-  if (actor.role === 'nutritionist') query = query.where('createdBy', '==', uid);
-  const snapshot = await query.limit(50).get();
-  const ruleSets = snapshot.docs
-    .map(doc => ({
-      ruleSetId: doc.id,
-      latestPublishedVersion: doc.data().latestPublishedVersion || null,
-      updatedAt: doc.data().updatedAt?.toDate?.()?.toISOString() || null
-    }))
-    .filter(item => item.latestPublishedVersion)
-    .sort((a, b) => String(b.updatedAt || '').localeCompare(String(a.updatedAt || '')));
-  return { ruleSets };
-});
-
-// Assegnazione v2: niente Ambito/Versione/Strategia/anteprima dal client.
-// Revisione e checksum sono risolti server-side dalla pubblicazione più
-// recente; il backend rifiuta payload senza scadenza se senza flag esplicito.
-// Le note restano visibili solo al personale autorizzato.
-//
-// Fase 2: il percorso operativo risolve `structureId` dalle dietStructures
-// (pointer {structureId, revisionId, checksum} sull'assignment). Il percorso
-// `ruleSetId` resta SOLO per retrocompatibilità dei client già rilasciati.
 exports.assignClientStructure = callable(async (data, uid) => {
   const input = validateStructureAssignment(data);
   const actor = await actorContext(input.organizationId, uid);
   const client = await authorizedClient(actor, input.clientId);
-  let structurePointer = null;
-  let legacyPointer = null;
-  let structureName = null;
-  if (input.structureId) {
-    const { doc } = await authorizedStructure(actor, input.structureId);
-    if (doc.data().status === 'archived') {
-      throw new HttpsError('failed-precondition', 'La struttura è archiviata: riattivala prima di assegnarla');
-    }
-    const revisionId = doc.data().currentRevisionId;
-    const revisionChecksum = doc.data().latestChecksum;
-    if (!revisionId || !revisionChecksum) {
-      throw new HttpsError('not-found', 'Struttura dieta non trovata o senza pubblicazioni');
-    }
-    const revision = await doc.ref.collection('revisions').doc(String(revisionId)).get();
-    if (!revision.exists || revision.data().checksum !== revisionChecksum || !verifyStructureRevision(revision.data())) {
-      throw new HttpsError('failed-precondition', 'Pubblicazione della struttura non valida');
-    }
-    structurePointer = { structureId: doc.id, revisionId: String(revisionId), checksum: revisionChecksum };
-    structureName = doc.data().name || doc.id;
-  } else {
-    const rootRef = db.doc(`organizations/${actor.organizationId}/ruleSets/${input.ruleSetId}`);
-    const root = await rootRef.get();
-    if (!root.exists || !root.data()?.latestPublishedVersion || !root.data()?.latestChecksum) {
-      throw new HttpsError('not-found', 'Struttura dieta non trovata o senza pubblicazioni');
-    }
-    if (actor.role === 'nutritionist' && root.data().createdBy !== uid) {
-      throw new HttpsError('permission-denied', 'Puoi assegnare soltanto le tue strutture dieta');
-    }
-    legacyPointer = {
-      scope: 'tenant', ruleSetId: input.ruleSetId,
-      version: root.data().latestPublishedVersion,
-      checksum: root.data().latestChecksum
-    };
-    const versionRef = await ruleVersionRef(actor.organizationId, legacyPointer);
-    const versionDoc = await versionRef.get();
-    if (!versionDoc.exists || !verifiedRuleVersion(versionDoc.data(), legacyPointer)) {
-      throw new HttpsError('failed-precondition', 'Pubblicazione della struttura non valida');
-    }
+  const { doc } = await authorizedStructure(actor, input.structureId);
+  if (doc.data().status === 'archived') {
+    throw new HttpsError('failed-precondition', 'La struttura è archiviata: riattivala prima di assegnarla');
   }
+  const revisionId = doc.data().currentRevisionId;
+  const revisionChecksum = doc.data().latestChecksum;
+  if (!revisionId || !revisionChecksum) {
+    throw new HttpsError('not-found', 'Struttura dieta non trovata o senza pubblicazioni');
+  }
+  const revision = await doc.ref.collection('revisions').doc(String(revisionId)).get();
+  if (!revision.exists || revision.data().checksum !== revisionChecksum || !verifyStructureRevision(revision.data())) {
+    throw new HttpsError('failed-precondition', 'Pubblicazione della struttura non valida');
+  }
+  const structurePointer = { structureId: doc.id, revisionId: String(revisionId), checksum: revisionChecksum };
+  const structureName = doc.data().name || doc.id;
   const notesMetadata = input.notes ? { notes: input.notes, notesVisibility: 'staff' } : {};
   const assignmentId = checksum(`${actor.organizationId}:${input.clientId}:${input.idempotencyKey}`).slice(0, 32);
   const assignmentRef = client.ref.collection('assignments').doc(assignmentId);
@@ -802,14 +414,10 @@ exports.assignClientStructure = callable(async (data, uid) => {
   const eventId = checksum(`assignment.created:${assignmentId}`).slice(0, 32);
   const now = new Date();
   const immediate = input.effectiveAt <= now;
-  // Audit: il percorso v2 registra structureId + revisionId (mai il checksum
-  // in chiaro verso la console: resta nel documento interno e nello snapshot).
-  const auditMetadata = structurePointer
-    ? { clientId: client.id, structureId: structurePointer.structureId, revisionId: structurePointer.revisionId, effectiveAt: input.effectiveAt.toISOString(), expiresAt: input.expiresAt ? input.expiresAt.toISOString() : null, withoutExpiration: input.withoutExpiration }
-    : { clientId: client.id, ruleSetId: legacyPointer.ruleSetId, revision: legacyPointer.version, effectiveAt: input.effectiveAt.toISOString(), expiresAt: input.expiresAt ? input.expiresAt.toISOString() : null, withoutExpiration: input.withoutExpiration };
-  const projection = structurePointer
-    ? { assignmentId, structureId: structurePointer.structureId, structureName }
-    : { assignmentId, ruleSet: legacyPointer };
+  // Audit: structureId + revisionId (il checksum resta nel documento interno
+  // e nello snapshot, mai in chiaro verso la console).
+  const auditMetadata = { clientId: client.id, structureId: structurePointer.structureId, revisionId: structurePointer.revisionId, effectiveAt: input.effectiveAt.toISOString(), expiresAt: input.expiresAt ? input.expiresAt.toISOString() : null, withoutExpiration: input.withoutExpiration };
+  const projection = { assignmentId, structureId: structurePointer.structureId, structureName };
   await db.runTransaction(async tx => {
     const [existing, state] = await Promise.all([tx.get(assignmentRef), tx.get(stateRef)]);
     if (existing.exists) return;
@@ -818,12 +426,11 @@ exports.assignClientStructure = callable(async (data, uid) => {
       tx.update(client.ref.collection('assignments').doc(previousAssignmentId), { status: 'revoked', revocationReason: 'Sostituito da una nuova assegnazione', updatedAt: FieldValue.serverTimestamp(), updatedBy: uid });
     }
     tx.create(assignmentRef, {
-      schemaVersion: structurePointer ? 2 : 1, assignmentId, clientId: client.id,
-      ...(structurePointer ? { structure: structurePointer, structureName } : { ruleSet: legacyPointer }),
+      schemaVersion: 3, assignmentId, clientId: client.id,
+      structure: structurePointer, structureName,
       status: immediate ? 'active' : 'scheduled', effectiveAt: Timestamp.fromDate(input.effectiveAt),
       expiresAt: input.expiresAt ? Timestamp.fromDate(input.expiresAt) : null,
       withoutExpiration: input.withoutExpiration,
-      strategy: 'migrate-on-confirmation', reason: input.notes || 'Assegnazione da console',
       notesVisibility: 'staff', ...notesMetadata,
       previousAssignmentId, idempotencyKey: input.idempotencyKey,
       createdAt: FieldValue.serverTimestamp(), updatedAt: FieldValue.serverTimestamp(), createdBy: uid, updatedBy: uid
@@ -846,184 +453,6 @@ exports.assignClientStructure = callable(async (data, uid) => {
   return { assignmentId, status: immediate ? 'active' : 'scheduled' };
 });
 
-// ---- Dosi e frequenze personalizzate per cliente (console "Dosi clienti") ----
-// Gli override vivono sull'assegnazione (revisionati, non-retroattivi): la
-// revisione della struttura assegnata non viene mai toccata.
-
-// Assegnazione + famiglie dosabili (dosi studio dalla revisione/struttura).
-// Senza assignmentId esplicito usa il puntatore state/activeAssignment.
-async function loadClientDoseContext(actor, client, assignmentId) {
-  let snap;
-  if (assignmentId) {
-    snap = await client.ref.collection('assignments').doc(assignmentId).get();
-    if (!snap.exists) throw new HttpsError('not-found', 'Assegnazione non trovata');
-  } else {
-    const state = await client.ref.collection('state').doc('activeAssignment').get();
-    const activeId = state.data()?.assignmentId;
-    if (!activeId) return { ref: null, assignment: null, families: [] };
-    snap = await client.ref.collection('assignments').doc(activeId).get();
-    if (!snap.exists) return { ref: null, assignment: null, families: [] };
-  }
-  const assignment = snap.data();
-  let families = [];
-  if (assignment.structure?.structureId) {
-    const { doc } = await authorizedStructure(actor, assignment.structure.structureId);
-    const revision = await doc.ref.collection('revisions').doc(String(assignment.structure.revisionId)).get();
-    if (!revision.exists) throw new HttpsError('failed-precondition', 'Revisione della struttura assegnata non trovata');
-    families = (revision.data().rules || [])
-      .filter(rule => rule.enabled !== false && (rule.guideFamilyId || rule.mellerFamilyId))
-      .map(rule => ({ family: rule.guideFamilyId || rule.mellerFamilyId, studio: rule.quantityGrams || null, ingredientIds: rule.ingredientIds || [] }));
-  } else if (assignment.ruleSet) {
-    const versionRef = await ruleVersionRef(actor.organizationId, assignment.ruleSet);
-    const version = await versionRef.get();
-    if (!version.exists) throw new HttpsError('failed-precondition', 'Versione rule set assegnata non trovata');
-    families = (version.data().rules || [])
-      .filter(rule => rule.family)
-      .map(rule => ({ family: rule.family, label: rule.label || rule.family, studio: rule.slots || null, ingredientIds: [] }));
-  }
-  return { ref: snap.ref, assignment, families };
-}
-
-function isoOrNull(value) {
-  return value?.toDate?.()?.toISOString?.() || null;
-}
-
-exports.getClientDoses = callable(async (data, uid) => {
-  const input = validateGetClientDoses(data);
-  const actor = await actorContext(input.organizationId, uid);
-  const client = await authorizedClient(actor, input.clientId);
-  const context = await loadClientDoseContext(actor, client, input.assignmentId);
-  if (!context.assignment) {
-    return {
-      clientId: client.id, displayCode: client.displayCode || client.id,
-      assignment: null, families: [], overrides: { doses: {}, frequencies: {} },
-      frequencyDefaults: CLIENT_FREQUENCY_KEYS.map(key => ({ key, label: CLIENT_FREQUENCY_LABELS[key], ...CLIENT_FREQUENCY_DEFAULTS[key] }))
-    };
-  }
-  const catalog = await loadGlobalCatalog();
-  const names = new Map(catalog.ingredients.map(item => [item.ingredientId, item.displayName || item.ingredientId]));
-  return {
-    clientId: client.id,
-    displayCode: client.displayCode || client.id,
-    assignment: {
-      assignmentId: context.assignment.assignmentId || context.ref.id,
-      status: context.assignment.status,
-      structureName: context.assignment.structureName || context.assignment.structure?.structureId || null,
-      effectiveAt: isoOrNull(context.assignment.effectiveAt),
-      expiresAt: isoOrNull(context.assignment.expiresAt),
-      overridesRevision: Number(context.assignment.clientOverrides?.revision || 0)
-    },
-    families: context.families.map(item => ({
-      family: item.family,
-      label: item.label || item.family,
-      ingredients: item.ingredientIds.map(ingredientId => names.get(ingredientId) || ingredientId),
-      studio: item.studio
-    })),
-    overrides: {
-      doses: context.assignment.clientOverrides?.doses || {},
-      frequencies: context.assignment.clientOverrides?.frequencies || {}
-    },
-    frequencyDefaults: CLIENT_FREQUENCY_KEYS.map(key => ({ key, label: CLIENT_FREQUENCY_LABELS[key], ...CLIENT_FREQUENCY_DEFAULTS[key] }))
-  };
-});
-
-exports.updateClientDoseOverrides = callable(async (data, uid) => {
-  const input = validateUpdateClientDoseOverrides(data);
-  const actor = await actorContext(input.organizationId, uid);
-  const client = await authorizedClient(actor, input.clientId);
-  const context = await loadClientDoseContext(actor, client, input.assignmentId);
-  if (!context.assignment) throw new HttpsError('failed-precondition', 'Il cliente non ha un’assegnazione attiva da personalizzare');
-  if (!DOSE_EDITABLE_ASSIGNMENT_STATUSES.has(context.assignment.status)) {
-    throw new HttpsError('failed-precondition', 'Assegnazione non modificabile: solo quelle attive o programmate accettano dosi personalizzate');
-  }
-  const clean = validateClientDoseOverrides(
-    { doses: input.doses, frequencies: input.frequencies },
-    { families: context.families.map(item => item.family) }
-  );
-  const assignmentId = context.assignment.assignmentId || context.ref.id;
-  const nextRevision = input.expectedRevision + 1;
-  const eventId = checksum(`assignment.doses:${assignmentId}:${nextRevision}`).slice(0, 32);
-  await db.runTransaction(async tx => {
-    const fresh = await tx.get(context.ref);
-    if (!fresh.exists) throw new HttpsError('not-found', 'Assegnazione non trovata');
-    const current = Number(fresh.data()?.clientOverrides?.revision || 0);
-    if (current !== input.expectedRevision) {
-      throw new HttpsError('failed-precondition', 'Le dosi sono state modificate da un altro operatore: ricarica e riprova');
-    }
-    tx.update(context.ref, {
-      clientOverrides: {
-        schemaVersion: 1, revision: nextRevision,
-        doses: clean.doses, frequencies: clean.frequencies,
-        updatedAt: FieldValue.serverTimestamp(), updatedBy: uid
-      },
-      updatedAt: FieldValue.serverTimestamp(), updatedBy: uid
-    });
-    tx.create(auditRef(actor.organizationId, eventId), auditEvent({
-      orgId: actor.organizationId, eventId, type: 'assignment.doses_updated', actor,
-      subject: { type: 'assignment', id: assignmentId }, idempotencyKey: eventId,
-      metadata: { clientId: client.id, assignmentId, revision: nextRevision, families: Object.keys(clean.doses), frequencyKeys: Object.keys(clean.frequencies) }
-    }));
-  });
-  return { revision: nextRevision };
-});
-
-exports.copyClientDoses = callable(async (data, uid) => {
-  const input = validateCopyClientDoses(data);
-  const actor = await actorContext(input.organizationId, uid);
-  const from = await authorizedClient(actor, input.fromClientId);
-  const to = await authorizedClient(actor, input.toClientId);
-  const fromContext = await loadClientDoseContext(actor, from, null);
-  const toContext = await loadClientDoseContext(actor, to, null);
-  if (!fromContext.assignment || !toContext.assignment) {
-    throw new HttpsError('failed-precondition', 'Entrambi i clienti devono avere un’assegnazione attiva');
-  }
-  if (!DOSE_EDITABLE_ASSIGNMENT_STATUSES.has(toContext.assignment.status)) {
-    throw new HttpsError('failed-precondition', 'Assegnazione di destinazione non modificabile: solo quelle attive o programmate accettano dosi personalizzate');
-  }
-  const toFamilies = new Set(toContext.families.map(item => item.family));
-  const copied = {};
-  const skippedFamilies = [];
-  Object.entries(fromContext.assignment.clientOverrides?.doses || {}).forEach(([family, patch]) => {
-    if (toFamilies.has(family)) copied[family] = patch;
-    else skippedFamilies.push(family);
-  });
-  const clean = validateClientDoseOverrides(
-    { doses: copied, frequencies: fromContext.assignment.clientOverrides?.frequencies || {} },
-    { families: [...toFamilies] }
-  );
-  const assignmentId = toContext.assignment.assignmentId || toContext.ref.id;
-  const nextRevision = input.expectedRevision + 1;
-  const eventId = checksum(`assignment.doses.copy:${assignmentId}:${nextRevision}`).slice(0, 32);
-  await db.runTransaction(async tx => {
-    const fresh = await tx.get(toContext.ref);
-    if (!fresh.exists) throw new HttpsError('not-found', 'Assegnazione non trovata');
-    const current = Number(fresh.data()?.clientOverrides?.revision || 0);
-    if (current !== input.expectedRevision) {
-      throw new HttpsError('failed-precondition', 'Le dosi sono state modificate da un altro operatore: ricarica e riprova');
-    }
-    tx.update(toContext.ref, {
-      clientOverrides: {
-        schemaVersion: 1, revision: nextRevision,
-        doses: clean.doses, frequencies: clean.frequencies,
-        updatedAt: FieldValue.serverTimestamp(), updatedBy: uid,
-        copiedFromClientId: from.id
-      },
-      updatedAt: FieldValue.serverTimestamp(), updatedBy: uid
-    });
-    tx.create(auditRef(actor.organizationId, eventId), auditEvent({
-      orgId: actor.organizationId, eventId, type: 'assignment.doses_copied', actor,
-      subject: { type: 'assignment', id: assignmentId }, idempotencyKey: eventId,
-      metadata: { fromClientId: from.id, toClientId: to.id, assignmentId, revision: nextRevision, copiedFamilies: Object.keys(clean.doses), skippedFamilies }
-    }));
-  });
-  return { revision: nextRevision, copiedFamilies: Object.keys(clean.doses), skippedFamilies };
-});
-
-// Sezione "Strutture dieta" (schema v2, docs/schema-catalogo-strutture-v2.json):
-// aggregato mutabile + revisioni immutabili, privacy per ownerUid. Il
-// nutritionist vede/tocca solo le proprie strutture; il creatore le vede
-// tutte. Niente campo "Versione" verso l'UI; il checksum è riservato al creatore.
-
 function structureDoc(structure, { includeChecksum = false } = {}) {
   const data = structure.data();
   const doc = {
@@ -1034,36 +463,67 @@ function structureDoc(structure, { includeChecksum = false } = {}) {
     createdAt: data.createdAt?.toDate?.()?.toISOString() || null,
     updatedAt: data.updatedAt?.toDate?.()?.toISOString() || null,
     currentRevisionId: data.currentRevisionId || null,
-    ruleCount: data.ruleCount ?? null,
-    alternativeGroupCount: data.alternativeGroupCount ?? 0,
-    hasDietPlan: data.hasDietPlan === true,
+    summary: data.summary || null,
     ingredientCatalogVersion: data.ingredientCatalogVersion ?? null
   };
   if (includeChecksum) doc.latestChecksum = data.latestChecksum || null;
   return doc;
 }
 
-// Riferimenti al catalogo globale: ogni ingrediente e categoria citati dalla
-// revisione devono esistere (e non essere archiviati) al momento della
+// Riferimenti al catalogo globale: ogni famiglia e ingrediente citati dal
+// piano dieta devono esistere (e non essere archiviati) al momento della
 // pubblicazione. Le dosi restano nella struttura; il catalogo non ne ha.
-function assertCatalogReferences({ rules, alternativeGroups }, lookup) {
-  rules.forEach(rule => {
-    (rule.ingredientIds || []).forEach(ingredientId => {
-      if (!lookup.ingredientIds.has(ingredientId)) {
-        throw new HttpsError('failed-precondition', `Ingrediente "${ingredientId}" inesistente o archiviato in catalogo (famiglia ${rule.guideFamilyId})`);
-      }
+function assertCatalogReferences(dietPlan, lookup) {
+  const failMissing = (kind, ref, where) => {
+    throw new HttpsError('failed-precondition', `${kind} "${ref}" inesistente o archiviato in catalogo (${where})`);
+  };
+  (dietPlan?.days || []).forEach(day => {
+    (day?.meals || []).forEach(meal => {
+      (meal?.options || []).forEach((option, optionIndex) => {
+        const optionWhere = `giornata ${day?.dayId}, ${meal?.mealId}, opzione ${optionIndex + 1}`;
+        (option?.blocks || []).forEach(block => {
+          if (!lookup.families.has(block.referenceFamilyId)) failMissing('Famiglia', block.referenceFamilyId, optionWhere);
+          if (block.referenceIngredientId && !lookup.ingredientIds.has(block.referenceIngredientId)) {
+            failMissing('Ingrediente', block.referenceIngredientId, optionWhere);
+          }
+          (block?.templateSnapshot?.equivalents || []).forEach(equivalent => {
+            if (!lookup.families.has(equivalent.familyId)) failMissing('Famiglia', equivalent.familyId, `${optionWhere}, template equivalenze`);
+            if (equivalent.ingredientId && !lookup.ingredientIds.has(equivalent.ingredientId)) {
+              failMissing('Ingrediente', equivalent.ingredientId, `${optionWhere}, template equivalenze`);
+            }
+          });
+          (block?.overrides || []).forEach(override => {
+            if (!lookup.families.has(override.familyId)) failMissing('Famiglia', override.familyId, `${optionWhere}, override`);
+            if (override.ingredientId && !lookup.ingredientIds.has(override.ingredientId)) {
+              failMissing('Ingrediente', override.ingredientId, `${optionWhere}, override`);
+            }
+          });
+        });
+        (option?.items || []).forEach(item => {
+          if (!lookup.ingredientIds.has(item.ingredientId)) failMissing('Ingrediente', item.ingredientId, optionWhere);
+        });
+      });
     });
-    if (rule.categoryId && rule.categoryId !== 'free' && !lookup.categoryIds.has(rule.categoryId)) {
-      throw new HttpsError('failed-precondition', `Categoria "${rule.categoryId}" inesistente in catalogo (famiglia ${rule.guideFamilyId})`);
-    }
   });
-  (alternativeGroups || []).forEach(group => {
-    (group.items || []).forEach(item => {
-      if (!lookup.ingredientIds.has(item.ingredientId)) {
-        throw new HttpsError('failed-precondition', `Ingrediente "${item.ingredientId}" inesistente o archiviato in catalogo (gruppo ${group.alternativeGroupId})`);
-      }
+}
+
+// Sommario del piano per la lista strutture (contatori, no dosi in chiaro).
+function dietPlanSummaryData(dietPlan) {
+  let meals = 0;
+  let options = 0;
+  let blocks = 0;
+  let items = 0;
+  let recipes = 0;
+  (dietPlan?.days || []).forEach(day => (day?.meals || []).forEach(meal => {
+    meals += 1;
+    (meal?.options || []).forEach(option => {
+      options += 1;
+      if (option?.type === 'recipe') recipes += 1;
+      blocks += Array.isArray(option?.blocks) ? option.blocks.length : 0;
+      items += Array.isArray(option?.items) ? option.items.length : 0;
     });
-  });
+  }));
+  return { dayCount: (dietPlan?.days || []).length, mealCount: meals, optionCount: options, blockCount: blocks, itemCount: items, recipeOptionCount: recipes };
 }
 
 async function authorizedStructure(actor, structureId, { mustOwn = false } = {}) {
@@ -1116,9 +576,7 @@ exports.getDietStructureRevision = callable(async (data, uid) => {
     structure,
     revision: {
       revisionId: revision.id,
-      schemaVersion: Number(revision.data().schemaVersion || 1),
-      rules: revision.data().rules || [],
-      alternativeGroups: revision.data().alternativeGroups || [],
+      schemaVersion: Number(revision.data().schemaVersion || 0),
       dietPlan: revision.data().dietPlan || null,
       ingredientCatalogVersion: revision.data().ingredientCatalogVersion ?? null,
       checksum: actor.isCreator ? revision.data().checksum || null : undefined,
@@ -1130,47 +588,42 @@ exports.getDietStructureRevision = callable(async (data, uid) => {
 });
 
 exports.createDietStructure = callable(async (data, uid) => {
-  exactObject(data, ['organizationId', 'name', 'rules', 'alternativeGroups', 'dietPlan', 'idempotencyKey']);
+  exactObject(data, ['organizationId', 'name', 'dietPlan', 'idempotencyKey']);
   const actor = await actorContext(data.organizationId, uid);
   const name = text(data.name, 'name', { min: 3, max: 80 });
   const dietPlan = validateDietPlan(data.dietPlan);
-  const rules = validateDietStructureRules(data.rules, { allowEmpty: Boolean(dietPlan) });
-  const alternativeGroups = validateAlternativeGroups(data.alternativeGroups);
   const idem = id(data.idempotencyKey, 'idempotencyKey');
   const catalog = await loadGlobalCatalog();
-  assertCatalogReferences({ rules, alternativeGroups }, catalogLookup(catalog));
+  assertCatalogReferences(dietPlan, catalogLookup(catalog));
+  const summary = dietPlanSummaryData(dietPlan);
   const structureId = checksum(`${actor.organizationId}:${uid}:${name}:${idem}`).slice(0, 24);
   const ref = db.doc(`organizations/${actor.organizationId}/dietStructures/${structureId}`);
-  const revisionSchema = dietPlan ? STRUCTURE_REVISION_SCHEMA_VERSION_WITH_PLAN : STRUCTURE_REVISION_SCHEMA_VERSION;
-  const revisionChecksum = structureRevisionChecksum({ schemaVersion: revisionSchema, rules, alternativeGroups, dietPlan });
+  const revisionChecksum = structureRevisionChecksum({ schemaVersion: STRUCTURE_REVISION_SCHEMA_VERSION, dietPlan });
   const eventId = checksum(`structure.created:${structureId}`).slice(0, 32);
   await db.runTransaction(async tx => {
     const [existing, audit] = await Promise.all([tx.get(ref), tx.get(auditRef(actor.organizationId, eventId))]);
     if (existing.exists || audit.exists) return;
     tx.create(ref, {
-      schemaVersion: 1, name, status: 'active', ownerUid: uid, createdBy: uid,
-      currentRevisionId: '1', latestChecksum: revisionChecksum, ruleCount: rules.length,
-      alternativeGroupCount: alternativeGroups.length, hasDietPlan: Boolean(dietPlan),
+      schemaVersion: 2, name, status: 'active', ownerUid: uid, createdBy: uid,
+      currentRevisionId: '1', latestChecksum: revisionChecksum, summary,
       ingredientCatalogVersion: catalog.catalogVersion,
       createdAt: FieldValue.serverTimestamp(), updatedAt: FieldValue.serverTimestamp()
     });
     tx.create(ref.collection('revisions').doc('1'), {
-      schemaVersion: revisionSchema, revisionId: '1', structureId, rules, alternativeGroups,
+      schemaVersion: STRUCTURE_REVISION_SCHEMA_VERSION, revisionId: '1', structureId,
       dietPlan, status: 'published', checksum: revisionChecksum, ingredientCatalogVersion: catalog.catalogVersion,
-      compatibleClientSchema: 6, changelog: 'Prima revisione', createdAt: FieldValue.serverTimestamp(),
+      compatibleClientSchema: 7, changelog: 'Prima revisione', createdAt: FieldValue.serverTimestamp(),
       updatedAt: FieldValue.serverTimestamp(), createdBy: uid, publishedAt: FieldValue.serverTimestamp(), publishedBy: uid
     });
-    tx.create(auditRef(actor.organizationId, eventId), auditEvent({ orgId: actor.organizationId, eventId, type: 'structure.created', actor, subject: { type: 'dietStructure', id: structureId }, idempotencyKey: idem, metadata: { name, ruleCount: rules.length, alternativeGroupCount: alternativeGroups.length, hasDietPlan: Boolean(dietPlan), ingredientCatalogVersion: catalog.catalogVersion } }));
+    tx.create(auditRef(actor.organizationId, eventId), auditEvent({ orgId: actor.organizationId, eventId, type: 'structure.created', actor, subject: { type: 'dietStructure', id: structureId }, idempotencyKey: idem, metadata: { name, summary, ingredientCatalogVersion: catalog.catalogVersion } }));
   });
   return { structureId, revisionId: '1' };
 });
 
 exports.updateDietStructureRevision = callable(async (data, uid) => {
-  exactObject(data, ['organizationId', 'structureId', 'name', 'rules', 'alternativeGroups', 'dietPlan', 'changelog', 'restoredFromRevisionId', 'idempotencyKey']);
+  exactObject(data, ['organizationId', 'structureId', 'name', 'dietPlan', 'changelog', 'restoredFromRevisionId', 'idempotencyKey']);
   const actor = await actorContext(data.organizationId, uid);
   const dietPlan = validateDietPlan(data.dietPlan);
-  const rules = validateDietStructureRules(data.rules, { allowEmpty: Boolean(dietPlan) });
-  const alternativeGroups = validateAlternativeGroups(data.alternativeGroups);
   const idem = id(data.idempotencyKey, 'idempotencyKey');
   const name = optionalText(data.name, 'name', 80);
   const changelog = optionalText(data.changelog, 'changelog', 500);
@@ -1178,30 +631,29 @@ exports.updateDietStructureRevision = callable(async (data, uid) => {
   const { ref, doc } = await authorizedStructure(actor, data.structureId, { mustOwn: actor.role === 'nutritionist' });
   if (doc.data().status === 'archived') throw new HttpsError('failed-precondition', 'Riattiva la struttura prima di pubblicare una nuova revisione');
   const catalog = await loadGlobalCatalog();
-  assertCatalogReferences({ rules, alternativeGroups }, catalogLookup(catalog));
+  assertCatalogReferences(dietPlan, catalogLookup(catalog));
+  const summary = dietPlanSummaryData(dietPlan);
   const nextRevisionId = String(Number(doc.data().currentRevisionId || '0') + 1);
-  const revisionSchema = dietPlan ? STRUCTURE_REVISION_SCHEMA_VERSION_WITH_PLAN : STRUCTURE_REVISION_SCHEMA_VERSION;
-  const revisionChecksum = structureRevisionChecksum({ schemaVersion: revisionSchema, rules, alternativeGroups, dietPlan });
+  const revisionChecksum = structureRevisionChecksum({ schemaVersion: STRUCTURE_REVISION_SCHEMA_VERSION, dietPlan });
   const eventId = checksum(`structure.revision:${ref.id}:${nextRevisionId}:${idem}`).slice(0, 32);
   await db.runTransaction(async tx => {
     const audit = await tx.get(auditRef(actor.organizationId, eventId));
     if (audit.exists) return;
     tx.update(ref, {
       ...(name ? { name } : {}),
-      currentRevisionId: nextRevisionId, latestChecksum: revisionChecksum, ruleCount: rules.length,
-      alternativeGroupCount: alternativeGroups.length, hasDietPlan: Boolean(dietPlan),
+      currentRevisionId: nextRevisionId, latestChecksum: revisionChecksum, summary,
       ingredientCatalogVersion: catalog.catalogVersion,
       updatedAt: FieldValue.serverTimestamp(), updatedBy: uid
     });
     tx.create(ref.collection('revisions').doc(nextRevisionId), {
-      schemaVersion: revisionSchema, revisionId: nextRevisionId, structureId: ref.id, rules, alternativeGroups,
+      schemaVersion: STRUCTURE_REVISION_SCHEMA_VERSION, revisionId: nextRevisionId, structureId: ref.id,
       dietPlan, status: 'published', checksum: revisionChecksum, ingredientCatalogVersion: catalog.catalogVersion,
-      compatibleClientSchema: 6, changelog: changelog || (restoredFrom ? `Ripristino dalla revisione ${restoredFrom}` : 'Nuova revisione'),
+      compatibleClientSchema: 7, changelog: changelog || (restoredFrom ? `Ripristino dalla revisione ${restoredFrom}` : 'Nuova revisione'),
       restoredFromRevisionId: restoredFrom || null,
       createdAt: FieldValue.serverTimestamp(), updatedAt: FieldValue.serverTimestamp(),
       createdBy: uid, publishedAt: FieldValue.serverTimestamp(), publishedBy: uid
     });
-    tx.create(auditRef(actor.organizationId, eventId), auditEvent({ orgId: actor.organizationId, eventId, type: 'structure.revision.published', actor, subject: { type: 'dietStructure', id: ref.id }, idempotencyKey: idem, metadata: { revisionId: nextRevisionId, restoredFromRevisionId: restoredFrom || null, alternativeGroupCount: alternativeGroups.length, hasDietPlan: Boolean(dietPlan), ingredientCatalogVersion: catalog.catalogVersion } }));
+    tx.create(auditRef(actor.organizationId, eventId), auditEvent({ orgId: actor.organizationId, eventId, type: 'structure.revision.published', actor, subject: { type: 'dietStructure', id: ref.id }, idempotencyKey: idem, metadata: { revisionId: nextRevisionId, restoredFromRevisionId: restoredFrom || null, summary, ingredientCatalogVersion: catalog.catalogVersion } }));
   });
   return { structureId: ref.id, revisionId: nextRevisionId };
 });
@@ -1226,6 +678,10 @@ exports.archiveDietStructure = callable(async (data, uid) => {
 // correnti di 2-8 strutture. Il nutritionist può confrontare solo le proprie;
 // il creatore tutte. Non modifica dati; le differenze sono calcolate per famiglia
 // (presenza, stato, ingredienti, dosi) e per gruppi alternativi.
+// CONFRONTA (sola lettura, matrice server-side): confronta le revisioni
+// correnti di 2-8 strutture. Il nutritionist può confrontare solo le proprie;
+// il creatore tutte. Non modifica dati. Il confronto è per giornata e pasto:
+// numero di opzioni, sommario blocchi e tipi di opzione.
 exports.compareDietStructures = callable(async (data, uid) => {
   exactObject(data, ['organizationId', 'structureIds']);
   const actor = await actorContext(data.organizationId, uid);
@@ -1244,46 +700,58 @@ exports.compareDietStructures = callable(async (data, uid) => {
       revision: revision?.exists ? revision.data() : null
     });
   }
-  const familyIds = new Set();
-  loaded.forEach(({ revision }) => (revision?.rules || []).forEach(rule => {
-    // Anche le revisioni legacy con la chiave storica entrano nel confronto.
-    const family = rule?.guideFamilyId || rule?.mellerFamilyId;
-    if (family) familyIds.add(family);
-  }));
-  const rows = [...familyIds].sort((a, b) => String(a).localeCompare(String(b), 'it')).map(family => {
+  const signature = revision => revision ? checksum({
+    days: (revision.dietPlan?.days || []).map(day => ({
+      dayType: day.dayType,
+      meals: (day.meals || []).map(meal => ({
+        mealId: meal.mealId,
+        options: (meal.options || []).map(option => ({
+          type: option.type,
+          blocks: (option.blocks || []).map(block => `${block.referenceFamilyId}:${block.referenceAmount?.value ?? ''}:${block.referenceAmount?.unit ?? ''}`),
+          items: (option.items || []).map(item => `${item.ingredientId}:${item.amount?.value ?? ''}`),
+          recipeId: option.recipeId || null
+        }))
+      }))
+    }))
+  }) : null;
+  const dayTypes = new Set();
+  loaded.forEach(({ revision }) => (revision?.dietPlan?.days || []).forEach(day => dayTypes.add(day.dayType)));
+  const rows = [...dayTypes].sort().map(dayType => {
     const cells = {};
     loaded.forEach(({ structure, revision }) => {
-      const rule = (revision?.rules || []).find(item => (item?.guideFamilyId || item?.mellerFamilyId) === family);
-      cells[structure.id] = rule
-        ? { present: true, enabled: rule.enabled !== false, ingredientCount: (rule.ingredientIds || []).length, quantityGrams: rule.quantityGrams || null }
-        : { present: false };
+      const day = (revision?.dietPlan?.days || []).find(item => item.dayType === dayType);
+      cells[structure.id] = day ? { present: true, mealCount: (day.meals || []).length } : { present: false };
     });
     const signatures = new Set(loaded.map(({ structure }) => checksum(cells[structure.id])));
-    return { guideFamilyId: family, cells, differs: signatures.size > 1 };
+    return { dayType, cells, differs: signatures.size > 1 };
   });
-  const groupIds = new Set();
-  loaded.forEach(({ revision }) => (revision?.alternativeGroups || []).forEach(group => {
-    if (group?.alternativeGroupId) groupIds.add(group.alternativeGroupId);
-  }));
-  const groupRows = [...groupIds].sort((a, b) => String(a).localeCompare(String(b), 'it')).map(groupId => {
+  const mealRows = [];
+  const mealKeys = new Set();
+  loaded.forEach(({ revision }) => (revision?.dietPlan?.days || []).forEach(day => (day?.meals || []).forEach(meal => {
+    mealKeys.add(`${day.dayType}|${meal.mealId}`);
+  })));
+  [...mealKeys].sort().forEach(key => {
+    const [dayType, mealId] = key.split('|');
     const cells = {};
     loaded.forEach(({ structure, revision }) => {
-      const group = (revision?.alternativeGroups || []).find(item => item?.alternativeGroupId === groupId);
-      cells[structure.id] = group
-        ? { present: true, displayName: group.displayName || groupId, itemCount: (group.items || []).length }
-        : { present: false };
+      const day = (revision?.dietPlan?.days || []).find(item => item.dayType === dayType);
+      const meal = (day?.meals || []).find(item => item.mealId === mealId);
+      cells[structure.id] = meal ? {
+        present: true,
+        optionCount: (meal.options || []).length,
+        optionTypes: [...new Set((meal.options || []).map(option => option.type))]
+      } : { present: false };
     });
     const signatures = new Set(loaded.map(({ structure }) => checksum(cells[structure.id])));
-    return { alternativeGroupId: groupId, cells, differs: signatures.size > 1 };
+    mealRows.push({ dayType, mealId, cells, differs: signatures.size > 1 });
   });
   return {
     structures: loaded.map(({ structure }) => ({
       id: structure.id, name: structure.name, status: structure.status,
-      ruleCount: structure.ruleCount, alternativeGroupCount: structure.alternativeGroupCount,
-      updatedAt: structure.updatedAt
+      summary: structure.summary, updatedAt: structure.updatedAt
     })),
     rows,
-    groupRows,
+    mealRows,
     comparedAt: new Date().toISOString()
   };
 });
@@ -1312,25 +780,32 @@ function canonicalCatalogEntry(item, kind) {
       status: item.status || 'active'
     };
   }
+  if (kind === 'family') {
+    return {
+      familyId: item.familyId, displayName: item.displayName,
+      categoryId: item.categoryId, sortOrder: Number(item.sortOrder || 0),
+      status: item.status || 'active'
+    };
+  }
   return {
     ingredientId: item.ingredientId, displayName: item.displayName,
-    categoryId: item.categoryId, aliases: [...(item.aliases || [])].sort(),
-    mappingKind: item.mappingKind,
-    // Fallback alla chiave storica: un documento importato prima del cambio
-    // nome non deve generare falsi aggiornamenti nel diff dell'import.
-    guideFamilyId: item.guideFamilyId || item.mellerFamilyId || null,
+    categoryId: item.categoryId, familyId: item.familyId || null,
+    aliases: [...(item.aliases || [])].sort(),
+    dietaryFlags: { vegetarian: item.dietaryFlags?.vegetarian === true, vegan: item.dietaryFlags?.vegan === true },
     status: item.status || 'active'
   };
 }
 
-function catalogContentChecksum(ingredients, categories, catalogVersion) {
+function catalogContentChecksum(ingredients, categories, families, catalogVersion) {
   const byIngredient = (a, b) => String(a.ingredientId).localeCompare(String(b.ingredientId));
   const byCategory = (a, b) => String(a.categoryId).localeCompare(String(b.categoryId));
+  const byFamily = (a, b) => String(a.familyId).localeCompare(String(b.familyId));
   return checksum({
-    schemaVersion: 2,
+    schemaVersion: 3,
     catalogVersion,
     ingredients: ingredients.map(item => canonicalCatalogEntry(item, 'ingredient')).sort(byIngredient),
-    categories: categories.map(item => canonicalCatalogEntry(item, 'category')).sort(byCategory)
+    categories: categories.map(item => canonicalCatalogEntry(item, 'category')).sort(byCategory),
+    families: families.map(item => canonicalCatalogEntry(item, 'family')).sort(byFamily)
   });
 }
 
@@ -1363,17 +838,19 @@ exports.importGlobalIngredientCatalog = callable(async (data, uid) => {
     }
     const snapIngredients = Array.isArray(snapshot.data().ingredients) ? snapshot.data().ingredients : [];
     const snapCategories = Array.isArray(snapshot.data().categories) ? snapshot.data().categories : [];
+    const snapFamilies = Array.isArray(snapshot.data().families) ? snapshot.data().families : [];
     const snapIds = new Set(snapIngredients.map(item => item?.ingredientId).filter(Boolean));
     const snapCatIds = new Set(snapCategories.map(item => item?.categoryId).filter(Boolean));
-    // La categoria riservata 'free' non si cancella mai con un ripristino.
+    const snapFamilyIds = new Set(snapFamilies.map(item => item?.familyId).filter(Boolean));
     const deleteIds = catalog.ingredients.map(item => item.ingredientId).filter(idValue => !snapIds.has(idValue));
-    const deleteCatIds = catalog.categories.map(item => item.categoryId).filter(idValue => idValue !== 'free' && !snapCatIds.has(idValue));
-    const totalWrites = snapIngredients.length + snapCategories.length + deleteIds.length + deleteCatIds.length + 3;
+    const deleteCatIds = catalog.categories.map(item => item.categoryId).filter(idValue => !snapCatIds.has(idValue));
+    const deleteFamilyIds = catalog.families.map(item => item.familyId).filter(idValue => !snapFamilyIds.has(idValue));
+    const totalWrites = snapIngredients.length + snapCategories.length + snapFamilies.length + deleteIds.length + deleteCatIds.length + deleteFamilyIds.length + 3;
     if (totalWrites > 500) throw new HttpsError('failed-precondition', 'Ripristino troppo grande per una transazione atomica: contatta il supporto');
     const nextVersion = catalog.catalogVersion + 1;
-    const restoredChecksum = catalogContentChecksum(snapIngredients, snapCategories, nextVersion);
+    const restoredChecksum = catalogContentChecksum(snapIngredients, snapCategories, snapFamilies, nextVersion);
     const eventId = checksum(`catalog.restored:${restoreVersion}:${nextVersion}`).slice(0, 32);
-    const currentSnapshot = JSON.stringify({ ingredients: catalog.ingredients, categories: catalog.categories });
+    const currentSnapshot = JSON.stringify({ ingredients: catalog.ingredients, categories: catalog.categories, families: catalog.families });
     if (currentSnapshot.length > 950000) throw new HttpsError('failed-precondition', 'Catalogo corrente troppo grande per lo snapshot: contatta il supporto');
     await db.runTransaction(async tx => {
       const fresh = await tx.get(metaRef);
@@ -1383,24 +860,30 @@ exports.importGlobalIngredientCatalog = callable(async (data, uid) => {
       if ((await tx.get(platformAuditRef(eventId))).exists) return;
       snapIngredients.forEach(entry => {
         tx.set(db.doc(`globalIngredientCatalog/current/ingredients/${entry.ingredientId}`), {
-          ...entry, schemaVersion: 2, catalogVersion: nextVersion, updatedAt: FieldValue.serverTimestamp()
+          ...entry, schemaVersion: 3, catalogVersion: nextVersion, updatedAt: FieldValue.serverTimestamp()
         });
       });
       snapCategories.forEach(entry => {
         tx.set(db.doc(`globalIngredientCatalog/current/categories/${entry.categoryId}`), {
-          ...entry, schemaVersion: 2, catalogVersion: nextVersion, updatedAt: FieldValue.serverTimestamp()
+          ...entry, schemaVersion: 3, catalogVersion: nextVersion, updatedAt: FieldValue.serverTimestamp()
+        });
+      });
+      snapFamilies.forEach(entry => {
+        tx.set(db.doc(`globalIngredientCatalog/current/families/${entry.familyId}`), {
+          ...entry, schemaVersion: 3, catalogVersion: nextVersion, updatedAt: FieldValue.serverTimestamp()
         });
       });
       deleteIds.forEach(idValue => tx.delete(db.doc(`globalIngredientCatalog/current/ingredients/${idValue}`)));
       deleteCatIds.forEach(idValue => tx.delete(db.doc(`globalIngredientCatalog/current/categories/${idValue}`)));
+      deleteFamilyIds.forEach(idValue => tx.delete(db.doc(`globalIngredientCatalog/current/families/${idValue}`)));
       tx.set(db.doc(`globalIngredientCatalog/versions/snapshots/${catalog.catalogVersion}`), {
-        schemaVersion: 2, catalogVersion: catalog.catalogVersion, checksum: catalog.checksum,
-        ingredients: catalog.ingredients, categories: catalog.categories,
+        schemaVersion: 3, catalogVersion: catalog.catalogVersion, checksum: catalog.checksum,
+        ingredients: catalog.ingredients, categories: catalog.categories, families: catalog.families,
         supersededBy: nextVersion, createdAt: FieldValue.serverTimestamp(), createdBy: uid
       });
       tx.set(metaRef, {
-        schemaVersion: 2, catalogVersion: nextVersion, checksum: restoredChecksum,
-        ingredientCount: snapIngredients.length, categoryCount: snapCategories.length,
+        schemaVersion: 3, catalogVersion: nextVersion, checksum: restoredChecksum,
+        ingredientCount: snapIngredients.length, categoryCount: snapCategories.length, familyCount: snapFamilies.length,
         updatedAt: FieldValue.serverTimestamp(), updatedBy: uid
       });
       tx.create(platformAuditRef(eventId), {
@@ -1421,9 +904,12 @@ exports.importGlobalIngredientCatalog = callable(async (data, uid) => {
   const denylist = Array.isArray(denylistDoc.data()?.ingredientIds) ? denylistDoc.data().ingredientIds : [];
   const existingIngredients = {};
   catalog.ingredients.forEach(item => { existingIngredients[item.ingredientId] = item; });
+  const existingFamilies = {};
+  catalog.families.forEach(item => { existingFamilies[item.familyId] = item; });
   const report = validateCatalogImport(parsed, {
     existingIngredients,
     existingCategories: catalog.categories.map(item => item.categoryId),
+    existingFamilies,
     denylist
   });
   const previewId = catalogImportPreviewId(report.normalized, catalog.catalogVersion);
@@ -1447,7 +933,7 @@ exports.importGlobalIngredientCatalog = callable(async (data, uid) => {
   if (report.errors.length) {
     throw new HttpsError('failed-precondition', `Import bloccato: ${report.errors.length} errori — correggi il file e riesegui il dry-run`);
   }
-  const writeCount = report.normalized.ingredients.length + report.normalized.categories.length;
+  const writeCount = report.normalized.ingredients.length + report.normalized.categories.length + report.normalized.families.length;
   if (writeCount > CATALOG_COMMIT_WRITE_LIMIT) {
     throw new HttpsError('failed-precondition', `Commit atomico limitato a ${CATALOG_COMMIT_WRITE_LIMIT} voci: suddividi il file`);
   }
@@ -1455,11 +941,13 @@ exports.importGlobalIngredientCatalog = callable(async (data, uid) => {
   report.normalized.ingredients.forEach(entry => mergedIngredients.set(entry.ingredientId, entry));
   const mergedCategories = new Map(catalog.categories.map(item => [item.categoryId, item]));
   report.normalized.categories.forEach(entry => mergedCategories.set(entry.categoryId, entry));
+  const mergedFamilies = new Map(catalog.families.map(item => [item.familyId, item]));
+  report.normalized.families.forEach(entry => mergedFamilies.set(entry.familyId, entry));
   const createdOrUpdated = report.counts.create + report.counts.update;
   if (createdOrUpdated === 0) throw new HttpsError('failed-precondition', 'Niente da scrivere: il file non contiene novità');
   const nextVersion = catalog.catalogVersion + 1;
-  const newChecksum = catalogContentChecksum([...mergedIngredients.values()], [...mergedCategories.values()], nextVersion);
-  const currentSnapshot = JSON.stringify({ ingredients: catalog.ingredients, categories: catalog.categories });
+  const newChecksum = catalogContentChecksum([...mergedIngredients.values()], [...mergedCategories.values()], [...mergedFamilies.values()], nextVersion);
+  const currentSnapshot = JSON.stringify({ ingredients: catalog.ingredients, categories: catalog.categories, families: catalog.families });
   if (currentSnapshot.length > 950000) throw new HttpsError('failed-precondition', 'Catalogo corrente troppo grande per lo snapshot: contatta il supporto');
   const eventId = checksum(`catalog.imported:${previewId}:${nextVersion}`).slice(0, 32);
   await db.runTransaction(async tx => {
@@ -1470,22 +958,27 @@ exports.importGlobalIngredientCatalog = callable(async (data, uid) => {
     if ((await tx.get(platformAuditRef(eventId))).exists) return;
     report.normalized.ingredients.forEach(entry => {
       tx.set(db.doc(`globalIngredientCatalog/current/ingredients/${entry.ingredientId}`), {
-        schemaVersion: 2, ...entry, catalogVersion: nextVersion, updatedAt: FieldValue.serverTimestamp()
+        schemaVersion: 3, ...entry, catalogVersion: nextVersion, updatedAt: FieldValue.serverTimestamp()
       });
     });
     report.normalized.categories.forEach(entry => {
       tx.set(db.doc(`globalIngredientCatalog/current/categories/${entry.categoryId}`), {
-        schemaVersion: 2, ...entry, catalogVersion: nextVersion, updatedAt: FieldValue.serverTimestamp()
+        schemaVersion: 3, ...entry, catalogVersion: nextVersion, updatedAt: FieldValue.serverTimestamp()
+      });
+    });
+    report.normalized.families.forEach(entry => {
+      tx.set(db.doc(`globalIngredientCatalog/current/families/${entry.familyId}`), {
+        schemaVersion: 3, ...entry, catalogVersion: nextVersion, updatedAt: FieldValue.serverTimestamp()
       });
     });
     tx.set(db.doc(`globalIngredientCatalog/versions/snapshots/${catalog.catalogVersion}`), {
-      schemaVersion: 2, catalogVersion: catalog.catalogVersion, checksum: catalog.checksum,
-      ingredients: catalog.ingredients, categories: catalog.categories,
+      schemaVersion: 3, catalogVersion: catalog.catalogVersion, checksum: catalog.checksum,
+      ingredients: catalog.ingredients, categories: catalog.categories, families: catalog.families,
       supersededBy: nextVersion, createdAt: FieldValue.serverTimestamp(), createdBy: uid
     });
     tx.set(metaRef, {
-      schemaVersion: 2, catalogVersion: nextVersion, checksum: newChecksum,
-      ingredientCount: mergedIngredients.size, categoryCount: mergedCategories.size,
+      schemaVersion: 3, catalogVersion: nextVersion, checksum: newChecksum,
+      ingredientCount: mergedIngredients.size, categoryCount: mergedCategories.size, familyCount: mergedFamilies.size,
       updatedAt: FieldValue.serverTimestamp(), updatedBy: uid
     });
     tx.create(platformAuditRef(eventId), {
@@ -3854,111 +3347,336 @@ exports.listProfessionalShares = callable(async (data, uid) => {
   return { shares };
 });
 
-// ---- Tabelle grammature del nutrizionista ----
-// Raccolta personale organizations/{org}/grammatureTables (rules: catch-all
-// senza accesso diretto, come le ricette professionali). Ogni nutrizionista
-// vede e gestisce solo le proprie tabelle; il creatore le vede tutte.
-// Le tabelle alimentano la precompilazione dei gruppi scelta nell'editor
-// della dieta guidata: il professionista sceglie la tabella in compilazione.
+// ---------------------------------------------------------------------
+// Template equivalenze (organization-scoped, revisioni immutabili).
+// Famiglia di riferimento obbligatoria, ingrediente di riferimento
+// facoltativo, quantità di riferimento ed equivalenti proporzionali. La
+// pubblicazione congela la revisione (checksum): le strutture che la citano
+// ne portano uno snapshot, quindi modifiche future NON sono retroattive.
+// ---------------------------------------------------------------------
 
-function serializeGrammatureTable(doc) {
-  const data = doc.data();
-  return {
-    id: doc.id, ...data,
-    createdAt: data.createdAt?.toDate?.()?.toISOString() || null,
+function serializeEquivalenceTemplate(template, { includeDraft = false } = {}) {
+  const data = template.data();
+  const doc = {
+    id: template.id,
+    name: data.name || template.id,
+    status: data.status || 'active',
+    ownerUid: data.ownerUid || data.createdBy || null,
+    currentRevisionId: data.currentRevisionId || null,
+    referenceFamilyId: data.referenceFamilyId || null,
     updatedAt: data.updatedAt?.toDate?.()?.toISOString() || null
   };
-}
-
-async function authorizedGrammatureTable(actor, tableId) {
-  const ref = db.doc(`organizations/${actor.organizationId}/grammatureTables/${id(tableId, 'tableId')}`);
-  const snap = await ref.get();
-  if (!snap.exists) throw new HttpsError('not-found', 'Tabella grammature non trovata');
-  if (snap.data().ownerUid !== actor.uid) {
-    throw new HttpsError('permission-denied', 'Puoi modificare soltanto le tue tabelle');
+  if (includeDraft) {
+    doc.draftRevision = data.draftRevision || null;
+    doc.latestChecksum = data.latestChecksum || null;
   }
-  return { ref, snap };
+  return doc;
 }
 
-exports.listMyGrammatureTables = callable(async (data, uid) => {
+async function authorizedEquivalenceTemplate(actor, templateId, { mustOwn = false } = {}) {
+  const ref = db.doc(`organizations/${actor.organizationId}/equivalenceTemplates/${id(templateId, 'templateId')}`);
+  const doc = await ref.get();
+  if (!doc.exists) throw new HttpsError('not-found', 'Template equivalenze non trovato');
+  if (!actor.isCreator && (mustOwn || actor.role === 'nutritionist') && (doc.data().ownerUid || doc.data().createdBy) !== actor.uid) {
+    throw new HttpsError('permission-denied', 'Puoi gestire soltanto i tuoi template equivalenze');
+  }
+  return { ref, doc };
+}
+
+exports.listEquivalenceTemplates = callable(async (data, uid) => {
   exactObject(data, ['organizationId']);
   const actor = await actorContext(data.organizationId, uid);
-  const snapshot = await db.collection(`organizations/${actor.organizationId}/grammatureTables`).limit(GRAMMATURE_TABLE_LIMITS.rows * 4).get();
-  const tables = snapshot.docs
-    .map(doc => serializeGrammatureTable(doc))
-    .filter(item => actor.isCreator || item.ownerUid === uid)
+  let query = db.collection(`organizations/${actor.organizationId}/equivalenceTemplates`);
+  if (actor.role === 'nutritionist') query = query.where('ownerUid', '==', uid);
+  const snapshot = await query.limit(100).get();
+  const templates = snapshot.docs
+    .map(doc => serializeEquivalenceTemplate(doc, { includeDraft: Boolean(actor.isCreator) }))
     .sort((a, b) => String(b.updatedAt || '').localeCompare(String(a.updatedAt || '')));
-  return { tables };
+  return { templates };
 });
 
-exports.saveGrammatureTable = callable(async (data, uid) => {
-  exactObject(data, ['organizationId', 'tableId', 'table', 'idempotencyKey']);
+// Restituisce la revisione richiesta (o la corrente) con gli equivalenti
+// completi: serve alla console per precompilare i blocchi delle strutture e
+// al client per lo snapshot non retroattivo.
+exports.getEquivalenceTemplateRevision = callable(async (data, uid) => {
+  exactObject(data, ['organizationId', 'templateId', 'revisionId']);
   const actor = await actorContext(data.organizationId, uid);
-  const table = validateGrammatureTable(data.table);
-  const idem = id(data.idempotencyKey, 'idempotencyKey');
-  if (data.tableId != null && data.tableId !== '') {
-    // Aggiornamento di una tabella esistente: solo il proprietario.
-    const { ref, snap } = await authorizedGrammatureTable(actor, data.tableId);
-    const eventId = checksum(`grammature.updated:${ref.id}:${idem}`).slice(0, 32);
-    await db.runTransaction(async tx => {
-      const audit = await tx.get(auditRef(actor.organizationId, eventId));
-      if (audit.exists) return;
-      tx.update(ref, { ...table, updatedAt: FieldValue.serverTimestamp(), updatedBy: uid });
-      tx.create(auditRef(actor.organizationId, eventId), auditEvent({ orgId: actor.organizationId, eventId, type: 'grammatureTable.updated', actor, subject: { type: 'grammatureTable', id: ref.id }, idempotencyKey: idem, metadata: { name: table.name, rowCount: table.rows.length } }));
-    });
-    return { tableId: ref.id, rowCount: table.rows.length };
+  const { doc } = await authorizedEquivalenceTemplate(actor, data.templateId);
+  const revisionId = data.revisionId == null || data.revisionId === ''
+    ? doc.data().currentRevisionId
+    : id(String(data.revisionId), 'revisionId');
+  if (!revisionId) throw new HttpsError('not-found', 'Nessuna revisione pubblicata');
+  const revision = await doc.ref.collection('revisions').doc(revisionId).get();
+  if (!revision.exists || !verifyEquivalenceTemplateRevision(revision.data())) {
+    throw new HttpsError('not-found', 'Revisione del template non valida');
   }
-  // Nuova tabella: id deterministico da contenuto + idempotenza.
-  const tableId = `T${checksum(`${actor.organizationId}:${uid}:${table.name}:${idem}`).slice(0, 12)}`;
-  const ref = db.doc(`organizations/${actor.organizationId}/grammatureTables/${tableId}`);
-  const eventId = checksum(`grammature.created:${tableId}`).slice(0, 32);
-  await db.runTransaction(async tx => {
-    const [existing, audit] = await Promise.all([tx.get(ref), tx.get(auditRef(actor.organizationId, eventId))]);
-    if (existing.exists || audit.exists) return;
-    tx.create(ref, {
-      schemaVersion: 1, ...table, ownerUid: uid, createdBy: uid,
-      createdAt: FieldValue.serverTimestamp(), updatedAt: FieldValue.serverTimestamp()
-    });
-    tx.create(auditRef(actor.organizationId, eventId), auditEvent({ orgId: actor.organizationId, eventId, type: 'grammatureTable.created', actor, subject: { type: 'grammatureTable', id: tableId }, idempotencyKey: idem, metadata: { name: table.name, rowCount: table.rows.length } }));
-  });
-  return { tableId, rowCount: table.rows.length };
+  return { template: serializeEquivalenceTemplate(doc), revision: revision.data() };
 });
 
-exports.duplicateGrammatureTable = callable(async (data, uid) => {
-  exactObject(data, ['organizationId', 'tableId', 'idempotencyKey']);
+exports.saveEquivalenceTemplate = callable(async (data, uid) => {
+  exactObject(data, ['organizationId', 'templateId', 'name', 'referenceFamilyId', 'referenceIngredientId', 'referenceAmount', 'equivalents', 'idempotencyKey']);
   const actor = await actorContext(data.organizationId, uid);
   const idem = id(data.idempotencyKey, 'idempotencyKey');
-  const { snap } = await authorizedGrammatureTable(actor, data.tableId);
-  const source = snap.data();
-  const name = `${String(source.name || 'Tabella').slice(0, GRAMMATURE_TABLE_LIMITS.name - 8)} (copia)`;
-  const tableId = `T${checksum(`${actor.organizationId}:${uid}:${name}:${idem}`).slice(0, 12)}`;
-  const ref = db.doc(`organizations/${actor.organizationId}/grammatureTables/${tableId}`);
-  const eventId = checksum(`grammature.duplicated:${tableId}`).slice(0, 32);
+  // Prima la validazione di forma (bloccante)...
+  const revision = validateEquivalenceTemplateRevision({
+    name: data.name,
+    referenceFamilyId: data.referenceFamilyId,
+    referenceIngredientId: data.referenceIngredientId,
+    referenceAmount: data.referenceAmount,
+    equivalents: data.equivalents
+  });
+  // ...poi la coerenza col catalogo globale: famiglie e ingredienti citati
+  // devono esistere, e l'ingrediente di riferimento deve appartenere alla
+  // famiglia di riferimento.
+  const catalog = await loadGlobalCatalog();
+  const lookup = catalogLookup(catalog);
+  const referenceFamily = lookup.families.get(revision.referenceFamilyId);
+  if (!referenceFamily) throw new HttpsError('failed-precondition', `Famiglia "${revision.referenceFamilyId}" inesistente in catalogo`);
+  const assertFamily = (familyId, where) => {
+    if (!lookup.families.has(familyId)) throw new HttpsError('failed-precondition', `Famiglia "${familyId}" inesistente in catalogo (${where})`);
+  };
+  const assertIngredient = (ingredientId, familyId, where) => {
+    if (!lookup.ingredientIds.has(ingredientId)) throw new HttpsError('failed-precondition', `Ingrediente "${ingredientId}" inesistente in catalogo (${where})`);
+    if (familyId) {
+      const ingredient = catalog.ingredients.find(item => item.ingredientId === ingredientId);
+      if (ingredient && ingredient.familyId !== familyId) {
+        throw new HttpsError('failed-precondition', `Ingrediente "${ingredientId}" non appartiene alla famiglia ${familyId} (${where})`);
+      }
+    }
+  };
+  assertIngredient(revision.referenceIngredientId, revision.referenceFamilyId, 'ingrediente di riferimento');
+  revision.equivalents.forEach(equivalent => {
+    assertFamily(equivalent.familyId, 'equivalente');
+    if (equivalent.ingredientId) assertIngredient(equivalent.ingredientId, equivalent.familyId, 'equivalente');
+  });
+  const revisionChecksum = equivalenceTemplateRevisionChecksum(revision);
+
+  const create = data.templateId == null || data.templateId === '';
+  let ref;
+  let templateId;
+  if (create) {
+    templateId = checksum(`${actor.organizationId}:${uid}:${revision.name}:${idem}`).slice(0, 24);
+    ref = db.doc(`organizations/${actor.organizationId}/equivalenceTemplates/${templateId}`);
+  } else {
+    const found = await authorizedEquivalenceTemplate(actor, data.templateId, { mustOwn: actor.role === 'nutritionist' });
+    ref = found.ref;
+    templateId = ref.id;
+  }
+  const eventId = checksum(create ? `template.created:${templateId}` : `template.revision:${templateId}:${idem}`).slice(0, 32);
   await db.runTransaction(async tx => {
     const [existing, audit] = await Promise.all([tx.get(ref), tx.get(auditRef(actor.organizationId, eventId))]);
-    if (existing.exists || audit.exists) return;
-    tx.create(ref, {
-      schemaVersion: 1, name, description: source.description || null,
-      rows: JSON.parse(JSON.stringify(source.rows || [])),
-      ownerUid: uid, createdBy: uid,
-      createdAt: FieldValue.serverTimestamp(), updatedAt: FieldValue.serverTimestamp()
+    if (existing.exists || audit.exists) {
+      if (create) return;
+      if (existing.data().status === 'archived') throw new HttpsError('failed-precondition', 'Riattiva il template prima di pubblicare una nuova revisione');
+    }
+    const nextRevisionId = existing.exists ? String(Number(existing.data().currentRevisionId || '0') + 1) : '1';
+    tx.set(ref, {
+      schemaVersion: 1, name: revision.name, status: 'active', ownerUid: uid, createdBy: uid,
+      currentRevisionId: nextRevisionId, latestChecksum: revisionChecksum,
+      referenceFamilyId: revision.referenceFamilyId,
+      ingredientCatalogVersion: catalog.catalogVersion,
+      createdAt: existing.exists ? existing.data().createdAt : FieldValue.serverTimestamp(),
+      updatedAt: FieldValue.serverTimestamp(), updatedBy: uid
+    }, { merge: true });
+    tx.create(ref.collection('revisions').doc(nextRevisionId), {
+      schemaVersion: 1, revisionId: nextRevisionId, templateId, ...revision,
+      status: 'published', checksum: revisionChecksum, ingredientCatalogVersion: catalog.catalogVersion,
+      changelog: create ? 'Prima revisione' : 'Nuova revisione',
+      createdAt: FieldValue.serverTimestamp(), publishedAt: FieldValue.serverTimestamp(), publishedBy: uid
     });
-    tx.create(auditRef(actor.organizationId, eventId), auditEvent({ orgId: actor.organizationId, eventId, type: 'grammatureTable.duplicated', actor, subject: { type: 'grammatureTable', id: tableId }, idempotencyKey: idem, metadata: { sourceId: snap.id, name } }));
+    tx.create(auditRef(actor.organizationId, eventId), auditEvent({
+      orgId: actor.organizationId, eventId,
+      type: create ? 'equivalenceTemplate.created' : 'equivalenceTemplate.revision.published',
+      actor, subject: { type: 'equivalenceTemplate', id: templateId },
+      idempotencyKey: idem,
+      metadata: { revisionId: nextRevisionId, referenceFamilyId: revision.referenceFamilyId, equivalentCount: revision.equivalents.length }
+    }));
   });
-  return { tableId, sourceId: snap.id };
+  return { templateId, revisionId: 'current' };
 });
 
-exports.deleteGrammatureTable = callable(async (data, uid) => {
-  exactObject(data, ['organizationId', 'tableId', 'idempotencyKey']);
+exports.archiveEquivalenceTemplate = callable(async (data, uid) => {
+  exactObject(data, ['organizationId', 'templateId', 'archived', 'idempotencyKey']);
   const actor = await actorContext(data.organizationId, uid);
   const idem = id(data.idempotencyKey, 'idempotencyKey');
-  const { ref, snap } = await authorizedGrammatureTable(actor, data.tableId);
-  const eventId = checksum(`grammature.deleted:${ref.id}:${idem}`).slice(0, 32);
+  if (typeof data.archived !== 'boolean') throw new HttpsError('invalid-argument', 'archived deve essere booleano');
+  const { ref } = await authorizedEquivalenceTemplate(actor, data.templateId, { mustOwn: actor.role === 'nutritionist' });
+  const eventId = checksum(`template.status:${ref.id}:${data.archived}:${idem}`).slice(0, 32);
   await db.runTransaction(async tx => {
     const audit = await tx.get(auditRef(actor.organizationId, eventId));
     if (audit.exists) return;
-    tx.delete(ref);
-    tx.create(auditRef(actor.organizationId, eventId), auditEvent({ orgId: actor.organizationId, eventId, type: 'grammatureTable.deleted', actor, subject: { type: 'grammatureTable', id: ref.id }, idempotencyKey: idem, metadata: { name: snap.data().name } }));
+    tx.update(ref, { status: data.archived ? 'archived' : 'active', updatedAt: FieldValue.serverTimestamp(), updatedBy: uid });
+    tx.create(auditRef(actor.organizationId, eventId), auditEvent({ orgId: actor.organizationId, eventId, type: data.archived ? 'equivalenceTemplate.archived' : 'equivalenceTemplate.restored', actor, subject: { type: 'equivalenceTemplate', id: ref.id }, idempotencyKey: idem, metadata: {} }));
   });
-  return { tableId: ref.id, deleted: true };
+  return { templateId: ref.id, status: data.archived ? 'archived' : 'active' };
+});
+
+// ---------------------------------------------------------------------
+// Richieste catalogo (flusso cliente → admin). Quando il client incontra un
+// ingrediente «unknown» chiede al cliente categoria e famiglia previste; la
+// richiesta entra in coda e SOLO l'amministratore la risolve (accetta con
+// inserimento in catalogo, modifica o rifiuta). Nessuna dose coinvolta.
+// ---------------------------------------------------------------------
+
+function publicCatalogRequestRow(doc, { includeResolution = false } = {}) {
+  const data = doc.data();
+  const row = {
+    requestId: doc.id,
+    status: data.status || 'pending',
+    ingredientText: data.ingredientText || '',
+    proposedCategoryId: data.proposedCategoryId || null,
+    proposedFamilyId: data.proposedFamilyId || null,
+    clientId: data.clientId || null,
+    clientTitle: data.clientTitle || null,
+    createdAt: data.createdAt?.toDate?.()?.toISOString() || null
+  };
+  if (includeResolution) {
+    row.resolution = data.resolution || null;
+    row.resolvedAt = data.resolvedAt?.toDate?.()?.toISOString() || null;
+    row.resolutionNote = data.resolutionNote || null;
+  }
+  return row;
+}
+
+// Cliente: apre una richiesta per un ingrediente non riconosciuto. La
+// proposta (categoria + famiglia) nasce dall'autocomplete del catalogo
+// stesso: il cliente sceglie tra categorie e famiglie esistenti.
+exports.submitCatalogRequest = callable(async (data, uid) => {
+  const input = validateCatalogRequestSubmit(data);
+  const link = await db.doc(`accountClientLinks/${uid}`).get();
+  if (!link.exists || link.data()?.status !== 'active') throw new HttpsError('permission-denied', 'Profilo non autorizzato');
+  const { organizationId, clientId } = link.data();
+  if (organizationId !== SINGLE_ORGANIZATION_ID) throw new HttpsError('permission-denied', 'Profilo non autorizzato');
+  const client = await db.doc(`organizations/${organizationId}/clients/${clientId}`).get();
+  if (!client.exists || client.data()?.authUid !== uid || client.data()?.status !== 'active') {
+    throw new HttpsError('permission-denied', 'Profilo non autorizzato');
+  }
+  const catalog = await loadGlobalCatalog();
+  const lookup = catalogLookup(catalog);
+  if (!lookup.categoryIds.has(input.proposedCategoryId)) throw new HttpsError('failed-precondition', 'Categoria proposta inesistente in catalogo');
+  if (!lookup.families.has(input.proposedFamilyId)) throw new HttpsError('failed-precondition', 'Famiglia proposta inesistente in catalogo');
+  const requestId = checksum(`catalog.request:${organizationId}:${clientId}:${input.normalizedIngredient}:${input.idempotencyKey}`).slice(0, 32);
+  const requestRef = db.doc(`organizations/${organizationId}/catalogRequests/${requestId}`);
+  const eventId = checksum(`catalog.request.created:${requestId}`).slice(0, 32);
+  await db.runTransaction(async tx => {
+    const [existing, audit] = await Promise.all([tx.get(requestRef), tx.get(auditRef(organizationId, eventId))]);
+    if (existing.exists || audit.exists) return;
+    tx.create(requestRef, {
+      schemaVersion: 1, requestId, status: 'pending',
+      ingredientText: input.ingredientText, normalizedIngredient: input.normalizedIngredient,
+      proposedCategoryId: input.proposedCategoryId, proposedFamilyId: input.proposedFamilyId,
+      clientId, clientTitle: client.data()?.title || null,
+      submittedByUid: uid, idempotencyKey: input.idempotencyKey,
+      createdAt: FieldValue.serverTimestamp(), updatedAt: FieldValue.serverTimestamp()
+    });
+    tx.create(auditRef(organizationId, eventId), auditEvent({
+      orgId: organizationId, eventId, type: 'catalogRequest.created', actor: { uid, role: 'client' },
+      subject: { type: 'catalogRequest', id: requestId }, idempotencyKey: input.idempotencyKey,
+      metadata: { ingredientText: input.ingredientText, proposedCategoryId: input.proposedCategoryId, proposedFamilyId: input.proposedFamilyId }
+    }));
+  });
+  return { requestId, status: 'pending' };
+});
+
+// Admin platform: coda delle richieste (pending prima, poi risolte).
+exports.listCatalogRequests = callable(async (data, uid) => {
+  exactObject(data, ['status']);
+  await platformAdmin(uid);
+  const statusFilter = data.status == null || data.status === '' ? null : text(data.status, 'status');
+  let query = db.collection(`organizations/${SINGLE_ORGANIZATION_ID}/catalogRequests`);
+  if (statusFilter) query = query.where('status', '==', statusFilter);
+  const snapshot = await query.orderBy('createdAt', 'desc').limit(100).get();
+  return { requests: snapshot.docs.map(doc => publicCatalogRequestRow(doc, { includeResolution: true })) };
+});
+
+// Admin platform: risoluzione. accept = proposta (eventualmente corretta)
+// che entra nel catalogo globale con una nuova versione; edit = correzione
+// esplicita dell'ingrediente; reject = rifiuto con motivo.
+exports.resolveCatalogRequest = callable(async (data, uid) => {
+  const input = validateCatalogRequestResolve(data);
+  const actor = await platformAdmin(uid);
+  const requestRef = db.doc(`organizations/${SINGLE_ORGANIZATION_ID}/catalogRequests/${input.requestId}`);
+  const eventId = checksum(`catalog.request.resolved:${input.requestId}:${input.action}:${input.idempotencyKey}`).slice(0, 32);
+  const catalog = await loadGlobalCatalog();
+  await db.runTransaction(async tx => {
+    const [request, audit] = await Promise.all([tx.get(requestRef), tx.get(platformAuditRef(eventId))]);
+    if (audit.exists) return;
+    const requestData = request.data();
+    if (!request.exists || requestData.status !== 'pending') {
+      throw new HttpsError('failed-precondition', 'Richiesta non trovata o già risolta');
+    }
+    if (input.action === 'reject') {
+      tx.update(requestRef, {
+        status: 'rejected', resolution: { action: 'reject' }, resolutionNote: input.reason,
+        resolvedAt: FieldValue.serverTimestamp(), resolvedBy: uid, updatedAt: FieldValue.serverTimestamp()
+      });
+      tx.create(platformAuditRef(eventId), {
+        schemaVersion: 1, eventId, type: 'catalogRequest.rejected', actor: { uid: actor.uid, role: actor.role },
+        subject: { type: 'catalogRequest', id: input.requestId }, idempotencyKey: input.idempotencyKey,
+        occurredAt: FieldValue.serverTimestamp(), metadata: { requestId: input.requestId, reason: input.reason }
+      });
+      return;
+    }
+    const ingredient = input.ingredient;
+    const existing = catalog.ingredients.find(item => item.ingredientId === ingredient.ingredientId);
+    if (existing && input.action === 'accept') {
+      throw new HttpsError('failed-precondition', `L'ingrediente "${ingredient.ingredientId}" esiste già in catalogo: usa «modifica» o scegli un altro ID`);
+    }
+    const family = catalog.families.find(item => item.familyId === ingredient.familyId);
+    if (!family) throw new HttpsError('failed-precondition', `Famiglia "${ingredient.familyId}" inesistente in catalogo`);
+    if (family.categoryId !== ingredient.categoryId) {
+      throw new HttpsError('failed-precondition', `La categoria "${ingredient.categoryId}" non coincide con quella della famiglia ${family.familyId}`);
+    }
+    const normalizedIngredient = {
+      ingredientId: ingredient.ingredientId,
+      displayName: ingredient.displayName,
+      normalizedName: normalizeIngredient(ingredient.displayName),
+      categoryId: ingredient.categoryId,
+      familyId: ingredient.familyId,
+      aliases: ingredient.aliases,
+      searchTokens: searchTokensFor(ingredient.displayName, ingredient.aliases),
+      dietaryFlags: ingredient.dietaryFlags,
+      status: 'active'
+    };
+    const nextVersion = catalog.catalogVersion + 1;
+    const merged = new Map(catalog.ingredients.map(item => [item.ingredientId, item]));
+    merged.set(normalizedIngredient.ingredientId, normalizedIngredient);
+    const newChecksum = catalogContentChecksum([...merged.values()], catalog.categories, catalog.families, nextVersion);
+    tx.set(db.doc(`globalIngredientCatalog/current/ingredients/${normalizedIngredient.ingredientId}`), {
+      schemaVersion: 3, ...normalizedIngredient, catalogVersion: nextVersion, updatedAt: FieldValue.serverTimestamp()
+    });
+    tx.set(db.doc('globalIngredientCatalog/versions/snapshots/' + catalog.catalogVersion), {
+      schemaVersion: 3, catalogVersion: catalog.catalogVersion, checksum: catalog.checksum,
+      ingredients: catalog.ingredients, categories: catalog.categories, families: catalog.families,
+      supersededBy: nextVersion, createdAt: FieldValue.serverTimestamp(), createdBy: uid
+    });
+    tx.set(db.doc('globalIngredientCatalog/current/meta/summary'), {
+      schemaVersion: 3, catalogVersion: nextVersion, checksum: newChecksum,
+      ingredientCount: merged.size, categoryCount: catalog.categories.length, familyCount: catalog.families.length,
+      updatedAt: FieldValue.serverTimestamp(), updatedBy: uid
+    });
+    tx.update(requestRef, {
+      status: 'accepted', resolution: { action: input.action, ingredient: normalizedIngredient },
+      resolutionNote: input.reason || '', resolvedIngredientId: normalizedIngredient.ingredientId,
+      resolvedAt: FieldValue.serverTimestamp(), resolvedBy: uid, updatedAt: FieldValue.serverTimestamp()
+    });
+    tx.create(platformAuditRef(eventId), {
+      schemaVersion: 1, eventId, type: 'catalogRequest.accepted', actor: { uid: actor.uid, role: actor.role },
+      subject: { type: 'catalogRequest', id: input.requestId }, idempotencyKey: input.idempotencyKey,
+      occurredAt: FieldValue.serverTimestamp(),
+      metadata: { requestId: input.requestId, ingredientId: normalizedIngredient.ingredientId, catalogVersion: nextVersion }
+    });
+  });
+  return { requestId: input.requestId, status: input.action === 'reject' ? 'rejected' : 'accepted' };
+});
+
+// Cliente: elenco delle proprie richieste (per lo stato nel pannello).
+exports.listMyCatalogRequests = callable(async (_data, uid) => {
+  const link = await db.doc(`accountClientLinks/${uid}`).get();
+  if (!link.exists || link.data()?.status !== 'active') return { requests: [] };
+  const { organizationId, clientId } = link.data();
+  if (organizationId !== SINGLE_ORGANIZATION_ID) return { requests: [] };
+  const snapshot = await db.collection(`organizations/${organizationId}/catalogRequests`)
+    .where('clientId', '==', clientId).orderBy('createdAt', 'desc').limit(20).get();
+  return { requests: snapshot.docs.map(doc => publicCatalogRequestRow(doc)) };
 });
