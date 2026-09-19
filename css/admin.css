@@ -478,7 +478,7 @@ html.dark-mode .check-row small,html.dark-mode .report-main small,html.dark-mode
   *,*::before,*::after{scroll-behavior:auto!important;animation-duration:.01ms!important;animation-iteration-count:1!important;transition-duration:.01ms!important}
 }
 
-/* Ricettario professionisti (ADR 0006): righe ingrediente dell’editor. */
+/* Ricettario professionisti (ADR 0003): righe ingrediente dell’editor. */
 .recipe-ingredients{display:grid;gap: 8px}
 .recipe-ingredient-row{display:grid;grid-template-columns:2fr 1fr auto;gap: 8px;align-items:center}
 .recipe-ingredient-row .ing-qty{width:100%}

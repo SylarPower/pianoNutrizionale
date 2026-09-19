@@ -2543,7 +2543,7 @@ body.dark-mode .generator-slot-lock-badge { background: #141414; color: #b8b8b8;
   line-height: 1.35;
 }
 
-/* ---- Inviti con email reale e verifica email (ADR 0004) ---- */
+/* ---- Inviti con email reale e verifica email (ADR 0001) ---- */
 .login-reset { margin-top: 12px; }
 .invite-summary {
   margin: 12px 0 8px;

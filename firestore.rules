@@ -321,7 +321,7 @@ service cloud.firestore {
       allow write: if false;
     }
 
-    // Proposte di cambio email (ADR 0004): documento server-only sia per le
+    // Proposte di cambio email (ADR 0001): documento server-only sia per le
     // scritture sia per le letture. Il cliente vede la proposta solo tramite
     // le callable autorizzate (listMyClientLinkRequests), che la legano al suo
     // UID; il professionista la vede in console tramite listAuthorizedClients.
