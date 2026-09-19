@@ -1243,8 +1243,9 @@ test('categorie spesa: passata di pomodoro e farine in Dispensa', () => {
   assert.equal(d.categoryForIngredient('Pomodori freschi'), '🥬 Verdura');
 });
 
-// ---- Linee guida (Guide): RIMOSSE ----
-// GUIDE_GRAMMATURE, popup alternative, travaso carboidrati e frequenze
+// ---- Linee guida del vecchio manuale: RIMOSSE ----
+// La tabella grammature globale, i popup alternative, il travaso carboidrati
+// e le frequenze proteiche
 // proteiche non esistono più: le dosi vivono nei template equivalenze e
 // nelle strutture dieta (organization-scoped). La lista spesa usa sempre
 // le porzioni originali delle ricette.
@@ -1252,7 +1253,7 @@ test('categorie spesa: passata di pomodoro e farine in Dispensa', () => {
 test('CSS smartphone: titoli ricettario, profilo e tipo giornata non collassano', () => {
   const css = fs.readFileSync(path.join(ROOT, 'css/style.css'), 'utf8');
   const mobileStart = css.indexOf('@media (max-width: 520px)');
-  const mobileEnd = css.indexOf('/* ===== Schema 4', mobileStart);
+  const mobileEnd = css.indexOf('/* ===== Estensioni successive', mobileStart);
   const mobile = css.slice(mobileStart, mobileEnd);
 
   assert.match(css, /\.recipe-section-name \{[\s\S]*?text-overflow: ellipsis;[\s\S]*?white-space: nowrap;/, 'titolo pasto sempre su una riga');

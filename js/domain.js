@@ -234,13 +234,6 @@
 
   // ----- Batch cooking dinamico -----
 
-  function dayDistance(from, to) {
-    const a = DAYS.indexOf(from);
-    const b = DAYS.indexOf(to);
-    if (a < 0 || b < 0) return null;
-    return (b - a + 7) % 7;
-  }
-
   // Ricerca del prossimo giorno (anche domenica → lunedì) in cui il piano
   // contiene la ricetta target in uno slot. Settimana ricorrente.
   function futureTarget(day, plan, targetSlot, recipeId, maxDays = 7) {
@@ -916,11 +909,6 @@ const PROTEIN_CATEGORY_LABELS = {
   // una sola volta al caricamento.
   function catalogHasLegacyFrequency(recipes) {
     return Array.isArray(recipes) && recipes.some(recipe => recipe && Object.prototype.hasOwnProperty.call(recipe, 'frequency'));
-  }
-
-  function isFishRecipe(recipe) {
-    const category = classifyProtein(recipe);
-    return category === 'omega' || category === 'otherFish';
   }
 
   function mulberry32(seed) {
@@ -2190,24 +2178,6 @@ const PROTEIN_CATEGORY_LABELS = {
   // ---------------------------------------------------------------------
   const EQUIVALENCE_TEMPLATE_SCHEMA_VERSION = 1;
 
-  function createEquivalenceTemplate(detail) {
-    const source = detail || {};
-    return {
-      schemaVersion: EQUIVALENCE_TEMPLATE_SCHEMA_VERSION,
-      name: String(source.name || ''),
-      referenceFamilyId: String(source.referenceFamilyId || ''),
-      referenceIngredientId: source.referenceIngredientId || null,
-      referenceAmount: createDietAmount(source.referenceAmount),
-      equivalents: (Array.isArray(source.equivalents) ? source.equivalents : [])
-        .filter(equivalent => equivalent && equivalent.familyId)
-        .map(equivalent => ({
-          familyId: String(equivalent.familyId),
-          ingredientId: equivalent.ingredientId || null,
-          amount: createDietAmount(equivalent.amount)
-        }))
-    };
-  }
-
   // Quantità proporzionali del template per una nuova quantità di riferimento:
   // base del calcolo riutilizzabile in console e in anteprima cliente.
   function equivalenceTemplateScaled(template, referenceValue) {
@@ -2255,7 +2225,6 @@ const PROTEIN_CATEGORY_LABELS = {
     planAlignedDosesEnabled,
     setPlanAlignedDosesEnabled,
     emptyPlan,
-    dayDistance,
     futureTarget,
     batchTaskStatus,
     portionFor,
@@ -2292,7 +2261,6 @@ const PROTEIN_CATEGORY_LABELS = {
     classifyProtein,
     inferProteinCategoryFromIngredients,
     catalogHasLegacyFrequency,
-    isFishRecipe,
     mulberry32,
     hashString,
     generateWeek,
@@ -2342,7 +2310,6 @@ const PROTEIN_CATEGORY_LABELS = {
     scalePortionText,
     // Template equivalenze (organization-scoped)
     EQUIVALENCE_TEMPLATE_SCHEMA_VERSION,
-    createEquivalenceTemplate,
     equivalenceTemplateScaled
   };
 });

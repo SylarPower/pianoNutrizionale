@@ -132,7 +132,7 @@ La famiglia di riferimento non può comparire tra gli equivalenti. Il calcolo pr
 
 `clients/{clientId}/state/activeAssignment` è una proiezione server-side; la cronologia resta nella subcollection `assignments`. Payload `assignClientStructure`: campi esatti `[organizationId, clientId, structureId, effectiveAt, expiresAt, withoutExpiration, notes, idempotencyKey]` — niente strategie né checksum lato client. Senza `expiresAt` è obbligatorio `withoutExpiration`.
 
-Il cliente legge tutto da `getMyAssignedProfile({})` → `profile` (schema 3): `{clientProfileId, assignmentId, structureId, structureRevisionId, structureChecksum, structureName, ingredientCatalogVersion, effectiveAt, expiresAt, structureRevision: {revisionId, dietPlan}, catalog: {catalogVersion, categories, families, ingredients}, compatibleClientSchema: 7}`. Lo snapshot client (`js/saas.js`) è `{schemaVersion: 2, clientProfileId, assignmentId, resolvedAt, migrationDecision: "confirmed", structureId, structureRevisionId, structureChecksum, ingredientCatalogVersion}`.
+Il cliente legge tutto da `getMyAssignedProfile({})` → `profile` (schema 3): `{clientProfileId, assignmentId, structureId, structureRevisionId, structureChecksum, structureName, ingredientCatalogVersion, effectiveAt, expiresAt, structureRevision: {revisionId, dietPlan}, catalog: {catalogVersion, categories, families, ingredients}, compatibleClientSchema: 7}`. Lo snapshot client (`js/saas.js`, persistito nel piano settimanale come campo `nutritionSnapshot`) è `{schemaVersion: 2, clientProfileId, assignmentId, resolvedAt, migrationDecision: "confirmed", structureId, structureRevisionId, structureChecksum, ingredientCatalogVersion}`.
 
 ## Coda ingredienti (client → platform admin)
 

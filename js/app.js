@@ -4877,7 +4877,7 @@ function quantityEditorField(baseId, label, raw) {
   const options = (state.unit === "" ? `<option value="" selected disabled>—</option>` : "")
     + QUANTITY_UNIT_OPTIONS.map(option => `<option value="${option.value}"${option.value === state.unit ? " selected" : ""}>${escapeHtml(option.label)}</option>`).join("");
   return `<label>${escapeHtml(label)}<span class="qty-input-row">`
-    + `<input id="${baseId}" type="number" min="0" step="any" inputmode="decimal" placeholder="0" value="${escapeAttr(state.num)}" data-num="${escapeAttr(state.num)}" data-unit="${escapeAttr(state.unit)}" aria-label="${escapeAttr(label)}: quantità numerica"${state.qb ? " disabled hidden" : ""} oninput="updateGuideEditorNotice()">`
+    + `<input id="${baseId}" type="number" min="0" step="any" inputmode="decimal" placeholder="0" value="${escapeAttr(state.num)}" data-num="${escapeAttr(state.num)}" data-unit="${escapeAttr(state.unit)}" aria-label="${escapeAttr(label)}: quantità numerica"${state.qb ? " disabled hidden" : ""}>`
     + `<select id="${baseId}-unit" aria-label="${escapeAttr(label)}: unità di misura" onchange="onQuantityUnitChange('${baseId}')">${options}</select>`
     + `</span></label>`;
 }
