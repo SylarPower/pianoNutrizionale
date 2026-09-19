@@ -231,13 +231,10 @@ function effectiveAssignment(assignment, now = new Date()) {
   return { valid: assignment.status === 'active', reason: assignment.status === 'active' ? null : assignment.status };
 }
 
-// Regole di una revisione struttura dieta (schema v2): famiglie Guide con
-// dosi per pasto (pranzo/cena) × giorno (allenamento/riposo). Le quantità sono
-// interi in grammi tra 1 e 2000; un pasto può essere `null` se non gestito,
-// mai entrambi. Schema esatto: docs/schema-catalogo-strutture-v3.json.
-// Quantità strutturata {value, unit}: numero 0–5000 + unità del vocabolario
-// chiuso dei piani dieta. Nessuna dose vive fuori dalle strutture o dai
-// template equivalenze del singolo professionista.
+// Quantità strutturata {value, unit} di blocchi, override, voci e template:
+// numero 0–5000 + unità del vocabolario chiuso dei piani dieta. Nessuna dose
+// vive fuori dalle strutture o dai template equivalenze del singolo
+// professionista. Schema esatto: docs/schema-catalogo-strutture-v3.json.
 function validateDietAmount(value, name) {
   if (!value || typeof value !== 'object') fail('invalid-argument', `${name} mancante`);
   exactObject(value, ['value', 'unit'], name);
@@ -1246,10 +1243,6 @@ function validateTransferStructureOwnership(input) {
   };
 }
 
-// ---- Dosi e frequenze personalizzate per cliente (console) ----
-// Le frequenze sono il mirror server-side di GUIDE_PROTEIN_FREQUENCIES in
-// js/domain.js (chiavi, etichette e default: allineamento verificato dai test
-// client). Max 14 = 7 giorni × 2 pasti principali (vincolo strutturale).
 // ---- Ricettario professionisti (ADR 0006) ----
 // Slot pasti: stessi ID del client (js/domain.js SLOTS e MEAL_SLOTS in
 // js/app.js). La parità esatta è verificata dai test

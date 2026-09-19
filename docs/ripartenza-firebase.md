@@ -168,7 +168,8 @@ salvataggio viene rifiutato perché gli alimenti non esistono in catalogo.
 3. Salva la pagina sul computer con nome `catalogo-import.json`
    (Ctrl+S / Cmd+S, formato "solo testo").
 
-Il file contiene 75 ingredienti e 6 categorie, con gli id del motore Guide. Per
+Il file contiene 229 ingredienti, 49 famiglie e 6 categorie (solo identità:
+nomi, alias, categoria, famiglia, flag vegetarian/vegan — nessuna dose). Per
 rigenerarlo identico in futuro c'è
 `node functions/scripts/generate-catalog-import.js` (con `--check` per la sola
 verifica).
@@ -317,7 +318,7 @@ mancante (Passo 5) e il catalogo non importato (Passo 6).
 4. Metti il tuo UID in `platformMembers` con `role: admin`, `status: active`.
 5. Fai entrare `nutrizionista` in `organizations/pianoNutrizionale/members`.
 6. Accendi `globalIngredientCatalog/config/docs/import = { enabled: true }`.
-7. Console → Catalogo → dry-run → Conferma import del file Guide.
+7. Console → Catalogo → dry-run → Conferma import di `catalogo-import.json`.
 8. Collega i clienti reali invitati e assegna loro una struttura.
 9. Re-importa le ricette eventualmente già presenti nel Ricettario.
 10. Pulisci le organizzazioni vecchie e verifica tutto.

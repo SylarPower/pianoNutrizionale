@@ -12,9 +12,9 @@ Prima del lancio il modello dati accumulava strati incoerenti:
 
 - `GUIDE_GRAMMATURE` come fonte globale delle dosi: identità ingredienti, grammature e logica clinica mescolate in un unico oggetto lato client.
 - `ruleSets` legacy e doppie fonti di verità (runtime assegnazioni vs strutture in console).
-- Catalogo v2 con `mappingKind` (`guided`/`free`) e `guideFamilyId` (nato come `mellerFamilyId`): l'appartenenza guidata era un attributo dell'ingrediente globale, quindi una scelta clinica spalmata sull'identità.
+- Catalogo v2 con `mappingKind` (`guided`/`free`) e `guideFamilyId` (a sua volta figlio di un refuso di nomina, corretto in corso d'opera): l'appartenenza guidata era un attributo dell'ingrediente globale, quindi una scelta clinica spalmata sull'identità.
 - dietPlan v1 con opzioni `free-foods`, `choiceGroups`, `target` kcal e campi peso legacy (`quantityState`, `netOfWaste`, `alternative`): un formato descrittivo ibrido.
-- Refusi e ponti di compatibilità (`mellerFamilyId`/`mellerModes`, fallback legacy, cataloghi sintetici).
+- Refusi di nomina nei campi, ponti di compatibilità, fallback legacy e cataloghi sintetici.
 
 Nessun dato di produzione esiste ancora: la pulizia distruttiva è ammessa ed è la scelta più pulita.
 
@@ -33,7 +33,7 @@ Nessun dato di produzione esiste ancora: la pulizia distruttiva è ammessa ed è
 
 - `GUIDE_GRAMMATURE` e ogni sua derivazione come fonte di dosi.
 - `ruleSets`, `globalRuleSets`, callable legacy (`publishRuleSetVersion`, `previewClientRuleSet`, `assignClientRuleSet`, `listRuleSets`, `submitMappingReport`, `proposeMapping`, `publishMapping`), percorso di assegnazione v1.
-- `mappingKind`/`guideFamilyId`/`mellerFamilyId`/`mellerModes` e ogni refuso collegato.
+- `mappingKind`/`guideFamilyId` e ogni campo refuso o collegato.
 - dietPlan v1: `free-foods`, `choiceGroups`, `target` kcal, campi peso legacy, label A–D persistite, revisioni strutture 1–3 con regole per famiglia e gruppi alternativi.
 - Editor strutture "classico" e vista console «Dosi».
 - Fallback legacy, bridge e cataloghi sintetici.

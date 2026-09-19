@@ -6,7 +6,7 @@
 - Dati personali sotto `users/{uid}`, dati domestici sotto `households/{id}`.
 - Le vecchie Rules proteggono UID/household ma non esistevano tenant, Functions, indici o test emulatori.
 - Le ricette e i piani sono documenti aggregati; import/export include il piano.
-- Guide viveva interamente in `js/domain.js`; i mapping mancanti erano soltanto locali.
+- Il primo motore delle dosi viveva interamente nel client (`js/domain.js`), senza catalogo condiviso né mapping lato server.
 - Rischi rilevati: confondere household e paziente; selezione autonoma di un protocollo; aggiornamento retroattivo; IDOR cross-client; PII nei report; scritture admin dal browser; cache di una versione revocata; assenza di rate limit/audit.
 
 ## Prerequisiti
@@ -30,7 +30,7 @@ firebase emulators:start --project piano-nutrizionale-test
 npm --prefix functions run seed:emulator
 ```
 
-Il seed stampa le credenziali della fixture locale e il checksum del rule set:
+Il seed stampa le credenziali della fixture locale e il checksum della struttura dieta:
 sono dati esclusivi dell'emulatore e non appartengono alla piattaforma live.
 `PIANO_SAAS_CONFIG.enabled` in `js/saas-config.js` è **già `true`** ed è il
 valore di produzione: non va toccato né per provare l'emulatore né per il
@@ -155,7 +155,7 @@ Creare una struttura dieta con l'editor a blocchi (`/admin.html` → Strutture: 
 Decisione: sblocco per 24 ore. L'integrazione reale è disattivata finché non viene scelto un provider web compatibile.
 
 - Consenso UE separato, revocabile e versionato.
-- Il provider riceve solo placement e identificatore pubblicitario consentito: mai ricette, ingredienti, diagnosi, rule set o client ID.
+- Il provider riceve solo placement e identificatore pubblicitario consentito: mai ricette, ingredienti, diagnosi, strutture dieta o client ID.
 - La ricevuta del provider deve essere verificata da `requestShoppingReward` server-side; il timestamp locale non è fonte autorevole.
 - Frequency cap, fallback in caso di disabilità/assenza inventory e alternativa a pagamento devono essere definiti prima dell'attivazione.
 - Niente countdown ingannevoli, pulsanti camuffati o blocco delle ricette.
@@ -208,11 +208,10 @@ Alert: spike permission-denied, checksum mismatch, errori scheduler, backlog olt
 - contenuti editoriali e GDPR self-service (la UI inviti email è già inclusa nella console);
 - job definitivi export/cancellazione/retention;
 - analytics esterne;
-- conversione automatica dei rule set canonici già in produzione;
 - claim provisioning e pannello platform globale;
 - test Functions con Firestore emulator (i validatori puri e le Rules sono coperti separatamente).
 
-Queste parti non devono essere simulate nel client. La slice consegnata copre coda mapping, pubblicazione tenant/globale autorizzata, assegnazione cliente, snapshot/fallback e UI professionale.
+Queste parti non devono essere simulate nel client. La piattaforma consegnata copre coda richieste ingredienti, import del catalogo globale autorizzato, strutture dieta e template equivalenze versionati, assegnazione cliente, snapshot/fallback e UI professionale.
 
 
 ### Nome visualizzato e inviti esistenti

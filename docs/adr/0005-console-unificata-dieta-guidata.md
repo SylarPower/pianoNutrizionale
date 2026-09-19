@@ -5,7 +5,7 @@
 - **Data**: 2026-09-13
 - **Contesto**: Piano Nutrizionale, organizzazione singola `pianoNutrizionale`
 - **Documenti collegati**: `docs/saas-data-contracts.md` (vista unificata,
-  dietPlan v1), `docs/editor-dieta-guidata.md` (guida operativa),
+  dietPlan v1), `docs/editor-strutture-dieta.md` (guida operativa, allora `editor-dieta-guidata.md`),
   `docs/inviti-email.md`, `docs/saas-runbook.md`, ADR 0003, ADR 0004
 
 ## 1. Perché questa decisione

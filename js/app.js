@@ -1911,7 +1911,7 @@ function renderWeek() {
               const recipe = getRecipe(planDay[slot.id]);
               const planned = recipe ? resolvePlannedRecipe(recipe, day, slot.id) : null;
               const alignedBadge = planned?.aligned
-                ? `<span class="guide-plan-badge" title="Dosi allineate alla tua dieta per questo pasto">↻</span>`
+                ? `<span class="diet-plan-badge" title="Dosi allineate alla tua dieta per questo pasto">↻</span>`
                 : "";
               const dosesLine = weekMealDosesHtml(planned, planDay.type);
               return `<div class="week-meal">
@@ -2874,10 +2874,10 @@ function setupDietEquivalentsModal() {
   if (document.getElementById("diet-equivalents-modal")) return;
   document.body.insertAdjacentHTML("beforeend", `
     <div id="diet-equivalents-modal" class="modal hidden" role="dialog" aria-modal="true" aria-labelledby="diet-modal-title">
-      <div class="modal-content guide-modal-content">
+      <div class="modal-content diet-modal-content">
         <div class="modal-header"><div><p class="eyebrow">EQUIVALENZE</p><h2 id="diet-modal-title"></h2><p id="diet-modal-subtitle" class="text-muted"></p></div><button class="btn-icon" onclick="closeDietEquivalents()" aria-label="Chiudi">&times;</button></div>
         <div id="diet-modal-body"></div>
-        <p class="guide-modal-note text-muted">Equivalenze dal template del tuo nutrizionista (pesi a crudo). La quantità è proporzionale alla dose prevista per questo pasto.</p>
+        <p class="diet-modal-note text-muted">Equivalenze dal template del tuo nutrizionista (pesi a crudo). La quantità è proporzionale alla dose prevista per questo pasto.</p>
         <div class="modal-footer"><button class="btn btn-primary full-width" onclick="closeDietEquivalents()">Chiudi</button></div>
       </div>
     </div>`);
@@ -2890,7 +2890,7 @@ window.openDietEquivalents = function(ingredientName) {
   document.getElementById("diet-modal-title").textContent = ingredientName;
   document.getElementById("diet-modal-subtitle").textContent = `Blocco ${data.referenceFamilyLabel} · dose di riferimento ${window.PianoDomain?.formatAmount ? PianoDomain.formatAmount(data.referenceAmount?.value, data.referenceAmount?.unit) : ""}`;
   const body = document.getElementById("diet-modal-body");
-  body.innerHTML = `<div class="alternative-table guide-equivalents"><div class="alternative-head"><strong>Alimento</strong><strong>Quantità equivalente</strong></div>${data.rows.map(row => `<div class="${row.overridden ? "guide-highlight" : ""}" title="${row.overridden ? "Quantità personalizzata dalla tua struttura dieta" : ""}"><span>${escapeHtml(row.label)}</span><strong>${escapeHtml(row.amount)}</strong></div>`).join("")}</div>`;
+  body.innerHTML = `<div class="alternative-table diet-equivalents"><div class="alternative-head"><strong>Alimento</strong><strong>Quantità equivalente</strong></div>${data.rows.map(row => `<div class="${row.overridden ? "diet-highlight" : ""}" title="${row.overridden ? "Quantità personalizzata dalla tua struttura dieta" : ""}"><span>${escapeHtml(row.label)}</span><strong>${escapeHtml(row.amount)}</strong></div>`).join("")}</div>`;
   document.getElementById("diet-equivalents-modal").classList.remove("hidden");
 };
 window.closeDietEquivalents = function() {
@@ -3440,9 +3440,9 @@ window.prepareRecipeImport = async function(file) {
     document.getElementById("import-file-name").textContent = file.name;
     document.getElementById("import-recipe-count").textContent = `${imported.recipes.length} ricett${imported.recipes.length === 1 ? "a" : "e"}`;
     document.getElementById("import-plan-note").textContent = imported.plan?.days ? "Il file contiene anche un piano: verrà applicato scegliendo Sostituisci oppure quando il tuo catalogo è vuoto." : "Il piano attuale verrà mantenuto quando possibile.";
-    const importNote = document.getElementById("import-guide-note");
+    const importNote = document.getElementById("import-doses-note");
     if (importNote) {
-      importNote.innerHTML = `<strong class="guide-import-ok">✓ Le ricette verranno importate fedelmente</strong><br><small>Nessuna dose viene modificata in importazione: la vista «dosi allineate» si applica solo in visualizzazione.</small>`;
+      importNote.innerHTML = `<strong class="import-ok">✓ Le ricette verranno importate fedelmente</strong><br><small>Nessuna dose viene modificata in importazione: la vista «dosi allineate» si applica solo in visualizzazione.</small>`;
     }
     document.getElementById("recipe-import-modal").classList.remove("hidden");
   } catch (error) {
@@ -3597,7 +3597,7 @@ function setupTransferModals() {
     <div id="recipe-import-modal" class="modal hidden" role="dialog" aria-modal="true">
       <div class="modal-content transfer-modal-content">
         <div class="modal-header"><div><p class="eyebrow">IMPORTAZIONE</p><h2>Come vuoi importare?</h2></div><button class="btn-icon" onclick="closeRecipeImportModal()">&times;</button></div>
-        <div class="transfer-summary"><strong id="import-file-name"></strong><span id="import-recipe-count"></span><p id="import-plan-note"></p><div id="import-guide-note" class="guide-import-note"></div></div>
+        <div class="transfer-summary"><strong id="import-file-name"></strong><span id="import-recipe-count"></span><p id="import-plan-note"></p><div id="import-doses-note" class="import-note"></div></div>
         <div class="transfer-choice-grid">
           <button class="transfer-choice" onclick="applyRecipeImport('add')"><span>＋</span><strong>Aggiungi</strong><small>Mantiene le ricette esistenti. Gli ID duplicati vengono rinominati.</small></button>
           <button class="transfer-choice danger" onclick="applyRecipeImport('replace')"><span>↻</span><strong>Sostituisci tutte</strong><small>Rimuove il catalogo attuale e mantiene solo le ricette importate.</small></button>
@@ -4679,10 +4679,10 @@ function renderModalContent() {
     ingredientList.innerHTML = items.map(({ ing, adapted }) => {
       const adaptedMark = adapted ? ` <small class="adapted-mark" title="Dose allineata alla tua dieta per questo pasto">↻</small>` : "";
       if (dietEquivalentsForIngredient(ing.name, currentModal?.dayKey, currentModal?.planSlot)) {
-        return `<li class="guide-ingredient" onclick="openDietEquivalents('${escapeAttr(ing.name)}')" title="Tocca per le equivalenze"><span>${escapeHtml(ing.name)}${adaptedMark} <small class="guide-hint">⇄</small></span>${getIngredientQuantityHtml(ing)}</li>`;
+        return `<li class="diet-ingredient" onclick="openDietEquivalents('${escapeAttr(ing.name)}')" title="Tocca per le equivalenze"><span>${escapeHtml(ing.name)}${adaptedMark} <small class="diet-hint">⇄</small></span>${getIngredientQuantityHtml(ing)}</li>`;
       }
       return `<li><span>${escapeHtml(ing.name)}${adaptedMark}</span>${getIngredientQuantityHtml(ing)}</li>`;
-    }).join("") + (hasEquivalents ? `<li class="guide-footnote"><small>↑ Tocca un alimento con ⇄ per le equivalenze previste dalla tua dieta</small></li>` : "");
+    }).join("") + (hasEquivalents ? `<li class="diet-footnote"><small>↑ Tocca un alimento con ⇄ per le equivalenze previste dalla tua dieta</small></li>` : "");
   }
 
   const prepList = document.getElementById("modal-prep-list");

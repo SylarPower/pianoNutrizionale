@@ -6,7 +6,7 @@
 - **Contesto**: Piano Nutrizionale, editor dieta guidata (dietPlan v1,
   revisioni schema 3)
 - **Documenti collegati**: `docs/saas-data-contracts.md` (dietPlan v1
-  evoluto), `docs/editor-dieta-guidata.md` (guida operativa), ADR 0005
+  evoluto), `docs/editor-strutture-dieta.md` (guida operativa, allora `editor-dieta-guidata.md`), ADR 0005
   (dieta guidata), ADR 0006 (ricettario professionisti)
 
 ## 1. Perché questa decisione
