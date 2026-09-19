@@ -73,9 +73,9 @@ function dietPlan() {
   ] });
 }
 
-function v3Profile(extra = {}) {
+function assignedProfile(extra = {}) {
   return {
-    schemaVersion: 3,
+    schemaVersion: 1,
     clientProfileId: 'cp1',
     assignmentId: 'a1',
     structureId: 's1',
@@ -97,9 +97,9 @@ const personalPlan = snapshot => ({ schemaVersion: Domain.VERSION, days: {}, ali
 // ---- Snapshot della conferma ----
 
 test('snapshot: la conferma fissa revisione, checksum e versione catalogo', () => {
-  const profile = v3Profile();
+  const profile = assignedProfile();
   const snapshot = saas.snapshotFor(profile, new Date('2026-05-01T08:00:00.000Z'));
-  assert.equal(snapshot.schemaVersion, 2);
+  assert.equal(snapshot.schemaVersion, 1);
   assert.equal(snapshot.structureId, 's1');
   assert.equal(snapshot.structureRevisionId, 'rev1');
   assert.equal(snapshot.structureChecksum, 'chk-1');
@@ -108,15 +108,15 @@ test('snapshot: la conferma fissa revisione, checksum e versione catalogo', () =
 });
 
 test('snapshot: cambio revisione o catalogo richiede nuova conferma', () => {
-  const profile = v3Profile();
+  const profile = assignedProfile();
   const plan = personalPlan(saas.snapshotFor(profile));
   assert.equal(saas.snapshotMatches(plan, profile), true);
   // Nuova revisione della struttura → pending-confirmation
-  assert.equal(saas.snapshotMatches(plan, v3Profile({ structureRevisionId: 'rev2', structureRevision: { revisionId: 'rev2', dietPlan: dietPlan() } })), false);
+  assert.equal(saas.snapshotMatches(plan, assignedProfile({ structureRevisionId: 'rev2', structureRevision: { revisionId: 'rev2', dietPlan: dietPlan() } })), false);
   // Checksum diverso (contenuto cambiato) → pending-confirmation
-  assert.equal(saas.snapshotMatches(plan, v3Profile({ structureChecksum: 'chk-2' })), false);
+  assert.equal(saas.snapshotMatches(plan, assignedProfile({ structureChecksum: 'chk-2' })), false);
   // Anche solo il catalogo ingredienti è cambiato → pending-confirmation
-  assert.equal(saas.snapshotMatches(plan, v3Profile({ ingredientCatalogVersion: 8 })), false);
+  assert.equal(saas.snapshotMatches(plan, assignedProfile({ ingredientCatalogVersion: 8 })), false);
   // Nessuno snapshot → da confermare
   assert.equal(saas.snapshotMatches(personalPlan(), profile), false);
 });
@@ -131,7 +131,7 @@ test('applyPolicy: senza assegnazione si resta su dosi originali', () => {
 });
 
 test('applyPolicy: assegnato e confermato attiva la vista allineata', () => {
-  const profile = v3Profile();
+  const profile = assignedProfile();
   const result = saas.applyPolicy(personalPlan(saas.snapshotFor(profile)), { state: 'assigned', profile });
   assert.equal(result.mode, 'assigned');
   assert.equal(result.migrationRequired, false);
@@ -139,7 +139,7 @@ test('applyPolicy: assegnato e confermato attiva la vista allineata', () => {
 });
 
 test('applyPolicy: profilo non confermato → originali forzate e conferma richiesta', () => {
-  const profile = v3Profile();
+  const profile = assignedProfile();
   const result = saas.applyPolicy(personalPlan(), { state: 'assigned', profile });
   assert.equal(result.mode, 'pending-confirmation');
   assert.equal(result.migrationRequired, true);
@@ -154,7 +154,7 @@ test('applyPolicy: nei piani famiglia valgono sempre le dosi originali', () => {
   global.getCurrentHousehold = () => ({ id: 'h1' });
   try {
     assert.equal(saas.saasPersonalScope(), false);
-    const profile = v3Profile();
+    const profile = assignedProfile();
     const result = saas.applyPolicy(personalPlan(saas.snapshotFor(profile)), { state: 'assigned', profile });
     assert.equal(result.mode, 'original-only', 'la dieta personale non si applica alla famiglia');
   } finally {
@@ -174,7 +174,7 @@ test('originalOnlyPlan: clona il piano senza mutarlo', () => {
 // ---- Motore dieta ----
 
 test('buildDietEngine: opzioni per pasto e tipo giornata, niente piano → null', () => {
-  const engine = Domain.buildDietEngine(v3Profile());
+  const engine = Domain.buildDietEngine(assignedProfile());
   assert.ok(engine);
   assert.equal(engine.structureRevisionId, 'rev1');
   assert.equal(engine.structureName, 'Struttura base');
@@ -223,7 +223,7 @@ test('dietBlockEquivalents: proporzionali, override esplicito vince senza riscal
 });
 
 test('alignRecipeToDiet: dosi allineate, aggiunti e omessi senza toccare la ricetta', () => {
-  const engine = Domain.buildDietEngine(v3Profile());
+  const engine = Domain.buildDietEngine(assignedProfile());
   const recipe = {
     id: 'r1', name: 'Pasta al pomodoro', slot: 'lunch',
     ingredients: [
@@ -263,7 +263,7 @@ test('alignRecipeToDiet: dosi allineate, aggiunti e omessi senza toccare la rice
 
 test('loadContext online: profilo assegnato salvato in cache e motore valido', async () => {
   delete store['pn_saas_profile_u1'];
-  const profile = v3Profile();
+  const profile = assignedProfile();
   global.callSaasFunction = async () => ({ state: 'assigned', profile });
   try {
     const context = await saas.loadContext('u1');
@@ -280,7 +280,7 @@ test('loadContext online: profilo assegnato salvato in cache e motore valido', a
 });
 
 test('loadContext offline: fallback sull’ultima versione verificata', async () => {
-  const profile = v3Profile();
+  const profile = assignedProfile();
   global.callSaasFunction = async () => { throw new Error('rete assente'); };
   try {
     const context = await saas.loadContext('u1');
@@ -295,9 +295,9 @@ test('loadContext offline: fallback sull’ultima versione verificata', async ()
 });
 
 test('cachedContext: profilo scaduto o senza motore → null', async () => {
-  store['pn_saas_profile_u2'] = JSON.stringify({ state: 'assigned', profile: v3Profile({ expiresAt: '2020-01-01T00:00:00.000Z' }) });
+  store['pn_saas_profile_u2'] = JSON.stringify({ state: 'assigned', profile: assignedProfile({ expiresAt: '2020-01-01T00:00:00.000Z' }) });
   assert.equal(saas.cachedContext('u2'), null, 'assegnazione scaduta');
-  const noEngine = v3Profile();
+  const noEngine = assignedProfile();
   noEngine.structureRevision = { revisionId: 'rev1', dietPlan: Domain.createEmptyDietPlan({ days: [] }) };
   store['pn_saas_profile_u2'] = JSON.stringify({ state: 'assigned', profile: noEngine });
   assert.equal(saas.cachedContext('u2'), null, 'senza piano a blocchi non si attiva nulla');

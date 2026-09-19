@@ -1,8 +1,8 @@
-# Contratti SaaS — modello v3 (catalogo globale, strutture a blocchi, template equivalenze)
+# Contratti SaaS — catalogo globale, strutture a blocchi, template equivalenze
 
 Tutte le date API sono ISO-8601; in Firestore sono `Timestamp`. Le stringhe utente sono trim, con lunghezze massime e senza HTML. I payload non accettano campi inattesi.
 
-Principio portante del modello: **identità e logica clinica separate**. Il catalogo globale contiene solo identità (nomi, alias, categoria, famiglia, flag dietetici); grammature, equivalenze e proporzioni vivono esclusivamente nel perimetro organizzazione (strutture dieta, template equivalenze, override). Lo schema JSON di riferimento: `docs/schema-catalogo-strutture-v3.json`.
+Principio portante del modello: **identità e logica clinica separate**. Il catalogo globale contiene solo identità (nomi, alias, categoria, famiglia, flag dietetici); grammature, equivalenze e proporzioni vivono esclusivamente nel perimetro organizzazione (strutture dieta, template equivalenze, override). Lo schema JSON di riferimento: `docs/schema-catalogo-strutture.json`.
 
 ## Membership e permessi
 
@@ -18,18 +18,18 @@ Principio portante del modello: **identità e logica clinica separate**. Il cata
 
 La membership autorevole è `organizations/{orgId}/members/{uid}` con `role`, `status`, `schemaVersion`. Per un nutrizionista `clients/{clientId}.nutritionistUids` limita l'accesso. `accountClientLinks/{uid}` è scritto solo server-side.
 
-## Catalogo globale ingredienti (v3)
+## Catalogo globale ingredienti (schema 1)
 
-`globalIngredientCatalog/current/{meta,families,ingredients,categories}` + `meta/summary` `{schemaVersion: 3, catalogVersion, checksum, ingredientCount, familyCount, categoryCount}`. Snapshot immutabili in `globalIngredientCatalog/versions/snapshots/<n>`; config server-only in `globalIngredientCatalog/config/{import,denylist}`. Ogni commit/restore crea una nuova versione mai sovrascritta; le revisioni strutture conservano `ingredientCatalogVersion` (non-retroattività).
+`globalIngredientCatalog/current/{meta,families,ingredients,categories}` + `meta/summary` `{schemaVersion: 1, catalogVersion, checksum, ingredientCount, familyCount, categoryCount}`. Snapshot immutabili in `globalIngredientCatalog/versions/snapshots/<n>`; config server-only in `globalIngredientCatalog/config/{import,denylist}`. Ogni commit/restore crea una nuova versione mai sovrascritta; le revisioni strutture conservano `ingredientCatalogVersion` (non-retroattività).
 
 ```js
 // families/{familyId} — famiglia globale stabile, unità di equivalenza
-{ schemaVersion: 3, familyId: "cereali", displayName: "Cereali e derivati",
+{ schemaVersion: 1, familyId: "cereali", displayName: "Cereali e derivati",
   categoryId: "carb", sortOrder: 10, status: "active",
   catalogVersion, updatedAt }
 
 // ingredients/{ingredientId} — SOLO identità, zero dosi
-{ schemaVersion: 3, ingredientId: "riso", displayName: "Riso",
+{ schemaVersion: 1, ingredientId: "riso", displayName: "Riso",
   normalizedName: "riso", aliases: ["risotto", "riso in bianco"],
   searchTokens: ["riso", "risotto", "bianco"],
   categoryId: "carb", familyId: "cereali",
@@ -39,15 +39,15 @@ La membership autorevole è `organizations/{orgId}/members/{uid}` con `role`, `s
 
 Qualsiasi chiave dose (`quantity*`, `grams`, `dose*`, `slots`…) è vietata dal validatore e rifiuta l'intero import. Il client riceve il catalogo come snapshot dentro il profilo assegnato (`publicCatalogSnapshot`): categorie, famiglie e ingredienti attivi, nessun campo server-only. Formato e ciclo di vita dell'import: `docs/catalog-import-format.md`.
 
-## Struttura dieta (revisioni schema 4, dietPlan schema 2)
+## Struttura dieta (revisioni schema 1, dietPlan schema 1)
 
 Le strutture sono org-scoped: `organizations/{orgId}/dietStructures/{structureId}` con metadati `{name, description, status, ownerId, createdAt, updatedAt}` e subcollection `revisions/{revisionId}` immutabile:
 
 ```js
 {
-  schemaVersion: 4,
+  schemaVersion: 1,
   revisionId, status: "published",
-  dietPlan: { … schema 2, sotto … },
+  dietPlan: { … schema 1, sotto … },
   checksum: "sha256 hex",            // structureRevisionChecksum({schemaVersion, dietPlan})
   ingredientCatalogVersion,          // congelato alla pubblicazione
   changelog, restoredFromRevisionId,
@@ -55,7 +55,7 @@ Le strutture sono org-scoped: `organizations/{orgId}/dietStructures/{structureId
 }
 ```
 
-Il `dietPlan` schema 2 è il solo contenuto clinico: giornate → pasti → **opzioni**. Tre tipi di opzione, mutuamente esclusivi:
+Il `dietPlan` schema 1 è il solo contenuto clinico: giornate → pasti → **opzioni**. Tre tipi di opzione, mutuamente esclusivi:
 
 - `family-block` — 1–8 **blocchi famiglia di riferimento**: quantità sull'ingrediente di riferimento, equivalenti dal template (snapshot non retroattivo), override espliciti della struttura;
 - `ingredients` — 1–20 ingredienti singoli con quantità;
@@ -115,12 +115,12 @@ Le etichette A/B/C/D **non si persistono**: sono derivazione di UI quando un pas
 
 La famiglia di riferimento non può comparire tra gli equivalenti. Il calcolo proporzionale (`dietBlockEquivalents` in `js/domain.js`) scala le quantità rispetto alla `referenceAmount` del blocco.
 
-## Assegnazione struttura (v3)
+## Assegnazione struttura (schema 1)
 
 ```js
 // organizations/{orgId}/clients/{clientId}/assignments/{assignmentId}
 {
-  schemaVersion: 3, assignmentId, organizationId, clientId,
+  schemaVersion: 1, assignmentId, organizationId, clientId,
   structure: { structureId, revisionId, checksum },   // puntatore verificato
   ingredientCatalogVersion,
   status: "active|suspended|revoked",
@@ -132,7 +132,7 @@ La famiglia di riferimento non può comparire tra gli equivalenti. Il calcolo pr
 
 `clients/{clientId}/state/activeAssignment` è una proiezione server-side; la cronologia resta nella subcollection `assignments`. Payload `assignClientStructure`: campi esatti `[organizationId, clientId, structureId, effectiveAt, expiresAt, withoutExpiration, notes, idempotencyKey]` — niente strategie né checksum lato client. Senza `expiresAt` è obbligatorio `withoutExpiration`.
 
-Il cliente legge tutto da `getMyAssignedProfile({})` → `profile` (schema 3): `{clientProfileId, assignmentId, structureId, structureRevisionId, structureChecksum, structureName, ingredientCatalogVersion, effectiveAt, expiresAt, structureRevision: {revisionId, dietPlan}, catalog: {catalogVersion, categories, families, ingredients}, compatibleClientSchema: 7}`. Lo snapshot client (`js/saas.js`, persistito nel piano settimanale come campo `nutritionSnapshot`) è `{schemaVersion: 2, clientProfileId, assignmentId, resolvedAt, migrationDecision: "confirmed", structureId, structureRevisionId, structureChecksum, ingredientCatalogVersion}`.
+Il cliente legge tutto da `getMyAssignedProfile({})` → `profile` (schema 1): `{clientProfileId, assignmentId, structureId, structureRevisionId, structureChecksum, structureName, ingredientCatalogVersion, effectiveAt, expiresAt, structureRevision: {revisionId, dietPlan}, catalog: {catalogVersion, categories, families, ingredients}, compatibleClientSchema: 7}`. Lo snapshot client (`js/saas.js`, persistito nel piano settimanale come campo `nutritionSnapshot`) è `{schemaVersion: 2, clientProfileId, assignmentId, resolvedAt, migrationDecision: "confirmed", structureId, structureRevisionId, structureChecksum, ingredientCatalogVersion}`.
 
 ## Coda ingredienti (client → platform admin)
 
@@ -173,7 +173,7 @@ Il cliente propone categoria+famiglia per un termine non riconosciuto (`submitCa
   createdAt, updatedAt, createdBy, decidedAt, decidedBy
 }
 
-// Invito con EMAIL REALE (ADR 0004): type clientEmail
+// Invito con EMAIL REALE (ADR 0001): type clientEmail
 {
   schemaVersion: 2, inviteId, type: "clientEmail", channel: "email",
   organizationId,
@@ -305,7 +305,7 @@ Le risposte di `listAuthorizedClients` includono `firstName`, `lastName`, `usern
 
 Per i clienti l'anagrafica è `firstName`/`lastName` gestita solo dallo staff via `updateClientProfileByStaff`. Per i professionisti l'anagrafica `firstName`/`lastName` è gestita solo dal creatore via `updateMemberProfileByStaff`.
 
-## Vista Clienti unificata (console, ADR 0005)
+## Vista Clienti unificata (console, ADR 0002)
 
 La console ha un'unica area «Clienti»: niente vista «Utenti» separata. Il team dello studio è riservato all'admin; richieste e inviti del cliente vivono nella scheda del cliente, senza elenco duplicato. L'invito con email reale è un dialog dedicato e il nutrizionista vede solo i propri clienti, in tutti gli stati operativi.
 
@@ -323,7 +323,7 @@ Titolo del cliente (mai UID o ID tecnici): «Nome Cognome» → email mascherata
 
 La rimozione esiste SOLO dentro la scheda («Rimuovi cliente» → dialog esplicativo → `removeClientLink`): revoca logica con audit, senza cancellare Auth/household/ricette/backup.
 
-## Ricettario professionisti (ADR 0006)
+## Ricettario professionisti (ADR 0003)
 
 Collezione `organizations/{orgId}/recipes/{recipeId}` (server-only: le regole negano tutto ai client, nessun indice composto):
 

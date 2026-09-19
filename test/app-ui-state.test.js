@@ -297,7 +297,7 @@ test('Profilo nutrizionale: collegamento attivo mostra sezione informativa o pro
   // Profilo assegnato e verificato.
   appState.saasContext = {
     state: 'assigned',
-    profile: { structureId: 'str-1', structureName: 'Base proteine', structureRevisionId: '4', schemaVersion: 2 }
+    profile: { structureId: 'str-1', structureName: 'Base proteine', structureRevisionId: '4', schemaVersion: 1 }
   };
   appState.saasPolicy = { mode: 'assigned', migrationRequired: false };
   const assigned = renderSaasProfileSection();
@@ -400,7 +400,7 @@ test('avvio rapido: dati e contesto invariati → nessuna riapplicazione né re-
   const previousSaasFn = global.callSaasFunction;
   const user = { uid: 'u1', email: 'mario@utenti.pianonutrizionale.app' };
   const profile = {
-    clientProfileId: 'c1', assignmentId: 'a1', schemaVersion: 3,
+    clientProfileId: 'c1', assignmentId: 'a1', schemaVersion: 1,
     structureId: 's1', structureRevisionId: 'rev1', structureChecksum: 'chk-1',
     structureName: 'Struttura base', ingredientCatalogVersion: 1,
     structureRevision: {

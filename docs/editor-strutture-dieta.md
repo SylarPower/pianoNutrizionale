@@ -1,6 +1,6 @@
-# Editor strutture dieta — guida operativa (dietPlan schema 2)
+# Editor strutture dieta — guida operativa (dietPlan schema 1)
 
-L'editor delle strutture costruisce la dieta come un piano stampato: **giornate → pasti → opzioni**, con le dosi espresse su **blocchi famiglia di riferimento**. Contratto dati: `docs/saas-data-contracts.md` (struttura dieta, revisioni schema 4); schema JSON: `docs/schema-catalogo-strutture-v3.json`; decisioni: ADR 0008.
+L'editor delle strutture costruisce la dieta come un piano stampato: **giornate → pasti → opzioni**, con le dosi espresse su **blocchi famiglia di riferimento**. Contratto dati: `docs/saas-data-contracts.md` (struttura dieta, revisioni schema 1); schema JSON: `docs/schema-catalogo-strutture.json`; decisioni: ADR 0004.
 
 ## Dove si trova
 

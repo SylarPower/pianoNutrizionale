@@ -1,5 +1,5 @@
 'use strict';
-/* Link d'invito consegnato a mano (evoluzione dell'ADR 0004).
+/* Link d'invito consegnato a mano (evoluzione dell'ADR 0001).
  *
  * Il servizio di invio email è stato eliminato: il backend costruisce solo il
  * link e lo restituisce alla console, che lo mostra con "Copia link" e

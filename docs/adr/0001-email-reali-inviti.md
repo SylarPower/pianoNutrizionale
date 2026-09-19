@@ -1,4 +1,4 @@
-# ADR 0004 — Inviti e autenticazione con email reali
+# ADR 0001 — Inviti e autenticazione con email reali
 
 - **Stato**: accettata; **aggiornata il 2026-09-15** — consegna dell'invito
   solo manuale (Copia link / Condividi link), servizio email eliminato e

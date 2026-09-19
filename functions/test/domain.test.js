@@ -88,7 +88,7 @@ test('revisioni struttura: checksum schema corrente e verifica fail-closed', () 
   revision.checksum = structureRevisionChecksum({ schemaVersion: STRUCTURE_REVISION_SCHEMA_VERSION, dietPlan });
   assert.equal(verifyStructureRevision(revision), true);
   assert.equal(verifyStructureRevision({ ...revision, dietPlan: { ...dietPlan, generalNotes: 'modificato' } }), false, 'checksum legato al contenuto');
-  assert.equal(verifyStructureRevision({ ...revision, schemaVersion: 2 }), false, 'schema obsoleto rifiutato');
+  assert.equal(verifyStructureRevision({ ...revision, schemaVersion: 99 }), false, 'versione non corrente rifiutata');
   assert.equal(verifyStructureRevision({ ...revision, status: 'draft' }), false, 'solo revisioni pubblicate');
 });
 

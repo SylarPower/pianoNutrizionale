@@ -147,7 +147,7 @@ test('Impostazioni: tema penultimo e uscita davvero ultima', () => {
   const previousContext = appState.saasContext;
   const previousPolicy = appState.saasPolicy;
   appState.saasContext = { state: 'assigned', profile: {
-    schemaVersion: 3, clientProfileId: 'cp1', assignmentId: 'a1',
+    schemaVersion: 1, clientProfileId: 'cp1', assignmentId: 'a1',
     structureId: 's1', structureRevisionId: 'rev1', structureChecksum: 'chk',
     structureName: 'Struttura base', ingredientCatalogVersion: 1,
     structureRevision: { revisionId: 'rev1', dietPlan: PianoDomain.createEmptyDietPlan() },

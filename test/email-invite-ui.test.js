@@ -1,5 +1,5 @@
 'use strict';
-/* Interfaccia del nuovo modello con email reali (ADR 0004).
+/* Interfaccia del nuovo modello con email reali (ADR 0001).
  *
  * Verifica statica di client e console:
  *  - schermata invito email `#/invito/<token>` con email, nome e cognome

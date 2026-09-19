@@ -164,7 +164,7 @@ const CLIENT_DIET_PLAN = () => PianoDomain.createEmptyDietPlan({ days: [
   ] })
 ] });
 const CLIENT_PROFILE = () => ({
-  schemaVersion: 3,
+  schemaVersion: 1,
   clientProfileId: 'cp1',
   assignmentId: 'a1',
   structureId: 's1',

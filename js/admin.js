@@ -560,7 +560,7 @@ async function submitAssignment(event) {
   } catch (error) { $('assignment-error').textContent = adminError(error); }
 }
 
-// ---- Sezione Ricettario professionisti (ADR 0006) ----
+// ---- Sezione Ricettario professionisti (ADR 0003) ----
 // Bozze private del professionista, condivisioni di studio (solo creatore)
 // e invii tracciati ai clienti. Tutte le scritture passano dalle callable;
 // le archiviate non sono più modificabili né inviabili (senza ripristino).

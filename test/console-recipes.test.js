@@ -1,5 +1,5 @@
 'use strict';
-/* Parte C (console) — vista Ricettario professionisti (ADR 0006):
+/* Parte C (console) — vista Ricettario professionisti (ADR 0003):
  * - voce di menu, vista view-recipes, dialoghi ricetta e invio;
  * - tutte le scritture passano dalle callable (mai Firestore diretto);
  * - permessi UI: modifica/archivia proprietario, condividi creatore. */

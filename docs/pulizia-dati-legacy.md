@@ -37,7 +37,7 @@ produzione. Questo documento corregge quel piano.
 | `recipeShares/**`, `priceEntries/**`, `priceMeta/**`, `accountClientLinks/**`, `platformMembers/**` | Funzionalità attive: condivisioni, prezzi, collegamenti account. |
 | `organizations/pianoNutrizionale/**` | È l'organizzazione SaaS **in uso**. Le Functions accettano solo questa (`SINGLE_ORGANIZATION_ID = 'pianoNutrizionale'`, `functions/src/domain.js:5`). |
 
-La rifondazione pre-lancio (ADR 0008) ha eliminato dal codice ruleSets,
+La rifondazione pre-lancio (ADR 0004) ha eliminato dal codice ruleSets,
 globalRuleSets, code mapping e ogni ponte legacy: le collezioni elencate qui
 non sono più lette da nessuna Function né dal client.
 
@@ -215,7 +215,7 @@ Se hai anche un modo di lanciare i test automatici (per esempio il workflow
 `npm --prefix functions test` = 111 test, `npm run smoke` = SMOKE OK,
 `npm run syntax` = OK. Tutti verdi sul ramo aggiornato.
 
-> Conteggi aggiornati alla rifondazione (ADR 0008): 345 test client e 111
+> Conteggi aggiornati alla rifondazione (ADR 0004): 345 test client e 111
 > test Functions.
 
 > Gli account tecnici con email fittizia (`@utenti.pianonutrizionale.app`)

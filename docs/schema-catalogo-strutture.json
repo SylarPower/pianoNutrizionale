@@ -1,6 +1,6 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "$id": "https://piano.app/schemas/catalogo-strutture-v3.json",
+  "$id": "https://piano.app/schemas/catalogo-strutture.json",
   "title": "Piano — Catalogo globale, Strutture dieta, Template equivalenze e assegnazioni",
   "description": "Contratto vigente dopo la rifondazione pre-lancio. Identità (catalogo globale) separata dalla logica clinica (strutture e template org-scoped). Il catalogo non contiene dosi; le dosi vivono solo nelle strutture dieta e nei template equivalenze del singolo professionista. Le revisioni sono immutabili e non retroattive: checksum verificato sia dal server sia dal client.",
   "type": "object",
@@ -102,12 +102,12 @@
       }
     },
     "dietPlan": {
-      "description": "Schema 2. Giornate → pasti → opzioni. Le etichette A/B/C/D non si persistono: derivazione di UI. Un pasto a opzione singola resta options:[…] con un solo elemento.",
+      "description": "Schema 1. Giornate → pasti → opzioni. Le etichette A/B/C/D non si persistono: derivazione di UI. Un pasto a opzione singola resta options:[…] con un solo elemento.",
       "type": "object",
       "required": ["schemaVersion", "days", "generalNotes"],
       "additionalProperties": false,
       "properties": {
-        "schemaVersion": { "const": 2 },
+        "schemaVersion": { "const": 1 },
         "generalNotes": { "type": "string", "maxLength": 2000 },
         "days": { "type": "array", "minItems": 1, "maxItems": 14, "items": { "$ref": "#/$defs/dietPlanDay" } }
       }
@@ -236,13 +236,13 @@
       }
     },
     "structureRevision": {
-      "description": "Schema 4: solo dietPlan, checksum dedicato. La revisione pubblicata congela anche ingredientCatalogVersion (non-retroattività del catalogo).",
+      "description": "Schema 1: solo dietPlan, checksum dedicato. La revisione pubblicata congela anche ingredientCatalogVersion (non-retroattività del catalogo).",
       "type": "object",
       "required": ["revisionId", "schemaVersion", "status", "dietPlan", "checksum", "ingredientCatalogVersion"],
       "additionalProperties": false,
       "properties": {
         "revisionId": { "type": "string" },
-        "schemaVersion": { "const": 4 },
+        "schemaVersion": { "const": 1 },
         "status": { "enum": ["published"] },
         "dietPlan": { "$ref": "#/$defs/dietPlan" },
         "checksum": { "type": "string", "description": "structureRevisionChecksum({schemaVersion, dietPlan})." },

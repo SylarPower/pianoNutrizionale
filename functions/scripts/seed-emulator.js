@@ -64,7 +64,7 @@ function canonicalIngredient(entry) {
 function catalogContentChecksum(ingredients, categories, families, version) {
   const byId = key => (a, b) => String(a[key]).localeCompare(String(b[key]));
   return checksumOf({
-    schemaVersion: 3, catalogVersion: version,
+    schemaVersion: 1, catalogVersion: version,
     ingredients: ingredients.map(item => canonicalIngredient(item)).sort(byId('ingredientId')),
     categories: categories.map(item => canonicalCategory(item)).sort(byId('categoryId')),
     families: families.map(item => canonicalFamily(item)).sort(byId('familyId'))
@@ -110,13 +110,13 @@ const SEED_TEMPLATE = {
   ]
 };
 
-// ---- Struttura dieta a blocchi (dietPlan schema 2) ----
+// ---- Struttura dieta a blocchi (dietPlan schema 1) ----
 // Il blocco cereali del pranzo è agganciato alla revisione 1 del template:
 // lo snapshot è fissato nella revisione pubblicata e non cambia se il
 // template evolve (non retroattività silenziosa). Un override puntuale
 // personalizza gli gnocchi rispetto al template.
 const SEED_DIET_PLAN = {
-  schemaVersion: 2,
+  schemaVersion: 1,
   days: [
     {
       dayId: 'giorno-allenamento', label: 'Giorno di allenamento', dayType: 'training',
@@ -290,18 +290,18 @@ async function main() {
 
   categories.forEach(category => batch.set(
     db.doc(`globalIngredientCatalog/current/categories/${category.categoryId}`),
-    { schemaVersion: 3, ...category, catalogVersion, updatedAt: now }
+    { schemaVersion: 1, ...category, catalogVersion, updatedAt: now }
   ));
   families.forEach(family => batch.set(
     db.doc(`globalIngredientCatalog/current/families/${family.familyId}`),
-    { schemaVersion: 3, ...family, catalogVersion, updatedAt: now }
+    { schemaVersion: 1, ...family, catalogVersion, updatedAt: now }
   ));
   ingredients.forEach(ingredient => batch.set(
     db.doc(`globalIngredientCatalog/current/ingredients/${ingredient.ingredientId}`),
-    { schemaVersion: 3, ...ingredient, catalogVersion, updatedAt: now }
+    { schemaVersion: 1, ...ingredient, catalogVersion, updatedAt: now }
   ));
   batch.set(db.doc('globalIngredientCatalog/current/meta/summary'), {
-    schemaVersion: 3, catalogVersion, checksum: catalogChecksum,
+    schemaVersion: 1, catalogVersion, checksum: catalogChecksum,
     ingredientCount: ingredients.length, categoryCount: categories.length, familyCount: families.length,
     updatedAt: now
   });

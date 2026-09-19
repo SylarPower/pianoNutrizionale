@@ -42,8 +42,8 @@ Il client usa una feature flag pubblica in `js/saas-config.js`, attiva (`enabled
 
 Architettura e operatività:
 
-- [ADR 0008 — rifondazione catalogo/strutture/template](docs/adr/0008-rifondazione-catalogo-strutture-v3.md) e [gli altri ADR](docs/adr/) — il codice usa la sola organizzazione `pianoNutrizionale`
-- [contratti dati e matrice permessi](docs/saas-data-contracts.md) e [schema JSON](docs/schema-catalogo-strutture-v3.json)
+- [ADR 0004 — rifondazione catalogo/strutture/template](docs/adr/0004-rifondazione-catalogo-strutture.md) e [gli altri ADR](docs/adr/) — il codice usa la sola organizzazione `pianoNutrizionale`
+- [contratti dati e matrice permessi](docs/saas-data-contracts.md) e [schema JSON](docs/schema-catalogo-strutture.json)
 - [formato import catalogo](docs/catalog-import-format.md) e [editor strutture dieta](docs/editor-strutture-dieta.md)
 - [runbook deploy, migrazione, GDPR e rollback](docs/saas-runbook.md)
 - [pubblicare su Firebase senza terminale](docs/deploy-online-senza-terminale.md)
@@ -85,12 +85,12 @@ collezioni dell'organizzazione singola `pianoNutrizionale`:
 ```text
 organizations/pianoNutrizionale/members/{uid}                 membership (solo nutritionist)
 organizations/pianoNutrizionale/clients/{clientId}            clienti + assignments/ e state/
-organizations/pianoNutrizionale/dietStructures/{id}/revisions/{n}   strutture dieta (schema 4)
+organizations/pianoNutrizionale/dietStructures/{id}/revisions/{n}   strutture dieta (revisioni schema 1)
 organizations/pianoNutrizionale/equivalenceTemplates/{id}/revisions/{n}   template equivalenze
 organizations/pianoNutrizionale/invitations|clientLinkRequests|catalogRequests|notifications|auditLog
 accountClientLinks/{uid}                          collegamento account ↔ cliente
 platformMembers/{uid}                             platform admin (creatore)
-globalIngredientCatalog/current/{meta,families,ingredients,categories}   catalogo identità (v3)
+globalIngredientCatalog/current/{meta,families,ingredients,categories}   catalogo identità (schema 1)
 globalIngredientCatalog/config                    config server-only (import flag, denylist)
 globalIngredientCatalog/versions/snapshots/{n}    snapshot versioni (rollback)
 platformAuditLog/{eventId}                        audit di piattaforma (catalogo, richieste)

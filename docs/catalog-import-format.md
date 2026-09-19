@@ -1,6 +1,6 @@
 # Import batch del catalogo globale ingredienti (platform admin)
 
-Documento di contratto per l'import del catalogo ingredienti globale v3 (`globalIngredientCatalog/current/...`). L'import è riservato al **platform admin**, è **versionato** (`catalogVersion`), **atomico**, **reversibile** e si esegue via callable backend (`importGlobalIngredientCatalog`) — mai da scritture client.
+Documento di contratto per l'import del catalogo ingredienti globale (`globalIngredientCatalog/current/...`). L'import è riservato al **platform admin**, è **versionato** (`catalogVersion`), **atomico**, **reversibile** e si esegue via callable backend (`importGlobalIngredientCatalog`) — mai da scritture client.
 
 Il catalogo contiene **solo identità**: nomi canonici, alias, categoria, famiglia, flag dietetici vegetarian/vegan, `searchTokens` (rigenerati dal server). **Zero dosi**: qualsiasi chiave che somigli a una dose rifiuta l'intero file — grammature e proporzioni vivono esclusivamente nelle strutture dieta e nei template equivalenze del singolo professionista.
 
@@ -65,4 +65,4 @@ Le versioni del catalogo **non collassano** con le revisioni delle strutture: og
 - `functions/test/fixtures/catalog-import-alias-collision.json` — alias che collide con un ingrediente esistente → dry-run con conflitto.
 - `functions/test/fixtures/catalog-import-provisional-denied.json` — ID in denylist → rifiuto bloccante.
 
-> **Stato**: callable, fixture e test sono allineati al formato v3. Il commit/restore in produzione resta dietro `CATALOG_IMPORT_ENABLED` (default off); il dry-run è sempre disponibile al platform admin. La denylist vive solo nella configurazione server-side e non entra mai nel repository: la fixture `…-provisional-denied.json` usa un ID segnaposto per dimostrare il meccanismo.
+> **Stato**: callable, fixture e test sono allineati al formato corrente. Il commit/restore in produzione resta dietro `CATALOG_IMPORT_ENABLED` (default off); il dry-run è sempre disponibile al platform admin. La denylist vive solo nella configurazione server-side e non entra mai nel repository: la fixture `…-provisional-denied.json` usa un ID segnaposto per dimostrare il meccanismo.

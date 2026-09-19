@@ -94,7 +94,7 @@ Creare una struttura dieta con l'editor a blocchi (`/admin.html` → Strutture: 
 - Il flag è pubblico e non è un controllo di sicurezza: le autorizzazioni
   restano nelle Rules e nelle callable.
 
-## Console unificata (ADR 0005, 2026-09-13)
+## Console unificata (ADR 0002, 2026-09-13)
 
 - Deploy come sempre: Rules/indici, Functions, Hosting con bump di `CACHE_VERSION`.
 - Alcune query combinavano due `where` senza indice composto dichiarato
@@ -216,7 +216,7 @@ Queste parti non devono essere simulate nel client. La piattaforma consegnata co
 
 Un invito a un account già esistente compare nella campanella dell’app, con il nome del professionista e i pulsanti per accettare o rifiutare. Nome e cognome sono facoltativi: si possono salvare dalla sezione di collegamento professionista (cliente) o dalla console (professionista).
 
-### Inviti con email reale (ADR 0004) — link consegnato a mano
+### Inviti con email reale (ADR 0001) — link consegnato a mano
 
 La console invita i clienti reali con la loro **email**, nome e cognome
 (**Clienti → ＋ Invita nuovo cliente**): il cliente sceglie la password dal link

@@ -78,7 +78,7 @@ test('validateDietPlan accetta un piano valido e lo normalizza', () => {
 
 test('validateDietPlan rifiuta versione, campi extra, duplicati e limiti', () => {
   assert.throws(() => validateDietPlan(null), /dietPlan mancante/);
-  assert.throws(() => validateDietPlan({ ...validPlan(), schemaVersion: 1 }), /schemaVersion/);
+  assert.throws(() => validateDietPlan({ ...validPlan(), schemaVersion: 99 }), /schemaVersion/);
   assert.throws(() => validateDietPlan({ ...validPlan(), extra: 1 }), /campi non ammessi/);
   // dayId duplicato
   const dupDay = validPlan();
@@ -127,7 +127,7 @@ test('revisioni struttura: checksum dedicato e verifica fail-closed', () => {
     dietPlan: { ...dietPlan, generalNotes: 'altre note' }, checksum
   }), false);
   // Schema obsoleto e stato non pubblicato: rifiutati.
-  assert.equal(verifyStructureRevision({ schemaVersion: 2, status: 'published', dietPlan, checksum }), false);
+  assert.equal(verifyStructureRevision({ schemaVersion: 99, status: 'published', dietPlan, checksum }), false);
   assert.equal(verifyStructureRevision({ schemaVersion: STRUCTURE_REVISION_SCHEMA_VERSION, status: 'draft', dietPlan, checksum }), false);
 });
 

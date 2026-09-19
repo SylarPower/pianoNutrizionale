@@ -151,7 +151,7 @@ const ASSIGNED_CATALOG = {
   ]
 };
 const ASSIGNED_PROFILE = {
-  schemaVersion: 3, clientProfileId: 'cp1', assignmentId: 'a1',
+  schemaVersion: 1, clientProfileId: 'cp1', assignmentId: 'a1',
   structureId: 's1', structureRevisionId: 'rev1', structureChecksum: 'chk',
   structureName: 'Base', ingredientCatalogVersion: 1,
   effectiveAt: '2026-01-01T00:00:00.000Z', expiresAt: null,

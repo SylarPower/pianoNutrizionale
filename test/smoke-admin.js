@@ -173,7 +173,7 @@ assert('moltiplicatore ricetta renderizzato', Boolean(doc.querySelector('#diet-p
 // Collect: il piano passa dai factory del dominio senza i transienti.
 window.__admin.adminState.dietPlan.days[0].meals[1].options[0].items[0]._displayName = 'Petto di pollo';
 const collected = window.__admin.collectDietPlanFromEditor();
-assert('collect restituisce piano v2', collected.schemaVersion === domain.DIET_PLAN_SCHEMA_VERSION);
+assert('collect restituisce il piano corrente', collected.schemaVersion === domain.DIET_PLAN_SCHEMA_VERSION);
 assert('collect conserva giorni/pasti/opzioni', collected.days.length === 1 && collected.days[0].meals.length === 2);
 const item = collected.days[0].meals[1].options[0].items[0];
 assert('collect scarta i campi transienti', !('_displayName' in item) && item.ingredientId === 'petto-di-pollo');

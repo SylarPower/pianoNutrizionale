@@ -226,7 +226,7 @@ function usernameFromUser(user) {
 }
 
 // =====================================================================
-// Nuovo modello con EMAIL REALE (ADR 0004)
+// Nuovo modello con EMAIL REALE (ADR 0001)
 // =====================================================================
 // L'email reale è la credenziale dei clienti; nome e cognome sono dati di
 // profilo inseriti dal nutrizionista. Questo blocco NON converte gli account

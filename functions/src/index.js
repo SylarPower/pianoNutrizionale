@@ -226,7 +226,7 @@ async function resolveDueAssignment(orgId, clientId) {
 // interni non escono mai verso il cliente.
 function publicStructureAssignment({ assignment, clientId, structure, revision, catalog }) {
   return {
-    schemaVersion: 3,
+    schemaVersion: 1,
     clientProfileId: clientId,
     assignmentId: assignment.assignmentId,
     structureId: assignment.structure.structureId,
@@ -426,7 +426,7 @@ exports.assignClientStructure = callable(async (data, uid) => {
       tx.update(client.ref.collection('assignments').doc(previousAssignmentId), { status: 'revoked', revocationReason: 'Sostituito da una nuova assegnazione', updatedAt: FieldValue.serverTimestamp(), updatedBy: uid });
     }
     tx.create(assignmentRef, {
-      schemaVersion: 3, assignmentId, clientId: client.id,
+      schemaVersion: 1, assignmentId, clientId: client.id,
       structure: structurePointer, structureName,
       status: immediate ? 'active' : 'scheduled', effectiveAt: Timestamp.fromDate(input.effectiveAt),
       expiresAt: input.expiresAt ? Timestamp.fromDate(input.expiresAt) : null,
@@ -536,7 +536,7 @@ async function authorizedStructure(actor, structureId, { mustOwn = false } = {})
   return { ref, doc };
 }
 
-// Ricettario professionisti (ADR 0006): lettura/modifica solo proprietario
+// Ricettario professionisti (ADR 0003): lettura/modifica solo proprietario
 // con mustOwn (vale ANCHE per il creatore: non modifica le ricette altrui).
 // La visibilità 'studio' abilita lettura e invio, mai la modifica.
 async function authorizedProfessionalRecipe(actor, recipeId, { mustOwn = false } = {}) {
@@ -604,7 +604,7 @@ exports.createDietStructure = callable(async (data, uid) => {
     const [existing, audit] = await Promise.all([tx.get(ref), tx.get(auditRef(actor.organizationId, eventId))]);
     if (existing.exists || audit.exists) return;
     tx.create(ref, {
-      schemaVersion: 2, name, status: 'active', ownerUid: uid, createdBy: uid,
+      schemaVersion: 1, name, status: 'active', ownerUid: uid, createdBy: uid,
       currentRevisionId: '1', latestChecksum: revisionChecksum, summary,
       ingredientCatalogVersion: catalog.catalogVersion,
       createdAt: FieldValue.serverTimestamp(), updatedAt: FieldValue.serverTimestamp()
@@ -801,7 +801,7 @@ function catalogContentChecksum(ingredients, categories, families, catalogVersio
   const byCategory = (a, b) => String(a.categoryId).localeCompare(String(b.categoryId));
   const byFamily = (a, b) => String(a.familyId).localeCompare(String(b.familyId));
   return checksum({
-    schemaVersion: 3,
+    schemaVersion: 1,
     catalogVersion,
     ingredients: ingredients.map(item => canonicalCatalogEntry(item, 'ingredient')).sort(byIngredient),
     categories: categories.map(item => canonicalCatalogEntry(item, 'category')).sort(byCategory),
@@ -860,29 +860,29 @@ exports.importGlobalIngredientCatalog = callable(async (data, uid) => {
       if ((await tx.get(platformAuditRef(eventId))).exists) return;
       snapIngredients.forEach(entry => {
         tx.set(db.doc(`globalIngredientCatalog/current/ingredients/${entry.ingredientId}`), {
-          ...entry, schemaVersion: 3, catalogVersion: nextVersion, updatedAt: FieldValue.serverTimestamp()
+          ...entry, schemaVersion: 1, catalogVersion: nextVersion, updatedAt: FieldValue.serverTimestamp()
         });
       });
       snapCategories.forEach(entry => {
         tx.set(db.doc(`globalIngredientCatalog/current/categories/${entry.categoryId}`), {
-          ...entry, schemaVersion: 3, catalogVersion: nextVersion, updatedAt: FieldValue.serverTimestamp()
+          ...entry, schemaVersion: 1, catalogVersion: nextVersion, updatedAt: FieldValue.serverTimestamp()
         });
       });
       snapFamilies.forEach(entry => {
         tx.set(db.doc(`globalIngredientCatalog/current/families/${entry.familyId}`), {
-          ...entry, schemaVersion: 3, catalogVersion: nextVersion, updatedAt: FieldValue.serverTimestamp()
+          ...entry, schemaVersion: 1, catalogVersion: nextVersion, updatedAt: FieldValue.serverTimestamp()
         });
       });
       deleteIds.forEach(idValue => tx.delete(db.doc(`globalIngredientCatalog/current/ingredients/${idValue}`)));
       deleteCatIds.forEach(idValue => tx.delete(db.doc(`globalIngredientCatalog/current/categories/${idValue}`)));
       deleteFamilyIds.forEach(idValue => tx.delete(db.doc(`globalIngredientCatalog/current/families/${idValue}`)));
       tx.set(db.doc(`globalIngredientCatalog/versions/snapshots/${catalog.catalogVersion}`), {
-        schemaVersion: 3, catalogVersion: catalog.catalogVersion, checksum: catalog.checksum,
+        schemaVersion: 1, catalogVersion: catalog.catalogVersion, checksum: catalog.checksum,
         ingredients: catalog.ingredients, categories: catalog.categories, families: catalog.families,
         supersededBy: nextVersion, createdAt: FieldValue.serverTimestamp(), createdBy: uid
       });
       tx.set(metaRef, {
-        schemaVersion: 3, catalogVersion: nextVersion, checksum: restoredChecksum,
+        schemaVersion: 1, catalogVersion: nextVersion, checksum: restoredChecksum,
         ingredientCount: snapIngredients.length, categoryCount: snapCategories.length, familyCount: snapFamilies.length,
         updatedAt: FieldValue.serverTimestamp(), updatedBy: uid
       });
@@ -958,26 +958,26 @@ exports.importGlobalIngredientCatalog = callable(async (data, uid) => {
     if ((await tx.get(platformAuditRef(eventId))).exists) return;
     report.normalized.ingredients.forEach(entry => {
       tx.set(db.doc(`globalIngredientCatalog/current/ingredients/${entry.ingredientId}`), {
-        schemaVersion: 3, ...entry, catalogVersion: nextVersion, updatedAt: FieldValue.serverTimestamp()
+        schemaVersion: 1, ...entry, catalogVersion: nextVersion, updatedAt: FieldValue.serverTimestamp()
       });
     });
     report.normalized.categories.forEach(entry => {
       tx.set(db.doc(`globalIngredientCatalog/current/categories/${entry.categoryId}`), {
-        schemaVersion: 3, ...entry, catalogVersion: nextVersion, updatedAt: FieldValue.serverTimestamp()
+        schemaVersion: 1, ...entry, catalogVersion: nextVersion, updatedAt: FieldValue.serverTimestamp()
       });
     });
     report.normalized.families.forEach(entry => {
       tx.set(db.doc(`globalIngredientCatalog/current/families/${entry.familyId}`), {
-        schemaVersion: 3, ...entry, catalogVersion: nextVersion, updatedAt: FieldValue.serverTimestamp()
+        schemaVersion: 1, ...entry, catalogVersion: nextVersion, updatedAt: FieldValue.serverTimestamp()
       });
     });
     tx.set(db.doc(`globalIngredientCatalog/versions/snapshots/${catalog.catalogVersion}`), {
-      schemaVersion: 3, catalogVersion: catalog.catalogVersion, checksum: catalog.checksum,
+      schemaVersion: 1, catalogVersion: catalog.catalogVersion, checksum: catalog.checksum,
       ingredients: catalog.ingredients, categories: catalog.categories, families: catalog.families,
       supersededBy: nextVersion, createdAt: FieldValue.serverTimestamp(), createdBy: uid
     });
     tx.set(metaRef, {
-      schemaVersion: 3, catalogVersion: nextVersion, checksum: newChecksum,
+      schemaVersion: 1, catalogVersion: nextVersion, checksum: newChecksum,
       ingredientCount: mergedIngredients.size, categoryCount: mergedCategories.size, familyCount: mergedFamilies.size,
       updatedAt: FieldValue.serverTimestamp(), updatedBy: uid
     });
@@ -1453,7 +1453,7 @@ exports.inviteClientLink = callable(async (data, uid) => {
   }
   const token = crypto.randomBytes(32).toString('hex');
   const inviteId = checksum(`${actor.organizationId}:clientinvite:${input.username}:${input.idempotencyKey}`).slice(0, 32);
-  // Compatibilità controllata (ADR 0004): l'account tecnico è un account di
+  // Compatibilità controllata (ADR 0001): l'account tecnico è un account di
   // test. La sua CREAZIONE è consentita solo con un flag esplicito o negli
   // emulatori; gli account tecnici esistenti continuano invece a funzionare
   // senza limiti (login, collegamento, riscatto degli inviti già emessi).
@@ -1499,7 +1499,7 @@ exports.inviteClientLink = callable(async (data, uid) => {
 });
 
 // =====================================================================
-// Inviti con EMAIL REALE (nuovo flusso — ADR 0004) e convivenza legacy
+// Inviti con EMAIL REALE (nuovo flusso — ADR 0001) e convivenza legacy
 // =====================================================================
 // Regole di base di questo blocco:
 //  - i nuovi clienti reali usano l'email reale come credenziale: nessun
@@ -2057,7 +2057,7 @@ exports.getClientInviteLink = callable(async (data, uid) => {
 exports.getInviteLink = exports.getClientInviteLink;
 
 // Riscatto dell'invito email da parte del cliente autenticato. Il collegamento
-// diventa attivo SOLO con l'email verificata (decisione ADR 0004): qui il
+// diventa attivo SOLO con l'email verificata (decisione ADR 0001): qui il
 // token non viene mai consumato prima. Il token è facoltativo perché l'invito
 // resta recuperabile anche solo dall'email autenticata e verificata.
 exports.redeemClientInvite = callable(async (data, uid, request) => {
@@ -2892,7 +2892,7 @@ exports.respondClientLink = callable(async (data, uid, call) => {
   const orgId = SINGLE_ORGANIZATION_ID;
   if (request.organizationId && request.organizationId !== orgId) throw new HttpsError('not-found', 'Richiesta non trovata');
   // Le richieste nate da un invito con email reale (canale "email") richiedono
-  // l'email verificata: il collegamento abilita dati professionali (ADR 0004).
+  // l'email verificata: il collegamento abilita dati professionali (ADR 0001).
   // Le richieste legacy (username, solo test) non sono toccate.
   if (request.channel === 'email' && call?.auth?.token?.email_verified !== true) {
     throw new HttpsError('failed-precondition', 'Verifica prima il tuo indirizzo email: poi potrai accettare o rifiutare la richiesta');
@@ -3140,7 +3140,7 @@ exports.activateScheduledAssignments = onSchedule({ region: REGION, schedule: 'e
   logger.info('Scheduled assignments processed', { activated: due.size, expired: expired.size });
 });
 
-// ---- Ricettario professionisti (ADR 0006) ----
+// ---- Ricettario professionisti (ADR 0003) ----
 // Raccolta server-only organizations/{org}/recipes (rules: catch-all senza
 // accesso diretto). Concorrenza ottimistica su `revision`; visibilità
 // 'private' (solo proprietario) o 'studio' (lettura+invio per lo studio).
@@ -3643,15 +3643,15 @@ exports.resolveCatalogRequest = callable(async (data, uid) => {
     merged.set(normalizedIngredient.ingredientId, normalizedIngredient);
     const newChecksum = catalogContentChecksum([...merged.values()], catalog.categories, catalog.families, nextVersion);
     tx.set(db.doc(`globalIngredientCatalog/current/ingredients/${normalizedIngredient.ingredientId}`), {
-      schemaVersion: 3, ...normalizedIngredient, catalogVersion: nextVersion, updatedAt: FieldValue.serverTimestamp()
+      schemaVersion: 1, ...normalizedIngredient, catalogVersion: nextVersion, updatedAt: FieldValue.serverTimestamp()
     });
     tx.set(db.doc('globalIngredientCatalog/versions/snapshots/' + catalog.catalogVersion), {
-      schemaVersion: 3, catalogVersion: catalog.catalogVersion, checksum: catalog.checksum,
+      schemaVersion: 1, catalogVersion: catalog.catalogVersion, checksum: catalog.checksum,
       ingredients: catalog.ingredients, categories: catalog.categories, families: catalog.families,
       supersededBy: nextVersion, createdAt: FieldValue.serverTimestamp(), createdBy: uid
     });
     tx.set(db.doc('globalIngredientCatalog/current/meta/summary'), {
-      schemaVersion: 3, catalogVersion: nextVersion, checksum: newChecksum,
+      schemaVersion: 1, catalogVersion: nextVersion, checksum: newChecksum,
       ingredientCount: merged.size, categoryCount: catalog.categories.length, familyCount: catalog.families.length,
       updatedAt: FieldValue.serverTimestamp(), updatedBy: uid
     });

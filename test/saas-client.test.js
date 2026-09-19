@@ -9,7 +9,7 @@ function plan() {
   return { days: {}, alignedDosesEnabled: true };
 }
 const profile = {
-  schemaVersion: 3, clientProfileId: 'client-a', assignmentId: 'asg-1',
+  schemaVersion: 1, clientProfileId: 'client-a', assignmentId: 'asg-1',
   structureId: 'struttura-1', structureRevisionId: '3', structureChecksum: 'a'.repeat(64),
   structureName: 'Base', ingredientCatalogVersion: 4
 };

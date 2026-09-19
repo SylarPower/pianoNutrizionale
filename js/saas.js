@@ -33,7 +33,7 @@
   // cambio di revisione o di catalogo richiede una nuova conferma.
   function snapshotFor(profile, now = new Date()) {
     return {
-      schemaVersion: 2,
+      schemaVersion: 1,
       clientProfileId: profile.clientProfileId,
       assignmentId: profile.assignmentId,
       resolvedAt: now.toISOString(),

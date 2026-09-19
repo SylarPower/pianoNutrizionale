@@ -1,6 +1,6 @@
 {
   "name": "piano-nutrizionale",
-  "version": "4.1.0",
+  "version": "1.0.0",
   "private": true,
   "description": "PWA nutrizionale personale con console SaaS multi-tenant.",
   "scripts": {

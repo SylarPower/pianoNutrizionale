@@ -770,7 +770,7 @@
     return out.sort((a, b) => String(a.id).localeCompare(String(b.id), 'it', { numeric: true }));
   }
 
-  // Accettazione di una condivisione professionale (ADR 0006): il catalogo
+  // Accettazione di una condivisione professionale (ADR 0003): il catalogo
   // corrente è PRESERVATO e ogni ricetta ricevuta sostituisce quella con lo
   // STESSO id, marcata con fromProfessional (provenienza + sola lettura).
   // Pura e deterministica: receivedAt arriva dal chiamante.
@@ -1819,7 +1819,7 @@ const PROTEIN_CATEGORY_LABELS = {
   }
 
   // =====================================================================
-  // Strutture dieta — piano a blocchi (dietPlan schema 2)
+  // Strutture dieta — piano a blocchi (dietPlan schema 1)
   //
   // Il piano descrive la dieta come la deve leggere il cliente: giornate
   // (allenamento/riposo/altra), pasti e opzioni. Non esegue alcun calcolo
@@ -1835,7 +1835,7 @@ const PROTEIN_CATEGORY_LABELS = {
   // tali (note, integrazione, idratazione).
   // =====================================================================
 
-  const DIET_PLAN_SCHEMA_VERSION = 2;
+  const DIET_PLAN_SCHEMA_VERSION = 1;
   const DIET_PLAN_DAY_TYPES = ['training', 'rest', 'other'];
   const DIET_PLAN_DAY_TYPE_LABELS = {
     training: 'Giornata di allenamento',
@@ -2283,7 +2283,7 @@ const PROTEIN_CATEGORY_LABELS = {
     maskEmailClient,
     clientDisplayTitle,
     clientInitials,
-    // Strutture dieta — piano a blocchi (dietPlan schema 2)
+    // Strutture dieta — piano a blocchi (dietPlan schema 1)
     DIET_PLAN_SCHEMA_VERSION,
     DIET_PLAN_DAY_TYPES,
     DIET_PLAN_DAY_TYPE_LABELS,

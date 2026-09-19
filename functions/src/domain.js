@@ -109,7 +109,7 @@ function hashToken(token) {
 }
 
 // ---------------------------------------------------------------------
-// Email reali vs account tecnici legacy (ADR 0004)
+// Email reali vs account tecnici legacy (ADR 0001)
 //
 // `LEGACY_TEST_EMAIL_DOMAINS` è una LISTA CHIUSA e documentata: solo gli
 // indirizzi su questi domini sono considerati "account tecnici di test".
@@ -234,7 +234,7 @@ function effectiveAssignment(assignment, now = new Date()) {
 // Quantità strutturata {value, unit} di blocchi, override, voci e template:
 // numero 0–5000 + unità del vocabolario chiuso dei piani dieta. Nessuna dose
 // vive fuori dalle strutture o dai template equivalenze del singolo
-// professionista. Schema esatto: docs/schema-catalogo-strutture-v3.json.
+// professionista. Schema esatto: docs/schema-catalogo-strutture.json.
 function validateDietAmount(value, name) {
   if (!value || typeof value !== 'object') fail('invalid-argument', `${name} mancante`);
   exactObject(value, ['value', 'unit'], name);
@@ -247,11 +247,11 @@ function validateDietAmount(value, name) {
   return { value: number, unit };
 }
 
-// Checksum della revisione struttura. Schema 4 (modello a blocchi): copre
+// Checksum della revisione struttura. Schema 1 (modello a blocchi): copre
 // solo il dietPlan; le regole classiche per famiglie e i gruppi alternativi
 // non esistono più. Le revisioni 1–3 sono state eliminate col reset
 // pre-lancio: non restano documenti da verificare.
-const STRUCTURE_REVISION_SCHEMA_VERSION = 4;
+const STRUCTURE_REVISION_SCHEMA_VERSION = 1;
 
 function structureRevisionChecksum({ schemaVersion, dietPlan }) {
   return checksum({ schemaVersion, dietPlan: dietPlan === undefined ? null : dietPlan });
@@ -266,14 +266,14 @@ function verifyStructureRevision(value) {
 }
 
 // ---------------------------------------------------------------------
-// Strutture dieta — piano a blocchi (dietPlan schema 2)
+// Strutture dieta — piano a blocchi (dietPlan schema 1)
 // Lo stesso vocabolario vive in js/domain.js per la console; qui la
 // validazione è bloccante (fail) e ogni campo ha un limite. L'esistenza di
 // famiglie/ingredienti/template nel catalogo è verificata dalla callable
 // (serve Firestore): qui solo forma e coerenza interna.
 // ---------------------------------------------------------------------
 
-const DIET_PLAN_SCHEMA_VERSION = 2;
+const DIET_PLAN_SCHEMA_VERSION = 1;
 const DIET_PLAN_DAY_TYPES = new Set(['training', 'rest', 'other']);
 const DIET_PLAN_MEAL_IDS = new Set(['breakfast', 'morning-snack', 'lunch', 'afternoon-snack', 'dinner', 'evening-snack']);
 const DIET_PLAN_UNITS = new Set(['g', 'kg', 'ml', 'l', 'pz', 'fette', 'cucchiai', 'cucchiaini', 'tazze', 'bicchieri', 'porzioni', 'scatolette', 'misurini', 'qb']);
@@ -1045,7 +1045,7 @@ function validateInviteClientLink(input) {
   };
 }
 
-// Invito cliente con EMAIL REALE + nome + cognome (nuovo flusso, ADR 0004).
+// Invito cliente con EMAIL REALE + nome + cognome (nuovo flusso, ADR 0001).
 // Gli indirizzi tecnici legacy sono rifiutati qui: la creazione di account di
 // test passa solo dal flusso legacy esplicito (`inviteClientLink`).
 // Il link viene sempre consegnato a mano dalla console: il payload non ha più
@@ -1243,7 +1243,7 @@ function validateTransferStructureOwnership(input) {
   };
 }
 
-// ---- Ricettario professionisti (ADR 0006) ----
+// ---- Ricettario professionisti (ADR 0003) ----
 // Slot pasti: stessi ID del client (js/domain.js SLOTS e MEAL_SLOTS in
 // js/app.js). La parità esatta è verificata dai test
 // (functions/test/domain.test.js). Le ricette restano server-only: nessun

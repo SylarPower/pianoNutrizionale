@@ -1,5 +1,5 @@
 'use strict';
-/* Parte C (server) — ricettario professionisti (ADR 0006):
+/* Parte C (server) — ricettario professionisti (ADR 0003):
  * - raccolta server-only organizations/pianoNutrizionale/recipes;
  * - list/create/update/archive/share/send/cancel + listProfessionalShares;
  * - concorrenza ottimistica su revision, visibilità private/studio;

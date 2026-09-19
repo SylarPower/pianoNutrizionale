@@ -680,7 +680,7 @@ function applyTheme(isDark) {
 // molto prima dell'auth): evita il lampo di tema chiaro al riavvio della PWA.
 applyTheme(readBootTheme());
 
-// --- Invito con EMAIL REALE: link `#/invito/<token>` (ADR 0004) ---
+// --- Invito con EMAIL REALE: link `#/invito/<token>` (ADR 0001) ---
 // L'email, il nome e il cognome arrivano dal nutrizionista e non si modificano
 // qui; il cliente sceglie solo la password. Il collegamento si attiva dopo la
 // verifica email. I vecchi account vengono mantenuti solo lato server per la
@@ -716,7 +716,7 @@ function clearPendingEmailInviteToken() {
 }
 
 // Invito già usato per la registrazione e in ATTESA DI ATTIVAZIONE.
-// Il server non consuma il token finché l'email non è verificata (ADR 0004):
+// Il server non consuma il token finché l'email non è verificata (ADR 0001):
 // il token dell'invito NON si cancella, resta in sessione finché il riscatto
 // non risponde `link-active`. Qui si ricorda solo che quel token non è più un
 // link da aprire: non deve riportare alla schermata di registrazione (l'account
@@ -900,7 +900,7 @@ function showLogin() {
 
 // ---- Verifica dell'email (clienti reali) ----
 // Il collegamento con il professionista resta inattivo finché l'email non è
-// verificata (ADR 0004). L'account tecnico di test non ha una casella reale:
+// verificata (ADR 0001). L'account tecnico di test non ha una casella reale:
 // per lui il banner non compare.
 const VERIFICATION_RESEND_KEY = "pn_email_verification_last_sent";
 const VERIFICATION_RESEND_COOLDOWN_MS = 60 * 1000;
@@ -990,7 +990,7 @@ function setupVerificationBanner() {
   });
 }
 
-// ---- Attivazione del collegamento dopo la verifica email (ADR 0004) ----
+// ---- Attivazione del collegamento dopo la verifica email (ADR 0001) ----
 // Alla registrazione il riscatto risponde `email-verification-required` e il
 // backend NON consuma il token: finché l'email non è verificata il collegamento
 // resta inattivo. La verifica avviene fuori dall'app (link nella casella di

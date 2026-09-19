@@ -89,7 +89,7 @@ function validPlan() {
 }
 
 test('vocabolario condiviso: versioni, tipi, pasti, unità, opzioni', () => {
-  assert.equal(domain.DIET_PLAN_SCHEMA_VERSION, 2);
+  assert.equal(domain.DIET_PLAN_SCHEMA_VERSION, 1);
   assert.deepEqual(domain.DIET_PLAN_DAY_TYPES, ['training', 'rest', 'other']);
   assert.equal(domain.DIET_PLAN_MEALS.length, 6);
   assert.deepEqual(domain.DIET_PLAN_MEALS.map(meal => meal.id), ['breakfast', 'morning-snack', 'lunch', 'afternoon-snack', 'dinner', 'evening-snack']);
@@ -106,7 +106,7 @@ test('vocabolario condiviso: versioni, tipi, pasti, unità, opzioni', () => {
 
 test('builder puri: piano iniziale con allenamento + riposo e valori neutri', () => {
   const emptyPlan = domain.createEmptyDietPlan();
-  assert.equal(emptyPlan.schemaVersion, 2);
+  assert.equal(emptyPlan.schemaVersion, 1);
   assert.deepEqual(emptyPlan.days.map(day => day.dayType), ['training', 'rest']);
   assert.equal(emptyPlan.generalNotes, '');
   // Le giornate partono senza pasti né note: il professionista costruisce.

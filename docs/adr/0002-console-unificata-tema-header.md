@@ -1,9 +1,9 @@
-# ADR 0005 — Console Clienti unificata e tema in header
+# ADR 0002 — Console Clienti unificata e tema in header
 
 - **Stato**: accettata
 - **Data**: 2026-09-13
 - **Contesto**: Piano Nutrizionale, organizzazione singola `pianoNutrizionale`
-- **Documenti collegati**: `docs/saas-data-contracts.md` (vista unificata), `docs/editor-strutture-dieta.md` (guida operativa), `docs/inviti-email.md`, `docs/saas-runbook.md`, ADR 0004
+- **Documenti collegati**: `docs/saas-data-contracts.md` (vista unificata), `docs/editor-strutture-dieta.md` (guida operativa), `docs/inviti-email.md`, `docs/saas-runbook.md`, ADR 0001
 
 ## 1. Perché questa decisione
 
@@ -61,4 +61,4 @@ dalle Impostazioni; la console ha un tema scuro dedicato in `css/admin.css`.
 - Test di canarino sulla console (`admin-ui`, `console-clienti`,
   `profile-link-contract`, `app-ui-state`, `theme-toggle`, `settings-order`).
 - La gestione delle strutture dieta, dei template equivalenze e del piano
-  a blocchi è documentata in ADR 0008 e in `docs/editor-strutture-dieta.md`.
+  a blocchi è documentata in ADR 0004 e in `docs/editor-strutture-dieta.md`.

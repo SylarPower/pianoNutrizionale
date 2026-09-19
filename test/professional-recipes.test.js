@@ -1,5 +1,5 @@
 'use strict';
-/* Parte C (client) — ricette del professionista (ADR 0006):
+/* Parte C (client) — ricette del professionista (ADR 0003):
  * - merge puro: catalogo preservato, sostituzione per stesso id, flag
  *   fromProfessional con provenienza;
  * - anteprima conflitti: nota di sola lettura al posto dei select;
