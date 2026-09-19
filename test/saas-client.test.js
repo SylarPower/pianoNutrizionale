@@ -154,7 +154,7 @@ test('round-trip export → import: payload valido accettato, payload manomesso 
   });
   const payload = {
     format: 'piano-nutrizionale-recipes', schemaVersion: 7,
-    exportedAt: new Date().toISOString(), exportedBy: 'gabriele',
+    exportedAt: new Date().toISOString(), exportedBy: 'cliente-1',
     recipes: [recipe(1), recipe(2)],
     plan: { schemaVersion: 7, days }
   };

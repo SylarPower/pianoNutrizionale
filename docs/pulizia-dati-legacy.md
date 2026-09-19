@@ -6,7 +6,7 @@ scorciatoia per chi usa il terminale: **puoi ignorarla**, trovi sempre la
 versione con i clic.
 
 Obiettivo: cancellare i dati delle vecchie organizzazioni e delle collezioni
-morte **senza rompere gli account attivi** (`gabriele`, `martina`, `admin`,
+morte **senza rompere gli account attivi** (`cliente-1`, `cliente-2`, `admin`,
 `cliente`, `nutrizionista`) e senza rompere il codice che è in produzione.
 
 > ⚠️ Leggi prima il **Passo 0**: contiene l'elenco delle cose che **non**
@@ -14,7 +14,7 @@ morte **senza rompere gli account attivi** (`gabriele`, `martina`, `admin`,
 
 > 🧭 **Da dove partire?** Se devi ancora **costruire** la struttura nuova
 > (organizzazione `pianoNutrizionale`, creatore, nutrizionista, catalogo, collegamento di
-> `gabriele` e `martina`), fai prima
+> `cliente-1` e `cliente-2`), fai prima
 > [ripartenza-firebase.md](ripartenza-firebase.md): qui si cancella, là si
 > costruisce. Cancellare per primo lascerebbe gli account senza appartenenza.
 
@@ -29,7 +29,7 @@ produzione. Questo documento corregge quel piano.
 
 | Cosa lasciare stare | Perché |
 |---|---|
-| `users/{uid}/content/recipeCatalog`, `users/{uid}/config/shoppingList`, `users/{uid}/config/weeklyPlan`, `users/{uid}/backups/*` | È il magazzino **attuale** dell'app: `js/firebase.js` ci legge e ci scrive a ogni utilizzo (righe 476, 484, 508). Vale anche per `gabriele` e `martina` dopo il re-import. |
+| `users/{uid}/content/recipeCatalog`, `users/{uid}/config/shoppingList`, `users/{uid}/config/weeklyPlan`, `users/{uid}/backups/*` | È il magazzino **attuale** dell'app: `js/firebase.js` ci legge e ci scrive a ogni utilizzo (righe 476, 484, 508). Vale anche per `cliente-1` e `cliente-2` dopo il re-import. |
 | `households/**` | Area condivisa degli account collegati: usata da `js/firebase.js` (righe 456-501, 667-688). |
 | `globalIngredientCatalog/config/docs/import` e `.../denylist` | Le leggono le Cloud Functions in produzione (`functions/src/index.js:1188` per l'import, `functions/src/domain.js:598` per la denylist). Non sono "refusi". |
 | `globalIngredientCatalog/current/**` | Catalogo ingredienti globale attivo (`functions/src/index.js:118-120`). |
@@ -74,9 +74,9 @@ Note:
 
 ---
 
-## Passo 2 — `gabriele` e `martina`: export e re-import (nessuno script)
+## Passo 2 — Account con dati storici (es. `cliente-1`, `cliente-2`): export e re-import (nessuno script)
 
-I dati storici di `gabriele` e `martina` **non vengono migrati da nessuno
+I dati storici degli account clienti (es. `cliente-1` e `cliente-2`) **non vengono migrati da nessuno
 script**: si rifà un export e un import dall'app. Il formato è già coperto dai
 test automatici (`test/saas-client.test.js`, round-trip
 `piano-nutrizionale-recipes`).
@@ -84,10 +84,10 @@ test automatici (`test/saas-client.test.js`, round-trip
 Da fare **una volta per ciascun account**, e **prima** di qualsiasi
 cancellazione di dati personali.
 
-1. Apri l'app con l'account di `gabriele`. Il nickname non cambia.
+1. Apri l'app con l'account del primo cliente (es. `cliente-1`). Il nickname non cambia.
 2. Vai nella schermata **Ricettario**.
 3. Premi il pulsante **Esporta**. Scarica un file chiamato
-   `ricette-gabriele-AAAA-MM-GG.json`.
+   `ricette-<nickname>-AAAA-MM-GG.json`.
 4. Apri il file con un editor di testo e controlla che contenga queste righe:
    - `"format": "piano-nutrizionale-recipes"`
    - `"schemaVersion": 5`
@@ -102,7 +102,7 @@ cancellazione di dati personali.
    lista della spesa in un'unica operazione.
 7. Controlla a schermo: settimana completa, ricette presenti, lista della spesa
    coerente.
-8. Ripeti dal punto 1 con l'account di `martina`.
+8. Ripeti dal punto 1 con gli altri account clienti.
 
 Se l'import si blocca con un errore, **non insistere**: il validatore ha
 rifiutato il file (ricette vuote, pasti sconosciuti, riferimenti mancanti).
@@ -184,7 +184,7 @@ o da Firebase console → Firestore → **Rules** (vedi
 
 ## Passo 6 — Account (Firebase Authentication): niente da cancellare
 
-Nessun account Auth va cancellato. `gabriele`, `martina`, `admin`, `cliente` e
+Nessun account Auth va cancellato. `cliente-1`, `cliente-2`, `admin`, `cliente` e
 `nutrizionista` restano attivi con i nickname attuali e con l'email tecnica
 `<nickname>@utenti.pianonutrizionale.app`.
 
@@ -192,9 +192,9 @@ Nessun account Auth va cancellato. `gabriele`, `martina`, `admin`, `cliente` e
 
 ## Passo 7 — Verifica finale (10 minuti, solo clic)
 
-1. Apri l'app con `gabriele`: settimana, ricette e lista della spesa devono
+1. Apri l'app con il primo account cliente: settimana, ricette e lista della spesa devono
    essere quelle di prima.
-2. Apri l'app con `martina`: idem.
+2. Ripeti con gli altri account clienti: idem.
 3. Apri `admin.html` con `admin` e poi con `nutrizionista`: le sezioni
    **Clienti**, **Dosi clienti**, **Strutture dieta**, **Utenti** e **Coda
    ingredienti** devono caricarsi senza messaggi rossi. Con `admin` (creatore)
@@ -233,7 +233,7 @@ Se hai anche un modo di lanciare i test automatici (per esempio il workflow
 ## Riepilogo in 8 righe
 
 1. Attiva il ripristino a 7 giorni (Disaster Recovery).
-2. `gabriele` e `martina`: **Esporta** e poi **Importa** dal Ricettario.
+2. Ogni account cliente con dati storici: **Esporta** e poi **Importa** dal Ricettario.
 3. In `organizations` cancella tutto tranne `pianoNutrizionale` (che deve esistere: vedi
    [ripartenza-firebase.md](ripartenza-firebase.md)).
 4. Svuota `globalRuleSets`, `mappingReports`, `mappingProposals` (modello eliminato).
